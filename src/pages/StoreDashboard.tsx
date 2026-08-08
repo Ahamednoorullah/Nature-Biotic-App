@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { getStore, productTypes } from "@/lib/data";
+import { getStore, productCategories, ProductCategory } from "@/lib/data";
 import {
   Card,
   StatCard,
@@ -1074,7 +1074,10 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   value={typeFilter}
                   onChange={setTypeFilter}
                   placeholder="All Product Types"
-                  options={productTypes.map((t) => ({ value: t, label: t }))}
+                  options={productCategories.map((t) => ({
+                    value: t,
+                    label: t,
+                  }))}
                 />
               </div>
               <Button variant="secondary">

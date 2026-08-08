@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   products as allProducts,
-  productTypes,
+  productCategories,
   type Product,
 } from "@/lib/data";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
@@ -32,7 +32,7 @@ export default function CompanyProducts() {
           p.name.toLowerCase().includes(search.toLowerCase()) ||
           p.manufacturer.toLowerCase().includes(search.toLowerCase()) ||
           p.hsnCode.toLowerCase().includes(search.toLowerCase());
-        const mt = typeFilter === "all" || p.productType === typeFilter;
+        const mt = typeFilter === "all" || p.productCategory === typeFilter;
         return ms && mt;
       }),
     [products, search, typeFilter],
@@ -44,7 +44,7 @@ export default function CompanyProducts() {
       {
         key: string;
         name: string;
-        productType: string;
+        ProductCategory: string;
         hsnCode: string;
         imageColor: string;
         variants: Product[];
@@ -56,7 +56,7 @@ export default function CompanyProducts() {
         .trim()
         .replace(/\s+/g, " ")
         .toLowerCase();
-      const key = `${product.productType.toLowerCase()}__${normalizedName}__${product.hsnCode}`;
+      const key = `${product.productCategory.toLowerCase()}__${normalizedName}__${product.hsnCode}`;
 
       const existing = groups.get(key);
       if (existing) {
@@ -65,7 +65,7 @@ export default function CompanyProducts() {
         groups.set(key, {
           key,
           name: product.name,
-          productType: product.productType,
+          ProductCategory: product.productCategory,
           hsnCode: product.hsnCode,
           imageColor: product.imageColor,
           variants: [product],
@@ -202,7 +202,7 @@ export default function CompanyProducts() {
                 value={typeFilter}
                 onChange={setTypeFilter}
                 placeholder="All Product Types"
-                options={productTypes.map((t) => ({ value: t, label: t }))}
+                options={productCategories.map((t) => ({ value: t, label: t }))}
               />
             </div>
             <Button variant="secondary">
@@ -254,7 +254,7 @@ export default function CompanyProducts() {
                     Image
                   </th>
                   <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
-                    Product Type
+                    Product Category
                   </th>
                   <th className="w-[17%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
                     Product Name
@@ -307,7 +307,7 @@ export default function CompanyProducts() {
                             rowSpan={group.variants.length}
                             className="border-r border-slate-100 px-2 py-3 align-middle text-slate-600 break-words"
                           >
-                            {group.productType}
+                            {group.ProductCategory}
                           </td>
 
                           <td
