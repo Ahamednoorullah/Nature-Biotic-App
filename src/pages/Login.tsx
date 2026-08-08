@@ -39,7 +39,7 @@ export default function Login() {
 
             <div className="mb-6 text-center">
               <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                Sign in to Continue
+                Sign In
               </h1>
               {/* <p className="mx-auto mt-2 max-w-md text-sm leading-5 text-slate-500">
                 Welcome back! Please enter your details to access your account.
