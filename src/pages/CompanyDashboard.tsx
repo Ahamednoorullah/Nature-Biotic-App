@@ -341,9 +341,7 @@ export default function CompanyDashboard() {
           <h2 className="text-lg font-bold text-slate-800 tracking-tight">
             Store Overview
           </h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Performance summary for your registered store.
-          </p>
+          <p className="text-sm text-slate-500 mt-0.5">Performance</p>
         </div>
 
         <Card className="p-5 sm:p-6 animate-fade-in">
