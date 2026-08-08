@@ -927,6 +927,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-4">
           Business Overview
         </h2>
+        <p>Overall Store view</p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 stagger">
           <StatCard
             label="Sales"
