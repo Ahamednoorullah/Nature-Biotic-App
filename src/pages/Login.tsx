@@ -141,7 +141,7 @@ export default function Login() {
                   <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 ) : (
                   <span className="relative flex w-full items-center justify-center">
-                    <span>Sign In</span>
+                    <span>Sign In </span>
                     <span
                       className="material-symbols-rounded absolute right-0"
                       style={{ fontSize: 26 }}
@@ -162,7 +162,7 @@ export default function Login() {
             <p className="text-center text-sm text-slate-500 sm:text-base">
               Need help?{" "}
               <span className="font-semibold text-brand-600">
-                Contact your administrator
+                Contact your Administrator
               </span>
             </p>
           </div>
