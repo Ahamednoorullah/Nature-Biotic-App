@@ -39,7 +39,7 @@ export default function Login() {
 
             <div className="mb-6 text-center">
               <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                Sign in to Continue
+                Sign In
               </h1>
               {/* <p className="mx-auto mt-2 max-w-md text-sm leading-5 text-slate-500">
                 Welcome back! Please enter your details to access your account.
@@ -135,7 +135,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading}
-                className="mt-1 flex h-[56px] w-full items-center justify-center rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-600 px-6 text-lg font-bold text-white shadow-[0_12px_30px_rgba(22,163,74,0.28)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(22,163,74,0.34)] disabled:cursor-not-allowed disabled:opacity-60 sm:text-xl"
+                className="mt-1 flex h-[56px] w-full items-center justify-center rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-600 px-6 text-lg font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60 sm:text-xl"
               >
                 {loading ? (
                   <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -162,7 +162,7 @@ export default function Login() {
             <p className="text-center text-sm text-slate-500 sm:text-base">
               Need help?{" "}
               <span className="font-semibold text-brand-600">
-                Contact your administrator
+                Contact your Administrator
               </span>
             </p>
           </div>
