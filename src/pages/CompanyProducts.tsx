@@ -5,18 +5,9 @@ import {
   type Product,
 } from "@/lib/data";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
-import { formatCurrency, initials } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import ProductAddForm from "@/components/ProductAddForm";
 import ProductDetail from "@/pages/CompanyProductDetail";
-
-const colorMap: Record<string, string> = {
-  emerald: "from-emerald-400 to-emerald-600",
-  teal: "from-teal-400 to-teal-600",
-  red: "from-red-400 to-red-600",
-  amber: "from-amber-400 to-amber-600",
-  blue: "from-blue-400 to-blue-600",
-  purple: "from-purple-400 to-purple-600",
-};
 
 export default function CompanyProducts() {
   const [showAdd, setShowAdd] = useState(false);
@@ -44,9 +35,10 @@ export default function CompanyProducts() {
       {
         key: string;
         name: string;
+        purpose: string;
+        productType: string;
         ProductCategory: string;
         hsnCode: string;
-        imageColor: string;
         variants: Product[];
       }
     >();
@@ -65,9 +57,10 @@ export default function CompanyProducts() {
         groups.set(key, {
           key,
           name: product.name,
+          purpose: (product as Product & { purpose?: string }).purpose ?? "-",
+          productType: product.productType,
           ProductCategory: product.productCategory,
           hsnCode: product.hsnCode,
-          imageColor: product.imageColor,
           variants: [product],
         });
       }
@@ -250,28 +243,31 @@ export default function CompanyProducts() {
             <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
               <thead>
                 <tr className="border-b-2 border-slate-200 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600 xl:text-xs">
-                  <th className="w-[8%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    Image
+                  <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                    S.No
+                  </th>
+                  <th className="w-[13%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
+                    Product Type
                   </th>
                   <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
                     Product Category
                   </th>
-                  <th className="w-[17%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
-                    Product Name
-                  </th>
-                  <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
-                    HSN / SAC
+                  <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
+                    Product Name / Purpose
                   </th>
                   <th className="w-[11%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
+                    HSN / SAC
+                  </th>
+                  <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
                     Pack Size
                   </th>
-                  <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
+                  <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
                     Selling Price
                   </th>
-                  <th className="w-[13%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
+                  <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
                     MRP
                   </th>
-                  <th className="w-[11%] px-2 py-3 text-center font-semibold">
+                  <th className="w-[8%] px-2 py-3 text-center font-semibold">
                     Tax %
                   </th>
                 </tr>
@@ -291,16 +287,16 @@ export default function CompanyProducts() {
                         <>
                           <td
                             rowSpan={group.variants.length}
-                            className="border-r border-slate-100 px-2 py-3 text-center align-middle"
+                            className="border-r border-slate-100 px-2 py-3 text-center align-middle font-medium text-slate-400"
                           >
-                            <div
-                              className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${
-                                colorMap[group.imageColor] ??
-                                "from-slate-400 to-slate-600"
-                              } text-sm font-bold text-white`}
-                            >
-                              {initials(group.name)}
-                            </div>
+                            {groupIndex + 1}
+                          </td>
+
+                          <td
+                            rowSpan={group.variants.length}
+                            className="border-r border-slate-100 px-2 py-3 align-middle text-slate-600 break-words"
+                          >
+                            {group.productType}
                           </td>
 
                           <td
@@ -314,7 +310,15 @@ export default function CompanyProducts() {
                             rowSpan={group.variants.length}
                             className="border-r border-slate-100 px-2 py-3 align-middle font-semibold text-slate-800 break-words"
                           >
-                            {group.name}
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span>{group.name}</span>
+                              <span className="font-normal text-slate-400">
+                                -
+                              </span>
+                              <span className="font-medium text-brand-700">
+                                {group.purpose}
+                              </span>
+                            </div>
                           </td>
 
                           <td

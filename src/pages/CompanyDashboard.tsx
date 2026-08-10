@@ -6,6 +6,7 @@ import { formatCurrency, formatCompact, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
+type ActualDetailView = "sales" | "collection" | "outstanding" | null;
 
 const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "today", label: "Today" },
@@ -227,9 +228,71 @@ const dashboardData: Record<DateFilter, DashboardData> = {
   },
 };
 
+const actualSalesList = [
+  {
+    date: "08 Aug 2026",
+    invoiceNo: "INV-1028",
+    partyName: "Sairam Agri Input",
+    value: 48200,
+  },
+  {
+    date: "08 Aug 2026",
+    invoiceNo: "INV-1027",
+    partyName: "Shriya Tech",
+    value: 36500,
+  },
+  {
+    date: "07 Aug 2026",
+    invoiceNo: "INV-1026",
+    partyName: "Nature Bio Mart",
+    value: 52800,
+  },
+  {
+    date: "07 Aug 2026",
+    invoiceNo: "INV-1025",
+    partyName: "Sairam Agri Input",
+    value: 46500,
+  },
+];
+
+const actualCollectionList = [
+  {
+    date: "08 Aug 2026",
+    receiptNo: "RCPT-0821",
+    partyName: "Sairam Agri Input",
+    amount: 8500,
+  },
+  {
+    date: "08 Aug 2026",
+    receiptNo: "RCPT-0820",
+    partyName: "Shriya Tech",
+    amount: 6200,
+  },
+  {
+    date: "07 Aug 2026",
+    receiptNo: "RCPT-0819",
+    partyName: "Nature Bio Mart",
+    amount: 4800,
+  },
+  {
+    date: "07 Aug 2026",
+    receiptNo: "RCPT-0818",
+    partyName: "Sairam Agri Input",
+    amount: 5000,
+  },
+];
+
+const actualOutstandingList = [
+  { partyName: "Sairam Agri Input", amount: 7200, month: "30 Days" },
+  { partyName: "Shriya Tech", amount: 5800, month: "60 Days" },
+  { partyName: "Nature Bio Mart", amount: 5000, month: "90 Days" },
+];
+
 export default function CompanyDashboard() {
   const { goStore } = useNav();
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
+  const [actualDetailView, setActualDetailView] =
+    useState<ActualDetailView>(null);
 
   const data = useMemo(() => dashboardData[dateFilter], [dateFilter]);
   const store = allStores[0];
@@ -261,32 +324,70 @@ export default function CompanyDashboard() {
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 stagger">
-          <StatCard
-            label="Sales"
-            value={formatCurrency(data.actual.receivable)}
-            icon="account_balance_wallet"
-            color="brand"
-            trend={data.actual.trends.receivable}
-            trendUp
-          />
-          <StatCard
-            label="Collection"
-            value={formatCurrency(data.actual.revenue)}
-            icon="payments"
-            color="blue"
-            trend={data.actual.trends.revenue}
-            trendUp
-          />
-          <StatCard
-            label="Outstanding"
-            value={formatCurrency(data.actual.outstanding)}
-            icon="receipt_long"
-            color="amber"
-            trend={data.actual.trends.outstanding}
-            trendUp
-          />
-          {/* <StatCard label="No of Farmers" value={String(data.actual.farmers)} icon="groups" color="brand" trend={data.actual.trends.farmers} trendUp /> */}
+          <button
+            type="button"
+            onClick={() =>
+              setActualDetailView((prev) => (prev === "sales" ? null : "sales"))
+            }
+            className="text-left rounded-2xl transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            <StatCard
+              label="Sales"
+              value={formatCurrency(data.actual.receivable)}
+              icon="account_balance_wallet"
+              color="brand"
+              trend={data.actual.trends.receivable}
+              trendUp
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setActualDetailView((prev) =>
+                prev === "collection" ? null : "collection",
+              )
+            }
+            className="text-left rounded-2xl transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            <StatCard
+              label="Collection"
+              value={formatCurrency(data.actual.revenue)}
+              icon="payments"
+              color="blue"
+              trend={data.actual.trends.revenue}
+              trendUp
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              setActualDetailView((prev) =>
+                prev === "outstanding" ? null : "outstanding",
+              )
+            }
+            className="text-left rounded-2xl transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-amber-300"
+          >
+            <StatCard
+              label="Outstanding"
+              value={formatCurrency(data.actual.outstanding)}
+              icon="receipt_long"
+              color="amber"
+              trend={data.actual.trends.outstanding}
+              trendUp
+            />
+          </button>
         </div>
+
+        {actualDetailView && (
+          <div className="mt-5 animate-fade-in">
+            <ActualDetailsBox
+              view={actualDetailView}
+              onClose={() => setActualDetailView(null)}
+            />
+          </div>
+        )}
       </section>
 
       {/* SECTION 2 — Market Sales */}
@@ -341,7 +442,9 @@ export default function CompanyDashboard() {
           <h2 className="text-lg font-bold text-slate-800 tracking-tight">
             Store Overview
           </h2>
-          <p className="text-sm text-slate-500 mt-0.5">Performance</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Performance summary for your registered store.
+          </p>
         </div>
 
         <Card className="p-5 sm:p-6 animate-fade-in">
@@ -403,6 +506,165 @@ export default function CompanyDashboard() {
         </Card>
       </section>
     </div>
+  );
+}
+
+function ActualDetailsBox({
+  view,
+  onClose,
+}: {
+  view: Exclude<ActualDetailView, null>;
+  onClose: () => void;
+}) {
+  const config = {
+    sales: {
+      title: "Overall Sales",
+      subtitle: "Company and direct sales invoice details",
+      icon: "receipt_long",
+      tone: "brand",
+    },
+    collection: {
+      title: "Overall Collection",
+      subtitle: "Receipt-wise collection details",
+      icon: "payments",
+      tone: "blue",
+    },
+    outstanding: {
+      title: "Outstanding Details",
+      subtitle: "Store-wise outstanding ageing summary",
+      icon: "account_balance",
+      tone: "amber",
+    },
+  }[view];
+
+  const toneClass =
+    config.tone === "brand"
+      ? "bg-brand-50 text-brand-700"
+      : config.tone === "blue"
+        ? "bg-blue-50 text-blue-700"
+        : "bg-amber-50 text-amber-700";
+
+  return (
+    <Card className="overflow-hidden border border-slate-200 shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex h-10 w-10 items-center justify-center rounded-xl ${toneClass}`}
+          >
+            <Icon name={config.icon} size={20} />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800">{config.title}</h3>
+            <p className="text-xs text-slate-500">{config.subtitle}</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+        >
+          <Icon name="close" size={18} />
+        </button>
+      </div>
+
+      {view === "sales" && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[650px] text-sm">
+            <thead>
+              <tr className="bg-white text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-5 py-3 text-left font-semibold">Date</th>
+                <th className="px-5 py-3 text-left font-semibold">
+                  Invoice No
+                </th>
+                <th className="px-5 py-3 text-left font-semibold">
+                  Party Name
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">Value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {actualSalesList.map((row) => (
+                <tr key={row.invoiceNo} className="hover:bg-slate-50">
+                  <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                  <td className="px-5 py-3 font-semibold text-slate-700">
+                    {row.invoiceNo}
+                  </td>
+                  <td className="px-5 py-3 text-slate-700">{row.partyName}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-800">
+                    {formatCurrency(row.value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "collection" && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[650px] text-sm">
+            <thead>
+              <tr className="bg-white text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-5 py-3 text-left font-semibold">Date</th>
+                <th className="px-5 py-3 text-left font-semibold">
+                  Receipt No
+                </th>
+                <th className="px-5 py-3 text-left font-semibold">
+                  Party Name
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {actualCollectionList.map((row) => (
+                <tr key={row.receiptNo} className="hover:bg-slate-50">
+                  <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                  <td className="px-5 py-3 font-semibold text-slate-700">
+                    {row.receiptNo}
+                  </td>
+                  <td className="px-5 py-3 text-slate-700">{row.partyName}</td>
+                  <td className="px-5 py-3 text-right font-bold text-slate-800">
+                    {formatCurrency(row.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "outstanding" && (
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {actualOutstandingList.map((row) => (
+            <div
+              key={`${row.partyName}-${row.month}`}
+              className="rounded-xl border border-slate-200 bg-white p-4"
+            >
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Store
+                  </p>
+                  <h4 className="mt-1 font-bold text-slate-800">
+                    {row.partyName}
+                  </h4>
+                </div>
+                <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                  {row.month}
+                </span>
+              </div>
+              <p className="text-xs font-medium text-slate-500">
+                Outstanding Amount
+              </p>
+              <p className="mt-1 text-xl font-bold text-slate-900">
+                {formatCurrency(row.amount)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

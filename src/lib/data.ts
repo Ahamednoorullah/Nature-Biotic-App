@@ -25,13 +25,29 @@ export type ProductCategory =
   | "Nutrients (Fertilizer)"
   | "Manenes";
 
+export type ProductType = "Liquid" | "Powder" | "Gel" | "Granules";
+
+export type Purpose =
+  | "Root Enhancer"
+  | "Vegetative Growth Simulator"
+  | "Tillers and Branche Developers"
+  | "Flower Enhancer"
+  | "Bud Developer"
+  | "Yield Enhancer"
+  | "Larvicide"
+  | "Miticide & Acaricide"
+  | "Botanical fungicide"
+  | "Insecticide (Suckingpest)";
+
 export type TaxType = "Intrastate" | "Interstate";
 
 export type Product = {
   id: string;
   storeId: string;
   name: string;
+  purpose: Purpose;
   productCategory: ProductCategory;
+  productType: ProductType;
   manufacturer: string;
   vendor: string;
   unit: "Weight" | "Volume";
@@ -225,7 +241,9 @@ const warehouses = ["Main Warehouse - Bellary", "Secondary Warehouse - Hospet"];
 const productSeed: Omit<Product, "id" | "storeId">[] = [
   {
     name: "Electra",
+    purpose: "Larvicide",
     productCategory: "Pesticide",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Volume",
@@ -259,7 +277,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Aalga",
+    purpose: "Tillers and Branche Developers",
     productCategory: "Bio-stimulant",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Volume",
@@ -292,7 +312,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Astra",
+    purpose: "Miticide & Acaricide",
     productCategory: "Pesticide",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Volume",
@@ -326,7 +348,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Alpha",
+    purpose: "Yield Enhancer",
     productCategory: "Bio-stimulant",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Weight",
@@ -360,7 +384,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Nuetra",
+    purpose: "Botanical fungicide",
     productCategory: "Bio-stimulant",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Volume",
@@ -392,7 +418,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Ultra",
+    purpose: "Insecticide (Suckingpest)",
     productCategory: "Pesticide",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Weight",
@@ -426,7 +454,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Electra Plus",
+    purpose: "Larvicide",
     productCategory: "Pesticide",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Volume",
@@ -458,7 +488,9 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
   {
     name: "Aalga Gold",
+    purpose: "Root Enhancer",
     productCategory: "Bio-stimulant",
+    productType: "Liquid",
     manufacturer: "Nature Biotic Pvt. Ltd.",
     vendor: "Nature Biotic Distribution",
     unit: "Volume",
@@ -1099,4 +1131,24 @@ export const productCategories: ProductCategory[] = [
   "Fungicide",
   "Nutrients (Fertilizer)",
   "Manenes",
+];
+
+export const productTypes: ProductType[] = [
+  "Liquid",
+  "Powder",
+  "Gel",
+  "Granules",
+];
+
+export const purpose: Purpose[] = [
+  "Root Enhancer",
+  "Vegetative Growth Simulator",
+  "Tillers and Branche Developers",
+  "Flower Enhancer",
+  "Bud Developer",
+  "Yield Enhancer",
+  "Larvicide",
+  "Miticide & Acaricide",
+  "Botanical fungicide",
+  "Insecticide (Suckingpest)",
 ];
