@@ -335,9 +335,9 @@ export default function CompanySales() {
 
       {/* Create Store Sale — full-screen form */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-6">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-0">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={closeForm} />
-          <div className="relative bg-white w-full sm:max-w-[1200px] sm:rounded-2xl shadow-elevated flex flex-col h-full sm:h-[90vh] animate-scale-in">
+          <div className="relative bg-white w-full sm:max-w-[1210px] sm:rounded-2xl shadow-elevated flex flex-col h-full sm:h-[90vh] animate-scale-in">
             {/* Fixed header */}
             <div className="flex items-start justify-between px-5 sm:px-8 py-4 border-b border-slate-100 shrink-0">
               <div>
@@ -532,15 +532,33 @@ export default function CompanySales() {
                   </div>
                 </div>
               </section>
-            </div>
+              {/* ACTION BUTTONS — immediately after Grand Total */}
+                    <div className="mt-5 flex flex-col sm:flex-row gap-3 justify-end">
+                      <Button
+                        variant="secondary"
+                        onClick={closeForm}
+                        className="w-full sm:w-auto"
+                      >
+                        Cancel
+                      </Button>
 
-            {/* Fixed action footer */}
-            <div className="px-5 sm:px-8 py-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 sm:justify-end shrink-0 bg-white">
-              <Button variant="secondary" onClick={closeForm} className="w-full sm:w-auto">Cancel</Button>
-              <Button variant="secondary" onClick={handleSaveDraft} className="w-full sm:w-auto">Save Draft</Button>
-              <Button onClick={handleCreate} disabled={!canCreate} className="w-full sm:w-auto">
-                <Icon name="check_circle" size={18} /> Create Sale
-              </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={handleSaveDraft}
+                        className="w-full sm:w-auto"
+                      >
+                        Save Draft
+                      </Button>
+                
+                      <Button
+                        onClick={handleCreate}
+                        disabled={!canCreate}
+                        className="w-full sm:w-auto"
+                      >
+                        <Icon name="check_circle" size={18} />
+                        Create Sale
+                      </Button>
+                    </div>
             </div>
           </div>
         </div>
