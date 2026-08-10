@@ -13,6 +13,7 @@ type PackingType = "Volume" | "Weight";
 type ProductDetailRow = {
   id: number;
   size: string;
+  Purchaseprice: string;
   sellingPrice: string;
   mrp: string;
   limitStock: string;
@@ -113,7 +114,7 @@ export default function ProductAddForm({
 }) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [details, setDetails] = useState<ProductDetailRow[]>([
-    { id: 1, size: "", sellingPrice: "", mrp: "", limitStock: "" },
+    { id: 1, size: "", Purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
   ]);
   const [applicationMethods, setApplicationMethods] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
@@ -146,7 +147,7 @@ export default function ProductAddForm({
     }));
 
     setDetails([
-      { id: Date.now(), size: "", sellingPrice: "", mrp: "", limitStock: "" },
+      { id: Date.now(), size: "", Purchaseprice: "",  sellingPrice: "", mrp: "", limitStock: "" },
     ]);
   }
 
@@ -166,6 +167,7 @@ export default function ProductAddForm({
       {
         id: Date.now() + Math.random(),
         size: "",
+        Purchaseprice: "",
         sellingPrice: "",
         mrp: "",
         limitStock: "",
@@ -198,7 +200,14 @@ export default function ProductAddForm({
   function resetForm() {
     setForm(emptyForm);
     setDetails([
-      { id: Date.now(), size: "", sellingPrice: "", mrp: "", limitStock: "" },
+      {
+        id: Date.now(),
+        size: "",
+        Purchaseprice: "",
+        sellingPrice: "",
+        mrp: "",
+        limitStock: "",
+      },
     ]);
     setApplicationMethods([]);
   }
@@ -232,6 +241,7 @@ export default function ProductAddForm({
     details.every(
       (row) =>
         row.size &&
+        row.Purchaseprice.trim() &&
         row.sellingPrice.trim() &&
         row.mrp.trim() &&
         row.limitStock.trim(),
