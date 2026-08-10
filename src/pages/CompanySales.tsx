@@ -335,7 +335,7 @@ export default function CompanySales() {
 
       {/* Create Store Sale — full-screen form */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-stretch sm:items-center sm:justify-center sm:p-4 lg:p-6">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-6">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={closeForm} />
           <div className="relative bg-white w-full sm:max-w-[1200px] sm:rounded-2xl shadow-elevated flex flex-col h-full sm:h-[90vh] animate-scale-in">
             {/* Fixed header */}
