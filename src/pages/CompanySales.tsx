@@ -533,7 +533,7 @@ export default function CompanySales() {
                 </div>
               </section>
               {/* ACTION BUTTONS — immediately after Grand Total */}
-                    <div className="relative -top-3 flex flex-col sm:flex-row gap-3 justify-end">
+                    <div className="relative -top-4 flex flex-col sm:flex-row gap-3 justify-end">
                       <Button
                         variant="secondary"
                         onClick={closeForm}
