@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useEffect } from "react";
 import { getStore, productCategories, ProductCategory } from "@/lib/data";
 import {
   Card,
@@ -12,6 +13,7 @@ import {
 import { formatCurrency, formatCompact, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
 
+
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 const filterTabs: { key: DateFilter; label: string }[] = [
@@ -21,6 +23,13 @@ const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "quarterly", label: "Quarterly" },
   { key: "yearly", label: "Yearly" },
 ];
+
+useEffect(() => {
+  window.scrollTo({
+    top: 0,
+    behavior: "instant",
+  });
+}, []);
 
 type ExecKey = "ram" | "ajith" | "periya";
 
