@@ -941,7 +941,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
 
       {/* ROW 1 — Business Overview */}
       <div className="mb-12">
-        <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-4">
+        <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-10">
           Business Overview
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 stagger">

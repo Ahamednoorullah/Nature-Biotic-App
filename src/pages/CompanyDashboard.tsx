@@ -249,7 +249,7 @@ export default function CompanyDashboard() {
         document.body,
       )}
 
-      <div className="h-[90px]" />
+      <div className="h-[30px]" />
       {/* SECTION 1 — Actual Sales */}
       <section className="mb-12">
         <div className="mb-5">
