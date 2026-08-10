@@ -917,11 +917,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   return (
     <div>
       {/* Sticky date filter */}
-      <div className="sticky top-16 z-10 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3.5 mb-10 bg-slate-50 border-b border-slate-200 shadow-sm">
+      {/* <div className="sticky top-16 z-10 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3.5 mb-10 bg-slate-50 border-b border-slate-200 shadow-sm">
         <div className="flex justify-end">
           <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
         </div>
-      </div>
+      </div> */}
 
       {createPortal(
               <div className="fixed top-[82px] right-8 z-[9999]">
