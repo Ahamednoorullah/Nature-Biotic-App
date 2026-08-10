@@ -337,7 +337,7 @@ export default function CompanySales() {
       {showCreate && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-0">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={closeForm} />
-          <div className="relative bg-white w-full sm:max-w-[1210px] sm:rounded-2xl shadow-elevated flex flex-col h-full sm:h-[90vh] animate-scale-in">
+          <div className="relative bg-white w-full sm:max-w-[1210px] shadow-elevated flex flex-col h-full sm:h-[90vh] animate-scale-in">
             {/* Fixed header */}
             <div className="flex items-start justify-between px-5 sm:px-8 py-4 border-b border-slate-100 shrink-0">
               <div>
@@ -533,7 +533,7 @@ export default function CompanySales() {
                 </div>
               </section>
               {/* ACTION BUTTONS — immediately after Grand Total */}
-                    <div className="mt-5 flex flex-col sm:flex-row gap-3 justify-end">
+                    <div className="relative -top-3 flex flex-col sm:flex-row gap-3 justify-end">
                       <Button
                         variant="secondary"
                         onClick={closeForm}
