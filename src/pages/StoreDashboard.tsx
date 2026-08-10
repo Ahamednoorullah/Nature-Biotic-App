@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useEffect } from "react";
 import { getStore, productCategories, ProductCategory } from "@/lib/data";
 import {
   Card,
@@ -11,6 +12,7 @@ import {
 } from "@/components/ui";
 import { formatCurrency, formatCompact, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
+
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -744,6 +746,7 @@ function getStockWarnings(pack: PackSizeStock) {
 //     },
 //   ],
 // };
+
 const stockData: Record<DateFilter, StockRow[]> = {
   today: [
     {
@@ -861,6 +864,9 @@ const stockData: Record<DateFilter, StockRow[]> = {
 };
 
 export default function StoreDashboard({ storeId }: { storeId: string }) {
+    useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   const store = getStore(storeId);
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [search, setSearch] = useState("");
@@ -930,13 +936,14 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
               document.body,
             )}
 
+            
+
 
       {/* ROW 1 — Business Overview */}
       <div className="mb-12">
-        <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-4">
+        <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-10">
           Business Overview
         </h2>
-        <p>Overall Store view</p>
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 stagger">
           <StatCard
             label="Sales"
