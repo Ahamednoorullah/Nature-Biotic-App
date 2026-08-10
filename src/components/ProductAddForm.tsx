@@ -29,6 +29,10 @@ type FormState = {
   vendor: string;
   productPurpose: string;
   dosage: string;
+  dosageUnit: string;
+  filler: string;
+  fillerUnit: string;
+  fillerType: "Water" | "NA" | "";
   safetyColor: string;
 };
 
@@ -43,6 +47,10 @@ const emptyForm: FormState = {
   vendor: "Nature Biotic Distribution",
   productPurpose: "",
   dosage: "",
+  dosageUnit: "",
+  filler: "",
+  fillerUnit: "",
+  fillerType: "",
   safetyColor: "",
 };
 
@@ -56,25 +64,11 @@ const productCategoryOptions = [
   "Manenes",
 ];
 
-const productPurposeOptions = [
-  "Root Enhancer",
-  "Vegetative Growth Simulator",
-  "Tillers and Branche Developers",
-  "Flower Enhancer",
-  "Bud Developer",
-  "Yield Enhancer",
-  "Larvicide",
-  "Miticide & Acaricide",
-  "Botanical fungicide",
-  "Insecticide (Suckingpest)",
-];
-
 const applicationMethodOptions = [
   "Foliar Spray",
   "Drenching",
   "Fertigation",
   "Broadcasting",
-  "Drip Irrigation / Drip Application",
 ];
 
 const safetyColorOptions = ["Green", "Red", "Orange", "White", "Blue"];
@@ -130,12 +124,27 @@ export default function ProductAddForm({
     return [];
   }, [form.packingType]);
 
+  const unitOptions =
+    form.packingType === "Volume"
+      ? ["ml", "L"]
+      : form.packingType === "Weight"
+        ? ["g", "Kg"]
+        : [];
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function handlePackingTypeChange(value: string) {
-    update("packingType", value as PackingType);
+    const packingType = value as PackingType;
+
+    setForm((prev) => ({
+      ...prev,
+      packingType,
+      dosageUnit: packingType === "Volume" ? "ml" : "g",
+      fillerUnit: packingType === "Volume" ? "ml" : "g",
+    }));
+
     setDetails([
       { id: Date.now(), size: "", sellingPrice: "", mrp: "", limitStock: "" },
     ]);
@@ -176,6 +185,14 @@ export default function ProductAddForm({
         ? prev.filter((item) => item !== method)
         : [...prev, method],
     );
+  }
+
+  function handleFillerType(value: "Water" | "NA") {
+    setForm((prev) => ({
+      ...prev,
+      fillerType: value,
+      filler: value === "NA" ? "" : prev.filler,
+    }));
   }
 
   function resetForm() {
@@ -221,8 +238,11 @@ export default function ProductAddForm({
     );
 
   const additionalDetailsValid =
-    form.productPurpose &&
+    form.productPurpose.trim() &&
     form.dosage.trim() &&
+    form.dosageUnit &&
+    form.fillerType &&
+    (form.fillerType === "NA" || (form.filler.trim() && form.fillerUnit)) &&
     form.safetyColor &&
     applicationMethods.length > 0;
 
@@ -484,28 +504,27 @@ export default function ProductAddForm({
           <SectionTitle
             icon="description"
             title="Additional Details"
-            description="Set product purpose, application methods, dosage and safety colour."
+            description="Set product purpose, application methods, dosage, filler and safety colour."
           />
 
           <div className="space-y-5">
-            <Select
+            {/* Product Purpose */}
+            <Input
               label="Product Purpose"
               value={form.productPurpose}
               onChange={(v) => update("productPurpose", v)}
-              placeholder="Select product purpose"
-              options={productPurposeOptions.map((item) => ({
-                value: item,
-                label: item,
-              }))}
+              placeholder="e.g. Larvicide / Root Enhancer"
+              icon="target"
               required
             />
 
+            {/* Application Method */}
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Application Method <span className="text-red-500">*</span>
               </label>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {applicationMethodOptions.map((method) => {
                   const checked = applicationMethods.includes(method);
 
@@ -522,25 +541,108 @@ export default function ProductAddForm({
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleApplicationMethod(method)}
-                        className="h-4 w-4 accent-brand-600"
+                        className="h-4 w-4 shrink-0 accent-brand-600"
                       />
-                      <span>{method}</span>
+                      <span className="whitespace-nowrap">{method}</span>
                     </label>
                   );
                 })}
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                label="Dosage"
-                value={form.dosage}
-                onChange={(v) => update("dosage", v)}
-                placeholder="e.g. 2 ml / Litre or 500 ml / acre"
-                icon="science"
-                required
-              />
+            {/* Dosage + Filler + Safety */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-end">
+              {/* Dosage */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Dosage <span className="text-red-500">*</span>
+                </label>
 
+                <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={form.dosage}
+                    onChange={(e) => update("dosage", e.target.value)}
+                    placeholder="Enter dosage"
+                    className="min-w-0 flex-1 bg-transparent px-4 py-3 text-slate-700 outline-none"
+                  />
+
+                  <select
+                    value={form.dosageUnit}
+                    onChange={(e) => update("dosageUnit", e.target.value)}
+                    disabled={!form.packingType}
+                    className="border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600 outline-none disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    <option value="">Unit</option>
+                    {unitOptions.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {unit}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Filler */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Filler <span className="text-red-500">*</span>
+                </label>
+
+                <div className="flex min-w-0 gap-2">
+                  <div className="flex min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={form.filler}
+                      onChange={(e) => update("filler", e.target.value)}
+                      placeholder={
+                        form.fillerType === "NA"
+                          ? "Not applicable"
+                          : "Enter filler"
+                      }
+                      disabled={form.fillerType === "NA"}
+                      className="min-w-0 flex-1 bg-transparent px-4 py-3 text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                    />
+
+                    <select
+                      value={form.fillerUnit}
+                      onChange={(e) => update("fillerUnit", e.target.value)}
+                      disabled={!form.packingType || form.fillerType === "NA"}
+                      className="border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600 outline-none disabled:cursor-not-allowed disabled:text-slate-300"
+                    >
+                      <option value="">Unit</option>
+                      {unitOptions.map((unit) => (
+                        <option key={unit} value={unit}>
+                          {unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {(["Water", "NA"] as const).map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => handleFillerType(item)}
+                        className={`px-2.5 py-2 text-xs font-semibold transition ${
+                          form.fillerType === item
+                            ? "bg-brand-600 text-white"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Safety */}
               <Select
                 label="Safety Information"
                 value={form.safetyColor}

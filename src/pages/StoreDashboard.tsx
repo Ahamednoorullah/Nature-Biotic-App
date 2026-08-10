@@ -13,7 +13,6 @@ import {
 import { formatCurrency, formatCompact, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
 
-
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 const filterTabs: { key: DateFilter; label: string }[] = [
@@ -25,6 +24,12 @@ const filterTabs: { key: DateFilter; label: string }[] = [
 ];
 
 type ExecKey = "ram" | "ajith" | "periya";
+type ExecDetailType = "sales" | "collection" | "cash" | "outstanding";
+
+type ExecDetailSelection = {
+  execKey: ExecKey;
+  type: ExecDetailType;
+} | null;
 
 type ExecSummary = {
   sales: number;
@@ -49,6 +54,303 @@ const execColors: Record<ExecKey, string> = {
   ram: "from-emerald-400 to-emerald-600",
   ajith: "from-blue-400 to-blue-600",
   periya: "from-amber-400 to-amber-600",
+};
+
+const execDetailData: Record<
+  ExecKey,
+  {
+    sales: {
+      date: string;
+      invoiceNo: string;
+      farmer: string;
+      amount: number;
+    }[];
+    collection: {
+      date: string;
+      receiptNo: string;
+      farmer: string;
+      amount: number;
+    }[];
+    cash: { date: string; farmer: string; amount: number }[];
+    outstanding: {
+      date: string;
+      farmer: string;
+      amount: number;
+      village: string;
+      phone: string;
+    }[];
+  }
+> = {
+  ram: {
+    sales: [
+      {
+        date: "10 Aug 2026",
+        invoiceNo: "INV-RK-1042",
+        farmer: "Murugan",
+        amount: 6200,
+      },
+      {
+        date: "10 Aug 2026",
+        invoiceNo: "INV-RK-1041",
+        farmer: "Selvam",
+        amount: 4800,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-RK-1038",
+        farmer: "Kannan",
+        amount: 7500,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-RK-1036",
+        farmer: "Raja",
+        amount: 6000,
+      },
+    ],
+    collection: [
+      {
+        date: "10 Aug 2026",
+        receiptNo: "RCPT-RK-521",
+        farmer: "Murugan",
+        amount: 5200,
+      },
+      {
+        date: "10 Aug 2026",
+        receiptNo: "RCPT-RK-520",
+        farmer: "Selvam",
+        amount: 4300,
+      },
+      {
+        date: "09 Aug 2026",
+        receiptNo: "RCPT-RK-516",
+        farmer: "Kannan",
+        amount: 6900,
+      },
+      {
+        date: "09 Aug 2026",
+        receiptNo: "RCPT-RK-514",
+        farmer: "Raja",
+        amount: 5200,
+      },
+    ],
+    cash: [
+      { date: "10 Aug 2026", farmer: "Murugan", amount: 1200 },
+      { date: "10 Aug 2026", farmer: "Selvam", amount: 800 },
+      { date: "09 Aug 2026", farmer: "Kannan", amount: 900 },
+      { date: "09 Aug 2026", farmer: "Raja", amount: 500 },
+    ],
+    outstanding: [
+      {
+        date: "10 Aug 2026",
+        farmer: "Murugan",
+        amount: 900,
+        village: "Seithur",
+        phone: "98765 43210",
+      },
+      {
+        date: "09 Aug 2026",
+        farmer: "Selvam",
+        amount: 700,
+        village: "Chatrapatti",
+        phone: "98765 43211",
+      },
+      {
+        date: "08 Aug 2026",
+        farmer: "Kannan",
+        amount: 800,
+        village: "Watrap",
+        phone: "98765 43212",
+      },
+      {
+        date: "08 Aug 2026",
+        farmer: "Raja",
+        amount: 500,
+        village: "Rajapalayam",
+        phone: "98765 43213",
+      },
+    ],
+  },
+  ajith: {
+    sales: [
+      {
+        date: "10 Aug 2026",
+        invoiceNo: "INV-AK-842",
+        farmer: "Arun",
+        amount: 5400,
+      },
+      {
+        date: "10 Aug 2026",
+        invoiceNo: "INV-AK-840",
+        farmer: "Bala",
+        amount: 4600,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-AK-836",
+        farmer: "Suresh",
+        amount: 5100,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-AK-833",
+        farmer: "Muthu",
+        amount: 4700,
+      },
+    ],
+    collection: [
+      {
+        date: "10 Aug 2026",
+        receiptNo: "RCPT-AK-421",
+        farmer: "Arun",
+        amount: 4700,
+      },
+      {
+        date: "10 Aug 2026",
+        receiptNo: "RCPT-AK-419",
+        farmer: "Bala",
+        amount: 3900,
+      },
+      {
+        date: "09 Aug 2026",
+        receiptNo: "RCPT-AK-416",
+        farmer: "Suresh",
+        amount: 4500,
+      },
+      {
+        date: "09 Aug 2026",
+        receiptNo: "RCPT-AK-413",
+        farmer: "Muthu",
+        amount: 4100,
+      },
+    ],
+    cash: [
+      { date: "10 Aug 2026", farmer: "Arun", amount: 900 },
+      { date: "10 Aug 2026", farmer: "Bala", amount: 700 },
+      { date: "09 Aug 2026", farmer: "Suresh", amount: 650 },
+      { date: "09 Aug 2026", farmer: "Muthu", amount: 550 },
+    ],
+    outstanding: [
+      {
+        date: "10 Aug 2026",
+        farmer: "Arun",
+        amount: 700,
+        village: "Srivilliputhur",
+        phone: "98765 43220",
+      },
+      {
+        date: "09 Aug 2026",
+        farmer: "Bala",
+        amount: 600,
+        village: "Mamsapuram",
+        phone: "98765 43221",
+      },
+      {
+        date: "08 Aug 2026",
+        farmer: "Suresh",
+        amount: 800,
+        village: "Koonampatti",
+        phone: "98765 43222",
+      },
+      {
+        date: "08 Aug 2026",
+        farmer: "Muthu",
+        amount: 500,
+        village: "Vathirairuppu",
+        phone: "98765 43223",
+      },
+    ],
+  },
+  periya: {
+    sales: [
+      {
+        date: "10 Aug 2026",
+        invoiceNo: "INV-PS-742",
+        farmer: "Velu",
+        amount: 4900,
+      },
+      {
+        date: "10 Aug 2026",
+        invoiceNo: "INV-PS-740",
+        farmer: "Ganesan",
+        amount: 4200,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-PS-736",
+        farmer: "Ramesh",
+        amount: 4500,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-PS-733",
+        farmer: "Saravanan",
+        amount: 4000,
+      },
+    ],
+    collection: [
+      {
+        date: "10 Aug 2026",
+        receiptNo: "RCPT-PS-321",
+        farmer: "Velu",
+        amount: 4300,
+      },
+      {
+        date: "10 Aug 2026",
+        receiptNo: "RCPT-PS-319",
+        farmer: "Ganesan",
+        amount: 3700,
+      },
+      {
+        date: "09 Aug 2026",
+        receiptNo: "RCPT-PS-316",
+        farmer: "Ramesh",
+        amount: 3900,
+      },
+      {
+        date: "09 Aug 2026",
+        receiptNo: "RCPT-PS-313",
+        farmer: "Saravanan",
+        amount: 3500,
+      },
+    ],
+    cash: [
+      { date: "10 Aug 2026", farmer: "Velu", amount: 700 },
+      { date: "10 Aug 2026", farmer: "Ganesan", amount: 600 },
+      { date: "09 Aug 2026", farmer: "Ramesh", amount: 600 },
+      { date: "09 Aug 2026", farmer: "Saravanan", amount: 500 },
+    ],
+    outstanding: [
+      {
+        date: "10 Aug 2026",
+        farmer: "Velu",
+        amount: 600,
+        village: "Sivakasi",
+        phone: "98765 43230",
+      },
+      {
+        date: "09 Aug 2026",
+        farmer: "Ganesan",
+        amount: 500,
+        village: "Thiruthangal",
+        phone: "98765 43231",
+      },
+      {
+        date: "08 Aug 2026",
+        farmer: "Ramesh",
+        amount: 600,
+        village: "Sattur",
+        phone: "98765 43232",
+      },
+      {
+        date: "08 Aug 2026",
+        farmer: "Saravanan",
+        amount: 500,
+        village: "Vembakottai",
+        phone: "98765 43233",
+      },
+    ],
+  },
 };
 
 const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
@@ -412,9 +714,11 @@ function getStockWarnings(pack: PackSizeStock) {
 
   return {
     lowStock: pack.availableStock <= 5,
-    expiringSoon: daysToExpiry >= 0 && daysToExpiry <= 31,
+    expiringSoon: daysToExpiry >= 0 && daysToExpiry <= 92,
     expired: daysToExpiry < 0,
-    noRecentSale: daysSinceSale >= 30,
+    noSale30: daysSinceSale >= 30,
+    noSale60: daysSinceSale >= 60,
+    noSale90: daysSinceSale >= 90,
     daysSinceSale,
   };
 }
@@ -864,13 +1168,14 @@ const stockData: Record<DateFilter, StockRow[]> = {
 };
 
 export default function StoreDashboard({ storeId }: { storeId: string }) {
-    useEffect(() => {
+  useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
   const store = getStore(storeId);
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
 
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const rows = useMemo(() => stockData[dateFilter], [dateFilter]);
@@ -930,14 +1235,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       </div> */}
 
       {createPortal(
-              <div className="fixed top-[82px] right-8 z-[9999]">
-                <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
-              </div>,
-              document.body,
-            )}
-
-            
-
+        <div className="fixed top-[82px] right-8 z-[9999]">
+          <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
+        </div>,
+        document.body,
+      )}
 
       {/* ROW 1 — Business Overview */}
       <div className="mb-12">
@@ -1025,24 +1327,36 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     label="Sales"
                     value={formatCurrency(e.sales)}
                     color="text-brand-600"
+                    onClick={() =>
+                      setExecDetail({ execKey: key, type: "sales" })
+                    }
                   />
                   <ExecField
                     icon="account_balance_wallet"
                     label="Collection"
                     value={formatCurrency(e.collection)}
                     color="text-blue-600"
+                    onClick={() =>
+                      setExecDetail({ execKey: key, type: "collection" })
+                    }
                   />
                   <ExecField
                     icon="savings"
                     label="Cash in Hand"
                     value={formatCurrency(e.collectionInHand)}
                     color="text-emerald-600"
+                    onClick={() =>
+                      setExecDetail({ execKey: key, type: "cash" })
+                    }
                   />
                   <ExecField
                     icon="receipt_long"
                     label="Outstanding"
                     value={formatCurrency(e.outstanding)}
                     color="text-amber-600"
+                    onClick={() =>
+                      setExecDetail({ execKey: key, type: "outstanding" })
+                    }
                   />
                   <ExecField
                     icon="groups"
@@ -1066,6 +1380,15 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
           })}
         </div>
       </div>
+
+      {execDetail &&
+        createPortal(
+          <ExecutiveDetailModal
+            selection={execDetail}
+            onClose={() => setExecDetail(null)}
+          />,
+          document.body,
+        )}
 
       {/* ROW 3 — Product Stock Statement */}
       <div>
@@ -1108,19 +1431,31 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
               warning
             </span>
-            Store Stock ≤ 5
+            Low Stock
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">
             <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
               event_upcoming
             </span>
-            Expiry within 1 month
+            Expiry within 3 months
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-purple-700">
             <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
               history
             </span>
-            No sale for 30+ days
+            No sale 30+ days
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-orange-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              history
+            </span>
+            No sale 60+ days
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              history
+            </span>
+            No sale 90+ days
           </span>
         </div>
 
@@ -1134,7 +1469,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     S.No
                   </th>
                   <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
-                    Product Type
+                    Product Category
                   </th>
                   <th className="w-[12%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Product Name
@@ -1184,11 +1519,15 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                           ? "bg-amber-50"
                           : warnings.lowStock
                             ? "bg-red-50"
-                            : warnings.noRecentSale
-                              ? "bg-purple-50/60"
-                              : productIndex % 2 === 0
-                                ? "bg-white"
-                                : "bg-slate-50/60";
+                            : warnings.noSale90
+                              ? "bg-rose-50/80"
+                              : warnings.noSale60
+                                ? "bg-orange-50/70"
+                                : warnings.noSale30
+                                  ? "bg-purple-50/60"
+                                  : productIndex % 2 === 0
+                                    ? "bg-white"
+                                    : "bg-slate-50/60";
 
                       return (
                         <tr
@@ -1229,9 +1568,15 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                           >
                             <div className="flex min-w-0 items-center gap-1">
                               <span className="truncate">{pack.batchNo}</span>
-                              {warnings.noRecentSale && (
+                              {warnings.noSale30 && (
                                 <span
-                                  className="material-symbols-rounded shrink-0 text-purple-600"
+                                  className={`material-symbols-rounded shrink-0 ${
+                                    warnings.noSale90
+                                      ? "text-rose-600"
+                                      : warnings.noSale60
+                                        ? "text-orange-600"
+                                        : "text-purple-600"
+                                  }`}
                                   style={{ fontSize: 15 }}
                                   title={`No sale for ${warnings.daysSinceSale} days`}
                                 >
@@ -1253,7 +1598,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                                 warnings.expired
                                   ? "Expired"
                                   : warnings.expiringSoon
-                                    ? "Expiry within 1 month"
+                                    ? "Expiry within 3 months"
                                     : undefined
                               }
                             >
@@ -1341,6 +1686,167 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   );
 }
 
+function ExecutiveDetailModal({
+  selection,
+  onClose,
+}: {
+  selection: Exclude<ExecDetailSelection, null>;
+  onClose: () => void;
+}) {
+  const { execKey, type } = selection;
+  const rows = execDetailData[execKey][type];
+
+  const titles: Record<ExecDetailType, string> = {
+    sales: "Sales Details",
+    collection: "Collection Details",
+    cash: "Cash in Hand Details",
+    outstanding: "Outstanding Details",
+  };
+
+  const icons: Record<ExecDetailType, string> = {
+    sales: "payments",
+    collection: "account_balance_wallet",
+    cash: "savings",
+    outstanding: "receipt_long",
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+              <Icon name={icons[type]} size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800">
+                {execNames[execKey]} — {titles[type]}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Detailed activity for the selected executive
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+          >
+            <Icon name="close" size={19} />
+          </button>
+        </div>
+
+        <div className="max-h-[65vh] overflow-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="sticky top-0 z-10 bg-white">
+              {type === "sales" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-5 py-3 text-left">Date</th>
+                  <th className="px-5 py-3 text-left">Invoice No</th>
+                  <th className="px-5 py-3 text-left">Farmer Name</th>
+                  <th className="px-5 py-3 text-right">Amount</th>
+                </tr>
+              )}
+
+              {type === "collection" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-5 py-3 text-left">Date</th>
+                  <th className="px-5 py-3 text-left">Receipt No</th>
+                  <th className="px-5 py-3 text-left">Farmer Name</th>
+                  <th className="px-5 py-3 text-right">Amount</th>
+                </tr>
+              )}
+
+              {type === "cash" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-5 py-3 text-left">Date</th>
+                  <th className="px-5 py-3 text-left">Farmer Name</th>
+                  <th className="px-5 py-3 text-right">Amount</th>
+                </tr>
+              )}
+
+              {type === "outstanding" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-5 py-3 text-left">Date</th>
+                  <th className="px-5 py-3 text-left">Farmer Name</th>
+                  <th className="px-5 py-3 text-right">Amount</th>
+                  <th className="px-5 py-3 text-left">Village</th>
+                  <th className="px-5 py-3 text-left">Phone No</th>
+                </tr>
+              )}
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {type === "sales" &&
+                (rows as typeof execDetailData.ram.sales).map((row) => (
+                  <tr key={row.invoiceNo} className="hover:bg-slate-50">
+                    <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700">
+                      {row.invoiceNo}
+                    </td>
+                    <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
+                    <td className="px-5 py-3 text-right font-bold text-slate-800">
+                      {formatCurrency(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+
+              {type === "collection" &&
+                (rows as typeof execDetailData.ram.collection).map((row) => (
+                  <tr key={row.receiptNo} className="hover:bg-slate-50">
+                    <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                    <td className="px-5 py-3 font-semibold text-slate-700">
+                      {row.receiptNo}
+                    </td>
+                    <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
+                    <td className="px-5 py-3 text-right font-bold text-slate-800">
+                      {formatCurrency(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+
+              {type === "cash" &&
+                (rows as typeof execDetailData.ram.cash).map((row, index) => (
+                  <tr
+                    key={`${row.farmer}-${index}`}
+                    className="hover:bg-slate-50"
+                  >
+                    <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                    <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
+                    <td className="px-5 py-3 text-right font-bold text-slate-800">
+                      {formatCurrency(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+
+              {type === "outstanding" &&
+                (rows as typeof execDetailData.ram.outstanding).map(
+                  (row, index) => (
+                    <tr
+                      key={`${row.farmer}-${index}`}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                      <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
+                      <td className="px-5 py-3 text-right font-bold text-amber-700">
+                        {formatCurrency(row.amount)}
+                      </td>
+                      <td className="px-5 py-3 text-slate-600">
+                        {row.village}
+                      </td>
+                      <td className="px-5 py-3 text-slate-600">{row.phone}</td>
+                    </tr>
+                  ),
+                )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SegmentedDateFilter({
   value,
   onChange,
@@ -1372,14 +1878,25 @@ function ExecField({
   label,
   value,
   color = "text-slate-800",
+  onClick,
 }: {
   icon: string;
   label: string;
   value: string;
   color?: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-slate-50/70">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg bg-slate-50/70 transition ${
+        onClick
+          ? "cursor-pointer hover:bg-slate-100 hover:-translate-y-0.5"
+          : "cursor-default"
+      }`}
+    >
       <Icon name={icon} size={15} className="text-slate-400 shrink-0" />
       <div className="min-w-0">
         <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
@@ -1389,6 +1906,6 @@ function ExecField({
           {value}
         </p>
       </div>
-    </div>
+    </button>
   );
 }
