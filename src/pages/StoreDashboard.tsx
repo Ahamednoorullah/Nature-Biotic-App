@@ -24,13 +24,6 @@ const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "yearly", label: "Yearly" },
 ];
 
-useEffect(() => {
-  window.scrollTo({
-    top: 0,
-    behavior: "instant",
-  });
-}, []);
-
 type ExecKey = "ram" | "ajith" | "periya";
 
 type ExecSummary = {
@@ -753,6 +746,7 @@ function getStockWarnings(pack: PackSizeStock) {
 //     },
 //   ],
 // };
+
 const stockData: Record<DateFilter, StockRow[]> = {
   today: [
     {
@@ -870,6 +864,9 @@ const stockData: Record<DateFilter, StockRow[]> = {
 };
 
 export default function StoreDashboard({ storeId }: { storeId: string }) {
+    useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   const store = getStore(storeId);
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [search, setSearch] = useState("");
@@ -938,6 +935,8 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
               </div>,
               document.body,
             )}
+
+            
 
 
       {/* ROW 1 — Business Overview */}
