@@ -501,16 +501,7 @@ export default function ProductAddForm({
             <p className="text-xs text-slate-400">
               {details.length} pack size{details.length !== 1 ? "s" : ""} added
             </p>
-
-            <button
-              type="button"
-              onClick={addDetailRow}
-              disabled={!form.packingType}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 transition hover:text-brand-700 disabled:cursor-not-allowed disabled:text-slate-300"
-            >
-              <Icon name="add_circle" size={18} />
-              Add another size
-            </button>
+            
           </div>
         </Card>
 
