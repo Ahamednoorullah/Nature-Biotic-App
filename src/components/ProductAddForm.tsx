@@ -13,7 +13,7 @@ type PackingType = "Volume" | "Weight";
 type ProductDetailRow = {
   id: number;
   size: string;
-  Purchaseprice: string;
+  purchaseprice: string;
   sellingPrice: string;
   mrp: string;
   limitStock: string;
@@ -114,7 +114,7 @@ export default function ProductAddForm({
 }) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [details, setDetails] = useState<ProductDetailRow[]>([
-    { id: 1, size: "", Purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
+    { id: 1, size: "", purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
   ]);
   const [applicationMethods, setApplicationMethods] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
@@ -147,7 +147,7 @@ export default function ProductAddForm({
     }));
 
     setDetails([
-      { id: Date.now(), size: "", Purchaseprice: "",  sellingPrice: "", mrp: "", limitStock: "" },
+      { id: Date.now(), size: "", purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
     ]);
   }
 
@@ -167,7 +167,7 @@ export default function ProductAddForm({
       {
         id: Date.now() + Math.random(),
         size: "",
-        Purchaseprice: "",
+        purchaseprice: "",
         sellingPrice: "",
         mrp: "",
         limitStock: "",
@@ -200,14 +200,7 @@ export default function ProductAddForm({
   function resetForm() {
     setForm(emptyForm);
     setDetails([
-      {
-        id: Date.now(),
-        size: "",
-        Purchaseprice: "",
-        sellingPrice: "",
-        mrp: "",
-        limitStock: "",
-      },
+      { id: Date.now(), size: "", purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
     ]);
     setApplicationMethods([]);
   }
@@ -241,7 +234,7 @@ export default function ProductAddForm({
     details.every(
       (row) =>
         row.size &&
-        row.Purchaseprice.trim() &&
+        row.purchaseprice.trim() &&
         row.sellingPrice.trim() &&
         row.mrp.trim() &&
         row.limitStock.trim(),
@@ -419,8 +412,9 @@ export default function ProductAddForm({
           )}
 
           <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_48px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
+            <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_1fr_48px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
               <div>Size</div>
+              <div>Purchase Price</div>
               <div>Selling Price</div>
               <div>MRP</div>
               <div>Limit Stock</div>
@@ -431,7 +425,7 @@ export default function ProductAddForm({
               {details.map((row, index) => (
                 <div
                   key={row.id}
-                  className="grid gap-4 px-4 py-4 md:grid-cols-[1fr_1fr_1fr_1fr_48px] md:items-end md:gap-3"
+                  className="grid gap-4 px-4 py-4 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_48px] md:items-end md:gap-3"
                 >
                   <Select
                     label={`Size ${index + 1}`}
@@ -446,6 +440,16 @@ export default function ProductAddForm({
                       value: size,
                       label: size,
                     }))}
+                    required
+                  />
+
+                    <Input
+                    label="Purchase Price"
+                    type="number"
+                    value={row.purchaseprice}
+                    onChange={(v) => updateDetail(row.id, "purchaseprice", v)}
+                    placeholder="0"
+                    icon="currency_rupee"
                     required
                   />
 
