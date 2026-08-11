@@ -16,6 +16,7 @@ export default function CompanyStores() {
     email: '',
     address: '',
     city: '',
+    district: '',
     state: '',
     gst: '',
     openedDate: '',
@@ -46,7 +47,7 @@ export default function CompanyStores() {
       openedDate: form.openedDate || new Date().toISOString().split('T')[0],
     };
     setStores([...stores, newStore]);
-    setForm({ name: '', code: '', owner: '', phone: '', email: '', address: '', city: '', state: '', gst: '', openedDate: '' });
+    setForm({ name: '', code: '', owner: '', phone: '', email: '', address: '', city: '', district: '', state: '', gst: '', openedDate: '' });
     setShowAdd(false);
   }
 
@@ -132,6 +133,7 @@ export default function CompanyStores() {
           <Input label="Address" value={form.address} onChange={(v) => update('address', v)} placeholder="Street address" icon="location_on" />
           <div className="grid sm:grid-cols-2 gap-4">
             <Input label="City" value={form.city} onChange={(v) => update('city', v)} placeholder="e.g. Rajapalayam" />
+            <Input label="District" value={form.district} onChange={(v) => update('district', v)} placeholder="e.g. Virudhunagar" />
             <Input label="State" value={form.state} onChange={(v) => update('state', v)} placeholder="e.g. Tamil Nadu" />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
