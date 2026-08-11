@@ -107,6 +107,30 @@ const execDetailData: Record<
         farmer: "Raja",
         amount: 6000,
       },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-RK-1036",
+        farmer: "Raja",
+        amount: 6000,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-RK-1036",
+        farmer: "Raja",
+        amount: 6000,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-RK-1036",
+        farmer: "Raja",
+        amount: 6000,
+      },
+      {
+        date: "09 Aug 2026",
+        invoiceNo: "INV-RK-1036",
+        farmer: "Raja",
+        amount: 6000,
+      },
     ],
     collection: [
       {
@@ -659,6 +683,7 @@ type PackSizeStock = {
   availableStock: number;
   stockInHand: number;
   stockValue: number;
+  unitPrice?: number;
 };
 
 type StockRow = {
@@ -712,8 +737,10 @@ function getStockWarnings(pack: PackSizeStock) {
     ? 0
     : Math.floor((today.getTime() - lastSale.getTime()) / DAY_MS);
 
+  const totalStock = pack.availableStock + pack.stockInHand;
+
   return {
-    lowStock: pack.availableStock <= 5,
+    lowStock: totalStock <= 5,
     expiringSoon: daysToExpiry >= 0 && daysToExpiry <= 92,
     expired: daysToExpiry < 0,
     noSale30: daysSinceSale >= 30,
@@ -1465,34 +1492,37 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
               <thead className="sticky top-0">
                 <tr className="bg-slate-100 text-slate-600 text-[10px] xl:text-xs uppercase tracking-wide border-b-2 border-slate-200">
-                  <th className="w-[5%] px-1.5 py-3 text-center font-semibold border-r border-slate-200">
+                  <th className="w-[2%] px-1 py-3 text-center font-semibold border-r border-slate-200">
                     S.No
                   </th>
-                  <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
-                    Product Category
-                  </th>
-                  <th className="w-[12%] px-2 py-3 text-left font-semibold border-r border-slate-200">
-                    Product Name
+                  <th className="w-[8%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Product Type
                   </th>
                   <th className="w-[8%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Product Name
+                  </th>
+                  <th className="w-[7%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Pack Size
                   </th>
-                  <th className="w-[12%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                  <th className="w-[7%] px-2 py-3 text-right font-semibold border-r border-slate-200">
+                    Unit Price
+                  </th>
+                  <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Batch No
                   </th>
-                  <th className="w-[10%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                  <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Expiry Date
                   </th>
-                  <th className="w-[10%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
+                  <th className="w-[9%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
                     Store Stock
                   </th>
-                  <th className="w-[9%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
+                  <th className="w-[8%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
                     Hand Stock
                   </th>
                   <th className="w-[9%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
                     Total Stock
                   </th>
-                  <th className="w-[14%] px-2 py-3 text-right font-semibold">
+                  <th className="w-[13%] px-2 py-3 text-right font-semibold">
                     Stock Value
                   </th>
                 </tr>
@@ -1501,7 +1531,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                 {filteredRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={11}
                       className="text-center py-10 text-slate-400"
                     >
                       No products match your filters.
@@ -1511,23 +1541,20 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   filteredRows.flatMap((product, productIndex) =>
                     product.packSizes.map((pack, packIndex) => {
                       const totalStock = pack.availableStock + pack.stockInHand;
+                      const unitPrice =
+                        pack.unitPrice ??
+                        (totalStock > 0
+                          ? Math.round(pack.stockValue / totalStock)
+                          : 0);
                       const warnings = getStockWarnings(pack);
 
                       const rowWarningClass = warnings.expired
                         ? "bg-red-100/80"
                         : warnings.expiringSoon
                           ? "bg-amber-50"
-                          : warnings.lowStock
-                            ? "bg-red-50"
-                            : warnings.noSale90
-                              ? "bg-rose-50/80"
-                              : warnings.noSale60
-                                ? "bg-orange-50/70"
-                                : warnings.noSale30
-                                  ? "bg-purple-50/60"
-                                  : productIndex % 2 === 0
-                                    ? "bg-white"
-                                    : "bg-slate-50/60";
+                          : productIndex % 2 === 0
+                            ? "bg-white"
+                            : "bg-slate-50/60";
 
                       return (
                         <tr
@@ -1562,28 +1589,14 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                           <td className="px-2 py-2.5 border-r border-slate-100 text-slate-600 whitespace-nowrap">
                             {pack.packSize}
                           </td>
+                          <td className="px-2 py-2.5 border-r border-slate-100 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
+                            {formatCurrency(unitPrice)}
+                          </td>
                           <td
-                            className="px-2 py-2.5 border-r border-slate-100 text-slate-600"
+                            className="px-2 py-2.5 border-r border-slate-100 text-slate-600 truncate"
                             title={pack.batchNo}
                           >
-                            <div className="flex min-w-0 items-center gap-1">
-                              <span className="truncate">{pack.batchNo}</span>
-                              {warnings.noSale30 && (
-                                <span
-                                  className={`material-symbols-rounded shrink-0 ${
-                                    warnings.noSale90
-                                      ? "text-rose-600"
-                                      : warnings.noSale60
-                                        ? "text-orange-600"
-                                        : "text-purple-600"
-                                  }`}
-                                  style={{ fontSize: 15 }}
-                                  title={`No sale for ${warnings.daysSinceSale} days`}
-                                >
-                                  history
-                                </span>
-                              )}
-                            </div>
+                            {pack.batchNo}
                           </td>
                           <td className="px-2 py-2.5 border-r border-slate-100 whitespace-nowrap">
                             <span
@@ -1615,35 +1628,69 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                               {pack.expiryDate}
                             </span>
                           </td>
-                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-semibold">
-                            <span
-                              className={`inline-flex min-w-8 items-center justify-center rounded-md px-1.5 py-0.5 ${
-                                warnings.lowStock
-                                  ? "bg-red-100 text-red-700 ring-1 ring-red-200"
-                                  : "text-slate-800"
-                              }`}
-                              title={
-                                warnings.lowStock
-                                  ? "Low stock warning"
-                                  : undefined
-                              }
-                            >
-                              {warnings.lowStock && (
-                                <span
-                                  className="material-symbols-rounded mr-0.5"
-                                  style={{ fontSize: 13 }}
-                                >
-                                  warning
-                                </span>
-                              )}
-                              {pack.availableStock}
-                            </span>
+                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-semibold text-slate-800">
+                            {pack.availableStock}
                           </td>
                           <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums text-slate-700">
                             {pack.stockInHand}
                           </td>
-                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-bold text-slate-800">
-                            {totalStock}
+                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-bold">
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              <span
+                                className={`inline-flex min-w-10 items-center justify-center gap-1 rounded-md px-2 py-1 ${
+                                  warnings.noSale90
+                                    ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300"
+                                    : warnings.noSale60
+                                      ? "bg-orange-100 text-orange-800 ring-1 ring-orange-300"
+                                      : warnings.noSale30
+                                        ? "bg-purple-100 text-purple-800 ring-1 ring-purple-300"
+                                        : "text-slate-800"
+                                } ${
+                                  warnings.lowStock ? "ring-2 ring-red-400" : ""
+                                }`}
+                                title={
+                                  warnings.lowStock && warnings.noSale30
+                                    ? `Low stock. No sale for ${warnings.daysSinceSale} days`
+                                    : warnings.lowStock
+                                      ? "Low total stock warning"
+                                      : warnings.noSale30
+                                        ? `No sale for ${warnings.daysSinceSale} days`
+                                        : undefined
+                                }
+                              >
+                                {warnings.lowStock && (
+                                  <span
+                                    className="material-symbols-rounded text-red-600"
+                                    style={{ fontSize: 14 }}
+                                  >
+                                    warning
+                                  </span>
+                                )}
+                                {warnings.noSale30 && (
+                                  <span
+                                    className="material-symbols-rounded"
+                                    style={{ fontSize: 14 }}
+                                  >
+                                    history
+                                  </span>
+                                )}
+                                {totalStock}
+                              </span>
+
+                              {warnings.noSale90 ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-rose-700">
+                                  90+ Days
+                                </span>
+                              ) : warnings.noSale60 ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700">
+                                  60+ Days
+                                </span>
+                              ) : warnings.noSale30 ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-purple-700">
+                                  30+ Days
+                                </span>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
                             {formatCurrency(pack.stockValue)}
@@ -1658,7 +1705,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                 <tfoot>
                   <tr className="bg-slate-100 font-bold text-slate-700 border-t-2 border-slate-200">
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-2 py-3 text-right border-r border-slate-200"
                     >
                       Total
