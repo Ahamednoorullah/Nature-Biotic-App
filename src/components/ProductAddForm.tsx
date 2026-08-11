@@ -114,7 +114,14 @@ export default function ProductAddForm({
 }) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [details, setDetails] = useState<ProductDetailRow[]>([
-    { id: 1, size: "", purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
+    {
+      id: 1,
+      size: "",
+      purchaseprice: "",
+      sellingPrice: "",
+      mrp: "",
+      limitStock: "",
+    },
   ]);
   const [applicationMethods, setApplicationMethods] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
@@ -147,7 +154,14 @@ export default function ProductAddForm({
     }));
 
     setDetails([
-      { id: Date.now(), size: "", purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
+      {
+        id: Date.now(),
+        size: "",
+        purchaseprice: "",
+        sellingPrice: "",
+        mrp: "",
+        limitStock: "",
+      },
     ]);
   }
 
@@ -200,7 +214,14 @@ export default function ProductAddForm({
   function resetForm() {
     setForm(emptyForm);
     setDetails([
-      { id: Date.now(), size: "", purchaseprice: "", sellingPrice: "", mrp: "", limitStock: "" },
+      {
+        id: Date.now(),
+        size: "",
+        purchaseprice: "",
+        sellingPrice: "",
+        mrp: "",
+        limitStock: "",
+      },
     ]);
     setApplicationMethods([]);
   }
@@ -443,7 +464,7 @@ export default function ProductAddForm({
                     required
                   />
 
-                    <Input
+                  <Input
                     label="Purchase Price"
                     type="number"
                     value={row.purchaseprice}
@@ -501,7 +522,6 @@ export default function ProductAddForm({
             <p className="text-xs text-slate-400">
               {details.length} pack size{details.length !== 1 ? "s" : ""} added
             </p>
-            
           </div>
         </Card>
 
@@ -514,14 +534,40 @@ export default function ProductAddForm({
 
           <div className="space-y-5">
             {/* Product Purpose */}
-            <Input
+            {/* <Input
               label="Product Purpose"
               value={form.productPurpose}
               onChange={(v) => update("productPurpose", v)}
               placeholder="e.g. Larvicide / Root Enhancer"
               icon="target"
               required
-            />
+            /> */}
+            {/* Product Purpose + Safety Information */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Input
+                label="Product Purpose"
+                value={form.productPurpose}
+                onChange={(v) => update("productPurpose", v)}
+                placeholder="e.g. Larvicide / Root Enhancer"
+                icon="target"
+                required
+              />
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Safety Information <span className="text-red-500">*</span>
+                </label>
+
+                <input
+                  type="text"
+                  value={form.safetyColor}
+                  onChange={(e) => update("safetyColor", e.target.value)}
+                  placeholder="Enter safety information"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                  required
+                />
+              </div>
+            </div>
 
             {/* Application Method */}
             <div>
@@ -556,7 +602,7 @@ export default function ProductAddForm({
             </div>
 
             {/* Dosage + Filler + Safety */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-end">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-end">
               {/* Dosage */}
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-slate-700">
@@ -648,7 +694,7 @@ export default function ProductAddForm({
               </div>
 
               {/* Safety */}
-              <Select
+              {/* <Select
                 label="Safety Information"
                 value={form.safetyColor}
                 onChange={(v) => update("safetyColor", v)}
@@ -658,7 +704,7 @@ export default function ProductAddForm({
                   label: color,
                 }))}
                 required
-              />
+              /> */}
             </div>
           </div>
         </Card>

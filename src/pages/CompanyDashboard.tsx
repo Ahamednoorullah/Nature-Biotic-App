@@ -283,9 +283,30 @@ const actualCollectionList = [
 ];
 
 const actualOutstandingList = [
-  { partyName: "Sairam Agri Input", amount: 7200, month: "30 Days" },
-  { partyName: "Shriya Tech", amount: 5800, month: "60 Days" },
-  { partyName: "Nature Bio Mart", amount: 5000, month: "90 Days" },
+  {
+    partyName: "Sairam Agri Input",
+    under30: 5000,
+    over30: 5000,
+    over60: 10000,
+    over90: 10000,
+    totalAmount: 30000,
+  },
+  {
+    partyName: "Shriya Tech",
+    under30: 4200,
+    over30: 3600,
+    over60: 5200,
+    over90: 3000,
+    totalAmount: 16000,
+  },
+  {
+    partyName: "Nature Bio Mart",
+    under30: 3000,
+    over30: 2500,
+    over60: 4000,
+    over90: 3500,
+    totalAmount: 13000,
+  },
 ];
 
 export default function CompanyDashboard() {
@@ -631,33 +652,102 @@ function ActualDetailsBox({
       )}
 
       {view === "outstanding" && (
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-          {actualOutstandingList.map((row) => (
-            <div
-              key={`${row.partyName}-${row.month}`}
-              className="rounded-xl border border-slate-200 bg-white p-4"
-            >
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Store
-                  </p>
-                  <h4 className="mt-1 font-bold text-slate-800">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-white text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-5 py-3 text-left font-semibold">
+                  Party Name
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">
+                  &lt; 30 Days
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">
+                  &gt; 30 Days
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">
+                  &gt; 60 Days
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">
+                  &gt; 90 Days
+                </th>
+                <th className="px-5 py-3 text-right font-semibold">
+                  Total Amount
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {actualOutstandingList.map((row) => (
+                <tr key={row.partyName} className="hover:bg-slate-50">
+                  <td className="px-5 py-4 font-semibold text-slate-800">
                     {row.partyName}
-                  </h4>
-                </div>
-                <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
-                  {row.month}
-                </span>
-              </div>
-              <p className="text-xs font-medium text-slate-500">
-                Outstanding Amount
-              </p>
-              <p className="mt-1 text-xl font-bold text-slate-900">
-                {formatCurrency(row.amount)}
-              </p>
-            </div>
-          ))}
+                  </td>
+                  <td className="px-5 py-4 text-right font-medium tabular-nums text-slate-700">
+                    {formatCurrency(row.under30)}
+                  </td>
+                  <td className="px-5 py-4 text-right font-medium tabular-nums text-amber-700">
+                    {formatCurrency(row.over30)}
+                  </td>
+                  <td className="px-5 py-4 text-right font-medium tabular-nums text-orange-700">
+                    {formatCurrency(row.over60)}
+                  </td>
+                  <td className="px-5 py-4 text-right font-semibold tabular-nums text-rose-700">
+                    {formatCurrency(row.over90)}
+                  </td>
+                  <td className="px-5 py-4 text-right font-bold tabular-nums text-slate-900">
+                    {formatCurrency(row.totalAmount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold text-slate-800">
+                <td className="px-5 py-4 text-right">Total</td>
+                <td className="px-5 py-4 text-right tabular-nums">
+                  {formatCurrency(
+                    actualOutstandingList.reduce(
+                      (sum, row) => sum + row.under30,
+                      0,
+                    ),
+                  )}
+                </td>
+                <td className="px-5 py-4 text-right tabular-nums">
+                  {formatCurrency(
+                    actualOutstandingList.reduce(
+                      (sum, row) => sum + row.over30,
+                      0,
+                    ),
+                  )}
+                </td>
+                <td className="px-5 py-4 text-right tabular-nums">
+                  {formatCurrency(
+                    actualOutstandingList.reduce(
+                      (sum, row) => sum + row.over60,
+                      0,
+                    ),
+                  )}
+                </td>
+                <td className="px-5 py-4 text-right tabular-nums">
+                  {formatCurrency(
+                    actualOutstandingList.reduce(
+                      (sum, row) => sum + row.over90,
+                      0,
+                    ),
+                  )}
+                </td>
+                <td className="px-5 py-4 text-right tabular-nums text-brand-700">
+                  {formatCurrency(
+                    actualOutstandingList.reduce(
+                      (sum, row) => sum + row.totalAmount,
+                      0,
+                    ),
+                  )}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       )}
     </Card>

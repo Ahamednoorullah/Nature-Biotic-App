@@ -107,30 +107,6 @@ const execDetailData: Record<
         farmer: "Raja",
         amount: 6000,
       },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-RK-1036",
-        farmer: "Raja",
-        amount: 6000,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-RK-1036",
-        farmer: "Raja",
-        amount: 6000,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-RK-1036",
-        farmer: "Raja",
-        amount: 6000,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-RK-1036",
-        farmer: "Raja",
-        amount: 6000,
-      },
     ],
     collection: [
       {
@@ -1273,54 +1249,48 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-10">
           Business Overview
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 stagger">
-          <StatCard
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 stagger">
+          <BusinessOverviewCard
             label="Sales"
-            value={formatCompact(data.sales)}
+            value={formatCurrency(data.sales)}
             icon="payments"
             color="brand"
             trend={data.trends.sales}
-            trendUp
           />
-          <StatCard
+          <BusinessOverviewCard
             label="Collection"
-            value={formatCompact(data.collection)}
+            value={formatCurrency(data.collection)}
             icon="account_balance_wallet"
             color="blue"
             trend={data.trends.collection}
-            trendUp
           />
-          <StatCard
+          <BusinessOverviewCard
             label="Outstanding"
-            value={formatCompact(data.outstanding)}
+            value={formatCurrency(data.outstanding)}
             icon="receipt_long"
             color="amber"
             trend={data.trends.outstanding}
-            trendUp
           />
-          <StatCard
+          <BusinessOverviewCard
             label="Farmers"
             value={String(data.farmers)}
             icon="groups"
             color="purple"
             trend={data.trends.farmers}
-            trendUp
           />
-          <StatCard
+          <BusinessOverviewCard
             label="Farms"
             value={String(data.farms)}
             icon="agriculture"
             color="brand"
             trend={data.trends.farms}
-            trendUp
           />
-          <StatCard
+          <BusinessOverviewCard
             label="Crops"
             value={String(data.crops)}
             icon="spa"
             color="blue"
             trend={data.trends.crops}
-            trendUp
           />
         </div>
       </div>
@@ -1492,19 +1462,19 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
               <thead className="sticky top-0">
                 <tr className="bg-slate-100 text-slate-600 text-[10px] xl:text-xs uppercase tracking-wide border-b-2 border-slate-200">
-                  <th className="w-[2%] px-1 py-3 text-center font-semibold border-r border-slate-200">
+                  <th className="w-[4%] px-1 py-3 text-center font-semibold border-r border-slate-200">
                     S.No
                   </th>
-                  <th className="w-[8%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                  <th className="w-[9%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Product Type
                   </th>
-                  <th className="w-[8%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                  <th className="w-[9%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Product Name
                   </th>
                   <th className="w-[7%] px-2 py-3 text-left font-semibold border-r border-slate-200">
                     Pack Size
                   </th>
-                  <th className="w-[7%] px-2 py-3 text-right font-semibold border-r border-slate-200">
+                  <th className="w-[9%] px-2 py-3 text-right font-semibold border-r border-slate-200">
                     Unit Price
                   </th>
                   <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
@@ -1733,6 +1703,50 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   );
 }
 
+function BusinessOverviewCard({
+  label,
+  value,
+  icon,
+  color,
+  trend,
+}: {
+  label: string;
+  value: string;
+  icon: string;
+  color: "brand" | "blue" | "amber" | "purple";
+  trend: string;
+}) {
+  const colors: Record<string, string> = {
+    brand: "bg-emerald-50 text-emerald-600",
+    blue: "bg-blue-50 text-blue-600",
+    amber: "bg-amber-50 text-amber-600",
+    purple: "bg-purple-50 text-purple-600",
+  };
+
+  return (
+    <Card className="p-4 transition-base hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-500">{label}</p>
+          <p className="mt-1 whitespace-nowrap text-[20px] font-bold tracking-tight text-slate-800">
+            {value}
+          </p>
+        </div>
+
+        <div
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${colors[color]}`}
+        >
+          <Icon name={icon} size={16} />
+        </div>
+      </div>
+
+      <p className="mt-3 text-[11px] font-semibold leading-tight text-emerald-600">
+        {trend}
+      </p>
+    </Card>
+  );
+}
+
 function ExecutiveDetailModal({
   selection,
   onClose,
@@ -1759,7 +1773,7 @@ function ExecutiveDetailModal({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
@@ -1784,7 +1798,7 @@ function ExecutiveDetailModal({
           </button>
         </div>
 
-        <div className="max-h-[65vh] overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full min-w-[680px] text-sm">
             <thead className="sticky top-0 z-10 bg-white">
               {type === "sales" && (
