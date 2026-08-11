@@ -518,20 +518,17 @@ function ActualDetailsBox({
 }) {
   const config = {
     sales: {
-      title: "Overall Sales",
-      subtitle: "Company and direct sales invoice details",
+      title: "Sales",
       icon: "receipt_long",
       tone: "brand",
     },
     collection: {
-      title: "Overall Collection",
-      subtitle: "Receipt-wise collection details",
+      title: "Collection",
       icon: "payments",
       tone: "blue",
     },
     outstanding: {
-      title: "Outstanding Details",
-      subtitle: "Store-wise outstanding ageing summary",
+      title: "Outstanding",
       icon: "account_balance",
       tone: "amber",
     },
@@ -555,7 +552,6 @@ function ActualDetailsBox({
           </div>
           <div>
             <h3 className="font-bold text-slate-800">{config.title}</h3>
-            <p className="text-xs text-slate-500">{config.subtitle}</p>
           </div>
         </div>
 
