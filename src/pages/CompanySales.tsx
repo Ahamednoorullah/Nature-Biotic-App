@@ -311,7 +311,8 @@ export default function CompanySales() {
             <table className="w-full text-sm min-w-[1200px] border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">S.No</th>
+                   <th rowSpan={2} className="text-center font-semibold px-3 py-3 border-r border-slate-200">
+                  S.No</th>
                   <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Invoice Number</th>
                   <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Sale Date</th>
                   <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Store Name</th>
@@ -319,6 +320,11 @@ export default function CompanySales() {
                   <th className="text-right font-semibold px-3 py-3 border-r border-slate-200">Total Amount</th>
                   <th className="text-center font-semibold px-3 py-3 border-r border-slate-200">Payment Status</th>
                   <th className="text-center font-semibold px-3 py-3">Actions</th>
+                </tr>
+                <tr className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
+                <th className="text-right font-semibold px-3 py-2">SGST</th>
+                <th className="text-right font-semibold px-3 py-2">CGST</th>
+                <th className="text-right font-semibold px-3 py-2 border-r border-slate-200">IGST</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,6 +334,9 @@ export default function CompanySales() {
                     <td className="px-3 py-3 text-slate-500 border-r border-slate-100">{formatDate(s.date)}</td>
                     <td className="px-3 py-3 text-slate-700 border-r border-slate-100">{s.storeName}</td>
                     <td className="px-3 py-3 text-slate-600 border-r border-slate-100">{s.storeLocation}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatCurrency(s.sgst)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatCurrency(s.cgst)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">{formatCurrency(s.igst)}</td>
                     <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">{formatCurrency(s.total)}</td>
                     <td className="px-3 py-3 text-center border-r border-slate-100">
                       <Badge color={statusColor[s.paymentStatus]}>{s.paymentStatus}</Badge>
