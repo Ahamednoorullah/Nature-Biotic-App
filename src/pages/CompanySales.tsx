@@ -18,6 +18,9 @@ type SaleRow = {
   quantity: number;
   rate: number;
   taxAmount: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
   total: number;
   paymentStatus: PaymentStatus;
 };
@@ -73,6 +76,9 @@ const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
     quantity: qty,
     rate,
     taxAmount: tax,
+    sgst: Math.round((tax / 2) * 100) / 100,  // Example: Intra-State tax
+    cgst: Math.round((tax / 2) * 100) / 100,
+    igst: 0,
     total,
     paymentStatus: paymentStatuses[i % 3],
   };
@@ -222,23 +228,43 @@ export default function CompanySales() {
   }
 
   function handleCreate() {
-    if (!storeId || !invoiceNo || added.length === 0) return;
-    const store = stores.find((s) => s.id === storeId)!;
-    const newRows: SaleRow[] = added.map((r, i) => ({
-      id: `s${sales.length + i}`,
-      invoiceNo,
-      date: saleDate,
-      storeId: store.id,
-      storeName: store.name,
-      storeLocation: store.location,
-      product: r.product!.name,
-      packSize: r.packSize,
-      quantity: r.quantity,
-      rate: r.sellingPrice,
-      taxAmount: r.taxAmount,
-      total: r.rowTotal,
-      paymentStatus,
-    }));
+  if (!storeId || !invoiceNo || added.length === 0) return;
+
+  const store = stores.find((s) => s.id === storeId)!;
+
+  const newRows: SaleRow[] = added.map((r, i) => ({
+    id: `s${sales.length + i}`,
+    invoiceNo,
+    date: saleDate,
+    storeId: store.id,
+    storeName: store.name,
+    storeLocation: store.location,
+    product: r.product!.name,
+    packSize: r.packSize,
+    quantity: r.quantity,
+    rate: r.sellingPrice,
+    taxAmount: r.taxAmount,
+
+    // Tax breakup
+    sgst:
+      r.taxType === 'Intra-State (SGST + CGST)'
+        ? Math.round((r.taxAmount / 2) * 100) / 100
+        : 0,
+
+    cgst:
+      r.taxType === 'Intra-State (SGST + CGST)'
+        ? Math.round((r.taxAmount / 2) * 100) / 100
+        : 0,
+
+    igst:
+      r.taxType === 'Inter-State (IGST)'
+        ? r.taxAmount
+        : 0,
+
+    total: r.rowTotal,
+    paymentStatus,
+  }));
+
     setSales([...newRows, ...sales]);
     resetForm();
     setShowCreate(false);
@@ -285,6 +311,7 @@ export default function CompanySales() {
             <table className="w-full text-sm min-w-[1200px] border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
+                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">S.No</th>
                   <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Invoice Number</th>
                   <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Sale Date</th>
                   <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Store Name</th>
@@ -296,7 +323,7 @@ export default function CompanySales() {
               </thead>
               <tbody>
                 {filtered.map((s, i) => (
-                  <tr key={s.id} className={`border-b border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}>
+                  <tr key={s.id} className={`border-b border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}> 
                     <td className="px-3 py-3 font-semibold text-slate-800 border-r border-slate-100">{s.invoiceNo}</td>
                     <td className="px-3 py-3 text-slate-500 border-r border-slate-100">{formatDate(s.date)}</td>
                     <td className="px-3 py-3 text-slate-700 border-r border-slate-100">{s.storeName}</td>
