@@ -165,95 +165,115 @@ export default function CompanyStores() {
         ))}
       </div>
 
-      <Modal
-        open={Boolean(selectedStore)}
-        onClose={() => setSelectedStore(null)}
-        title={
-          selectedStore
-            ? `${selectedStore.name} - Store Details`
-            : "Store Details"
-        }
-            size="2xl"
-            footer={
-            selectedStore ? (
-            <>
-        <Button
-          variant="secondary"
-          onClick={() => setSelectedStore(null)}
-        >
-          Close
-        </Button>
+      {selectedStore &&
+  createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="flex w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
 
-        <Button
-          onClick={() => {
-            const storeId = selectedStore.id;
-            setSelectedStore(null);
-            goStore(storeId);
-          }}
-        >
-          <Icon name="dashboard" size={18} />
-          Open Dashboard
-        </Button>
-      </>
-    ) : undefined
-  }
->
-        {selectedStore && (
-          <div className="space-y-5">
-            <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-100 font-bold text-brand-700">
-                {selectedStore.code}
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">
-                  {selectedStore.name}
-                </h3>
-                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                  <Icon name="location_on" size={16} />
-                  {selectedStore.location || "-"}
-                </p>
-              </div>
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">
+              {selectedStore.name} - Store Details
+            </h2>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <StoreInfoBox
-                icon="person"
-                label="Owner Name"
-                value={selectedStore.owner || "-"}
-              />
-              <StoreInfoBox
-                icon="call"
-                label="Phone Number"
-                value={selectedStore.phone || "-"}
-              />
-              <StoreInfoBox
-                icon="receipt_long"
-                label="GST Number"
-                value={selectedStore.gst || "-"}
-              />
-              <StoreInfoBox
-                icon="badge"
-                label="Store Code"
-                value={selectedStore.code || "-"}
-              />
-              <StoreInfoBox
-                icon="calendar_month"
-                label="Opening Date"
-                value={selectedStore.openedDate || "-"}
-              />
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 p-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Full Address
-              </p>
-              <p className="text-sm leading-6 text-slate-700">
-                {selectedStore.address || "-"}
-              </p>
-            </div>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Store information and details.
+            </p>
           </div>
-        )}
-      </Modal>
+
+          <button
+            type="button"
+            onClick={() => setSelectedStore(null)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+          >
+            <Icon name="close" size={19} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+
+            <StoreInfoBox
+              icon="person"
+              label="Owner Name"
+              value={selectedStore.owner || "-"}
+            />
+
+            <StoreInfoBox
+              icon="call"
+              label="Phone Number"
+              value={selectedStore.phone || "-"}
+            />
+
+            <StoreInfoBox
+              icon="receipt_long"
+              label="GST Number"
+              value={selectedStore.gst || "-"}
+            />
+
+            <StoreInfoBox
+              icon="badge"
+              label="Store Code"
+              value={selectedStore.code || "-"}
+            />
+
+            <StoreInfoBox
+              icon="calendar_month"
+              label="Opening Date"
+              value={selectedStore.openedDate || "-"}
+            />
+
+            <StoreInfoBox
+              icon="location_on"
+              label="Location"
+              value={selectedStore.location || "-"}
+            />
+
+          </div>
+
+          {/* Address */}
+          <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Full Address
+            </p>
+
+            <p className="text-sm leading-6 text-slate-700">
+              {selectedStore.address || "-"}
+            </p>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+
+          <Button
+            variant="secondary"
+            onClick={() => setSelectedStore(null)}
+          >
+            Close
+          </Button>
+
+          <Button
+            onClick={() => {
+              const storeId = selectedStore.id;
+              setSelectedStore(null);
+              goStore(storeId);
+            }}
+          >
+            <Icon name="dashboard" size={18} />
+            Open Dashboard
+          </Button>
+
+        </div>
+
+      </div>
+    </div>,
+    document.body
+  )}
 
       {showAdd &&
         createPortal(
