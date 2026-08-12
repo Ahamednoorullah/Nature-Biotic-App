@@ -323,7 +323,7 @@ export default function CompanySales() {
 
           <th
             rowSpan={2}
-            className="text-center font-semibold px-1 py-1 border-r border-slate-200"
+            className="text-center font-semibold px-2 py-2 border-r border-slate-200"
           >
             Date
           </th>
