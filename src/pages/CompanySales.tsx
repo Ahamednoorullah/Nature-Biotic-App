@@ -17,6 +17,7 @@ type SaleRow = {
   packSize: string;
   quantity: number;
   rate: number;
+  withoutTax: number; // ADD
   taxAmount: number;
   sgst: number;
   cgst: number;
@@ -62,26 +63,28 @@ const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
   const product = allProducts[i % allProducts.length];
   const qty = 2 + (i % 8);
   const rate = 300 + (i % 4) * 80;
-  const tax = Math.round((qty * rate * 0.05) * 100) / 100;
-  const total = qty * rate + tax;
+  const withoutTax = qty * rate;
+  const tax = Math.round((withoutTax * 0.05) * 100) / 100;
+  const total = withoutTax + tax;
   return {
-    id: `s${i}`,
-    invoiceNo: `NB-INV-${String(2001 + i)}`,
-    date: d.toISOString().split('T')[0],
-    storeId: store.id,
-    storeName: store.name,
-    storeLocation: store.location,
-    product: product.name,
-    packSize: product.size,
-    quantity: qty,
-    rate,
-    taxAmount: tax,
-    sgst: Math.round((tax / 2) * 100) / 100,  // Example: Intra-State tax
-    cgst: Math.round((tax / 2) * 100) / 100,
-    igst: 0,
-    total,
-    Status: Status[i % 3],
-  };
+  id: `s${i}`,
+  invoiceNo: `NB-INV-${String(2001 + i)}`,
+  date: d.toISOString().split('T')[0],
+  storeId: store.id,
+  storeName: store.name,
+  storeLocation: store.location,
+  product: product.name,
+  packSize: product.size,
+  quantity: qty,
+  rate,
+  withoutTax,
+  taxAmount: tax,
+  sgst: Math.round((tax / 2) * 100) / 100,
+  cgst: Math.round((tax / 2) * 100) / 100,
+  igst: 0,
+  total,
+  Status: Status[i % 3],
+};
 });
 
 const statusColor: Record<Status, 'green' | 'amber' | 'blue'> = {
@@ -232,7 +235,16 @@ export default function CompanySales() {
 
   const store = stores.find((s) => s.id === storeId)!;
 
-  const newRows: SaleRow[] = added.map((r, i) => ({
+  const newRows: SaleRow[] = added.map((r, i) => {
+  const withoutTax =
+    Math.max(0, r.quantity * r.sellingPrice - r.discount);
+
+  const taxAmount =
+    Math.round(
+      withoutTax * (r.taxPercent / 100) * 100
+    ) / 100;
+
+  return {
     id: `s${sales.length + i}`,
     invoiceNo,
     date: saleDate,
@@ -243,27 +255,28 @@ export default function CompanySales() {
     packSize: r.packSize,
     quantity: r.quantity,
     rate: r.sellingPrice,
-    taxAmount: r.taxAmount,
+    withoutTax,
+    taxAmount,
 
-    // Tax breakup
     sgst:
       r.taxType === 'Intra-State (SGST + CGST)'
-        ? Math.round((r.taxAmount / 2) * 100) / 100
+        ? Math.round((taxAmount / 2) * 100) / 100
         : 0,
 
     cgst:
       r.taxType === 'Intra-State (SGST + CGST)'
-        ? Math.round((r.taxAmount / 2) * 100) / 100
+        ? Math.round((taxAmount / 2) * 100) / 100
         : 0,
 
     igst:
       r.taxType === 'Inter-State (IGST)'
-        ? r.taxAmount
+        ? taxAmount
         : 0,
 
-    total: r.rowTotal,
+    total: Math.round((withoutTax + taxAmount) * 100) / 100,
     Status,
-  }));
+  };
+});
 
     setSales([...newRows, ...sales]);
     resetForm();
@@ -346,7 +359,12 @@ export default function CompanySales() {
       >
         City
       </th>
-
+      <th
+        rowSpan={2}
+        className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+      >
+        Without Tax
+      </th>
       <th
         colSpan={3}
         className="w-[21%] text-center font-semibold px-2 py-3 border-r border-slate-200"
@@ -413,6 +431,10 @@ export default function CompanySales() {
 
       <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
         {s.storeLocation}
+      </td>
+
+      <td className="px-2 py-3 text-center tabular-nums font-semibold text-slate-700 border-r border-slate-100">
+      {formatCurrency(s.withoutTax)}
       </td>
 
       <td className="px-2 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
