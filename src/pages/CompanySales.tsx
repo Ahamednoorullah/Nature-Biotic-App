@@ -365,14 +365,7 @@ export default function CompanySales() {
         rowSpan={2}
         className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
       >
-        Payment Status
-      </th>
-
-      <th
-        rowSpan={2}
-        className="w-[8%] text-center font-semibold px-2 py-3"
-      >
-        Actions
+        Status
       </th>
     </tr>
 
@@ -443,25 +436,6 @@ export default function CompanySales() {
           {s.Status}
         </Badge>
       </td>
-
-      <td className="px-2 py-3">
-        <div className="flex items-center justify-center gap-1">
-          <button
-            className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base"
-            title="View"
-          >
-            <Icon name="visibility" size={18} />
-          </button>
-
-          <button
-            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-base"
-            title="Print"
-          >
-            <Icon name="print" size={18} />
-          </button>
-        </div>
-      </td>
-
     </tr>
   ))}
 </tbody>
