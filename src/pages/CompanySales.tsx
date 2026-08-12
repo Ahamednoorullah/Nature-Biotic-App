@@ -316,14 +316,14 @@ export default function CompanySales() {
 
           <th
             rowSpan={2}
-            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+            className="text-center font-semibold px-1 py-1 border-r border-slate-200"
           >
             S.No
           </th>
 
           <th
             rowSpan={2}
-            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+            className="text-center font-semibold px-1 py-1 border-r border-slate-200"
           >
             Date
           </th>
@@ -371,15 +371,6 @@ export default function CompanySales() {
           >
             Status
           </th>
-
-          {/* ACTIONS */}
-          <th
-            rowSpan={2}
-            className="text-center font-semibold px-3 py-3"
-          >
-            Actions
-          </th>
-
         </tr>
 
         {/* TAX SUB HEADERS */}
@@ -460,28 +451,6 @@ export default function CompanySales() {
                 {s.Status}
               </Badge>
             </td>
-
-            {/* ACTIONS */}
-            <td className="px-3 py-3 whitespace-nowrap">
-              <div className="flex items-center justify-center gap-1">
-
-                <button
-                  className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base"
-                  title="View"
-                >
-                  <Icon name="visibility" size={18} />
-                </button>
-
-                <button
-                  className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-base"
-                  title="Print"
-                >
-                  <Icon name="print" size={18} />
-                </button>
-
-              </div>
-            </td>
-
           </tr>
         ))}
       </tbody>
