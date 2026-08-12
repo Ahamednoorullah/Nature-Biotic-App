@@ -307,141 +307,188 @@ export default function CompanySales() {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1100px] border-collapse">
-  <thead>
-    {/* Main Header */}
-    <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm min-w-[1400px] border-collapse">
 
-      <th
-        rowSpan={2}
-        className="text-center font-semibold px-3 py-3 border-r border-slate-200"
-      >
-        S.No
-      </th>
+      <thead>
+        {/* Main Header */}
+        <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
 
-      <th
-        rowSpan={2}
-        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
-      >
-        Date
-      </th>
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            S.No
+          </th>
 
-      <th
-        rowSpan={2}
-        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
-      >
-        Invoice No
-      </th>
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            Date
+          </th>
 
-      <th
-        rowSpan={2}
-        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
-      >
-        Party Name
-      </th>
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            Invoice No
+          </th>
 
-      <th
-        rowSpan={2}
-        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
-      >
-        City
-      </th>
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            Party Name
+          </th>
 
-      {/* TAX MAIN HEADER */}
-      <th
-        colSpan={3}
-        className="text-center font-semibold px-3 py-3 border-r border-slate-200"
-      >
-        Tax
-      </th>
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            City
+          </th>
 
-      <th
-        rowSpan={2}
-        className="text-right font-semibold px-3 py-3"
-      >
-        Total
-      </th>
-    </tr>
+          {/* TAX */}
+          <th
+            colSpan={3}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            Tax
+          </th>
 
-    {/* Tax Sub Headers */}
-    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            Total
+          </th>
 
-      <th className="text-right font-semibold px-3 py-2 border-r border-slate-100">
-        SGST
-      </th>
+          {/* PAYMENT STATUS */}
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+          >
+            Payment Status
+          </th>
 
-      <th className="text-right font-semibold px-3 py-2 border-r border-slate-100">
-        CGST
-      </th>
+          {/* ACTIONS */}
+          <th
+            rowSpan={2}
+            className="text-center font-semibold px-3 py-3"
+          >
+            Actions
+          </th>
 
-      <th className="text-right font-semibold px-3 py-2 border-r border-slate-200">
-        IGST
-      </th>
+        </tr>
 
-    </tr>
-  </thead>
+        {/* TAX SUB HEADERS */}
+        <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
 
-  <tbody>
-    {filtered.map((s, i) => (
-      <tr
-        key={s.id}
-        className={`border-b border-slate-100 ${
-          i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
-        } hover:bg-brand-50/40 transition-base`}
-      >
+          <th className="text-center font-semibold px-3 py-2 border-r border-slate-100">
+            SGST
+          </th>
 
-        {/* S.No */}
-        <td className="px-3 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
-          {i + 1}
-        </td>
+          <th className="text-center font-semibold px-3 py-2 border-r border-slate-100">
+            CGST
+          </th>
 
-        {/* Date */}
-        <td className="px-3 py-3 text-slate-500 border-r border-slate-100">
-          {formatDate(s.date)}
-        </td>
+          <th className="text-center font-semibold px-3 py-2 border-r border-slate-200">
+            IGST
+          </th>
 
-        {/* Invoice No */}
-        <td className="px-3 py-3 font-semibold text-slate-800 border-r border-slate-100">
-          {s.invoiceNo}
-        </td>
+        </tr>
+      </thead>
 
-        {/* Party Name */}
-        <td className="px-3 py-3 text-slate-700 border-r border-slate-100">
-          {s.storeName}
-        </td>
+      <tbody>
+        {filtered.map((s, i) => (
+          <tr
+            key={s.id}
+            className={`border-b border-slate-100 ${
+              i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
+            } hover:bg-brand-50/40 transition-base`}
+          >
 
-        {/* City */}
-        <td className="px-3 py-3 text-slate-600 border-r border-slate-100">
-          {s.storeLocation}
-        </td>
+            {/* S.NO */}
+            <td className="px-3 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
+              {i + 1}
+            </td>
 
-        {/* SGST */}
-        <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-          {formatCurrency(s.sgst)}
-        </td>
+            {/* DATE */}
+            <td className="px-3 py-3 text-slate-500 border-r border-slate-100 whitespace-nowrap">
+              {formatDate(s.date)}
+            </td>
 
-        {/* CGST */}
-        <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-          {formatCurrency(s.cgst)}
-        </td>
+            {/* INVOICE */}
+            <td className="px-3 py-3 font-semibold text-slate-800 border-r border-slate-100 whitespace-nowrap">
+              {s.invoiceNo}
+            </td>
 
-        {/* IGST */}
-        <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-          {formatCurrency(s.igst)}
-        </td>
+            {/* PARTY */}
+            <td className="px-3 py-3 text-slate-700 border-r border-slate-100 whitespace-nowrap">
+              {s.storeName}
+            </td>
 
-        {/* Total */}
-        <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800">
-          {formatCurrency(s.total)}
-        </td>
+            {/* CITY */}
+            <td className="px-3 py-3 text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {s.storeLocation}
+            </td>
 
-      </tr>
-    ))}
-  </tbody>
-</table>
-          </div>
-        </Card>
+            {/* SGST */}
+            <td className="px-3 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(s.sgst)}
+            </td>
+
+            {/* CGST */}
+            <td className="px-3 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(s.cgst)}
+            </td>
+
+            {/* IGST */}
+            <td className="px-3 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(s.igst)}
+            </td>
+
+            {/* TOTAL */}
+            <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(s.total)}
+            </td>
+
+            {/* PAYMENT STATUS */}
+            <td className="px-3 py-3 text-center border-r border-slate-100 whitespace-nowrap">
+              <Badge color={statusColor[s.paymentStatus]}>
+                {s.paymentStatus}
+              </Badge>
+            </td>
+
+            {/* ACTIONS */}
+            <td className="px-3 py-3 whitespace-nowrap">
+              <div className="flex items-center justify-center gap-1">
+
+                <button
+                  className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base"
+                  title="View"
+                >
+                  <Icon name="visibility" size={18} />
+                </button>
+
+                <button
+                  className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-base"
+                  title="Print"
+                >
+                  <Icon name="print" size={18} />
+                </button>
+
+              </div>
+            </td>
+
+          </tr>
+        ))}
+      </tbody>
+
+    </table>
+  </div>
+</Card>
       )}
 
       {/* Create Store Sale — full-screen form */}
