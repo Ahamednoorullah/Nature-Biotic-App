@@ -931,8 +931,8 @@ const staffNames = [
   "Ram Kumar",
   "Ajith Kumar",
   "PeriyaSamy",
-  "Priya S",
-  "Mohan L",
+  "Sarath KUmar",
+  "Vijay",
 ];
 
 export const staff: Staff[] = staffNames.map((name, i) => ({
@@ -955,7 +955,13 @@ export const staff: Staff[] = staffNames.map((name, i) => ({
   ][i],
   proofIdName: `staff-proof-${i + 1}.pdf`,
   profileImageName: "",
-  designation: roles[i % roles.length],
+  designation: [
+    "Field Exective",
+    "Field Exective",
+    "Field Exective",
+    "Field Exective",
+    "Field Exective",
+  ][i],
   level: ((i % 4) + 1) as 1 | 2 | 3 | 4,
   targetSales: [30000, 25000, 22000, 18000, 15000][i],
   targetFarmers: [50, 45, 40, 35, 30][i],

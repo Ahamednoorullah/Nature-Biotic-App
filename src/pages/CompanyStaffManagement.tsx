@@ -68,6 +68,7 @@ export default function CompanyStaffManagement() {
   const [staffList, setStaffList] = useState<Staff[]>(staffSeed);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [form, setForm] = useState<StaffForm>(emptyForm);
   const age = useMemo(() => calculateAge(form.dob), [form.dob]);
 
@@ -76,31 +77,64 @@ export default function CompanyStaffManagement() {
   }
   function closeAdd() {
     setShowAdd(false);
+    setEditingStaff(null);
     setForm(emptyForm);
   }
   function storeName(id: string) {
     return stores.find((s) => s.id === id)?.name ?? "-";
   }
+  function storeLocation(id: string) {
+    return stores.find((s) => s.id === id)?.location ?? "-";
+  }
 
-  const isValid = Boolean(
-    form.name &&
-    form.phone &&
-    form.email &&
-    form.dob &&
-    form.bloodGroup &&
-    form.joinedDate &&
-    form.designation &&
-    form.storeId &&
-    form.level &&
-    form.targetSales &&
-    form.targetFarmers &&
-    form.targetFarms,
-  );
+  function openEdit(member: Staff) {
+    setEditingStaff(member);
+    setSelectedStaff(null);
+    setForm({
+      name: member.name,
+      phone: member.phone,
+      alternativePhone: member.alternativePhone,
+      email: member.email,
+      dob: member.dob,
+      bloodGroup: member.bloodGroup,
+      joinedDate: member.joinedDate,
+      address: member.address,
+      proofIdName: member.proofIdName,
+      profileImageName: member.profileImageName,
+      designation: member.designation,
+      storeId: member.storeId,
+      level: String(member.level),
+      targetSales: String(member.targetSales),
+      targetFarmers: String(member.targetFarmers),
+      targetFarms: String(member.targetFarms),
+    });
+    setShowAdd(true);
+  }
+
+  const missingRequiredFields = [
+    !form.name.trim() && "Name",
+    !form.phone.trim() && "Phone Number",
+    !form.email.trim() && "Email ID",
+    !form.dob && "DOB",
+    !form.bloodGroup && "Blood Group",
+    !form.joinedDate && "Date of Joining",
+    !form.designation && "Designation",
+    !form.storeId && "Assign Store",
+    !form.level && "Level",
+    !form.targetSales.trim() && "Sales Target",
+    !form.targetFarmers.trim() && "Farmers Target",
+    !form.targetFarms.trim() && "Farms Target",
+  ].filter(Boolean) as string[];
+
+  const isValid = missingRequiredFields.length === 0;
 
   function handleSave() {
-    if (!isValid) return;
+    if (!isValid) {
+      window.alert(`Please fill: ${missingRequiredFields.join(", ")}`);
+      return;
+    }
     const member: Staff = {
-      id: `st-${Date.now()}`,
+      id: editingStaff?.id ?? `st-${Date.now()}`,
       storeId: form.storeId,
       name: form.name,
       phone: form.phone,
@@ -119,9 +153,13 @@ export default function CompanyStaffManagement() {
       targetFarmers: Number(form.targetFarmers) || 0,
       targetFarms: Number(form.targetFarms) || 0,
       role: form.designation,
-      status: "Active",
+      status: editingStaff?.status ?? "Active",
     };
-    setStaffList((p) => [...p, member]);
+    setStaffList((p) =>
+      editingStaff
+        ? p.map((x) => (x.id === editingStaff.id ? member : x))
+        : [...p, member],
+    );
     closeAdd();
   }
 
@@ -136,14 +174,20 @@ export default function CompanyStaffManagement() {
             Manage staff, store assignments, levels and targets.
           </p>
         </div>
-        <Button onClick={() => setShowAdd(true)}>
+        <Button
+          onClick={() => {
+            setEditingStaff(null);
+            setForm(emptyForm);
+            setShowAdd(true);
+          }}
+        >
           <Icon name="add" size={20} fill /> Add Staff
         </Button>
       </div>
 
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-sm">
+          <table className="w-full min-w-[1080px] border-collapse text-sm">
             <thead>
               <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
                 {[
@@ -153,11 +197,9 @@ export default function CompanyStaffManagement() {
                   "Phone",
                   "Designation",
                   "Assigned Store",
+                  "Location",
                   "Level",
                   "DOJ",
-                  "Sales Target",
-                  "Farmers",
-                  "Farms",
                   "View",
                 ].map((h) => (
                   <th key={h} className="px-3 py-3 text-left font-semibold">
@@ -183,13 +225,9 @@ export default function CompanyStaffManagement() {
                   <td className="px-3 py-3">{m.phone}</td>
                   <td className="px-3 py-3">{m.designation}</td>
                   <td className="px-3 py-3">{storeName(m.storeId)}</td>
+                  <td className="px-3 py-3">{storeLocation(m.storeId)}</td>
                   <td className="px-3 py-3">{m.level}</td>
                   <td className="px-3 py-3">{m.joinedDate}</td>
-                  <td className="px-3 py-3 font-semibold text-brand-700">
-                    {formatCurrency(m.targetSales)}
-                  </td>
-                  <td className="px-3 py-3">{m.targetFarmers}</td>
-                  <td className="px-3 py-3">{m.targetFarms}</td>
                   <td className="px-3 py-3">
                     <button
                       onClick={() => setSelectedStaff(m)}
@@ -211,9 +249,13 @@ export default function CompanyStaffManagement() {
             <div className="flex max-h-[92vh] w-[95vw] max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
                 <div>
-                  <h2 className="text-lg font-bold">Add Staff</h2>
+                  <h2 className="text-lg font-bold">
+                    {editingStaff ? "Edit Staff" : "Add Staff"}
+                  </h2>
                   <p className="text-sm text-slate-500">
-                    Enter personal, employment and target details.
+                    {editingStaff
+                      ? "Update staff information and save changes."
+                      : "Enter personal, employment and target details."}
                   </p>
                 </div>
                 <button onClick={closeAdd}>
@@ -266,6 +308,7 @@ export default function CompanyStaffManagement() {
                     <Select
                       label="Blood Group"
                       value={form.bloodGroup}
+                      placeholder="Select Blood Group"
                       onChange={(v) => update("bloodGroup", v)}
                       options={bloodGroups.map((x) => ({ value: x, label: x }))}
                       required
@@ -315,6 +358,7 @@ export default function CompanyStaffManagement() {
                     <Select
                       label="Designation"
                       value={form.designation}
+                      placeholder="Select Designation"
                       onChange={(v) => update("designation", v)}
                       options={designationOptions.map((x) => ({
                         value: x,
@@ -325,6 +369,7 @@ export default function CompanyStaffManagement() {
                     <Select
                       label="Assign Store"
                       value={form.storeId}
+                      placeholder="Select Store"
                       onChange={(v) => update("storeId", v)}
                       options={stores.map((s) => ({
                         value: s.id,
@@ -335,6 +380,7 @@ export default function CompanyStaffManagement() {
                     <Select
                       label="Level"
                       value={form.level}
+                      placeholder="Select Level"
                       onChange={(v) => update("level", v)}
                       options={["1", "2", "3", "4"].map((x) => ({
                         value: x,
@@ -378,8 +424,9 @@ export default function CompanyStaffManagement() {
                 <Button variant="secondary" onClick={closeAdd}>
                   Cancel
                 </Button>
-                <Button onClick={handleSave} disabled={!isValid}>
-                  <Icon name="save" size={18} /> Save Staff
+                <Button onClick={handleSave}>
+                  <Icon name="save" size={18} />{" "}
+                  {editingStaff ? "Update Staff" : "Save Staff"}
                 </Button>
               </div>
             </div>
@@ -399,9 +446,17 @@ export default function CompanyStaffManagement() {
                     {storeName(selectedStaff.storeId)}
                   </p>
                 </div>
-                <button onClick={() => setSelectedStaff(null)}>
-                  <Icon name="close" size={19} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <Button onClick={() => openEdit(selectedStaff)}>
+                    <Icon name="edit" size={16} /> Edit
+                  </Button>
+                  <button
+                    onClick={() => setSelectedStaff(null)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200"
+                  >
+                    <Icon name="close" size={19} />
+                  </button>
+                </div>
               </div>
               <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
                 <Info label="Phone" value={selectedStaff.phone} />

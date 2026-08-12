@@ -429,122 +429,6 @@ export default function ProductAddForm({
         </Card>
 
         <Card className="p-6">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <SectionTitle
-              icon="inventory_2"
-              title="Product Details"
-              description="Add one or more pack sizes with price and low-stock limit."
-            />
-            <Button
-              onClick={addDetailRow}
-              disabled={!form.packingType}
-              className="shrink-0"
-            >
-              <Icon name="add" size={18} /> Add Size
-            </Button>
-          </div>
-
-          {!form.packingType && (
-            <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-600">
-              <Icon name="info" size={18} />
-              Select Packing Type first. Size options will load automatically.
-            </div>
-          )}
-
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_1fr_48px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
-              <div>Size</div>
-              <div>Purchase Price</div>
-              <div>Selling Price</div>
-              <div>MRP</div>
-              <div>Limit Stock</div>
-              <div />
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {details.map((row, index) => (
-                <div
-                  key={row.id}
-                  className="grid gap-4 px-4 py-4 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_48px] md:items-end md:gap-3"
-                >
-                  <Select
-                    label={`Size ${index + 1}`}
-                    value={row.size}
-                    onChange={(v) => updateDetail(row.id, "size", v)}
-                    placeholder={
-                      form.packingType
-                        ? "Select pack size"
-                        : "Select packing type first"
-                    }
-                    options={sizeOptions.map((size) => ({
-                      value: size,
-                      label: size,
-                    }))}
-                    required
-                  />
-
-                  <Input
-                    label="Purchase Price"
-                    type="number"
-                    value={row.purchaseprice}
-                    onChange={(v) => updateDetail(row.id, "purchaseprice", v)}
-                    placeholder="0"
-                    icon="currency_rupee"
-                    required
-                  />
-
-                  <Input
-                    label="Selling Price"
-                    type="number"
-                    value={row.sellingPrice}
-                    onChange={(v) => updateDetail(row.id, "sellingPrice", v)}
-                    placeholder="0"
-                    icon="currency_rupee"
-                    required
-                  />
-
-                  <Input
-                    label="MRP"
-                    type="number"
-                    value={row.mrp}
-                    onChange={(v) => updateDetail(row.id, "mrp", v)}
-                    placeholder="0"
-                    icon="currency_rupee"
-                    required
-                  />
-
-                  <Input
-                    label="Limit Stock"
-                    type="number"
-                    value={row.limitStock}
-                    onChange={(v) => updateDetail(row.id, "limitStock", v)}
-                    placeholder="e.g. 5"
-                    icon="warning"
-                    required
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => removeDetailRow(row.id)}
-                    disabled={details.length === 1}
-                    title="Remove size"
-                    className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-500 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
-                  >
-                    <Icon name="delete" size={18} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
-              {details.length} pack size{details.length !== 1 ? "s" : ""} added
-            </p>
-          </div>
-        </Card>
-
-        <Card className="p-6">
           <SectionTitle
             icon="description"
             title="Application / Dosage"
@@ -691,6 +575,122 @@ export default function ProductAddForm({
                 required
               /> */}
             </div>
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <SectionTitle
+              icon="inventory_2"
+              title="Product Details"
+              description="Add one or more pack sizes with price and low-stock limit."
+            />
+            <Button
+              onClick={addDetailRow}
+              disabled={!form.packingType}
+              className="shrink-0"
+            >
+              <Icon name="add" size={18} /> Add Size
+            </Button>
+          </div>
+
+          {!form.packingType && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-600">
+              <Icon name="info" size={18} />
+              Select Packing Type first. Size options will load automatically.
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_1fr_48px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid">
+              <div>Size</div>
+              <div>Purchase Price</div>
+              <div>Selling Price</div>
+              <div>MRP</div>
+              <div>Limit Stock</div>
+              <div />
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {details.map((row, index) => (
+                <div
+                  key={row.id}
+                  className="grid gap-4 px-4 py-4 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_48px] md:items-end md:gap-3"
+                >
+                  <Select
+                    label={`Size ${index + 1}`}
+                    value={row.size}
+                    onChange={(v) => updateDetail(row.id, "size", v)}
+                    placeholder={
+                      form.packingType
+                        ? "Select pack size"
+                        : "Select packing type first"
+                    }
+                    options={sizeOptions.map((size) => ({
+                      value: size,
+                      label: size,
+                    }))}
+                    required
+                  />
+
+                  <Input
+                    label="Purchase Price"
+                    type="number"
+                    value={row.purchaseprice}
+                    onChange={(v) => updateDetail(row.id, "purchaseprice", v)}
+                    placeholder="0"
+                    icon="currency_rupee"
+                    required
+                  />
+
+                  <Input
+                    label="Selling Price"
+                    type="number"
+                    value={row.sellingPrice}
+                    onChange={(v) => updateDetail(row.id, "sellingPrice", v)}
+                    placeholder="0"
+                    icon="currency_rupee"
+                    required
+                  />
+
+                  <Input
+                    label="MRP"
+                    type="number"
+                    value={row.mrp}
+                    onChange={(v) => updateDetail(row.id, "mrp", v)}
+                    placeholder="0"
+                    icon="currency_rupee"
+                    required
+                  />
+
+                  <Input
+                    label="Limit Stock"
+                    type="number"
+                    value={row.limitStock}
+                    onChange={(v) => updateDetail(row.id, "limitStock", v)}
+                    placeholder="e.g. 5"
+                    icon="warning"
+                    required
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => removeDetailRow(row.id)}
+                    disabled={details.length === 1}
+                    title="Remove size"
+                    className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-100 bg-red-50 text-red-500 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-100 disabled:bg-slate-50 disabled:text-slate-300"
+                  >
+                    <Icon name="delete" size={18} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-400">
+              {details.length} pack size{details.length !== 1 ? "s" : ""} added
+            </p>
           </div>
         </Card>
 

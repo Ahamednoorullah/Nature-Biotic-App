@@ -686,13 +686,13 @@ function ActualDetailsBox({
                   <td className="px-5 py-4 text-right font-medium tabular-nums text-slate-700">
                     {formatCurrency(row.under30)}
                   </td>
-                  <td className="px-5 py-4 text-right font-medium tabular-nums text-amber-700">
+                  <td className="px-5 py-4 text-right font-medium tabular-nums text-slate-700">
                     {formatCurrency(row.over30)}
                   </td>
-                  <td className="px-5 py-4 text-right font-medium tabular-nums text-orange-700">
+                  <td className="px-5 py-4 text-right font-medium tabular-nums text-slate-700">
                     {formatCurrency(row.over60)}
                   </td>
-                  <td className="px-5 py-4 text-right font-semibold tabular-nums text-rose-700">
+                  <td className="px-5 py-4 text-right font-semibold tabular-nums text-slate-700">
                     {formatCurrency(row.over90)}
                   </td>
                   <td className="px-5 py-4 text-right font-bold tabular-nums text-slate-900">
