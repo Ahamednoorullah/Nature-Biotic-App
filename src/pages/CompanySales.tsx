@@ -3,7 +3,7 @@ import { Card, Badge, Button, Input, Select, EmptyState, Icon } from '@/componen
 import { formatCurrency, formatDate } from '@/lib/format';
 import { stores, products as allProducts, type Product } from '@/lib/data';
 
-type PaymentStatus = 'Paid' | 'Pending' | 'Partial';
+type Status = 'Paid' | 'Pending' | 'Partial';
 type TaxType = 'Intra-State (SGST + CGST)' | 'Inter-State (IGST)';
 
 type SaleRow = {
@@ -22,7 +22,7 @@ type SaleRow = {
   cgst: number;
   igst: number;
   total: number;
-  paymentStatus: PaymentStatus;
+  Status: Status;
 };
 
 type AddedRow = {
@@ -52,7 +52,7 @@ type EntryForm = {
   discount: number;
 };
 
-const paymentStatuses: PaymentStatus[] = ['Paid', 'Pending', 'Partial'];
+const Status: Status[] = ['Paid', 'Pending', 'Partial'];
 const taxTypes: TaxType[] = ['Intra-State (SGST + CGST)', 'Inter-State (IGST)'];
 
 const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
@@ -80,11 +80,11 @@ const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
     cgst: Math.round((tax / 2) * 100) / 100,
     igst: 0,
     total,
-    paymentStatus: paymentStatuses[i % 3],
+    Status: Status[i % 3],
   };
 });
 
-const statusColor: Record<PaymentStatus, 'green' | 'amber' | 'blue'> = {
+const statusColor: Record<Status, 'green' | 'amber' | 'blue'> = {
   Paid: 'green',
   Pending: 'amber',
   Partial: 'blue',
@@ -111,7 +111,7 @@ export default function CompanySales() {
   const [invoiceNo, setInvoiceNo] = useState('');
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
   const [storeId, setStoreId] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('Pending');
+  const [Status, setStatus] = useState<Status>('Pending');
   const [remarks, setRemarks] = useState('');
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
@@ -213,7 +213,7 @@ export default function CompanySales() {
     setInvoiceNo('');
     setSaleDate(new Date().toISOString().split('T')[0]);
     setStoreId('');
-    setPaymentStatus('Pending');
+    setStatus('Pending');
     setRemarks('');
     setEntry(emptyEntry());
     setAdded([]);
@@ -262,7 +262,7 @@ export default function CompanySales() {
         : 0,
 
     total: r.rowTotal,
-    paymentStatus,
+    Status,
   }));
 
     setSales([...newRows, ...sales]);
@@ -364,12 +364,12 @@ export default function CompanySales() {
             Total
           </th>
 
-          {/* PAYMENT STATUS */}
+          {/*STATUS */}
           <th
             rowSpan={2}
             className="text-center font-semibold px-3 py-3 border-r border-slate-200"
           >
-            Payment Status
+            Status
           </th>
 
           {/* ACTIONS */}
@@ -454,10 +454,10 @@ export default function CompanySales() {
               {formatCurrency(s.total)}
             </td>
 
-            {/* PAYMENT STATUS */}
+            {/* STATUS */}
             <td className="px-3 py-3 text-center border-r border-slate-100 whitespace-nowrap">
-              <Badge color={statusColor[s.paymentStatus]}>
-                {s.paymentStatus}
+              <Badge color={statusColor[s.Status]}>
+                {s.Status}
               </Badge>
             </td>
 
@@ -523,7 +523,7 @@ export default function CompanySales() {
                     options={stores.map((s) => ({ value: s.id, label: `${s.name} — ${s.location}` }))}
                     required
                   />
-                  <Input label="Payment Status" value={paymentStatus} onChange={() => {}} readOnly />
+                  <Input label="Status" value={Status} onChange={() => {}} readOnly />
                   <Input label="Store Address" value={selectedStore?.address || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
                   <Input label="GST Number" value={selectedStore?.gst || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
                 </div>
