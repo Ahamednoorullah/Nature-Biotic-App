@@ -337,7 +337,7 @@ export default function CompanySales() {
 
           <th
             rowSpan={2}
-            className="text-center font-semibold px-1 py-3 border-r border-slate-200"
+            className="text-center font-semibold px-3 py-3 border-r border-slate-200"
           >
             Party Name
           </th>
