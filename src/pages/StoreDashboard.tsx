@@ -39,7 +39,7 @@ type ExecSummary = {
   farmers: number;
   farms: number;
   crops: number;
-  bills: number;
+  visits: number;
   bestArea: string;
   topProduct: string;
 };
@@ -54,6 +54,36 @@ const execColors: Record<ExecKey, string> = {
   ram: "from-emerald-400 to-emerald-600",
   ajith: "from-blue-400 to-blue-600",
   periya: "from-amber-400 to-amber-600",
+};
+
+type ExecTarget = {
+  sales: number;
+  farmers: number;
+  farms: number;
+};
+
+const execTargets: Record<ExecKey, Record<DateFilter, ExecTarget>> = {
+  ram: {
+    today: { sales: 30000, farmers: 50, farms: 35 },
+    weekly: { sales: 200000, farmers: 55, farms: 40 },
+    monthly: { sales: 600000, farmers: 65, farms: 45 },
+    quarterly: { sales: 1800000, farmers: 75, farms: 55 },
+    yearly: { sales: 7200000, farmers: 90, farms: 70 },
+  },
+  ajith: {
+    today: { sales: 30000, farmers: 50, farms: 35 },
+    weekly: { sales: 200000, farmers: 55, farms: 40 },
+    monthly: { sales: 600000, farmers: 65, farms: 45 },
+    quarterly: { sales: 1800000, farmers: 75, farms: 55 },
+    yearly: { sales: 7200000, farmers: 90, farms: 70 },
+  },
+  periya: {
+    today: { sales: 30000, farmers: 50, farms: 35 },
+    weekly: { sales: 200000, farmers: 55, farms: 40 },
+    monthly: { sales: 600000, farmers: 65, farms: 45 },
+    quarterly: { sales: 1800000, farmers: 75, farms: 55 },
+    yearly: { sales: 7200000, farmers: 90, farms: 70 },
+  },
 };
 
 const execDetailData: Record<
@@ -363,7 +393,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 42,
       farms: 31,
       crops: 8,
-      bills: 18,
+      visits: 18,
       bestArea: "Rajapalayam",
       topProduct: "Electra",
     },
@@ -375,7 +405,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 46,
       farms: 34,
       crops: 10,
-      bills: 126,
+      visits: 126,
       bestArea: "Rajapalayam",
       topProduct: "Electra",
     },
@@ -387,7 +417,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 52,
       farms: 38,
       crops: 12,
-      bills: 542,
+      visits: 542,
       bestArea: "Rajapalayam",
       topProduct: "Electra",
     },
@@ -399,7 +429,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 58,
       farms: 42,
       crops: 14,
-      bills: 1604,
+      visits: 1604,
       bestArea: "Rajapalayam",
       topProduct: "Electra",
     },
@@ -411,7 +441,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 64,
       farms: 48,
       crops: 16,
-      bills: 6580,
+      visits: 6580,
       bestArea: "Rajapalayam",
       topProduct: "Electra",
     },
@@ -425,7 +455,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 36,
       farms: 28,
       crops: 7,
-      bills: 14,
+      visits: 14,
       bestArea: "Srivilliputhur",
       topProduct: "Aalga",
     },
@@ -437,7 +467,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 39,
       farms: 30,
       crops: 9,
-      bills: 98,
+      visits: 98,
       bestArea: "Srivilliputhur",
       topProduct: "Aalga",
     },
@@ -449,7 +479,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 44,
       farms: 33,
       crops: 11,
-      bills: 418,
+      visits: 418,
       bestArea: "Srivilliputhur",
       topProduct: "Aalga",
     },
@@ -461,7 +491,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 49,
       farms: 36,
       crops: 13,
-      bills: 1242,
+      visits: 1242,
       bestArea: "Srivilliputhur",
       topProduct: "Aalga",
     },
@@ -473,7 +503,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 54,
       farms: 41,
       crops: 15,
-      bills: 5060,
+      visits: 5060,
       bestArea: "Srivilliputhur",
       topProduct: "Aalga",
     },
@@ -487,7 +517,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 31,
       farms: 24,
       crops: 6,
-      bills: 11,
+      visits: 11,
       bestArea: "Sivakasi",
       topProduct: "Astra",
     },
@@ -499,7 +529,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 34,
       farms: 26,
       crops: 8,
-      bills: 82,
+      visits: 82,
       bestArea: "Sivakasi",
       topProduct: "Astra",
     },
@@ -511,7 +541,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 38,
       farms: 29,
       crops: 10,
-      bills: 356,
+      visits: 356,
       bestArea: "Sivakasi",
       topProduct: "Astra",
     },
@@ -523,7 +553,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 42,
       farms: 31,
       crops: 12,
-      bills: 1068,
+      visits: 1068,
       bestArea: "Sivakasi",
       topProduct: "Astra",
     },
@@ -535,7 +565,7 @@ const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
       farmers: 47,
       farms: 35,
       crops: 14,
-      bills: 4320,
+      visits: 4320,
       bestArea: "Sivakasi",
       topProduct: "Astra",
     },
@@ -1303,19 +1333,44 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         <div className="space-y-3">
           {(Object.keys(execNames) as ExecKey[]).map((key) => {
             const e = execData[key][dateFilter];
+            const target = execTargets[key][dateFilter];
             return (
               <Card key={key} className="p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div
-                    className={`w-10 h-10 rounded-xl bg-gradient-to-br ${execColors[key]} flex items-center justify-center text-white font-bold text-sm shrink-0`}
-                  >
-                    {initials(execNames[key])}
+                <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${execColors[key]} flex items-center justify-center text-white font-bold text-sm shrink-0`}
+                    >
+                      {initials(execNames[key])}
+                    </div>
+
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-slate-800 text-base leading-tight truncate">
+                        {execNames[key]}
+                      </h3>
+                      <p className="text-xs text-slate-400">Field Executive</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-slate-800 text-base leading-tight truncate">
-                      {execNames[key]}
-                    </h3>
-                    <p className="text-xs text-slate-400">Field Executive</p>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ExecutiveTargetBadge
+                      icon="payments"
+                      label="Sales Target"
+                      value={formatCurrency(target.sales)}
+                      color="brand"
+                    />
+                    <ExecutiveTargetBadge
+                      icon="groups"
+                      label="Farmers Target"
+                      value={String(target.farmers)}
+                      color="blue"
+                    />
+                    <ExecutiveTargetBadge
+                      icon="agriculture"
+                      label="Farms Target"
+                      value={String(target.farms)}
+                      color="amber"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-8 gap-2">
@@ -1368,8 +1423,8 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   <ExecField icon="spa" label="Crops" value={String(e.crops)} />
                   <ExecField
                     icon="receipt"
-                    label="Bills"
-                    value={String(e.bills)}
+                    label="Visits"
+                    value={String(e.visits)}
                   />
                 </div>
               </Card>
@@ -1756,6 +1811,7 @@ function ExecutiveDetailModal({
 }) {
   const { execKey, type } = selection;
   const rows = execDetailData[execKey][type];
+  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -1901,6 +1957,28 @@ function ExecutiveDetailModal({
                   ),
                 )}
             </tbody>
+
+            <tfoot className="sticky bottom-0 z-10">
+              <tr className="border-t-2 border-slate-200 bg-slate-50">
+                <td
+                  colSpan={type === "outstanding" ? 2 : type === "cash" ? 2 : 3}
+                  className="px-5 py-4 text-right text-sm font-bold text-slate-600"
+                >
+                  Total
+                </td>
+
+                <td className="px-5 py-4 text-right text-base font-bold tabular-nums text-brand-700">
+                  {formatCurrency(totalAmount)}
+                </td>
+
+                {type === "outstanding" && (
+                  <>
+                    <td className="px-5 py-4" />
+                    <td className="px-5 py-4" />
+                  </>
+                )}
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -1930,6 +2008,41 @@ function SegmentedDateFilter({
           {tab.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ExecutiveTargetBadge({
+  icon,
+  label,
+  value,
+  color,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  color: "brand" | "blue" | "amber";
+}) {
+  const tone: Record<string, string> = {
+    brand: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
+  };
+
+  return (
+    <div
+      className={`min-w-[118px] rounded-lg border px-2.5 py-1.5 ${tone[color]}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <Icon name={icon} size={13} />
+        <span className="text-[9px] font-semibold uppercase tracking-wide opacity-75">
+          {label}
+        </span>
+      </div>
+
+      <div className="mt-0.5">
+        <span className="text-xs font-bold">{value}</span>
+      </div>
     </div>
   );
 }

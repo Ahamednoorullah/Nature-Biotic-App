@@ -262,6 +262,9 @@ export default function CompanyProducts() {
                     Pack Size
                   </th>
                   <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
+                    Purchase Price
+                  </th>
+                  <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
                     Selling Price
                   </th>
                   <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
@@ -332,6 +335,9 @@ export default function CompanyProducts() {
 
                       <td className="whitespace-nowrap border-r border-slate-100 px-2 py-3 text-slate-600">
                         {variant.size}
+                      </td>
+                      <td className="whitespace-nowrap border-r border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                        {formatCurrency(variant.purchasePrice)}
                       </td>
 
                       <td className="whitespace-nowrap border-r border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-slate-800">

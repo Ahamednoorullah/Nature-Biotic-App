@@ -169,11 +169,23 @@ export type Staff = {
   id: string;
   storeId: string;
   name: string;
-  role: string;
   phone: string;
+  alternativePhone: string;
   email: string;
-  status: "Active" | "On Leave" | "Inactive";
+  dob: string;
+  age: number;
+  bloodGroup: string;
   joinedDate: string;
+  address: string;
+  proofIdName: string;
+  profileImageName: string;
+  designation: string;
+  level: 1 | 2 | 3 | 4;
+  targetSales: number;
+  targetFarmers: number;
+  targetFarms: number;
+  role: string;
+  status: "Active" | "On Leave" | "Inactive";
 };
 
 export const stores: Store[] = [
@@ -908,29 +920,48 @@ billDates.forEach((date, di) => {
 });
 
 const roles = [
-  "Store Manager",
+  "Field Executive",
   "Sales Executive",
-  "Inventory Clerk",
+  "Store Manager",
   "Accountant",
-  "Cashier",
+  "Inventory Clerk",
 ];
+
 const staffNames = [
-  "Ramesh Kumar",
+  "Ram Kumar",
+  "Ajith Kumar",
+  "PeriyaSamy",
   "Priya S",
   "Mohan L",
-  "Deepa R",
-  "Karthik N",
 ];
 
 export const staff: Staff[] = staffNames.map((name, i) => ({
   id: `st${i}`,
-  storeId: "s1",
+  storeId: stores[i % stores.length]?.id ?? "s1",
   name,
-  role: roles[i % roles.length],
   phone: `98765432${10 + i}`,
+  alternativePhone: `91234567${10 + i}`,
   email: `${name.toLowerCase().replace(/\s/g, ".")}@naturebiotic.in`,
-  status: i === 3 ? "On Leave" : "Active",
+  dob: `199${2 + i}-0${(i % 8) + 1}-1${i % 9}`,
+  age: 29 + i,
+  bloodGroup: ["O+", "A+", "B+", "AB+", "O-"][i % 5],
   joinedDate: `202${1 + (i % 3)}-0${1 + (i % 9)}-1${i % 9}`,
+  address: [
+    "Rajapalayam, Virudhunagar, Tamil Nadu",
+    "Srivilliputhur, Virudhunagar, Tamil Nadu",
+    "Sivakasi, Virudhunagar, Tamil Nadu",
+    "Tenkasi, Tamil Nadu",
+    "Idukki, Kerala",
+  ][i],
+  proofIdName: `staff-proof-${i + 1}.pdf`,
+  profileImageName: "",
+  designation: roles[i % roles.length],
+  level: ((i % 4) + 1) as 1 | 2 | 3 | 4,
+  targetSales: [30000, 25000, 22000, 18000, 15000][i],
+  targetFarmers: [50, 45, 40, 35, 30][i],
+  targetFarms: [35, 32, 28, 24, 20][i],
+  role: roles[i % roles.length],
+  status: i === 3 ? "On Leave" : "Active",
 }));
 
 export function getSalesTrend(

@@ -34,7 +34,6 @@ type FormState = {
   filler: string;
   fillerUnit: string;
   fillerType: "Water" | "NA" | "";
-  safetyColor: string;
 };
 
 const emptyForm: FormState = {
@@ -52,7 +51,6 @@ const emptyForm: FormState = {
   filler: "",
   fillerUnit: "",
   fillerType: "",
-  safetyColor: "",
 };
 
 const productTypeOptions = ["Powder", "Granules", "Gel", "Liquid"];
@@ -69,7 +67,7 @@ const applicationMethodOptions = [
   "Foliar Spray",
   "Drenching",
   "Fertigation",
-  "Broadcasting",
+  "Broadcasting (Soil Application)",
 ];
 
 const safetyColorOptions = ["Green", "Red", "Orange", "White", "Blue"];
@@ -196,11 +194,24 @@ export default function ProductAddForm({
   }
 
   function toggleApplicationMethod(method: string) {
-    setApplicationMethods((prev) =>
-      prev.includes(method)
+    setApplicationMethods((prev) => {
+      const next = prev.includes(method)
         ? prev.filter((item) => item !== method)
-        : [...prev, method],
-    );
+        : [...prev, method];
+
+      const hasBroadcasting = next.includes("Broadcasting (Soil Application)");
+      const hasWaterApplication = next.some((item) =>
+        ["Foliar Spray", "Drenching", "Fertigation"].includes(item),
+      );
+
+      setForm((current) => ({
+        ...current,
+        fillerType: hasBroadcasting ? "NA" : hasWaterApplication ? "Water" : "",
+        filler: hasBroadcasting ? "" : current.filler,
+      }));
+
+      return next;
+    });
   }
 
   function handleFillerType(value: "Water" | "NA") {
@@ -248,7 +259,8 @@ export default function ProductAddForm({
     form.productCategory &&
     form.packingType &&
     form.hsnCode &&
-    form.gstRate;
+    form.gstRate &&
+    form.productPurpose.trim();
 
   const productDetailsValid =
     details.length > 0 &&
@@ -262,12 +274,10 @@ export default function ProductAddForm({
     );
 
   const additionalDetailsValid =
-    form.productPurpose.trim() &&
     form.dosage.trim() &&
     form.dosageUnit &&
     form.fillerType &&
     (form.fillerType === "NA" || (form.filler.trim() && form.fillerUnit)) &&
-    form.safetyColor &&
     applicationMethods.length > 0;
 
   const isFormValid = Boolean(
@@ -406,6 +416,15 @@ export default function ProductAddForm({
               placeholder="e.g. Nature Biotic Distribution"
               icon="local_shipping"
             />
+
+            <Input
+              label="Product Purpose"
+              value={form.productPurpose}
+              onChange={(v) => update("productPurpose", v)}
+              placeholder="e.g. Larvicide / Root Enhancer"
+              icon="target"
+              required
+            />
           </div>
         </Card>
 
@@ -528,47 +547,11 @@ export default function ProductAddForm({
         <Card className="p-6">
           <SectionTitle
             icon="description"
-            title="Additional Details"
-            description="Set product purpose, application methods, dosage, filler and safety colour."
+            title="Application / Dosage"
+            description="Set application methods, dosage and filler details."
           />
 
           <div className="space-y-5">
-            {/* Product Purpose */}
-            {/* <Input
-              label="Product Purpose"
-              value={form.productPurpose}
-              onChange={(v) => update("productPurpose", v)}
-              placeholder="e.g. Larvicide / Root Enhancer"
-              icon="target"
-              required
-            /> */}
-            {/* Product Purpose + Safety Information */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <Input
-                label="Product Purpose"
-                value={form.productPurpose}
-                onChange={(v) => update("productPurpose", v)}
-                placeholder="e.g. Larvicide / Root Enhancer"
-                icon="target"
-                required
-              />
-
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                  Safety Information <span className="text-red-500">*</span>
-                </label>
-
-                <input
-                  type="text"
-                  value={form.safetyColor}
-                  onChange={(e) => update("safetyColor", e.target.value)}
-                  placeholder="Enter safety information"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                  required
-                />
-              </div>
-            </div>
-
             {/* Application Method */}
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-700">
@@ -582,7 +565,7 @@ export default function ProductAddForm({
                   return (
                     <label
                       key={method}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                      className={`flex min-h-[48px] cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium leading-tight transition ${
                         checked
                           ? "border-brand-300 bg-brand-50 text-brand-700"
                           : "border-slate-200 bg-white text-slate-600 hover:border-brand-200"
@@ -594,14 +577,16 @@ export default function ProductAddForm({
                         onChange={() => toggleApplicationMethod(method)}
                         className="h-4 w-4 shrink-0 accent-brand-600"
                       />
-                      <span className="whitespace-nowrap">{method}</span>
+                      <span className="whitespace-normal leading-tight break-words">
+                        {method}
+                      </span>
                     </label>
                   );
                 })}
               </div>
             </div>
 
-            {/* Dosage + Filler + Safety */}
+            {/* Dosage + Filler */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-end">
               {/* Dosage */}
               <div>
