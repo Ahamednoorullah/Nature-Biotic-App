@@ -308,53 +308,138 @@ export default function CompanySales() {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1200px] border-collapse">
-              <thead>
-                <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
-                   <th rowSpan={2} className="text-center font-semibold px-3 py-3 border-r border-slate-200">
-                  S.No</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Invoice Number</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Sale Date</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Store Name</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Store Location</th>
-                  <th className="text-right font-semibold px-3 py-3 border-r border-slate-200">Total Amount</th>
-                  <th className="text-center font-semibold px-3 py-3 border-r border-slate-200">Payment Status</th>
-                  <th className="text-center font-semibold px-3 py-3">Actions</th>
-                </tr>
-                <tr className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider border-b border-slate-200">
-                <th className="text-right font-semibold px-3 py-2">SGST</th>
-                <th className="text-right font-semibold px-3 py-2">CGST</th>
-                <th className="text-right font-semibold px-3 py-2 border-r border-slate-200">IGST</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s, i) => (
-                  <tr key={s.id} className={`border-b border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}> 
-                    <td className="px-3 py-3 font-semibold text-slate-800 border-r border-slate-100">{s.invoiceNo}</td>
-                    <td className="px-3 py-3 text-slate-500 border-r border-slate-100">{formatDate(s.date)}</td>
-                    <td className="px-3 py-3 text-slate-700 border-r border-slate-100">{s.storeName}</td>
-                    <td className="px-3 py-3 text-slate-600 border-r border-slate-100">{s.storeLocation}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatCurrency(s.sgst)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatCurrency(s.cgst)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">{formatCurrency(s.igst)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">{formatCurrency(s.total)}</td>
-                    <td className="px-3 py-3 text-center border-r border-slate-100">
-                      <Badge color={statusColor[s.paymentStatus]}>{s.paymentStatus}</Badge>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        <button className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base" title="View">
-                          <Icon name="visibility" size={18} />
-                        </button>
-                        <button className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-base" title="Print">
-                          <Icon name="print" size={18} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <table className="w-full text-sm min-w-[1100px] border-collapse">
+  <thead>
+    {/* Main Header */}
+    <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
+
+      <th
+        rowSpan={2}
+        className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+      >
+        S.No
+      </th>
+
+      <th
+        rowSpan={2}
+        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
+      >
+        Date
+      </th>
+
+      <th
+        rowSpan={2}
+        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
+      >
+        Invoice No
+      </th>
+
+      <th
+        rowSpan={2}
+        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
+      >
+        Party Name
+      </th>
+
+      <th
+        rowSpan={2}
+        className="text-left font-semibold px-3 py-3 border-r border-slate-200"
+      >
+        City
+      </th>
+
+      {/* TAX MAIN HEADER */}
+      <th
+        colSpan={3}
+        className="text-center font-semibold px-3 py-3 border-r border-slate-200"
+      >
+        Tax
+      </th>
+
+      <th
+        rowSpan={2}
+        className="text-right font-semibold px-3 py-3"
+      >
+        Total
+      </th>
+    </tr>
+
+    {/* Tax Sub Headers */}
+    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+
+      <th className="text-right font-semibold px-3 py-2 border-r border-slate-100">
+        SGST
+      </th>
+
+      <th className="text-right font-semibold px-3 py-2 border-r border-slate-100">
+        CGST
+      </th>
+
+      <th className="text-right font-semibold px-3 py-2 border-r border-slate-200">
+        IGST
+      </th>
+
+    </tr>
+  </thead>
+
+  <tbody>
+    {filtered.map((s, i) => (
+      <tr
+        key={s.id}
+        className={`border-b border-slate-100 ${
+          i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
+        } hover:bg-brand-50/40 transition-base`}
+      >
+
+        {/* S.No */}
+        <td className="px-3 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
+          {i + 1}
+        </td>
+
+        {/* Date */}
+        <td className="px-3 py-3 text-slate-500 border-r border-slate-100">
+          {formatDate(s.date)}
+        </td>
+
+        {/* Invoice No */}
+        <td className="px-3 py-3 font-semibold text-slate-800 border-r border-slate-100">
+          {s.invoiceNo}
+        </td>
+
+        {/* Party Name */}
+        <td className="px-3 py-3 text-slate-700 border-r border-slate-100">
+          {s.storeName}
+        </td>
+
+        {/* City */}
+        <td className="px-3 py-3 text-slate-600 border-r border-slate-100">
+          {s.storeLocation}
+        </td>
+
+        {/* SGST */}
+        <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+          {formatCurrency(s.sgst)}
+        </td>
+
+        {/* CGST */}
+        <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+          {formatCurrency(s.cgst)}
+        </td>
+
+        {/* IGST */}
+        <td className="px-3 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+          {formatCurrency(s.igst)}
+        </td>
+
+        {/* Total */}
+        <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800">
+          {formatCurrency(s.total)}
+        </td>
+
+      </tr>
+    ))}
+  </tbody>
+</table>
           </div>
         </Card>
       )}
