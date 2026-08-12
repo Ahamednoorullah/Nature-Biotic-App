@@ -324,34 +324,50 @@ export function Modal({
     "2xl": "max-w-6xl",
   }[size];
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
-        onClick={onClose}
-      />
-      <div
-        className={`relative bg-white rounded-2xl shadow-elevated w-full ${sizeClass} animate-scale-in max-h-[90vh] overflow-y-auto`}
-      >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-base p-1 rounded-lg hover:bg-slate-100"
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    {/* Background */}
+    <div
+      className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    />
+
+    {/* Popup */}
+    <div
+      className={`relative bg-white rounded-2xl shadow-elevated w-full ${sizeClass} animate-scale-in`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <h3 className="text-lg font-bold text-slate-800">
+          {title}
+        </h3>
+
+        <button
+          onClick={onClose}
+          className="text-slate-400 hover:text-slate-600 transition-base p-1 rounded-lg hover:bg-slate-100"
+        >
+          <span
+            className="material-symbols-rounded"
+            style={{ fontSize: 22 }}
           >
-            <span className="material-symbols-rounded" style={{ fontSize: 22 }}>
-              close
-            </span>
-          </button>
-        </div>
-        <div className="px-6 py-5">{children}</div>
-        {footer && (
-          <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-            {footer}
-          </div>
-        )}
+            close
+          </span>
+        </button>
       </div>
+
+      {/* Content */}
+      <div className="px-6 py-5">
+        {children}
+      </div>
+
+      {/* Footer */}
+      {footer && (
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+          {footer}
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 }
 
 export function StatCard({

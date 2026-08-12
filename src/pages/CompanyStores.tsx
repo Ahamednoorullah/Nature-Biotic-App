@@ -166,16 +166,17 @@ export default function CompanyStores() {
       </div>
 
       <Modal
-  open={Boolean(selectedStore)}
-  onClose={() => setSelectedStore(null)}
-  title={
-    selectedStore
-      ? `${selectedStore.name} - Store Details`
-      : "Store Details"
-  }
-  footer={
-    selectedStore ? (
-      <>
+        open={Boolean(selectedStore)}
+        onClose={() => setSelectedStore(null)}
+        title={
+          selectedStore
+            ? `${selectedStore.name} - Store Details`
+            : "Store Details"
+        }
+            size="2xl"
+            footer={
+            selectedStore ? (
+            <>
         <Button
           variant="secondary"
           onClick={() => setSelectedStore(null)}
@@ -197,71 +198,62 @@ export default function CompanyStores() {
     ) : undefined
   }
 >
-  {selectedStore && (
-    <div className="space-y-6">
+        {selectedStore && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-100 font-bold text-brand-700">
+                {selectedStore.code}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">
+                  {selectedStore.name}
+                </h3>
+                <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                  <Icon name="location_on" size={16} />
+                  {selectedStore.location || "-"}
+                </p>
+              </div>
+            </div>
 
-      {/* Store Name / Code / Owner */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <StoreInfoBox
+                icon="person"
+                label="Owner Name"
+                value={selectedStore.owner || "-"}
+              />
+              <StoreInfoBox
+                icon="call"
+                label="Phone Number"
+                value={selectedStore.phone || "-"}
+              />
+              <StoreInfoBox
+                icon="receipt_long"
+                label="GST Number"
+                value={selectedStore.gst || "-"}
+              />
+              <StoreInfoBox
+                icon="badge"
+                label="Store Code"
+                value={selectedStore.code || "-"}
+              />
+              <StoreInfoBox
+                icon="calendar_month"
+                label="Opening Date"
+                value={selectedStore.openedDate || "-"}
+              />
+            </div>
 
-        <StoreInfoBox
-          icon="storefront"
-          label="Store Name"
-          value={selectedStore.name || "-"}
-        />
-
-        <StoreInfoBox
-          icon="badge"
-          label="Store Code / Initial"
-          value={selectedStore.code || "-"}
-        />
-
-        <StoreInfoBox
-          icon="person"
-          label="Owner Name"
-          value={selectedStore.owner || "-"}
-        />
-
-      </div>
-
-      {/* Phone / Email / GST */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
-        <StoreInfoBox
-          icon="call"
-          label="Mobile Number"
-          value={selectedStore.phone || "-"}
-        />
-
-        <StoreInfoBox
-          icon="receipt_long"
-          label="GST Number"
-          value={selectedStore.gst || "-"}
-        />
-
-      </div>
-
-      {/* Address / Opening Date */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
-        <div className="md:col-span-2">
-          <StoreInfoBox
-            icon="location_on"
-            label="Address"
-            value={selectedStore.address || "-"}
-          />
-        </div>
-
-        <StoreInfoBox
-          icon="calendar_month"
-          label="Opening Date"
-          value={selectedStore.openedDate || "-"}
-        />
-
-      </div>
-
-    </div>
-  )}
-</Modal>
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Full Address
+              </p>
+              <p className="text-sm leading-6 text-slate-700">
+                {selectedStore.address || "-"}
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {showAdd &&
         createPortal(
