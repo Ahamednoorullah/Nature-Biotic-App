@@ -196,7 +196,7 @@ export default function CompanyStores() {
         {/* Content */}
         <div className="p-6">
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
 
             <StoreInfoBox
               icon="person"
@@ -233,21 +233,31 @@ export default function CompanyStores() {
               label="Location"
               value={selectedStore.location || "-"}
             />
-
           </div>
 
-          {/* Address */}
-          <div className="mt-4 rounded-2xl border border-slate-200 p-4">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-              Full Address
-            </p>
+          {/* Address + Outstanding Limit */}
+          <div className="mt-4 grid grid-cols-1 xl:grid-cols-3 gap-5">
 
-            <p className="text-sm leading-6 text-slate-700">
-              {selectedStore.address || "-"}
-            </p>
+            {/* Full Address - 2 columns */}
+            <div className="xl:col-span-2 rounded-2xl border border-slate-200 p-4">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Full Address
+              </p>
+
+              <p className="text-sm leading-6 text-slate-700">
+                {selectedStore.address || "-"}
+              </p>
+            </div>
+
+            {/* Outstanding Limit - 1 column */}
+            <StoreInfoBox
+              icon="wallet"
+              label="Outstanding Limit"
+              value="₹5,00,000"
+            />
+
           </div>
-
-        </div>
+          </div>
 
         {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
