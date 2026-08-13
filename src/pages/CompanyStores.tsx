@@ -20,6 +20,7 @@ export default function CompanyStores() {
     district: "",
     state: "",
     gst: "",
+    outstandinglimit: "",
     openedDate: "",
   });
 
@@ -59,6 +60,7 @@ export default function CompanyStores() {
       district: "",
       state: "",
       gst: "",
+      outstandinglimit: "",
       openedDate: "",
     });
     setShowAdd(false);
@@ -363,13 +365,23 @@ export default function CompanyStores() {
                     placeholder="e.g. Tamil Nadu"
                   />
                   {/* Address spans two columns */}
-                  <div className="md:col-span-2 xl:col-span-2">
+                  <div className="md:col-span-1 xl:col-span-1">
                     <Input
                       label="Address"
                       value={form.address}
                       onChange={(v) => update("address", v)}
                       placeholder="Street address"
                       icon="location_on"
+                    />
+                  </div>
+
+                  <div className="md:col-span-1 xl:col-span-1">
+                    <Input
+                      label="Outstanding Limit"
+                      value={form.outstandinglimit}
+                      onChange={(v) => update("outstandinglimit", v)}
+                      placeholder="5,00,000"
+                      icon="wallet"
                     />
                   </div>
 
