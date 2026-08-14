@@ -146,7 +146,7 @@ export default function CompanyReceipts() {
               <tbody>
                 {filtered.map((r, i) => (
                   <tr key={r.id} className={`border-b border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}>
-                    <td className="px-3 py-3 text-slate-500 border-r border-slate-100">
+                    <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
                       {formatDate(r.date)}
                     </td>
 
