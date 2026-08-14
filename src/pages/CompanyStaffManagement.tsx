@@ -21,6 +21,7 @@ type StaffForm = {
   targetSales: string;
   targetFarmers: string;
   targetFarms: string;
+  targetVisits: string;
 };
 
 const emptyForm: StaffForm = {
@@ -40,6 +41,7 @@ const emptyForm: StaffForm = {
   targetSales: "",
   targetFarmers: "",
   targetFarms: "",
+  targetVisits: "",
 };
 
 const designationOptions = [
@@ -107,6 +109,7 @@ export default function CompanyStaffManagement() {
       targetSales: String(member.targetSales),
       targetFarmers: String(member.targetFarmers),
       targetFarms: String(member.targetFarms),
+      targetVisits: String(member.targetVisits),
     });
     setShowAdd(true);
   }
@@ -124,6 +127,7 @@ export default function CompanyStaffManagement() {
     !form.targetSales.trim() && "Sales Target",
     !form.targetFarmers.trim() && "Farmers Target",
     !form.targetFarms.trim() && "Farms Target",
+    !form.targetVisits.trim() && "Visits Target",
   ].filter(Boolean) as string[];
 
   const isValid = missingRequiredFields.length === 0;
@@ -152,6 +156,7 @@ export default function CompanyStaffManagement() {
       targetSales: Number(form.targetSales) || 0,
       targetFarmers: Number(form.targetFarmers) || 0,
       targetFarms: Number(form.targetFarms) || 0,
+      targetVisits: Number(form.targetVisits) || 0,
       role: form.designation,
       status: editingStaff?.status ?? "Active",
     };
@@ -395,7 +400,7 @@ export default function CompanyStaffManagement() {
                   <h3 className="mb-4 text-sm font-bold uppercase text-slate-500">
                     Targets
                   </h3>
-                  <div className="grid gap-5 md:grid-cols-3">
+                  <div className="grid gap-5 md:grid-cols-4">
                     <Input
                       label="Sales Target"
                       type="number"
@@ -415,6 +420,13 @@ export default function CompanyStaffManagement() {
                       type="number"
                       value={form.targetFarms}
                       onChange={(v) => update("targetFarms", v)}
+                      required
+                    />
+                    <Input
+                      label="Visits Target"
+                      type="number"
+                      value={form.targetVisits}
+                      onChange={(v) => update("targetVisits", v)}
                       required
                     />
                   </div>
@@ -484,6 +496,10 @@ export default function CompanyStaffManagement() {
                 <Info
                   label="Farms Target"
                   value={String(selectedStaff.targetFarms)}
+                />
+                <Info
+                  label="Visits Target"
+                  value={String(selectedStaff.targetVisits)}
                 />
                 <Info
                   label="Proof ID"

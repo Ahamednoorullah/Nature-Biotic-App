@@ -60,29 +60,30 @@ type ExecTarget = {
   sales: number;
   farmers: number;
   farms: number;
+  visits: number;
 };
 
 const execTargets: Record<ExecKey, Record<DateFilter, ExecTarget>> = {
   ram: {
-    today: { sales: 30000, farmers: 50, farms: 35 },
-    weekly: { sales: 200000, farmers: 55, farms: 40 },
-    monthly: { sales: 600000, farmers: 65, farms: 45 },
-    quarterly: { sales: 1800000, farmers: 75, farms: 55 },
-    yearly: { sales: 7200000, farmers: 90, farms: 70 },
+    today: { sales: 30000, farmers: 50, farms: 35, visits: 10 },
+    weekly: { sales: 200000, farmers: 55, farms: 40, visits: 20 },
+    monthly: { sales: 600000, farmers: 65, farms: 45, visits: 40 },
+    quarterly: { sales: 1800000, farmers: 75, farms: 55, visits: 120 },
+    yearly: { sales: 7200000, farmers: 90, farms: 70, visits: 250 },
   },
   ajith: {
-    today: { sales: 30000, farmers: 50, farms: 35 },
-    weekly: { sales: 200000, farmers: 55, farms: 40 },
-    monthly: { sales: 600000, farmers: 65, farms: 45 },
-    quarterly: { sales: 1800000, farmers: 75, farms: 55 },
-    yearly: { sales: 7200000, farmers: 90, farms: 70 },
+    today: { sales: 30000, farmers: 50, farms: 35, visits: 10 },
+    weekly: { sales: 200000, farmers: 55, farms: 40, visits: 20 },
+    monthly: { sales: 600000, farmers: 65, farms: 45, visits: 40 },
+    quarterly: { sales: 1800000, farmers: 75, farms: 55, visits: 120 },
+    yearly: { sales: 7200000, farmers: 90, farms: 70, visits: 250 },
   },
   periya: {
-    today: { sales: 30000, farmers: 50, farms: 35 },
-    weekly: { sales: 200000, farmers: 55, farms: 40 },
-    monthly: { sales: 600000, farmers: 65, farms: 45 },
-    quarterly: { sales: 1800000, farmers: 75, farms: 55 },
-    yearly: { sales: 7200000, farmers: 90, farms: 70 },
+    today: { sales: 30000, farmers: 50, farms: 35, visits: 10 },
+    weekly: { sales: 200000, farmers: 55, farms: 40, visits: 20 },
+    monthly: { sales: 600000, farmers: 65, farms: 45, visits: 40 },
+    quarterly: { sales: 1800000, farmers: 75, farms: 55, visits: 120 },
+    yearly: { sales: 7200000, farmers: 90, farms: 70, visits: 250 },
   },
 };
 
@@ -105,9 +106,10 @@ const execDetailData: Record<
     outstanding: {
       date: string;
       farmer: string;
-      amount: number;
+
       village: string;
       phone: string;
+      amount: number;
     }[];
   }
 > = {
@@ -174,30 +176,34 @@ const execDetailData: Record<
       {
         date: "10 Aug 2026",
         farmer: "Murugan",
-        amount: 900,
+
         village: "Seithur",
         phone: "98765 43210",
+        amount: 900,
       },
       {
         date: "09 Aug 2026",
         farmer: "Selvam",
-        amount: 700,
+
         village: "Chatrapatti",
         phone: "98765 43211",
+        amount: 700,
       },
       {
         date: "08 Aug 2026",
         farmer: "Kannan",
-        amount: 800,
+
         village: "Watrap",
         phone: "98765 43212",
+        amount: 800,
       },
       {
         date: "08 Aug 2026",
         farmer: "Raja",
-        amount: 500,
+
         village: "Rajapalayam",
         phone: "98765 43213",
+        amount: 500,
       },
     ],
   },
@@ -264,30 +270,34 @@ const execDetailData: Record<
       {
         date: "10 Aug 2026",
         farmer: "Arun",
-        amount: 700,
+
         village: "Srivilliputhur",
         phone: "98765 43220",
+        amount: 700,
       },
       {
         date: "09 Aug 2026",
         farmer: "Bala",
-        amount: 600,
+
         village: "Mamsapuram",
         phone: "98765 43221",
+        amount: 600,
       },
       {
         date: "08 Aug 2026",
         farmer: "Suresh",
-        amount: 800,
+
         village: "Koonampatti",
         phone: "98765 43222",
+        amount: 800,
       },
       {
         date: "08 Aug 2026",
         farmer: "Muthu",
-        amount: 500,
+
         village: "Vathirairuppu",
         phone: "98765 43223",
+        amount: 500,
       },
     ],
   },
@@ -354,30 +364,34 @@ const execDetailData: Record<
       {
         date: "10 Aug 2026",
         farmer: "Velu",
-        amount: 600,
+
         village: "Sivakasi",
         phone: "98765 43230",
+        amount: 600,
       },
       {
         date: "09 Aug 2026",
         farmer: "Ganesan",
-        amount: 500,
+
         village: "Thiruthangal",
         phone: "98765 43231",
+        amount: 500,
       },
       {
         date: "08 Aug 2026",
         farmer: "Ramesh",
-        amount: 600,
+
         village: "Sattur",
         phone: "98765 43232",
+        amount: 600,
       },
       {
         date: "08 Aug 2026",
         farmer: "Saravanan",
-        amount: 500,
+
         village: "Vembakottai",
         phone: "98765 43233",
+        amount: 500,
       },
     ],
   },
@@ -1371,6 +1385,12 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                       value={String(target.farms)}
                       color="amber"
                     />
+                    <ExecutiveTargetBadge
+                      icon="receipt"
+                      label="Visits Target"
+                      value={String(target.visits)}
+                      color="purple"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-8 gap-2">
@@ -1887,9 +1907,10 @@ function ExecutiveDetailModal({
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-5 py-3 text-left">Date</th>
                   <th className="px-5 py-3 text-left">Farmer Name</th>
-                  <th className="px-5 py-3 text-right">Amount</th>
+
                   <th className="px-5 py-3 text-left">Village</th>
                   <th className="px-5 py-3 text-left">Phone No</th>
+                  <th className="px-5 py-3 text-right">Amount</th>
                 </tr>
               )}
             </thead>
@@ -1946,13 +1967,14 @@ function ExecutiveDetailModal({
                     >
                       <td className="px-5 py-3 text-slate-600">{row.date}</td>
                       <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-                      <td className="px-5 py-3 text-right font-bold text-amber-700">
-                        {formatCurrency(row.amount)}
-                      </td>
+
                       <td className="px-5 py-3 text-slate-600">
                         {row.village}
                       </td>
                       <td className="px-5 py-3 text-slate-600">{row.phone}</td>
+                      <td className="px-5 py-3 text-right font-bold text-amber-700">
+                        {formatCurrency(row.amount)}
+                      </td>
                     </tr>
                   ),
                 )}
@@ -1961,22 +1983,15 @@ function ExecutiveDetailModal({
             <tfoot className="sticky bottom-0 z-10">
               <tr className="border-t-2 border-slate-200 bg-slate-50">
                 <td
-                  colSpan={type === "outstanding" ? 2 : type === "cash" ? 2 : 3}
+                  colSpan={type === "outstanding" ? 4 : type === "cash" ? 2 : 3}
                   className="px-5 py-4 text-right text-sm font-bold text-slate-600"
                 >
                   Total
                 </td>
 
-                <td className="px-5 py-4 text-right text-base font-bold tabular-nums text-brand-700">
+                <td className="px-5 py-4 text-right text-base font-bold tabular-nums text-amber-700">
                   {formatCurrency(totalAmount)}
                 </td>
-
-                {type === "outstanding" && (
-                  <>
-                    <td className="px-5 py-4" />
-                    <td className="px-5 py-4" />
-                  </>
-                )}
               </tr>
             </tfoot>
           </table>
@@ -2021,12 +2036,13 @@ function ExecutiveTargetBadge({
   icon: string;
   label: string;
   value: string;
-  color: "brand" | "blue" | "amber";
+  color: "brand" | "blue" | "amber" | "purple";
 }) {
   const tone: Record<string, string> = {
     brand: "border-emerald-200 bg-emerald-50 text-emerald-700",
     blue: "border-blue-200 bg-blue-50 text-blue-700",
     amber: "border-amber-200 bg-amber-50 text-amber-700",
+    purple: "border-purple-200 bg-purple-50 text-purple-700",
   };
 
   return (
