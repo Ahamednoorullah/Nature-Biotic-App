@@ -3,7 +3,6 @@ import { Card, Badge, Button, Input, Select, EmptyState, Icon } from '@/componen
 import { formatCurrency, formatDate } from '@/lib/format';
 import { stores, products as allProducts, type Product } from '@/lib/data';
 
-type Status = 'Paid' | 'Pending' | 'Partial';
 type TaxType = 'Intra-State (SGST + CGST)' | 'Inter-State (IGST)';
 
 type SaleRow = {
@@ -13,6 +12,7 @@ type SaleRow = {
   storeId: string;
   storeName: string;
   storeLocation: string;
+  placeOfSupply: string;
   product: string;
   packSize: string;
   quantity: number;
@@ -23,7 +23,6 @@ type SaleRow = {
   cgst: number;
   igst: number;
   total: number;
-  Status: Status;
 };
 
 type AddedRow = {
@@ -53,7 +52,6 @@ type EntryForm = {
   discount: number;
 };
 
-const Status: Status[] = ['Paid', 'Pending', 'Partial'];
 const taxTypes: TaxType[] = ['Intra-State (SGST + CGST)', 'Inter-State (IGST)'];
 
 const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
@@ -73,6 +71,7 @@ const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
   storeId: store.id,
   storeName: store.name,
   storeLocation: store.location,
+  placeOfSupply: store.location?.split(',')[0] || '',
   product: product.name,
   packSize: product.size,
   quantity: qty,
@@ -83,15 +82,9 @@ const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
   cgst: Math.round((tax / 2) * 100) / 100,
   igst: 0,
   total,
-  Status: Status[i % 3],
 };
 });
 
-const statusColor: Record<Status, 'green' | 'amber' | 'blue'> = {
-  Paid: 'green',
-  Pending: 'amber',
-  Partial: 'blue',
-};
 
 function computeAdded(r: Omit<AddedRow, 'key' | 'taxAmount' | 'rowTotal'>): AddedRow {
   const gross = r.quantity * r.sellingPrice;
@@ -114,7 +107,6 @@ export default function CompanySales() {
   const [invoiceNo, setInvoiceNo] = useState('');
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
   const [storeId, setStoreId] = useState('');
-  const [Status, setStatus] = useState<Status>('Pending');
   const [remarks, setRemarks] = useState('');
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
@@ -216,7 +208,6 @@ export default function CompanySales() {
     setInvoiceNo('');
     setSaleDate(new Date().toISOString().split('T')[0]);
     setStoreId('');
-    setStatus('Pending');
     setRemarks('');
     setEntry(emptyEntry());
     setAdded([]);
@@ -236,52 +227,60 @@ export default function CompanySales() {
   const store = stores.find((s) => s.id === storeId)!;
 
   const newRows: SaleRow[] = added.map((r, i) => {
-  const withoutTax =
-    Math.max(0, r.quantity * r.sellingPrice - r.discount);
+    const withoutTax = Math.max(
+      0,
+      r.quantity * r.sellingPrice - r.discount
+    );
 
-  const taxAmount =
-    Math.round(
-      withoutTax * (r.taxPercent / 100) * 100
-    ) / 100;
+    const taxAmount =
+      Math.round(
+        withoutTax * (r.taxPercent / 100) * 100
+      ) / 100;
 
-  return {
-    id: `s${sales.length + i}`,
-    invoiceNo,
-    date: saleDate,
-    storeId: store.id,
-    storeName: store.name,
-    storeLocation: store.location,
-    product: r.product!.name,
-    packSize: r.packSize,
-    quantity: r.quantity,
-    rate: r.sellingPrice,
-    withoutTax,
-    taxAmount,
+    return {
+      id: `s${sales.length + i}`,
+      invoiceNo,
+      date: saleDate,
+      storeId: store.id,
+      storeName: store.name,
+      storeLocation: store.location,
 
-    sgst:
-      r.taxType === 'Intra-State (SGST + CGST)'
-        ? Math.round((taxAmount / 2) * 100) / 100
-        : 0,
+      // NEW
+      placeOfSupply: store.location?.split(',')[0] || '',
 
-    cgst:
-      r.taxType === 'Intra-State (SGST + CGST)'
-        ? Math.round((taxAmount / 2) * 100) / 100
-        : 0,
+      product: r.product!.name,
+      packSize: r.packSize,
+      quantity: r.quantity,
+      rate: r.sellingPrice,
 
-    igst:
-      r.taxType === 'Inter-State (IGST)'
-        ? taxAmount
-        : 0,
+      withoutTax,
+      taxAmount,
 
-    total: Math.round((withoutTax + taxAmount) * 100) / 100,
-    Status,
-  };
-});
+      sgst:
+        r.taxType === 'Intra-State (SGST + CGST)'
+          ? Math.round((taxAmount / 2) * 100) / 100
+          : 0,
 
-    setSales([...newRows, ...sales]);
-    resetForm();
-    setShowCreate(false);
-  }
+      cgst:
+        r.taxType === 'Intra-State (SGST + CGST)'
+          ? Math.round((taxAmount / 2) * 100) / 100
+          : 0,
+
+      igst:
+        r.taxType === 'Inter-State (IGST)'
+          ? taxAmount
+          : 0,
+
+      total: Math.round(
+        (withoutTax + taxAmount) * 100
+      ) / 100,
+    };
+  });
+
+  setSales([...newRows, ...sales]);
+  resetForm();
+  setShowCreate(false);
+}
 
   const canAdd = !!entry.productId && !!entry.batchNo && !!entry.expiryDate && entry.quantity >= 1;
   const canCreate = !!storeId && !!invoiceNo && added.length > 0;
@@ -359,6 +358,14 @@ export default function CompanySales() {
       >
         City
       </th>
+
+      <th
+        rowSpan={2}
+        className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+      >
+        Place of Supply
+      </th>
+
       <th
         rowSpan={2}
         className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
@@ -433,6 +440,10 @@ export default function CompanySales() {
         {s.storeLocation}
       </td>
 
+      <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
+        {s.placeOfSupply || "-"}
+      </td>
+
       <td className="px-2 py-3 text-center tabular-nums font-semibold text-slate-700 border-r border-slate-100">
       {formatCurrency(s.withoutTax)}
       </td>
@@ -451,12 +462,6 @@ export default function CompanySales() {
 
       <td className="px-2 py-3 text-center tabular-nums font-bold text-slate-800 border-r border-slate-100">
         {formatCurrency(s.total)}
-      </td>
-
-      <td className="px-2 py-3 text-center border-r border-slate-100">
-        <Badge color={statusColor[s.Status]}>
-          {s.Status}
-        </Badge>
       </td>
     </tr>
   ))}
@@ -499,7 +504,7 @@ export default function CompanySales() {
                     options={stores.map((s) => ({ value: s.id, label: `${s.name} — ${s.location}` }))}
                     required
                   />
-                  <Input label="Status" value={Status} onChange={() => {}} readOnly />
+                  <Input label="Place of Supply" value={selectedStore?.location?.split(',')[0] || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly/>
                   <Input label="Store Address" value={selectedStore?.address || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
                   <Input label="GST Number" value={selectedStore?.gst || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
                 </div>
