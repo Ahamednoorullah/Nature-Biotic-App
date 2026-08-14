@@ -11,13 +11,8 @@ type Receipt = {
   date: string;
   storeId: string;
   storeName: string;
-  storeLocation: string;
-  invoiceRef: string;
   method: string;
   amount: number;
-  receivedBy: string;
-  notes: string;
-  status: ReceiptStatus;
 };
 
 const methods = ['Cash', 'Bank Transfer', 'UPI', 'Cheque'];
@@ -34,13 +29,8 @@ const receipts: Receipt[] = Array.from({ length: 16 }, (_, i) => {
     date: d.toISOString().split('T')[0],
     storeId: store.id,
     storeName: store.name,
-    storeLocation: store.location,
-    invoiceRef: `NB-INV-${String(2001 + (i * 2))}`,
     method: methods[i % methods.length],
     amount: 1500 + (i % 8) * 2300,
-    receivedBy: receivers[i % receivers.length],
-    notes: i % 3 === 0 ? 'Part payment for invoice' : i % 3 === 1 ? 'Full settlement' : 'Advance against next order',
-    status: statuses[i % 2],
   };
 });
 
@@ -60,8 +50,7 @@ export default function CompanyReceipts() {
       receipts.filter((r) => {
         const ms =
           r.receiptNo.toLowerCase().includes(search.toLowerCase()) ||
-          r.storeName.toLowerCase().includes(search.toLowerCase()) ||
-          r.invoiceRef.toLowerCase().includes(search.toLowerCase());
+          r.storeName.toLowerCase().includes(search.toLowerCase());
         const mt = storeFilter === 'all' || r.storeId === storeFilter;
         let md = true;
         if (dateFilter !== 'all') {
@@ -83,9 +72,16 @@ export default function CompanyReceipts() {
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Receipts</h1>
           <p className="text-slate-500 mt-1">Payment receipts collected from stores. Read-only overview.</p>
         </div>
+
+        {/* Buttons */}
+        <div className="flex items-center gap-3">
+        <Button>
+          <Icon name="add" size={20} fill /> Create Receipt
+        </Button>
         <Button variant="secondary">
           <Icon name="download" size={20} /> Export
         </Button>
+      </div>
       </div>
 
       <Card className="p-4 mb-5">
@@ -123,45 +119,51 @@ export default function CompanyReceipts() {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1300px] border-collapse">
+            <table className="w-full table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Receipt Number</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Receipt Date</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Store Name</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Store Location</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Invoice Reference</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Payment Method</th>
-                  <th className="text-right font-semibold px-3 py-3 border-r border-slate-200">Amount Received</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Received By</th>
-                  <th className="text-left font-semibold px-3 py-3 border-r border-slate-200">Notes</th>
-                  <th className="text-center font-semibold px-3 py-3 border-r border-slate-200">Status</th>
-                  <th className="text-center font-semibold px-3 py-3">View Receipt</th>
+                  <th className="w-[16%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Receipt Date
+                  </th>
+
+                  <th className="w-[20%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Receipt Number
+                  </th>
+
+                  <th className="w-[22%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Store Name
+                  </th>
+
+                  <th className="w-[22%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Payment Method
+                  </th>
+
+                  <th className="w-[20%] text-center font-semibold px-3 py-3">
+                    Amount Received
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((r, i) => (
                   <tr key={r.id} className={`border-b border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}>
-                    <td className="px-3 py-3 font-semibold text-slate-800 border-r border-slate-100">{r.receiptNo}</td>
-                    <td className="px-3 py-3 text-slate-500 border-r border-slate-100">{formatDate(r.date)}</td>
-                    <td className="px-3 py-3 text-slate-700 border-r border-slate-100">{r.storeName}</td>
-                    <td className="px-3 py-3 text-slate-600 border-r border-slate-100">{r.storeLocation}</td>
-                    <td className="px-3 py-3 text-slate-500 border-r border-slate-100">{r.invoiceRef}</td>
-                    <td className="px-3 py-3 text-slate-600 border-r border-slate-100">{r.method}</td>
-                    <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">{formatCurrency(r.amount)}</td>
-                    <td className="px-3 py-3 text-slate-600 border-r border-slate-100">{r.receivedBy}</td>
-                    <td className="px-3 py-3 text-slate-500 text-xs border-r border-slate-100 max-w-[180px] truncate">{r.notes}</td>
-                    <td className="px-3 py-3 text-center border-r border-slate-100">
-                      <Badge color={statusColor[r.status]}>{r.status}</Badge>
+                    <td className="px-3 py-3 text-slate-500 border-r border-slate-100">
+                      {formatDate(r.date)}
                     </td>
-                    <td className="px-3 py-3 text-center">
-                      <button
-                        onClick={() => setViewReceipt(r)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base"
-                        title="View Receipt"
-                      >
-                        <Icon name="visibility" size={18} />
-                      </button>
+
+                    <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
+                      {r.receiptNo}
+                    </td>
+
+                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">
+                      {r.storeName}
+                    </td>
+
+                    <td className="px-3 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {r.method}
+                    </td>
+
+                    <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
+                      {formatCurrency(r.amount)}
                     </td>
                   </tr>
                 ))}
@@ -196,18 +198,11 @@ export default function CompanyReceipts() {
                 <p className="font-bold text-slate-800 text-lg">{viewReceipt.receiptNo}</p>
                 <p className="text-sm text-slate-500">{formatDate(viewReceipt.date)}</p>
               </div>
-              <div className="ml-auto">
-                <Badge color={statusColor[viewReceipt.status]}>{viewReceipt.status}</Badge>
-              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <DetailField label="Store Name" value={viewReceipt.storeName} />
-              <DetailField label="Store Location" value={viewReceipt.storeLocation} />
-              <DetailField label="Invoice Reference" value={viewReceipt.invoiceRef} />
               <DetailField label="Payment Method" value={viewReceipt.method} />
-              <DetailField label="Received By" value={viewReceipt.receivedBy} />
               <DetailField label="Amount Received" value={formatCurrency(viewReceipt.amount)} highlight />
-              <DetailField label="Notes" value={viewReceipt.notes} />
             </div>
           </div>
         )}

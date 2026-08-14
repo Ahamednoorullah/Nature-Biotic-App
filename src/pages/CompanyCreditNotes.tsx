@@ -7,14 +7,11 @@ type CreditNoteStatus = 'Approved' | 'Pending' | 'Rejected';
 type CreditNote = {
   id: string;
   creditNoteNo: string;
-  originalInvoiceNo: string;
   party: string;
   returnDate: string;
   product: string;
-  quantity: number;
   amount: number;
   reason: string;
-  status: CreditNoteStatus;
 };
 
 const productNames = ['Electra', 'Aalga', 'Astra', 'Alpha', 'Neutra', 'Rootra', 'Ultra'];
@@ -28,14 +25,11 @@ const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   return {
     id: `cn${i}`,
     creditNoteNo: `CN-${String(2001 + i)}`,
-    originalInvoiceNo: `NB-DIR-${String(1001 + (i * 2))}`,
     party: parties[i % parties.length],
     returnDate: d.toISOString().split('T')[0],
     product: productNames[i % productNames.length],
-    quantity: 1 + (i % 5),
     amount: (1 + (i % 5)) * (300 + (i % 4) * 80),
     reason: reasons[i % reasons.length],
-    status: statuses[i % 3],
   };
 });
 
@@ -53,7 +47,6 @@ export default function CompanyCreditNotes() {
       creditNotes.filter(
         (c) =>
           c.creditNoteNo.toLowerCase().includes(search.toLowerCase()) ||
-          c.originalInvoiceNo.toLowerCase().includes(search.toLowerCase()) ||
           c.party.toLowerCase().includes(search.toLowerCase()),
       ),
     [search],
@@ -84,44 +77,59 @@ export default function CompanyCreditNotes() {
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1100px]">
+            <table className="w-full table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="text-left font-semibold px-5 py-3.5">Credit Note No.</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Original Invoice</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Customer / Store</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Return Date</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Returned Product</th>
-                  <th className="text-right font-semibold px-5 py-3.5">Qty</th>
-                  <th className="text-right font-semibold px-5 py-3.5">Return Amount</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Reason</th>
-                  <th className="text-center font-semibold px-5 py-3.5">Status</th>
-                  <th className="text-center font-semibold px-5 py-3.5">Actions</th>
+                  <th className="w-[14%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Return Date
+                  </th>
+
+                  <th className="w-[15%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Credit Note No.
+                  </th>
+
+                  <th className="w-[20%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Customer / Store
+                  </th>
+
+                  <th className="w-[16%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Returned Product
+                  </th>
+
+                  <th className="w-[15%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                    Return Amount
+                  </th>
+
+                  <th className="w-[20%] text-center font-semibold px-3 py-3">
+                    Reason
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filtered.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50/50 transition-base">
-                    <td className="px-5 py-3.5 font-semibold text-slate-800">{c.creditNoteNo}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{c.originalInvoiceNo}</td>
-                    <td className="px-5 py-3.5 text-slate-700">{c.party}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{formatDate(c.returnDate)}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{c.product}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{c.quantity}</td>
-                    <td className="px-5 py-3.5 text-right font-bold text-slate-800">{formatCurrency(c.amount)}</td>
-                    <td className="px-5 py-3.5 text-slate-500">{c.reason}</td>
-                    <td className="px-5 py-3.5 text-center">
-                      <Badge color={statusColor[c.status]}>{c.status}</Badge>
+                    <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
+                      {formatDate(c.returnDate)}
                     </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center justify-center gap-1">
-                        <button className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base" title="View">
-                          <Icon name="visibility" size={18} />
-                        </button>
-                        <button className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-base" title="Delete">
-                          <Icon name="delete" size={18} />
-                        </button>
-                      </div>
+
+                    <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
+                      {c.creditNoteNo}
+                    </td>
+
+                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">
+                      {c.party}
+                    </td>
+
+                    <td className="px-3 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {c.product}
+                    </td>
+
+                    <td className="px-3 py-3 text-center font-bold text-slate-600 border-r border-slate-100">
+                      {formatCurrency(c.amount)}
+                    </td>
+
+                    <td className="px-3 py-3 text-center text-slate-500">
+                      {c.reason}
                     </td>
                   </tr>
                 ))}
