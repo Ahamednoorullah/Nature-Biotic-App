@@ -3,7 +3,8 @@ import { Card, Badge, Button, Input, Select, EmptyState, Icon } from '@/componen
 import { formatCurrency, formatDate } from '@/lib/format';
 import { stores, products as allProducts, type Product } from '@/lib/data';
 
-type TaxType = 'Intra-State (SGST + CGST)' | 'Inter-State (IGST)';
+
+type TaxType = 'Tamilnadu (SGST + CGST)' | 'Others (IGST)';
 
 type SaleRow = {
   id: string;
@@ -52,7 +53,7 @@ type EntryForm = {
   discount: number;
 };
 
-const taxTypes: TaxType[] = ['Intra-State (SGST + CGST)', 'Inter-State (IGST)'];
+const taxTypes: TaxType[] = ['Tamilnadu (SGST + CGST)', 'Others (IGST)'];
 
 const initialSales: SaleRow[] = Array.from({ length: 18 }, (_, i) => {
   const d = new Date();
@@ -103,13 +104,13 @@ export default function CompanySales() {
   const [search, setSearch] = useState('');
   const [storeFilter, setStoreFilter] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
-
   const [invoiceNo, setInvoiceNo] = useState('');
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
   const [storeId, setStoreId] = useState('');
   const [remarks, setRemarks] = useState('');
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
+  const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
 
   const selectedStore = stores.find((s) => s.id === storeId);
   const entryProduct = allProducts.find((p) => p.id === entry.productId);
@@ -142,9 +143,9 @@ export default function CompanySales() {
     const subtotal = added.reduce((s, r) => s + r.quantity * r.sellingPrice, 0);
     const totalDiscount = added.reduce((s, r) => s + r.discount, 0);
     const totalTax = added.reduce((s, r) => s + r.taxAmount, 0);
-    const sgst = added.reduce((s, r) => s + (r.taxType === 'Intra-State (SGST + CGST)' ? r.taxAmount / 2 : 0), 0);
-    const cgst = added.reduce((s, r) => s + (r.taxType === 'Intra-State (SGST + CGST)' ? r.taxAmount / 2 : 0), 0);
-    const igst = added.reduce((s, r) => s + (r.taxType === 'Inter-State (IGST)' ? r.taxAmount : 0), 0);
+    const sgst = added.reduce((s, r) => s + (r.taxType === 'Tamilnadu (SGST + CGST)' ? r.taxAmount / 2 : 0), 0);
+    const cgst = added.reduce((s, r) => s + (r.taxType === 'Tamilnadu (SGST + CGST)' ? r.taxAmount / 2 : 0), 0);
+    const igst = added.reduce((s, r) => s + (r.taxType === 'Others (IGST)' ? r.taxAmount : 0), 0);
     const grandTotal = added.reduce((s, r) => s + r.rowTotal, 0);
     return {
       subtotal: Math.round(subtotal * 100) / 100,
@@ -166,29 +167,46 @@ export default function CompanySales() {
     }));
   }
 
-  function addProduct() {
-    if (!entry.productId || !entry.batchNo || !entry.expiryDate || entry.quantity < 1) return;
-    const product = allProducts.find((p) => p.id === entry.productId);
-    if (!product) return;
-    const taxType: TaxType =
-      product.taxType === 'Intrastate' ? 'Intra-State (SGST + CGST)' : 'Inter-State (IGST)';
-    const newRow = computeAdded({
-      productId: entry.productId,
-      product,
-      batchNo: entry.batchNo,
-      expiryDate: entry.expiryDate,
-      packSize: product.size,
-      hsn: product.hsnCode || '',
-      mrp: product.mrp || 0,
-      taxType,
-      taxPercent: product.taxPercentage || 0,
-      quantity: entry.quantity,
-      sellingPrice: entry.sellingPrice,
-      discount: entry.discount,
-    });
-    setAdded((prev) => [...prev, newRow]);
-    setEntry(emptyEntry());
+ function addProduct() {
+  if (
+    !entry.productId ||
+    !entry.batchNo ||
+    !entry.expiryDate ||
+    entry.quantity < 1
+  ) {
+    return;
   }
+
+  const product = allProducts.find(
+    (p) => p.id === entry.productId
+  );
+
+  if (!product) return;
+
+  // Place of Supply decides the tax type
+  const taxType: TaxType =
+    placeOfSupply === "Tamil Nadu"
+      ? "Tamilnadu (SGST + CGST)"
+      : "Others (IGST)";
+
+  const newRow = computeAdded({
+    productId: entry.productId,
+    product,
+    batchNo: entry.batchNo,
+    expiryDate: entry.expiryDate,
+    packSize: product.size,
+    hsn: product.hsnCode || "",
+    mrp: product.mrp || 0,
+    taxType,
+    taxPercent: product.taxPercentage || 0,
+    quantity: entry.quantity,
+    sellingPrice: entry.sellingPrice,
+    discount: entry.discount,
+  });
+
+  setAdded((prev) => [...prev, newRow]);
+  setEntry(emptyEntry());
+}
 
   function updateAdded(key: string, patch: Partial<AddedRow>) {
     setAdded((prev) =>
@@ -221,10 +239,12 @@ export default function CompanySales() {
     // Draft save: keep form open, no-op persistence in this demo
   }
 
-  function handleCreate() {
+function handleCreate() {
   if (!storeId || !invoiceNo || added.length === 0) return;
 
-  const store = stores.find((s) => s.id === storeId)!;
+  const store = stores.find((s) => s.id === storeId);
+
+  if (!store) return;
 
   const newRows: SaleRow[] = added.map((r, i) => {
     const withoutTax = Math.max(
@@ -237,6 +257,21 @@ export default function CompanySales() {
         withoutTax * (r.taxPercent / 100) * 100
       ) / 100;
 
+    const isTamilNadu =
+      placeOfSupply === "Tamil Nadu";
+
+    const sgst = isTamilNadu
+      ? Math.round((taxAmount / 2) * 100) / 100
+      : 0;
+
+    const cgst = isTamilNadu
+      ? Math.round((taxAmount / 2) * 100) / 100
+      : 0;
+
+    const igst = !isTamilNadu
+      ? taxAmount
+      : 0;
+
     return {
       id: `s${sales.length + i}`,
       invoiceNo,
@@ -245,10 +280,9 @@ export default function CompanySales() {
       storeName: store.name,
       storeLocation: store.location,
 
-      // NEW
-      placeOfSupply: store.location?.split(',')[0] || '',
+      placeOfSupply,
 
-      product: r.product!.name,
+      product: r.product?.name || "",
       packSize: r.packSize,
       quantity: r.quantity,
       rate: r.sellingPrice,
@@ -256,20 +290,9 @@ export default function CompanySales() {
       withoutTax,
       taxAmount,
 
-      sgst:
-        r.taxType === 'Intra-State (SGST + CGST)'
-          ? Math.round((taxAmount / 2) * 100) / 100
-          : 0,
-
-      cgst:
-        r.taxType === 'Intra-State (SGST + CGST)'
-          ? Math.round((taxAmount / 2) * 100) / 100
-          : 0,
-
-      igst:
-        r.taxType === 'Inter-State (IGST)'
-          ? taxAmount
-          : 0,
+      sgst,
+      cgst,
+      igst,
 
       total: Math.round(
         (withoutTax + taxAmount) * 100
@@ -278,9 +301,10 @@ export default function CompanySales() {
   });
 
   setSales([...newRows, ...sales]);
+
   resetForm();
   setShowCreate(false);
-}
+} 
 
   const canAdd = !!entry.productId && !!entry.batchNo && !!entry.expiryDate && entry.quantity >= 1;
   const canCreate = !!storeId && !!invoiceNo && added.length > 0;
@@ -384,13 +408,6 @@ export default function CompanySales() {
         className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
       >
         Total
-      </th>
-
-      <th
-        rowSpan={2}
-        className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-      >
-        Status
       </th>
     </tr>
 
@@ -504,7 +521,15 @@ export default function CompanySales() {
                     options={stores.map((s) => ({ value: s.id, label: `${s.name} — ${s.location}` }))}
                     required
                   />
-                  <Input label="Place of Supply" value={selectedStore?.location?.split(',')[0] || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly/>
+                  <Select
+                      label="Place of Supply"
+                      value={placeOfSupply}
+                      onChange={setPlaceOfSupply}
+                      options={[
+                        { value: "Tamil Nadu", label: "Tamil Nadu" },
+                        { value: "Others", label: "Others" },
+                      ]}
+                    />
                   <Input label="Store Address" value={selectedStore?.address || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
                   <Input label="GST Number" value={selectedStore?.gst || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
                 </div>
