@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo } from "react";
 import {
   getProductsByStore,
   getStockStatus,
@@ -8,50 +8,126 @@ import {
   warehouseList,
   type Product,
   type StockStatus,
-} from '@/lib/data';
-import { useNav } from '@/context/NavContext';
-import { Card, Badge, Button, Input, Select, Modal, EmptyState, StatCard, Icon } from '@/components/ui';
-import { formatCurrency, formatCompact, formatDate, initials } from '@/lib/format';
+} from "@/lib/data";
+import { useNav } from "@/context/NavContext";
+import {
+  Card,
+  Badge,
+  Button,
+  Input,
+  Select,
+  Modal,
+  EmptyState,
+  StatCard,
+  Icon,
+} from "@/components/ui";
+import {
+  formatCurrency,
+  formatCompact,
+  formatDate,
+  initials,
+} from "@/lib/format";
 
 const colorMap: Record<string, string> = {
-  emerald: 'from-emerald-400 to-emerald-600',
-  teal: 'from-teal-400 to-teal-600',
-  red: 'from-red-400 to-red-600',
-  amber: 'from-amber-400 to-amber-600',
-  blue: 'from-blue-400 to-blue-600',
-  purple: 'from-purple-400 to-purple-600',
+  emerald: "from-emerald-400 to-emerald-600",
+  teal: "from-teal-400 to-teal-600",
+  red: "from-red-400 to-red-600",
+  amber: "from-amber-400 to-amber-600",
+  blue: "from-blue-400 to-blue-600",
+  purple: "from-purple-400 to-purple-600",
 };
 
-const statusColor: Record<StockStatus, 'green' | 'amber' | 'red'> = {
-  Healthy: 'green',
-  'Low Stock': 'amber',
-  'Out of Stock': 'red',
+const statusColor: Record<StockStatus, "green" | "amber" | "red"> = {
+  Healthy: "green",
+  "Low Stock": "amber",
+  "Out of Stock": "red",
 };
 
 const movementIcon: Record<string, { icon: string; color: string }> = {
-  IN: { icon: 'south_west', color: 'bg-brand-50 text-brand-600' },
-  OUT: { icon: 'north_east', color: 'bg-blue-50 text-blue-600' },
-  TRANSFER: { icon: 'sync_alt', color: 'bg-purple-50 text-purple-600' },
-  ADJUSTMENT: { icon: 'tune', color: 'bg-amber-50 text-amber-600' },
+  IN: { icon: "south_west", color: "bg-brand-50 text-brand-600" },
+  OUT: { icon: "north_east", color: "bg-blue-50 text-blue-600" },
+  TRANSFER: { icon: "sync_alt", color: "bg-purple-50 text-purple-600" },
+  ADJUSTMENT: { icon: "tune", color: "bg-amber-50 text-amber-600" },
 };
 
 export default function StoreInventory({ storeId }: { storeId: string }) {
   const { goStorePage, goProductDetail } = useNav();
-  const [products, setProducts] = useState<Product[]>(() => getProductsByStore(storeId));
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [warehouseFilter, setWarehouseFilter] = useState('all');
+  const [products, setProducts] = useState<Product[]>(() =>
+    getProductsByStore(storeId),
+  );
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [warehouseFilter, setWarehouseFilter] = useState("all");
   const [showImport, setShowImport] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [stockView, setStockView] = useState<
+    "inventory" | "executive" | "challans" | "returns"
+  >("inventory");
 
-  const filtered = useMemo(() => products.filter((p) => {
-    const ms = p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.productType.toLowerCase().includes(search.toLowerCase());
-    const status = getStockStatus(p);
-    const mst = statusFilter === 'all' || status === statusFilter;
-    const mw = warehouseFilter === 'all' || p.warehouse === warehouseFilter;
-    return ms && mst && mw;
-  }), [products, search, statusFilter, warehouseFilter]);
+  // Temporary UI data. Replace with API/data.ts values when backend wiring is ready.
+  const executiveStock = [
+    { executive: "Ram Kumar", issued: 120, sold: 72, returned: 8, hand: 40 },
+    { executive: "Ajith Kumar", issued: 95, sold: 61, returned: 9, hand: 25 },
+    { executive: "PeriyaSamy", issued: 80, sold: 54, returned: 6, hand: 20 },
+  ];
+
+  const deliveryChallans = [
+    {
+      dcNo: "DC-1001",
+      date: "2026-08-14",
+      executive: "Ram Kumar",
+      items: 4,
+      quantity: 45,
+      status: "Issued",
+    },
+    {
+      dcNo: "DC-1002",
+      date: "2026-08-14",
+      executive: "Ajith Kumar",
+      items: 3,
+      quantity: 30,
+      status: "Issued",
+    },
+    {
+      dcNo: "DC-0998",
+      date: "2026-08-13",
+      executive: "PeriyaSamy",
+      items: 2,
+      quantity: 20,
+      status: "Partially Returned",
+    },
+  ];
+
+  const stockReturns = [
+    {
+      returnNo: "RET-201",
+      date: "2026-08-14",
+      executive: "Ram Kumar",
+      dcNo: "DC-1001",
+      quantity: 8,
+    },
+    {
+      returnNo: "RET-198",
+      date: "2026-08-13",
+      executive: "PeriyaSamy",
+      dcNo: "DC-0998",
+      quantity: 6,
+    },
+  ];
+
+  const filtered = useMemo(
+    () =>
+      products.filter((p) => {
+        const ms =
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.productType.toLowerCase().includes(search.toLowerCase());
+        const status = getStockStatus(p);
+        const mst = statusFilter === "all" || status === statusFilter;
+        const mw = warehouseFilter === "all" || p.warehouse === warehouseFilter;
+        return ms && mst && mw;
+      }),
+    [products, search, statusFilter, warehouseFilter],
+  );
 
   const totalProducts = products.length;
   const stockValue = products.reduce((s, p) => s + p.sellingPrice * p.stock, 0);
@@ -60,9 +136,9 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
   const recentMovements = getRecentMovements(storeId, 6);
 
   const statusCounts: Record<StockStatus, number> = {
-    Healthy: products.filter((p) => getStockStatus(p) === 'Healthy').length,
-    'Low Stock': lowStock.length,
-    'Out of Stock': outOfStock.length,
+    Healthy: products.filter((p) => getStockStatus(p) === "Healthy").length,
+    "Low Stock": lowStock.length,
+    "Out of Stock": outOfStock.length,
   };
   const statusTotal = totalProducts || 1;
 
@@ -80,253 +156,637 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Inventory Management</h1>
-          <p className="text-slate-500 mt-1">Track stock levels, movements, and warehouse value.</p>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+            Inventory Management
+          </h1>
+          <p className="text-slate-500 mt-1">
+            Track stock levels, movements, and warehouse value.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => goStorePage('stock-adjustment')}>
+          <Button
+            variant="secondary"
+            onClick={() => goStorePage("stock-adjustment")}
+          >
             <Icon name="tune" size={18} /> Stock Adjustment
           </Button>
-          <Button onClick={() => goStorePage('add-stock')}>
+          <Button onClick={() => goStorePage("add-stock")}>
             <Icon name="add" size={20} fill /> Add Stock
           </Button>
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Products" value={String(totalProducts)} icon="inventory_2" color="brand" />
-        <StatCard label="Available Stock Value" value={formatCompact(stockValue)} icon="account_balance_wallet" color="blue" />
-        <StatCard label="Low Stock Products" value={String(lowStock.length)} icon="warning" color="amber" trend={lowStock.length > 0 ? 'Needs attention' : 'All good'} trendUp={lowStock.length === 0} />
-        <StatCard label="Out of Stock" value={String(outOfStock.length)} icon="error" color="red" trend={outOfStock.length > 0 ? 'Restock needed' : 'None'} trendUp={outOfStock.length === 0} />
-      </div>
-
-      {/* Chart + Low stock alert */}
-      <div className="grid lg:grid-cols-3 gap-5 mb-6">
-        {/* Stock status chart */}
-        <Card className="p-6 lg:col-span-2">
-          <h3 className="font-bold text-slate-800 mb-5">Stock Status Distribution</h3>
-          <div className="space-y-4">
-            {(['Healthy', 'Low Stock', 'Out of Stock'] as StockStatus[]).map((status) => {
-              const count = statusCounts[status];
-              const pct = Math.round((count / statusTotal) * 100);
-              const barColor = status === 'Healthy' ? 'bg-brand-500' : status === 'Low Stock' ? 'bg-amber-500' : 'bg-red-500';
-              return (
-                <div key={status}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-semibold text-slate-600">{status}</span>
-                    <span className="text-sm text-slate-500 font-medium">{count} products · {pct}%</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div className={`h-full rounded-full ${barColor} transition-all duration-700`} style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        {/* Low stock alert panel */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-slate-800">Low Stock Alerts</h3>
-            <Badge color="amber"><Icon name="warning" size={14} />{lowStock.length + outOfStock.length}</Badge>
-          </div>
-          {lowStock.length + outOfStock.length === 0 ? (
-            <div className="flex flex-col items-center py-8 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mb-3">
-                <Icon name="check_circle" size={26} className="text-brand-600" fill />
-              </div>
-              <p className="text-sm font-semibold text-slate-600">All stocks healthy</p>
-              <p className="text-xs text-slate-400 mt-1">No products below minimum level.</p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-72 overflow-y-auto">
-              {[...outOfStock, ...lowStock].map((p) => {
-                const status = getStockStatus(p);
-                return (
-                  <div key={p.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-base cursor-pointer" onClick={() => goProductDetail(p.id)}>
-                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${colorMap[p.imageColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
-                      {initials(p.name)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-slate-700 truncate">{p.name}</p>
-                      <p className="text-xs text-slate-400">{p.stock} / {p.minStock} min</p>
-                    </div>
-                    <Badge color={statusColor[status]}>{status === 'Out of Stock' ? 'Out' : 'Low'}</Badge>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {(lowStock.length + outOfStock.length) > 0 && (
-            <Button variant="secondary" size="sm" className="w-full mt-4" onClick={() => goStorePage('low-stock')}>
-              View All <Icon name="arrow_forward" size={16} />
-            </Button>
-          )}
-        </Card>
-      </div>
-
-      {/* Recent stock movements */}
-      <Card className="p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-slate-800">Recent Stock Movements</h3>
-          <Icon name="sync_alt" size={20} className="text-slate-400" />
-        </div>
-        {recentMovements.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-6">No recent movements.</p>
-        ) : (
-          <div className="space-y-1">
-            {recentMovements.map((m) => {
-              const product = getProductById(m.productId);
-              const mi = movementIcon[m.type];
-              return (
-                <div key={m.id} className="flex items-center gap-3 py-2.5">
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${mi.color}`}>
-                    <Icon name={mi.icon} size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-700 truncate">{product?.name ?? 'Product'}</p>
-                    <p className="text-xs text-slate-400">{m.remarks} · {formatDate(m.date)}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold ${m.type === 'IN' ? 'text-brand-600' : m.type === 'OUT' ? 'text-blue-600' : 'text-slate-600'}`}>
-                      {m.type === 'IN' ? '+' : m.type === 'OUT' ? '-' : ''}{m.quantity}
-                    </p>
-                    <p className="text-xs text-slate-400">{m.referenceNo}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* Toolbar */}
-      <Card className="p-4 mb-5">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="flex-1 max-w-md">
-            <Input value={search} onChange={setSearch} placeholder="Search products by name or category..." icon="search" />
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="w-full sm:w-44">
-              <Select value={statusFilter} onChange={setStatusFilter} placeholder="All Status"
-                options={[{ value: 'Healthy', label: 'Healthy' }, { value: 'Low Stock', label: 'Low Stock' }, { value: 'Out of Stock', label: 'Out of Stock' }]} />
-            </div>
-            <div className="w-full sm:w-52">
-              <Select value={warehouseFilter} onChange={setWarehouseFilter} placeholder="All Warehouses"
-                options={warehouseList.map((w) => ({ value: w, label: w }))} />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleExport} disabled={exporting}>
-              <Icon name="download" size={18} /> {exporting ? 'Exporting...' : 'Export'}
-            </Button>
-            <Button variant="secondary" onClick={() => setShowImport(true)}>
-              <Icon name="upload" size={18} /> Import
-            </Button>
-          </div>
-        </div>
-        <div className="mt-3 flex items-center justify-between text-sm">
-          <p className="text-slate-500 font-medium">
-            Showing <span className="font-bold text-slate-700">{filtered.length}</span> of {products.length} products
-          </p>
-          {(search || statusFilter !== 'all' || warehouseFilter !== 'all') && (
-            <button onClick={() => { setSearch(''); setStatusFilter('all'); setWarehouseFilter('all'); }}
-              className="text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
-              <Icon name="filter_alt_off" size={16} /> Clear filters
+      {/* Stock Management navigation */}
+      <Card className="p-2 mb-6">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: "inventory", label: "Store Inventory", icon: "inventory_2" },
+            { key: "executive", label: "Executive Stock", icon: "badge" },
+            {
+              key: "challans",
+              label: "Delivery Challans",
+              icon: "local_shipping",
+            },
+            {
+              key: "returns",
+              label: "Stock Returns",
+              icon: "assignment_return",
+            },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setStockView(tab.key as typeof stockView)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-base ${
+                stockView === tab.key
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <Icon name={tab.icon} size={18} />
+              {tab.label}
             </button>
-          )}
+          ))}
         </div>
       </Card>
 
-      {/* Inventory table */}
-      {filtered.length === 0 ? (
-        <Card className="p-0">
-          <EmptyState icon="warehouse" title="No inventory found"
-            description="Try adjusting your search or filters."
-            action={<Button onClick={() => goStorePage('add-stock')}><Icon name="add" size={20} fill /> Add Stock</Button>} />
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
+      {stockView === "executive" && (
+        <Card className="overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="font-bold text-slate-800">Executive Hand Stock</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Stock issued through delivery challans and balance currently with
+              each executive.
+            </p>
+          </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1100px]">
+            <table className="w-full text-sm min-w-[760px]">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="text-left font-semibold px-5 py-3.5">Image</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Product Name</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Category</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Unit</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Pack Size</th>
-                  <th className="text-right font-semibold px-5 py-3.5">Current Stock</th>
-                  <th className="text-right font-semibold px-5 py-3.5">Min Stock</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Warehouse</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Last Updated</th>
-                  <th className="text-center font-semibold px-5 py-3.5">Status</th>
-                  <th className="text-center font-semibold px-5 py-3.5">Actions</th>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <th className="text-left px-5 py-3">Executive</th>
+                  <th className="text-right px-5 py-3">Issued</th>
+                  <th className="text-right px-5 py-3">Sold</th>
+                  <th className="text-right px-5 py-3">Returned</th>
+                  <th className="text-right px-5 py-3">Hand Stock</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((p) => {
-                  const status = getStockStatus(p);
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-50/50 transition-base cursor-pointer" onClick={() => goProductDetail(p.id)}>
-                      <td className="px-5 py-3.5">
-                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colorMap[p.imageColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
-                          {initials(p.name)}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5 font-semibold text-slate-800">{p.name}</td>
-                      <td className="px-5 py-3.5 text-slate-500">{p.productType}</td>
-                      <td className="px-5 py-3.5 text-slate-600">{p.unit}</td>
-                      <td className="px-5 py-3.5"><span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium text-xs">{p.size}</span></td>
-                      <td className="px-5 py-3.5 text-right">
-                        <span className={`font-bold ${p.stock === 0 ? 'text-red-500' : p.stock < p.minStock ? 'text-amber-600' : 'text-slate-700'}`}>{p.stock}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right text-slate-500">{p.minStock}</td>
-                      <td className="px-5 py-3.5 text-slate-600 text-xs">{p.warehouse}</td>
-                      <td className="px-5 py-3.5 text-slate-500 text-xs">{formatDate(p.lastUpdated)}</td>
-                      <td className="px-5 py-3.5 text-center">
-                        <Badge color={statusColor[status]}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'currentColor' }} />
-                          {status}
-                        </Badge>
-                      </td>
-                      <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => goProductDetail(p.id)} className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base" title="View Details">
-                            <Icon name="visibility" size={18} />
-                          </button>
-                          <button onClick={() => goStorePage('add-stock')} className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base" title="Add Stock">
-                            <Icon name="add_box" size={18} />
-                          </button>
-                          <button onClick={() => removeProduct(p.id)} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-base" title="Delete">
-                            <Icon name="delete" size={18} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {executiveStock.map((row) => (
+                  <tr key={row.executive} className="hover:bg-slate-50">
+                    <td className="px-5 py-4 font-semibold text-slate-800">
+                      {row.executive}
+                    </td>
+                    <td className="px-5 py-4 text-right">{row.issued}</td>
+                    <td className="px-5 py-4 text-right text-brand-700 font-semibold">
+                      {row.sold}
+                    </td>
+                    <td className="px-5 py-4 text-right text-amber-700">
+                      {row.returned}
+                    </td>
+                    <td className="px-5 py-4 text-right font-bold text-blue-700">
+                      {row.hand}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </Card>
       )}
 
+      {stockView === "challans" && (
+        <Card className="overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-slate-800">Delivery Challans</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Products issued from the store to field executives.
+              </p>
+            </div>
+            <Button>
+              <Icon name="add" size={18} /> Create Challan
+            </Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[850px]">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <th className="text-left px-5 py-3">DC No</th>
+                  <th className="text-left px-5 py-3">Date</th>
+                  <th className="text-left px-5 py-3">Executive</th>
+                  <th className="text-right px-5 py-3">Items</th>
+                  <th className="text-right px-5 py-3">Qty</th>
+                  <th className="text-left px-5 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {deliveryChallans.map((row) => (
+                  <tr key={row.dcNo} className="hover:bg-slate-50">
+                    <td className="px-5 py-4 font-bold text-slate-700">
+                      {row.dcNo}
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">
+                      {formatDate(row.date)}
+                    </td>
+                    <td className="px-5 py-4 font-semibold">{row.executive}</td>
+                    <td className="px-5 py-4 text-right">{row.items}</td>
+                    <td className="px-5 py-4 text-right font-bold">
+                      {row.quantity}
+                    </td>
+                    <td className="px-5 py-4">
+                      <Badge
+                        color={row.status === "Issued" ? "green" : "amber"}
+                      >
+                        {row.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {stockView === "returns" && (
+        <Card className="overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="font-bold text-slate-800">Stock Returns</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              Unsold stock returned by executives to the store.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[760px]">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase">
+                  <th className="text-left px-5 py-3">Return No</th>
+                  <th className="text-left px-5 py-3">Date</th>
+                  <th className="text-left px-5 py-3">Executive</th>
+                  <th className="text-left px-5 py-3">DC No</th>
+                  <th className="text-right px-5 py-3">Returned Qty</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {stockReturns.map((row) => (
+                  <tr key={row.returnNo} className="hover:bg-slate-50">
+                    <td className="px-5 py-4 font-bold">{row.returnNo}</td>
+                    <td className="px-5 py-4">{formatDate(row.date)}</td>
+                    <td className="px-5 py-4 font-semibold">{row.executive}</td>
+                    <td className="px-5 py-4">{row.dcNo}</td>
+                    <td className="px-5 py-4 text-right font-bold text-amber-700">
+                      {row.quantity}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {stockView === "inventory" && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <StatCard
+              label="Total Products"
+              value={String(totalProducts)}
+              icon="inventory_2"
+              color="brand"
+            />
+            <StatCard
+              label="Available Stock Value"
+              value={formatCompact(stockValue)}
+              icon="account_balance_wallet"
+              color="blue"
+            />
+            <StatCard
+              label="Low Stock Products"
+              value={String(lowStock.length)}
+              icon="warning"
+              color="amber"
+              trend={lowStock.length > 0 ? "Needs attention" : "All good"}
+              trendUp={lowStock.length === 0}
+            />
+            <StatCard
+              label="Out of Stock"
+              value={String(outOfStock.length)}
+              icon="error"
+              color="red"
+              trend={outOfStock.length > 0 ? "Restock needed" : "None"}
+              trendUp={outOfStock.length === 0}
+            />
+          </div>
+
+          {/* Chart + Low stock alert */}
+          <div className="grid lg:grid-cols-3 gap-5 mb-6">
+            {/* Stock status chart */}
+            <Card className="p-6 lg:col-span-2">
+              <h3 className="font-bold text-slate-800 mb-5">
+                Stock Status Distribution
+              </h3>
+              <div className="space-y-4">
+                {(
+                  ["Healthy", "Low Stock", "Out of Stock"] as StockStatus[]
+                ).map((status) => {
+                  const count = statusCounts[status];
+                  const pct = Math.round((count / statusTotal) * 100);
+                  const barColor =
+                    status === "Healthy"
+                      ? "bg-brand-500"
+                      : status === "Low Stock"
+                        ? "bg-amber-500"
+                        : "bg-red-500";
+                  return (
+                    <div key={status}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-slate-600">
+                          {status}
+                        </span>
+                        <span className="text-sm text-slate-500 font-medium">
+                          {count} products · {pct}%
+                        </span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${barColor} transition-all duration-700`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            {/* Low stock alert panel */}
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-800">Low Stock Alerts</h3>
+                <Badge color="amber">
+                  <Icon name="warning" size={14} />
+                  {lowStock.length + outOfStock.length}
+                </Badge>
+              </div>
+              {lowStock.length + outOfStock.length === 0 ? (
+                <div className="flex flex-col items-center py-8 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mb-3">
+                    <Icon
+                      name="check_circle"
+                      size={26}
+                      className="text-brand-600"
+                      fill
+                    />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-600">
+                    All stocks healthy
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    No products below minimum level.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-72 overflow-y-auto">
+                  {[...outOfStock, ...lowStock].map((p) => {
+                    const status = getStockStatus(p);
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-base cursor-pointer"
+                        onClick={() => goProductDetail(p.id)}
+                      >
+                        <div
+                          className={`w-9 h-9 rounded-lg bg-gradient-to-br ${colorMap[p.imageColor] ?? "from-slate-400 to-slate-600"} flex items-center justify-center text-white font-bold text-xs shrink-0`}
+                        >
+                          {initials(p.name)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-slate-700 truncate">
+                            {p.name}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {p.stock} / {p.minStock} min
+                          </p>
+                        </div>
+                        <Badge color={statusColor[status]}>
+                          {status === "Out of Stock" ? "Out" : "Low"}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {lowStock.length + outOfStock.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full mt-4"
+                  onClick={() => goStorePage("low-stock")}
+                >
+                  View All <Icon name="arrow_forward" size={16} />
+                </Button>
+              )}
+            </Card>
+          </div>
+
+          {/* Recent stock movements */}
+          <Card className="p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-slate-800">
+                Recent Stock Movements
+              </h3>
+              <Icon name="sync_alt" size={20} className="text-slate-400" />
+            </div>
+            {recentMovements.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-6">
+                No recent movements.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {recentMovements.map((m) => {
+                  const product = getProductById(m.productId);
+                  const mi = movementIcon[m.type];
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 py-2.5">
+                      <div
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${mi.color}`}
+                      >
+                        <Icon name={mi.icon} size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-700 truncate">
+                          {product?.name ?? "Product"}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {m.remarks} · {formatDate(m.date)}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p
+                          className={`text-sm font-bold ${m.type === "IN" ? "text-brand-600" : m.type === "OUT" ? "text-blue-600" : "text-slate-600"}`}
+                        >
+                          {m.type === "IN" ? "+" : m.type === "OUT" ? "-" : ""}
+                          {m.quantity}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {m.referenceNo}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          {/* Toolbar */}
+          <Card className="p-4 mb-5">
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="flex-1 max-w-md">
+                <Input
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search products by name or category..."
+                  icon="search"
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="w-full sm:w-44">
+                  <Select
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    placeholder="All Status"
+                    options={[
+                      { value: "Healthy", label: "Healthy" },
+                      { value: "Low Stock", label: "Low Stock" },
+                      { value: "Out of Stock", label: "Out of Stock" },
+                    ]}
+                  />
+                </div>
+                <div className="w-full sm:w-52">
+                  <Select
+                    value={warehouseFilter}
+                    onChange={setWarehouseFilter}
+                    placeholder="All Warehouses"
+                    options={warehouseList.map((w) => ({ value: w, label: w }))}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={handleExport}
+                  disabled={exporting}
+                >
+                  <Icon name="download" size={18} />{" "}
+                  {exporting ? "Exporting..." : "Export"}
+                </Button>
+                <Button variant="secondary" onClick={() => setShowImport(true)}>
+                  <Icon name="upload" size={18} /> Import
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-sm">
+              <p className="text-slate-500 font-medium">
+                Showing{" "}
+                <span className="font-bold text-slate-700">
+                  {filtered.length}
+                </span>{" "}
+                of {products.length} products
+              </p>
+              {(search ||
+                statusFilter !== "all" ||
+                warehouseFilter !== "all") && (
+                <button
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("all");
+                    setWarehouseFilter("all");
+                  }}
+                  className="text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1"
+                >
+                  <Icon name="filter_alt_off" size={16} /> Clear filters
+                </button>
+              )}
+            </div>
+          </Card>
+
+          {/* Inventory table */}
+          {filtered.length === 0 ? (
+            <Card className="p-0">
+              <EmptyState
+                icon="warehouse"
+                title="No inventory found"
+                description="Try adjusting your search or filters."
+                action={
+                  <Button onClick={() => goStorePage("add-stock")}>
+                    <Icon name="add" size={20} fill /> Add Stock
+                  </Button>
+                }
+              />
+            </Card>
+          ) : (
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[1100px]">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Image
+                      </th>
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Product Name
+                      </th>
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Category
+                      </th>
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Unit
+                      </th>
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Pack Size
+                      </th>
+                      <th className="text-right font-semibold px-5 py-3.5">
+                        Current Stock
+                      </th>
+                      <th className="text-right font-semibold px-5 py-3.5">
+                        Min Stock
+                      </th>
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Warehouse
+                      </th>
+                      <th className="text-left font-semibold px-5 py-3.5">
+                        Last Updated
+                      </th>
+                      <th className="text-center font-semibold px-5 py-3.5">
+                        Status
+                      </th>
+                      <th className="text-center font-semibold px-5 py-3.5">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filtered.map((p) => {
+                      const status = getStockStatus(p);
+                      return (
+                        <tr
+                          key={p.id}
+                          className="hover:bg-slate-50/50 transition-base cursor-pointer"
+                          onClick={() => goProductDetail(p.id)}
+                        >
+                          <td className="px-5 py-3.5">
+                            <div
+                              className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colorMap[p.imageColor] ?? "from-slate-400 to-slate-600"} flex items-center justify-center text-white font-bold text-xs shrink-0`}
+                            >
+                              {initials(p.name)}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 font-semibold text-slate-800">
+                            {p.name}
+                          </td>
+                          <td className="px-5 py-3.5 text-slate-500">
+                            {p.productType}
+                          </td>
+                          <td className="px-5 py-3.5 text-slate-600">
+                            {p.unit}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-medium text-xs">
+                              {p.size}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <span
+                              className={`font-bold ${p.stock === 0 ? "text-red-500" : p.stock < p.minStock ? "text-amber-600" : "text-slate-700"}`}
+                            >
+                              {p.stock}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 text-right text-slate-500">
+                            {p.minStock}
+                          </td>
+                          <td className="px-5 py-3.5 text-slate-600 text-xs">
+                            {p.warehouse}
+                          </td>
+                          <td className="px-5 py-3.5 text-slate-500 text-xs">
+                            {formatDate(p.lastUpdated)}
+                          </td>
+                          <td className="px-5 py-3.5 text-center">
+                            <Badge color={statusColor[status]}>
+                              <span
+                                className="w-1.5 h-1.5 rounded-full"
+                                style={{ background: "currentColor" }}
+                              />
+                              {status}
+                            </Badge>
+                          </td>
+                          <td
+                            className="px-5 py-3.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => goProductDetail(p.id)}
+                                className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base"
+                                title="View Details"
+                              >
+                                <Icon name="visibility" size={18} />
+                              </button>
+                              <button
+                                onClick={() => goStorePage("add-stock")}
+                                className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base"
+                                title="Add Stock"
+                              >
+                                <Icon name="add_box" size={18} />
+                              </button>
+                              <button
+                                onClick={() => removeProduct(p.id)}
+                                className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-base"
+                                title="Delete"
+                              >
+                                <Icon name="delete" size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </>
+      )}
+
       {/* Import modal */}
-      <Modal open={showImport} onClose={() => setShowImport(false)} title="Import Inventory"
-        footer={<>
-          <Button variant="secondary" onClick={() => setShowImport(false)}>Cancel</Button>
-          <Button onClick={() => setShowImport(false)} disabled>Import</Button>
-        </>}>
+      <Modal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        title="Import Inventory"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => setShowImport(false)} disabled>
+              Import
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-4">
           <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-brand-400 transition-base cursor-pointer">
             <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
               <Icon name="cloud_upload" size={32} className="text-brand-600" />
             </div>
-            <p className="font-semibold text-slate-700">Drop your CSV file here</p>
-            <p className="text-sm text-slate-400 mt-1">or click to browse — supports .csv, .xlsx</p>
+            <p className="font-semibold text-slate-700">
+              Drop your CSV file here
+            </p>
+            <p className="text-sm text-slate-400 mt-1">
+              or click to browse — supports .csv, .xlsx
+            </p>
           </div>
           <div className="flex items-center gap-2 text-sm text-slate-500">
             <Icon name="info" size={18} className="text-slate-400" />
