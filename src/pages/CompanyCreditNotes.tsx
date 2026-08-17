@@ -464,6 +464,7 @@ export default function CompanyCreditNotes() {
 
                   </div>
                 )}
+                </div>
               </section>
 
               {/* Added Products Table */}
