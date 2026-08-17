@@ -12,6 +12,7 @@ type Receipt = {
   storeId: string;
   storeName: string;
   method: string;
+  invoiceAmount: number;
   amount: number;
 };
 
@@ -30,6 +31,7 @@ const receipts: Receipt[] = Array.from({ length: 16 }, (_, i) => {
     storeId: store.id,
     storeName: store.name,
     method: methods[i % methods.length],
+    invoiceAmount: 5000 + (i % 8) * 3000,
     amount: 1500 + (i % 8) * 2300,
   };
 });
@@ -141,6 +143,11 @@ export default function CompanyReceipts() {
                   <th className="w-[20%] text-center font-semibold px-3 py-3">
                     Amount Received
                   </th>
+
+                  <th className="w-[20%] text-center font-semibold px-3 py-3">
+                    Balance
+                  </th>
+
                 </tr>
               </thead>
               <tbody>
@@ -165,6 +172,11 @@ export default function CompanyReceipts() {
                     <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
                       {formatCurrency(r.amount)}
                     </td>
+
+                    <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
+                      {formatCurrency(Math.max(r.invoiceAmount - r.amount, 0))}
+                    </td>
+
                   </tr>
                 ))}
               </tbody>
