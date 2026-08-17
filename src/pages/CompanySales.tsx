@@ -569,6 +569,10 @@ function handleCreate() {
                         }
                         placeholder="Select size"
                         options={[
+                          { value: "100ml", label: "100 ml" },
+                          { value: "250ml", label: "250 ml" },
+                          { value: "500ml", label: "500 ml" },
+                          { value: "1l", label: "1 L" },
                           { value: "100g", label: "100 g" },
                           { value: "250g", label: "250 g" },
                           { value: "500g", label: "500 g" },
