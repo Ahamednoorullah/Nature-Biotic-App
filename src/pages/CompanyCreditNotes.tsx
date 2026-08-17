@@ -94,6 +94,7 @@ export default function CompanyCreditNotes() {
     quantity: 0,
     sellingPrice: 0,
     discount: 0,
+    reason: '',
   });
   const [added, setAdded] = useState<any[]>([]);
 
@@ -414,9 +415,15 @@ export default function CompanyCreditNotes() {
 
           <Input
             label="Reason"
-            placeholder="Reason for return"
-            value={remarks}
-            onChange={setRemarks}
+            type="text"
+            value={entry.reason}
+            onChange={(v) =>
+              setEntry((p) => ({
+                ...p,
+                reason: v,
+              }))
+            }
+            placeholder="Enter reason"
           />
 
         </div>
@@ -515,7 +522,7 @@ export default function CompanyCreditNotes() {
 
       {/* Selling Price */}
       <Input
-        label="Selling Price"
+        label="Price"
         type="number"
         value={String(entry.sellingPrice)}
         onChange={(v) =>
@@ -526,17 +533,18 @@ export default function CompanyCreditNotes() {
         }
       />
 
-      {/* Discount */}
+      {/* Reason */}
       <Input
-        label="Discount"
-        type="number"
-        value={String(entry.discount)}
+        label="Reason"
+        type="text"
+        value={entry.reason}
         onChange={(v) =>
           setEntry((p) => ({
             ...p,
-            discount: Number(v) || 0,
+            reason: v,
           }))
         }
+        placeholder="Enter reason"
       />
 
       {/* Add Product */}
@@ -554,10 +562,10 @@ export default function CompanyCreditNotes() {
 
     {/* Auto-loaded product details */}
     {entryProduct && (
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
+      <div className="mx-6 mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
 
-        <div className="col-span-2 sm:col-span-1 flex items-center gap-2">
-          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+        <div className="col-span-2 sm:col-span-1 flex items-center gap-2 -translate-y-1">
+          <div className="mt-1 w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
             <Icon name="image" size={20} className="text-slate-600" />
           </div>
 
