@@ -211,7 +211,7 @@ export default function CompanyCreditNotes() {
                   rowSpan={2}
                   className="px-4 py-3 text-center font-semibold border-r border-slate-200"
                 >
-                  Customer / Store
+                  Store
                 </th>
 
                 <th
@@ -412,92 +412,7 @@ export default function CompanyCreditNotes() {
       </div>
 
 
-      {/* Product Entry */}
-                    <section>
-                      <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">Add Product</h4>
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
-                        {/* Entry row */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-end">
-                          <div className="lg:col-span-1">
-                            <Select
-                              label="Select Product"
-                              value={entry.productId}
-                              onChange={selectProduct}
-                              placeholder="Choose product"
-                              options={productNames.map((name, idx) => ({ value: String(idx), label: name }))}
-                            />
-                          </div>
       
-                          {/* PKG Size */}
-                          <div>
-                            <Select
-                              label="PKG Size"
-                              value={entry.pkgsize}
-                              onChange={(v) =>
-                                setEntry((p) => ({
-                                  ...p,
-                                  pkgSize: v,
-                                }))
-                              }
-                              placeholder="Select size"
-                              options={[
-                          { value: "100ml", label: "100 ml" },
-                          { value: "250ml", label: "250 ml" },
-                          { value: "500ml", label: "500 ml" },
-                          { value: "1l", label: "1 L" },
-                          { value: "100g", label: "100 g" },
-                          { value: "250g", label: "250 g" },
-                          { value: "500g", label: "500 g" },
-                          { value: "1kg", label: "1 Kg" },
-                          { value: "5kg", label: "5 Kg" },
-                          { value: "10kg", label: "10 Kg" },
-                          { value: "25kg", label: "25 Kg" },
-                        ]}
-                            />
-                          </div>
-      
-                          <Input label="Batch No" value={entry.batchNo} onChange={(v) => setEntry((p) => ({ ...p, batchNo: v }))} placeholder="e.g. BAT-001" required />
-                          <Input label="Expiry Date" type="date" value={entry.expiryDate} onChange={(v) => setEntry((p) => ({ ...p, expiryDate: v }))} required />
-                          <Input label="Quantity" type="number" value={String(entry.quantity)} onChange={(v) => setEntry((p) => ({ ...p, quantity: Number(v) || 0 }))} />
-                          <Input label="Selling Price" type="number" value={String(entry.sellingPrice)} onChange={(v) => setEntry((p) => ({ ...p, sellingPrice: Number(v) || 0 }))} />
-                          <Input label="Discount" type="number" value={String(entry.discount)} onChange={(v) => setEntry((p) => ({ ...p, discount: Number(v) || 0 }))} />
-                          <Button onClick={addProduct} disabled={!canAdd} className="w-full h-[50px] px-3">
-                            <Icon name="add" size={18} /> <span className="whitespace-nowrap">Add Product</span>
-                          </Button>
-                        </div>
-      
-                        {/* Auto-loaded product details */}
-                        {entryProduct && (
-                          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
-                            <div className="col-span-2 sm:col-span-1 flex items-center gap-2">
-                              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                                <Icon name="image" size={20} className="text-slate-600" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-[11px] text-slate-400 font-medium">Product Image</p>
-                                <p className="text-xs font-semibold text-slate-700 truncate">{entryProduct.name}</p>
-                              </div>
-                            </div>
-                            <DetailField label="Pack Size" value={entry.pkgsize || '-'} />
-                            <DetailField label="HSN / SAC" value="-" />
-                            <DetailField label="MRP" value="-" />
-                            <DetailField label="Tax Type" value="-" />
-                            <DetailField
-                              label="Tax %"
-                              value="-"
-                            />
-                            <DetailField
-                              label="SGST"
-                              value="-"
-                            />
-                            <DetailField
-                              label="CGST"
-                              value="-"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </section>
 
       {/* Footer */}
       <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
