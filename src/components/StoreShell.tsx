@@ -11,27 +11,28 @@ type NavItem =
 
 const navItems: NavItem[] = [
   { type: 'link', key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { type: 'link', key: 'stock-management', label: 'Stock Management', icon: 'inventory_2' },
   {
-    type: 'group',
-    key: 'purchases',
-    label: 'Purchases',
-    icon: 'shopping_cart',
+    type: 'group', key: 'purchases', label: 'Purchases', icon: 'shopping_cart',
     children: [
+      { key: 'purchases', label: 'Purchase', icon: 'shopping_cart' },
       { key: 'debit-notes', label: 'Debit Notes', icon: 'request_quote' },
-      { key: 'payments', label: 'Payments', icon: 'payments' },
+      { key: 'return-stock', label: 'Return Stock', icon: 'assignment_return' },
+      { key: 'payments', label: 'Payment', icon: 'payments' },
       { key: 'expenses', label: 'Expenses', icon: 'receipt_long' },
     ],
   },
+  { type: 'link', key: 'stock-management', label: 'Stock Management', icon: 'inventory_2' },
   {
-    type: 'group',
-    key: 'sales',
-    label: 'Sales',
-    icon: 'sell',
+    type: 'group', key: 'sales', label: 'Sales', icon: 'sell',
     children: [
-      { key: 'credit-notes', label: 'Credit Notes', icon: 'request_quote' },
+      { key: 'farmers', label: 'Farmer', icon: 'groups' },
+      { key: 'quotation', label: 'Quotation', icon: 'description' },
+      { key: 'delivery-challan', label: 'Delivery Challan', icon: 'local_shipping' },
+      { key: 'return-challan', label: 'Return Challan', icon: 'assignment_return' },
+      { key: 'sales-invoice', label: 'Sales Invoice', icon: 'receipt_long' },
+      { key: 'credit-notes', label: 'Credit Note', icon: 'request_quote' },
       { key: 'receipt', label: 'Receipt', icon: 'receipt' },
-      { key: 'farmers', label: 'Farmers', icon: 'groups' },
+      { key: 'refund', label: 'Refund', icon: 'currency_exchange' },
     ],
   },
   { type: 'link', key: 'attendance', label: 'Attendance', icon: 'badge' },
@@ -41,6 +42,8 @@ const navItems: NavItem[] = [
 const groupKeys = ['purchases', 'sales'] as const;
 
 function activeGroupFor(page: StorePage): 'purchases' | 'sales' | null {
+  if (page === 'purchases') return 'purchases';
+  if (page === 'sales') return 'sales';
   for (const item of navItems) {
     if (item.type === 'group' && item.children.some((c) => c.key === page)) return item.key;
   }

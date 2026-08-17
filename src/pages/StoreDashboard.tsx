@@ -686,6 +686,58 @@ const kpiData: Record<DateFilter, KpiData> = {
   },
 };
 
+type DirectSalesSummary = {
+  sales: number;
+  collection: number;
+  outstanding: number;
+  farmers: number;
+  farms: number;
+  crops: number;
+};
+
+const directSalesData: Record<DateFilter, DirectSalesSummary> = {
+  today: {
+    sales: 18600,
+    collection: 15200,
+    outstanding: 3400,
+    farmers: 18,
+    farms: 12,
+    crops: 7,
+  },
+  weekly: {
+    sales: 124800,
+    collection: 103600,
+    outstanding: 21200,
+    farmers: 42,
+    farms: 31,
+    crops: 12,
+  },
+  monthly: {
+    sales: 368000,
+    collection: 301500,
+    outstanding: 66500,
+    farmers: 68,
+    farms: 49,
+    crops: 18,
+  },
+  quarterly: {
+    sales: 1085000,
+    collection: 886000,
+    outstanding: 199000,
+    farmers: 96,
+    farms: 72,
+    crops: 24,
+  },
+  yearly: {
+    sales: 4320000,
+    collection: 3520000,
+    outstanding: 800000,
+    farmers: 138,
+    farms: 104,
+    crops: 32,
+  },
+};
+
 // type StockRow = {
 //   id: string;
 //   name: string;
@@ -1225,6 +1277,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
 
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
+  const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
   const rows = useMemo(() => stockData[dateFilter], [dateFilter]);
 
   const filteredRows = useMemo(
@@ -1339,7 +1392,58 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </div>
       </div>
 
-      {/* ROW 2 — Executive Summary */}
+      {/* ROW 2 — Store Direct Sales */}
+      <div className="mb-12">
+        <div className="mb-4">
+          <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+            Store Direct Sales
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Farmers who purchase directly from this store.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <DirectSalesCard
+            label="Sales"
+            value={formatCurrency(directSales.sales)}
+            icon="payments"
+            color="brand"
+          />
+          <DirectSalesCard
+            label="Collection"
+            value={formatCurrency(directSales.collection)}
+            icon="account_balance_wallet"
+            color="blue"
+          />
+          <DirectSalesCard
+            label="Outstanding"
+            value={formatCurrency(directSales.outstanding)}
+            icon="receipt_long"
+            color="amber"
+          />
+          <DirectSalesCard
+            label="Farmers"
+            value={String(directSales.farmers)}
+            icon="groups"
+            color="purple"
+          />
+          <DirectSalesCard
+            label="Farms"
+            value={String(directSales.farms)}
+            icon="agriculture"
+            color="brand"
+          />
+          <DirectSalesCard
+            label="Crops"
+            value={String(directSales.crops)}
+            icon="spa"
+            color="blue"
+          />
+        </div>
+      </div>
+
+      {/* ROW 3 — Executive Summary */}
       <div className="mb-12">
         <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-4">
           Executive Summary
@@ -1775,6 +1879,44 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+function DirectSalesCard({
+  label,
+  value,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string;
+  icon: string;
+  color: "brand" | "blue" | "amber" | "purple";
+}) {
+  const colors: Record<string, string> = {
+    brand: "bg-emerald-50 text-emerald-600",
+    blue: "bg-blue-50 text-blue-600",
+    amber: "bg-amber-50 text-amber-600",
+    purple: "bg-purple-50 text-purple-600",
+  };
+
+  return (
+    <Card className="p-4 transition-base hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-500">{label}</p>
+          <p className="mt-1 text-[22px] font-bold tracking-tight text-slate-800">
+            {value}
+          </p>
+        </div>
+
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${colors[color]}`}
+        >
+          <Icon name={icon} size={18} />
+        </div>
+      </div>
+    </Card>
   );
 }
 

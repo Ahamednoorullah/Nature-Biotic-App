@@ -860,6 +860,52 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
   },
 ];
 
+export type CompanyStoreSaleRecord = {
+  id: string;
+  invoiceNo: string;
+  date: string;
+  storeId: string;
+  storeName: string;
+  storeLocation: string;
+  placeOfSupply: string;
+  product: string;
+  packSize: string;
+  quantity: number;
+  rate: number;
+  withoutTax: number;
+  taxAmount: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+};
+
+const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
+
+export function getCompanyStoreSales(): CompanyStoreSaleRecord[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const saved = localStorage.getItem(COMPANY_STORE_SALES_KEY);
+
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCompanyStoreSales(rows: CompanyStoreSaleRecord[]) {
+  try {
+    localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(rows));
+
+    window.dispatchEvent(new Event("company-store-sales-updated"));
+  } catch {}
+}
+
+export function getStorePurchasesFromCompanySales(storeId: string) {
+  return getCompanyStoreSales().filter((sale) => sale.storeId === storeId);
+}
+
 export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
   ...f,
   id: `f${i}`,
