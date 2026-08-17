@@ -22,6 +22,7 @@ type CreditNote = {
 };
 
 const productNames = ['Electra', 'Aalga', 'Astra', 'Alpha', 'Neutra', 'Rootra', 'Ultra'];
+const allProducts = productNames.map((name, i) => ({ id: `p${i}`, name }));
 const parties = ['Murugan Farms', 'Sairam Agri Inputs', 'Selvam Agri Mart', 'Karthikeyan Estates', 'Green Harvest Agro'];
 const reasons = ['Damaged Product', 'Expired Stock', 'Wrong Item Supplied', 'Quality Issue', 'Customer Return'];
 const statuses: CreditNoteStatus[] = ['Approved', 'Pending', 'Rejected'];
@@ -86,7 +87,9 @@ export default function CompanyCreditNotes() {
   const [added, setAdded] = useState<any[]>([]);
 
   const selectedStore = stores.find((s) => s.id === storeId);
-  const entryProduct: { name: string; imageColor?: string; size: string; hsnCode: string; mrp: number; taxType: string; taxPercentage: number; sgst: number; cgst: number } | null = null; // Product details will be populated from selected product
+  const entryProduct = allProducts.find(
+  (p) => p.id === entry.productId
+);
   
   const canAdd = entry.productId && entry.batchNo && entry.expiryDate && entry.quantity > 0;
   const canCreate = storeId && invoiceNo && added.length > 0;
@@ -475,13 +478,22 @@ export default function CompanyCreditNotes() {
                                 <p className="text-xs font-semibold text-slate-700 truncate">{entryProduct.name}</p>
                               </div>
                             </div>
-                            <DetailField label="Pack Size" value={entryProduct.size} />
-                            <DetailField label="HSN / SAC" value={entryProduct.hsnCode} />
-                            <DetailField label="MRP" value={formatCurrency(entryProduct.mrp)} />
-                            <DetailField label="Tax Type" value={entryProduct.taxType} />
-                            <DetailField label="Tax %" value={`${entryProduct.taxPercentage}%`} />
-                            <DetailField label="SGST" value={`${entryProduct.sgst}%`} />
-                            <DetailField label="CGST" value={`${entryProduct.cgst}%`} />
+                            <DetailField label="Pack Size" value={entry.pkgsize || '-'} />
+                            <DetailField label="HSN / SAC" value="-" />
+                            <DetailField label="MRP" value="-" />
+                            <DetailField label="Tax Type" value="-" />
+                            <DetailField
+                              label="Tax %"
+                              value="-"
+                            />
+                            <DetailField
+                              label="SGST"
+                              value="-"
+                            />
+                            <DetailField
+                              label="CGST"
+                              value="-"
+                            />
                           </div>
                         )}
                       </div>
