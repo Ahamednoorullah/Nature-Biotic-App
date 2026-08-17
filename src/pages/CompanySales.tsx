@@ -385,13 +385,6 @@ function handleCreate() {
         rowSpan={2}
         className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
       >
-        City
-      </th>
-
-      <th
-        rowSpan={2}
-        className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-      >
         Place of Supply
       </th>
 
@@ -456,10 +449,6 @@ function handleCreate() {
 
       <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
         {s.storeName}
-      </td>
-
-      <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
-        {s.storeLocation}
       </td>
 
       <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
