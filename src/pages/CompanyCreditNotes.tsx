@@ -33,6 +33,7 @@ const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   };
 });
 
+
 const statusColor: Record<CreditNoteStatus, 'green' | 'amber' | 'red'> = {
   Approved: 'green',
   Pending: 'amber',

@@ -569,18 +569,18 @@ function handleCreate() {
                         }
                         placeholder="Select size"
                         options={[
-                          { value: "100ml", label: "100 ml" },
-                          { value: "250ml", label: "250 ml" },
-                          { value: "500ml", label: "500 ml" },
-                          { value: "1l", label: "1 L" },
-                          { value: "100g", label: "100 g" },
-                          { value: "250g", label: "250 g" },
-                          { value: "500g", label: "500 g" },
-                          { value: "1kg", label: "1 Kg" },
-                          { value: "5kg", label: "5 Kg" },
-                          { value: "10kg", label: "10 Kg" },
-                          { value: "25kg", label: "25 Kg" },
-                        ]}
+                    { value: "100ml", label: "100 ml" },
+                    { value: "250ml", label: "250 ml" },
+                    { value: "500ml", label: "500 ml" },
+                    { value: "1l", label: "1 L" },
+                    { value: "100g", label: "100 g" },
+                    { value: "250g", label: "250 g" },
+                    { value: "500g", label: "500 g" },
+                    { value: "1kg", label: "1 Kg" },
+                    { value: "5kg", label: "5 Kg" },
+                    { value: "10kg", label: "10 Kg" },
+                    { value: "25kg", label: "25 Kg" },
+                  ]}
                       />
                     </div>
 
