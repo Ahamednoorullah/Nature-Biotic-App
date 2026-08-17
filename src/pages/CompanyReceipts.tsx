@@ -123,62 +123,72 @@ export default function CompanyReceipts() {
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm border-collapse">
               <thead>
-                <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
-                  <th className="w-[16%] text-center font-semibold px-3 py-3 border-r border-slate-200">
-                    Receipt Date
-                  </th>
+              <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
 
-                  <th className="w-[20%] text-center font-semibold px-3 py-3 border-r border-slate-200">
-                    Receipt Number
-                  </th>
+                <th className="w-[16%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                  Receipt Date
+                </th>
 
-                  <th className="w-[22%] text-center font-semibold px-3 py-3 border-r border-slate-200">
-                    Store Name
-                  </th>
+                <th className="w-[20%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                  Receipt Number
+                </th>
 
-                  <th className="w-[22%] text-center font-semibold px-3 py-3 border-r border-slate-200">
-                    Payment Method
-                  </th>
+                <th className="w-[22%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                  Store Name
+                </th>
 
-                  <th className="w-[20%] text-center font-semibold px-3 py-3">
-                    Amount Received
-                  </th>
+                <th className="w-[22%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                  Payment Method
+                </th>
 
-                  <th className="w-[20%] text-center font-semibold px-3 py-3">
-                    Balance
-                  </th>
+                <th className="w-[20%] text-center font-semibold px-3 py-3 border-r border-slate-200">
+                  Amount Received
+                </th>
+
+                <th className="w-[20%] text-center font-semibold px-3 py-3">
+                  Balance
+                </th>
+
+              </tr>
+            </thead>
+
+            <tbody>
+              {filtered.map((r, i) => (
+                <tr
+                  key={r.id}
+                  className={`border-b border-slate-100 ${
+                    i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
+                  } hover:bg-brand-50/40 transition-base`}
+                >
+
+                  <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
+                    {formatDate(r.date)}
+                  </td>
+
+                  <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
+                    {r.receiptNo}
+                  </td>
+
+                  <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">
+                    {r.storeName}
+                  </td>
+
+                  <td className="px-3 py-3 text-center text-slate-600 border-r border-slate-100">
+                    {r.method}
+                  </td>
+
+                  <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800 border-r border-slate-100">
+                    {formatCurrency(r.amount)}
+                  </td>
+
+                  <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
+                    {formatCurrency(
+                      Math.max(r.invoiceAmount - r.amount, 0)
+                    )}
+                  </td>
 
                 </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r, i) => (
-                  <tr key={r.id} className={`border-b border-slate-100 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}>
-                    <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
-                      {formatDate(r.date)}
-                    </td>
-
-                    <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
-                      {r.receiptNo}
-                    </td>
-
-                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">
-                      {r.storeName}
-                    </td>
-
-                    <td className="px-3 py-3 text-center text-slate-600 border-r border-slate-100">
-                      {r.method}
-                    </td>
-
-                    <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
-                      {formatCurrency(r.amount)}
-                    </td>
-
-                    <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
-                      {formatCurrency(Math.max(r.invoiceAmount - r.amount, 0))}
-                    </td>
-
-                  </tr>
-                ))}
+              ))}
               </tbody>
             </table>
           </div>
