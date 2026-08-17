@@ -439,7 +439,7 @@ export default function CompanyCreditNotes() {
         label="Select Product"
         value={entry.productId}
         onChange={selectProduct}
-        placeholder="Choose product"
+        placeholder="Select"
         options={allProducts.map((p) => ({
           value: p.id,
           label: p.name,
@@ -610,6 +610,24 @@ export default function CompanyCreditNotes() {
       </div>
     )}
       </section>
+
+      {/* Footer */}
+      <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 mt-6">
+        <Button
+          variant="secondary"
+          onClick={() => setShowCreate(false)}
+        >
+          Cancel
+        </Button>
+
+        <Button
+          onClick={handleCreate}
+          disabled={!canCreate}
+        >
+          <Icon name="save" size={18} />
+          Create Credit Note
+        </Button>
+      </div>
       </div>
       </div>
       )}
