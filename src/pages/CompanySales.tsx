@@ -29,6 +29,7 @@ type SaleRow = {
 type AddedRow = {
   key: string;
   productId: string;
+  pkgsize: string;
   product?: Product;
   batchNo: string;
   expiryDate: string;
@@ -46,6 +47,7 @@ type AddedRow = {
 
 type EntryForm = {
   productId: string;
+  pkgsize: string;
   batchNo: string;
   expiryDate: string;
   quantity: number;
@@ -96,7 +98,7 @@ function computeAdded(r: Omit<AddedRow, 'key' | 'taxAmount' | 'rowTotal'>): Adde
 }
 
 function emptyEntry(): EntryForm {
-  return { productId: '', batchNo: '', expiryDate: '', quantity: 1, sellingPrice: 0, discount: 0 };
+  return { productId: '', batchNo: '', expiryDate: '', quantity: 1, sellingPrice: 0, discount: 0, pkgsize: '' };
 }
 
 export default function CompanySales() {
@@ -163,6 +165,7 @@ export default function CompanySales() {
     setEntry((prev) => ({
       ...prev,
       productId,
+      pkgsize: product?.size || prev.pkgsize,
       sellingPrice: product ? product.sellingPrice : 0,
     }));
   }
@@ -170,6 +173,7 @@ export default function CompanySales() {
  function addProduct() {
   if (
     !entry.productId ||
+    !entry.pkgsize ||
     !entry.batchNo ||
     !entry.expiryDate ||
     entry.quantity < 1
@@ -192,6 +196,7 @@ export default function CompanySales() {
   const newRow = computeAdded({
     productId: entry.productId,
     product,
+    pkgsize:entry.pkgsize,
     batchNo: entry.batchNo,
     expiryDate: entry.expiryDate,
     packSize: product.size,
@@ -317,7 +322,7 @@ function handleCreate() {
           <p className="text-slate-500 mt-1">Nature Biotic to Store sales records.</p>
         </div>
         <Button onClick={() => { resetForm(); setShowCreate(true); }}>
-          <Icon name="add" size={20} fill /> Create Sale
+          <Icon name="add" size={20} fill /> Create Invoice
         </Button>
       </div>
 
@@ -511,8 +516,8 @@ function handleCreate() {
               <section>
                 <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">Sale Information</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input label="Invoice Number" value={invoiceNo} onChange={setInvoiceNo} placeholder="e.g. NB-INV-2050" required />
                   <Input label="Sale Date" type="date" value={saleDate} onChange={setSaleDate} />
+                  <Input label="Invoice Number" value={invoiceNo} onChange={setInvoiceNo} placeholder="e.g. NB-INV-2050" required />
                   <Select
                     label="Select Store"
                     value={storeId}
@@ -720,7 +725,7 @@ function handleCreate() {
                         className="w-full sm:w-auto"
                       >
                         <Icon name="check_circle" size={18} />
-                        Create Sale
+                        Create Invoice
                       </Button>
                     </div>
             </div>
