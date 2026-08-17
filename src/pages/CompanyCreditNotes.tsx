@@ -3,6 +3,7 @@ import { Card, Badge, Button, Input, Select, EmptyState, Icon } from '@/componen
 import { formatCurrency, formatDate } from '@/lib/format';
 import { stores } from '@/lib/data';
 
+
 type CreditNoteStatus = 'Approved' | 'Pending' | 'Rejected';
 
 type CreditNote = {
@@ -24,6 +25,9 @@ const productNames = ['Electra', 'Aalga', 'Astra', 'Alpha', 'Neutra', 'Rootra', 
 const parties = ['Murugan Farms', 'Sairam Agri Inputs', 'Selvam Agri Mart', 'Karthikeyan Estates', 'Green Harvest Agro'];
 const reasons = ['Damaged Product', 'Expired Stock', 'Wrong Item Supplied', 'Quality Issue', 'Customer Return'];
 const statuses: CreditNoteStatus[] = ['Approved', 'Pending', 'Rejected'];
+
+const [entryProduct, setEntryProduct] = useState<any>(null);
+const [showCreate, setShowCreate] = useState(false);
 
 const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   const d = new Date();
@@ -160,8 +164,9 @@ export default function CompanyCreditNotes() {
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Credit Notes (Returns)</h1>
           <p className="text-slate-500 mt-1">Manage product returns and credit note records.</p>
         </div>
-        <Button>
-          <Icon name="add" size={20} fill /> Create Credit Note
+        <Button onClick={() => setShowCreate(true)}>
+          <Icon name="add" size={20} fill />
+          Create Credit Note
         </Button>
       </div>
 
@@ -610,6 +615,99 @@ export default function CompanyCreditNotes() {
           </div>
         </div>
       )}
+
+    {showCreate && (
+  <div className="fixed inset-0 z-50 bg-black/40 p-4 flex items-center justify-center">
+    <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">
+            Create Credit Note
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">
+            Create a new credit note for product returns.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowCreate(false)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        >
+          <Icon name="close" size={20} />
+        </button>
+      </div>
+
+      {/* Form */}
+      <div className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+          <Input
+            label="Credit Note Number"
+            placeholder="e.g. CN-2050"
+            value={invoiceNo}
+            onChange={setCreditno}
+          />
+
+          <Input
+            label="Return Date"
+            type="date"
+            value={returnDate}
+            onChange={setreturnDate}
+          />
+
+          <Input
+            label="Customer / Store"
+            placeholder="Enter customer or store"
+            value={storeId}
+            onChange={setStoreId}
+          />
+
+          <Input
+            label="Returned Product"
+            placeholder="Enter product"
+            value={entry.productId}
+            onChange={(v) => setEntry({ ...entry, productId: v })}
+          />
+
+          <Input
+            label="Place of Return"
+            placeholder="Enter place"
+            value={placeOfSupply}
+            onChange={setPlaceOfSupply}
+          />
+
+          <Input
+            label="Reason"
+            placeholder="Reason for return"
+            value={remarks}
+            onChange={setRemarks}
+          />
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+        <Button
+          variant="secondary"
+          onClick={() => setShowCreate(false)}
+        >
+          Cancel
+        </Button>
+
+        <Button>
+          <Icon name="save" size={18} />
+          Create Credit Note
+        </Button>
+      </div>
+
+    </div>
+  </div>
+)}
+
     </div>
   );
 }
