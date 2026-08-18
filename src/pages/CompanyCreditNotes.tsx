@@ -9,12 +9,7 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import {
-  stores,
-  getCompanyCreditNotes,
-  saveCompanyCreditNotes,
-  type CompanyCreditNoteRecord,
-} from "@/lib/data";
+import { stores } from "@/lib/data";
 
 type CreditNoteStatus = "Approved" | "Pending" | "Rejected";
 
@@ -23,19 +18,13 @@ type CreditNote = {
   creditNoteNo: string;
   party: string;
   returnDate: string;
-  amount: number;
+  amount: number; // Without Tax
   sgst: number;
   cgst: number;
   igst: number;
   total: number;
   storeLocation: string;
   placeofreturn: string;
-  storeId?: string;
-  purchaseRef?: string;
-  product?: string;
-  quantity?: number;
-  reason?: string;
-  status?: "Pending" | "Approved" | "Rejected";
 };
 
 const productNames = [
@@ -77,7 +66,7 @@ const reasons = [
 ];
 const statuses: CreditNoteStatus[] = ["Approved", "Pending", "Rejected"];
 
-const seedCreditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
+const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   const d = new Date();
   d.setDate(d.getDate() - (i * 3 + 1));
 
@@ -114,31 +103,6 @@ const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red"> = {
 };
 
 export default function CompanyCreditNotes() {
-  const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
-    const saved = getCompanyCreditNotes();
-    if (saved.length > 0) {
-      return saved.map((x) => ({
-        id: x.id,
-        creditNoteNo: x.creditNoteNo,
-        party: x.storeName,
-        returnDate: x.returnDate,
-        amount: x.amount,
-        sgst: x.sgst,
-        cgst: x.cgst,
-        igst: x.igst,
-        total: x.total,
-        storeLocation: "",
-        placeofreturn: "",
-        storeId: x.storeId,
-        purchaseRef: x.purchaseRef,
-        product: x.product,
-        quantity: x.quantity,
-        reason: x.reason,
-        status: x.status,
-      }));
-    }
-    return seedCreditNotes;
-  });
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
@@ -167,16 +131,13 @@ export default function CompanyCreditNotes() {
   const canCreate = storeId && invoiceNo && added.length > 0;
 
   const totals = {
-    subtotal: added.reduce((s, r) => s + (r.amount || 0), 0),
-    totalDiscount: added.reduce((s, r) => s + (r.discount || 0), 0),
-    totalTax: added.reduce(
-      (s, r) => s + (r.sgst || 0) + (r.cgst || 0) + (r.igst || 0),
-      0,
-    ),
-    sgst: added.reduce((s, r) => s + (r.sgst || 0), 0),
-    cgst: added.reduce((s, r) => s + (r.cgst || 0), 0),
-    igst: added.reduce((s, r) => s + (r.igst || 0), 0),
-    grandTotal: added.reduce((s, r) => s + (r.total || 0), 0),
+    subtotal: 0,
+    totalDiscount: 0,
+    totalTax: 0,
+    sgst: 0,
+    cgst: 0,
+    igst: 0,
+    grandTotal: 0,
   };
 
   function selectProduct(productId: string) {
@@ -184,54 +145,15 @@ export default function CompanyCreditNotes() {
   }
 
   function addProduct() {
-    const product = allProducts.find((p) => p.id === entry.productId);
-    if (!product || !canAdd) return;
-
-    const gross = entry.quantity * entry.sellingPrice;
-    const taxable = Math.max(0, gross - entry.discount);
-    const taxRate = product.taxPercentage || 0;
-    const taxAmount = Math.round(taxable * (taxRate / 100) * 100) / 100;
-    const isTamilNadu = placeOfSupply === "Tamil Nadu";
-
-    setAdded((prev) => [
-      ...prev,
-      {
-        key: Math.random().toString(36).slice(2),
-        productId: product.id,
-        productName: product.name,
-        pkgsize: entry.pkgsize || product.size,
-        batchNo: entry.batchNo,
-        expiryDate: entry.expiryDate,
-        quantity: entry.quantity,
-        sellingPrice: entry.sellingPrice,
-        discount: entry.discount,
-        amount: taxable,
-        sgst: isTamilNadu ? taxAmount / 2 : 0,
-        cgst: isTamilNadu ? taxAmount / 2 : 0,
-        igst: isTamilNadu ? 0 : taxAmount,
-        total: taxable + taxAmount,
-      },
-    ]);
-
-    setEntry({
-      productId: "",
-      pkgsize: "",
-      batchNo: "",
-      expiryDate: "",
-      quantity: 0,
-      sellingPrice: 0,
-      discount: 0,
-    });
+    // Implementation
   }
 
   function updateAdded(key: string, updates: any) {
-    setAdded((prev) =>
-      prev.map((row) => (row.key === key ? { ...row, ...updates } : row)),
-    );
+    // Implementation
   }
 
   function removeAdded(key: string) {
-    setAdded((prev) => prev.filter((row) => row.key !== key));
+    // Implementation
   }
 
   function handleSaveDraft() {
@@ -239,58 +161,7 @@ export default function CompanyCreditNotes() {
   }
 
   function handleCreate() {
-    if (!canCreate || !selectedStore) return;
-
-    const newRows: CreditNote[] = added.map((row, i) => ({
-      id: `cn-${Date.now()}-${i}`,
-      creditNoteNo: invoiceNo,
-      party: selectedStore.name,
-      returnDate,
-      amount: row.amount || 0,
-      sgst: row.sgst || 0,
-      cgst: row.cgst || 0,
-      igst: row.igst || 0,
-      total: row.total || 0,
-      storeLocation: selectedStore.location,
-      placeofreturn: selectedStore.location?.split(",")[0] || "",
-      storeId: selectedStore.id,
-      purchaseRef: invoiceNo,
-      product: row.productName || "",
-      quantity: row.quantity || 0,
-      reason: remarks || "Product Return",
-      status: "Approved",
-    }));
-
-    const next = [...newRows, ...creditNotes];
-    setCreditNotes(next);
-
-    const synced: CompanyCreditNoteRecord[] = next
-      .filter((row) => row.storeId)
-      .map((row) => ({
-        id: row.id,
-        creditNoteNo: row.creditNoteNo,
-        storeId: row.storeId || "",
-        storeName: row.party,
-        returnDate: row.returnDate,
-        purchaseRef: row.purchaseRef || row.creditNoteNo,
-        product: row.product || "",
-        quantity: row.quantity || 0,
-        reason: row.reason || "Product Return",
-        amount: row.amount,
-        sgst: row.sgst,
-        cgst: row.cgst,
-        igst: row.igst,
-        total: row.total,
-        status: row.status || "Approved",
-      }));
-
-    saveCompanyCreditNotes(synced);
-    setAdded([]);
-    setRemarks("");
-    setStoreId("");
-    setCreditno("");
-    setreturnDate("");
-    setShowCreate(false);
+    // Implementation
   }
 
   const DetailField = ({ label, value }: any) => (
@@ -320,7 +191,7 @@ export default function CompanyCreditNotes() {
           c.creditNoteNo.toLowerCase().includes(search.toLowerCase()) ||
           c.party.toLowerCase().includes(search.toLowerCase()),
       ),
-    [search, creditNotes],
+    [search],
   );
 
   function closeForm() {
