@@ -98,7 +98,6 @@ export default function CompanyCreditNotes() {
   const [invoiceNo, setCreditno] = useState('');
   const [storeId, setStoreId] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
-  const [remarks, setRemarks] = useState('');
   const [entry, setEntry] = useState({
     productId: '',
     pkgsize: '',
@@ -221,7 +220,6 @@ export default function CompanyCreditNotes() {
     setCreditno('');
     setStoreId('');
     setPlaceOfSupply('');
-    setRemarks('');
     setEntry({
       productId: '',
       pkgsize: '',
@@ -238,14 +236,14 @@ export default function CompanyCreditNotes() {
   function handleSaveDraft() {
     if (!storeId || !invoiceNo) return;
     // TODO: persist as a draft (status: 'Pending') via your API / store
-    console.log('Saved as draft', { returnDate, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
+    console.log('Saved as draft', { returnDate, invoiceNo, storeId, placeOfSupply, added, totals });
     closeForm();
   }
 
   function handleCreate() {
     if (!canCreate) return;
     // TODO: push into creditNotes / call your create-credit-note API here
-    console.log('Creating credit note', { returnDate, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
+    console.log('Creating credit note', { returnDate, invoiceNo, storeId, placeOfSupply, added, totals });
     closeForm();
   }
 
@@ -456,15 +454,6 @@ export default function CompanyCreditNotes() {
                       placeholder="Auto-filled from store"
                       readOnly
                     />
-
-                    <div className="md:col-span-2">
-                      <Input
-                        label="Remarks"
-                        value={remarks}
-                        onChange={setRemarks}
-                        placeholder="Optional notes about this return"
-                      />
-                    </div>
                   </div>
                 </div>
 
