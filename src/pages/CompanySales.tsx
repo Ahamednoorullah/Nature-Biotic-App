@@ -454,23 +454,23 @@ export default function CompanySales() {
                       {s.placeOfSupply || "-"}
                     </td>
 
-                    <td className="px-2 py-3 text-center tabular-nums font-semibold text-slate-700 border-r border-slate-100">
+                    <td className="px-2 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
                       {formatCurrency(s.withoutTax)}
                     </td>
 
-                    <td className="px-2 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
                       {formatCurrency(s.sgst)}
                     </td>
 
-                    <td className="px-2 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
                       {formatCurrency(s.cgst)}
                     </td>
 
-                    <td className="px-2 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
                       {formatCurrency(s.igst)}
                     </td>
 
-                    <td className="px-2 py-3 text-center tabular-nums font-bold text-slate-800 border-r border-slate-100">
+                    <td className="px-2 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">
                       {formatCurrency(s.total)}
                     </td>
                   </tr>
@@ -980,3 +980,4 @@ function SummaryRow({
     </div>
   );
 }
+
