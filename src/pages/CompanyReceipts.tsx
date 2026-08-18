@@ -49,18 +49,18 @@ export default function CompanyReceipts() {
   const [dateFilter, setDateFilter] = useState('all');
   const [viewReceipt, setViewReceipt] = useState<Receipt | null>(null);
   const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>([]);
-const [showCreate, setShowCreate] = useState(false);
-const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
-const [receiptNo, setReceiptNo] = useState('');
-const [createStoreId, setCreateStoreId] = useState('');
-const [method, setMethod] = useState('');
-const [invoiceAmount, setInvoiceAmount] = useState(0);
-const [amountReceived, setAmountReceived] = useState(0);
-const [receivedBy, setReceivedBy] = useState('');
-const [remarks, setRemarks] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [receiptNo, setReceiptNo] = useState('');
+  const [createStoreId, setCreateStoreId] = useState('');
+  const [method, setMethod] = useState('');
+  const [invoiceAmount, setInvoiceAmount] = useState(0);
+  const [amountReceived, setAmountReceived] = useState(0);
+  const [receivedBy, setReceivedBy] = useState('');
+  const [remarks, setRemarks] = useState('');
 
-const createStore = stores.find((s) => s.id === createStoreId);
-const canCreate = !!createStoreId && !!receiptNo && !!method && amountReceived > 0;
+  const createStore = stores.find((s) => s.id === createStoreId);
+  const canCreate = !!createStoreId && !!receiptNo && !!method && amountReceived > 0;
 
 function resetCreateForm() {
   setReceiptDate(new Date().toISOString().split('T')[0]);
@@ -282,7 +282,7 @@ function handleCreateReceipt() {
 {showCreate &&
   createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="flex max-h-[92vh] w-[94vw] max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         {/* Fixed header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
@@ -355,15 +355,11 @@ function handleCreateReceipt() {
             />
 
             <div>
-              <p className="text-xs font-semibold text-slate-500 mb-1">Balance</p>
-              <p className="text-base font-bold text-slate-800">
-                {formatCurrency(Math.max(invoiceAmount - amountReceived, 0))}
-              </p>
+            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Balance</label>
+            <div className="w-full h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center text-base font-bold text-slate-800">
+              {formatCurrency(Math.max(invoiceAmount - amountReceived, 0))}
             </div>
-
-            <div className="sm:col-span-2">
-              <Input label="Remarks" value={remarks} onChange={setRemarks} placeholder="Optional notes" />
-            </div>
+          </div>
           </div>
         </div>
 
