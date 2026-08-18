@@ -122,7 +122,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                   <th className="px-5 py-3 text-left">Date</th>

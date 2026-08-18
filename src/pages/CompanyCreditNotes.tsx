@@ -1,7 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Card, Badge, Button, Input, Select, EmptyState, Icon } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/format';
-import { stores } from '@/lib/data';
+import {
+  stores,
+  addCompanyCreditNoteSyncRecords,
+  getCompanyCreditNoteSyncRecords,
+  type CompanyCreditNoteSyncRecord,
+} from '@/lib/data';
 import { createPortal } from 'react-dom';
 
 type CreditNoteStatus = 'Approved' | 'Pending' | 'Rejected';
@@ -18,6 +23,11 @@ type CreditNote = {
   total: number;
   storeLocation: string;
   placeofreturn: string;
+  storeId?: string;
+  product?: string;
+  quantity?: number;
+  reason?: string;
+  status?: CreditNoteStatus;
 };
 
 type AddedProduct = {
@@ -55,7 +65,7 @@ const parties = ['Murugan Farms', 'Sairam Agri Inputs', 'Selvam Agri Mart', 'Kar
 const reasons = ['Damaged Product', 'Expired Stock', 'Wrong Item Supplied', 'Quality Issue', 'Customer Return'];
 const statuses: CreditNoteStatus[] = ['Approved', 'Pending', 'Rejected'];
 
-const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
+const seedCreditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   const d = new Date();
   d.setDate(d.getDate() - (i * 3 + 1));
 
@@ -90,6 +100,35 @@ const statusColor: Record<CreditNoteStatus, 'green' | 'amber' | 'red'> = {
 };
 
 export default function CompanyCreditNotes() {
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
+    const synced = getCompanyCreditNoteSyncRecords();
+
+    const createdNotes: CreditNote[] = synced.map((row) => {
+      const store = stores.find((item) => item.id === row.storeId);
+
+      return {
+        id: row.id,
+        creditNoteNo: row.creditNoteNo,
+        party: row.storeName,
+        returnDate: row.returnDate,
+        amount: row.returnAmount,
+        sgst: 0,
+        cgst: 0,
+        igst: 0,
+        total: row.returnAmount,
+        storeLocation: store?.location || '',
+        placeofreturn: store?.location?.split(',')[0] || '',
+        storeId: row.storeId,
+        product: row.product,
+        quantity: row.quantity,
+        reason: row.reason,
+        status: row.status,
+      };
+    });
+
+    return [...createdNotes, ...seedCreditNotes];
+  });
+
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
 
@@ -243,9 +282,61 @@ export default function CompanyCreditNotes() {
   }
 
   function handleCreate() {
-    if (!canCreate) return;
-    // TODO: push into creditNotes / call your create-credit-note API here
-    console.log('Creating credit note', { returnDate, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
+    if (!canCreate || !selectedStore) return;
+
+    const createdAt = Date.now();
+
+    // One synced debit-note row per product in this credit note.
+    const syncRows: CompanyCreditNoteSyncRecord[] = added.map(
+      (item, index) => ({
+        id: `${invoiceNo}-${item.key}-${createdAt}-${index}`,
+        creditNoteNo: invoiceNo,
+        storeId: selectedStore.id,
+        storeName: selectedStore.name,
+        returnDate,
+        purchaseRef: invoiceNo,
+        product: item.productName,
+        quantity: item.quantity,
+        returnAmount: item.total,
+        reason: item.reason || remarks || 'Product Return',
+        status: 'Approved',
+      }),
+    );
+
+    addCompanyCreditNoteSyncRecords(syncRows);
+
+    // Also show the newly created credit note immediately in Company Credit Notes.
+    const companyRows: CreditNote[] = added.map((item, index) => ({
+      id: syncRows[index].id,
+      creditNoteNo: invoiceNo,
+      party: selectedStore.name,
+      returnDate,
+      amount: item.taxableAmount,
+      sgst: item.sgst,
+      cgst: item.cgst,
+      igst: item.igst,
+      total: item.total,
+      storeLocation: selectedStore.location,
+      placeofreturn: selectedStore.location?.split(',')[0] || '',
+      storeId: selectedStore.id,
+      product: item.productName,
+      quantity: item.quantity,
+      reason: item.reason || remarks || 'Product Return',
+      status: 'Approved',
+    }));
+
+    setCreditNotes((prev) => [...companyRows, ...prev]);
+
+    console.log('Created credit note', {
+      returnDate,
+      invoiceNo,
+      storeId,
+      placeOfSupply,
+      remarks,
+      added,
+      totals,
+    });
+
     closeForm();
   }
 
@@ -270,7 +361,7 @@ export default function CompanyCreditNotes() {
           c.creditNoteNo.toLowerCase().includes(search.toLowerCase()) ||
           c.party.toLowerCase().includes(search.toLowerCase()),
       ),
-    [search],
+    [search, creditNotes],
   );
 
   function closeForm() {

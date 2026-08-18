@@ -190,6 +190,74 @@ export type ExecutiveStockReturn = {
   remarks: string;
 };
 
+
+// Company Credit Note -> Store Debit Note sync
+export type CompanyCreditNoteSyncRecord = {
+  id: string;
+  creditNoteNo: string;
+  storeId: string;
+  storeName: string;
+  returnDate: string;
+  purchaseRef: string;
+  product: string;
+  quantity: number;
+  returnAmount: number;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+};
+
+const COMPANY_CREDIT_NOTE_SYNC_KEY =
+  "nature-biotic-company-credit-note-sync-v1";
+
+export function getCompanyCreditNoteSyncRecords(): CompanyCreditNoteSyncRecord[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(COMPANY_CREDIT_NOTE_SYNC_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCompanyCreditNoteSyncRecords(
+  rows: CompanyCreditNoteSyncRecord[],
+) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      COMPANY_CREDIT_NOTE_SYNC_KEY,
+      JSON.stringify(rows),
+    );
+    window.dispatchEvent(new Event("company-credit-note-sync-updated"));
+  } catch {
+    // Frontend demo should continue even if localStorage is unavailable.
+  }
+}
+
+export function addCompanyCreditNoteSyncRecords(
+  rows: CompanyCreditNoteSyncRecord[],
+) {
+  const existing = getCompanyCreditNoteSyncRecords();
+
+  // Prevent duplicate rows when the same note is saved again.
+  const existingIds = new Set(existing.map((row) => row.id));
+  const merged = [
+    ...rows.filter((row) => !existingIds.has(row.id)),
+    ...existing,
+  ];
+
+  saveCompanyCreditNoteSyncRecords(merged);
+  return merged;
+}
+
+export function getStoreDebitNotesFromCompanyCredits(storeId: string) {
+  return getCompanyCreditNoteSyncRecords().filter(
+    (row) => row.storeId === storeId,
+  );
+}
+
 export type StockStatus = "Healthy" | "Low Stock" | "Out of Stock";
 
 export type AdjustmentType = "Increase" | "Decrease";
