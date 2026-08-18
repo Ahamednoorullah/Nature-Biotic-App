@@ -190,6 +190,48 @@ export type ExecutiveStockReturn = {
   remarks: string;
 };
 
+export type CompanyCreditNoteRecord = {
+  id: string;
+  creditNoteNo: string;
+  storeId: string;
+  storeName: string;
+  returnDate: string;
+  purchaseRef: string;
+  product: string;
+  quantity: number;
+  reason: string;
+  amount: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+  status: "Pending" | "Approved" | "Rejected";
+};
+
+const COMPANY_CREDIT_NOTES_KEY = "nature-biotic-company-credit-notes-v1";
+
+export function getCompanyCreditNotes(): CompanyCreditNoteRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(COMPANY_CREDIT_NOTES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCompanyCreditNotes(rows: CompanyCreditNoteRecord[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(COMPANY_CREDIT_NOTES_KEY, JSON.stringify(rows));
+    window.dispatchEvent(new Event("company-credit-notes-updated"));
+  } catch {}
+}
+
+export function getStoreDebitNotesFromCompanyCredits(storeId: string) {
+  return getCompanyCreditNotes().filter((row) => row.storeId === storeId);
+}
+
 export type StockStatus = "Healthy" | "Low Stock" | "Out of Stock";
 
 export type AdjustmentType = "Increase" | "Decrease";

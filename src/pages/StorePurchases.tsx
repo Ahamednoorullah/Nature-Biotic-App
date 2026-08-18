@@ -6,9 +6,31 @@ import {
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 
+type PurchaseStatus = "Dispatched" | "Received";
+
+const PURCHASE_STATUS_KEY = "nature-biotic-store-purchase-status-v1";
+
+function getSavedStatuses(): Record<string, PurchaseStatus> {
+  try {
+    const raw = localStorage.getItem(PURCHASE_STATUS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStatuses(statuses: Record<string, PurchaseStatus>) {
+  try {
+    localStorage.setItem(PURCHASE_STATUS_KEY, JSON.stringify(statuses));
+  } catch {}
+}
+
 export default function StorePurchases({ storeId }: { storeId: string }) {
   const [rows, setRows] = useState<CompanyStoreSaleRecord[]>(() =>
     getStorePurchasesFromCompanySales(storeId),
+  );
+  const [statuses, setStatuses] = useState<Record<string, PurchaseStatus>>(() =>
+    getSavedStatuses(),
   );
 
   useEffect(() => {
@@ -53,6 +75,12 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
   const totalValue = invoices.reduce((s: any, r: any) => s + r.total, 0);
   const totalQty = invoices.reduce((s: any, r: any) => s + r.quantity, 0);
 
+  function markReceived(invoiceNo: string) {
+    const next = { ...statuses, [invoiceNo]: "Received" as PurchaseStatus };
+    setStatuses(next);
+    saveStatuses(next);
+  }
+
   return (
     <div>
       <div className="mb-6">
@@ -94,7 +122,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[950px] text-sm">
+            <table className="w-full min-w-[1000px] text-sm">
               <thead>
                 <tr className="border-b bg-slate-50 text-xs uppercase text-slate-500">
                   <th className="px-5 py-3 text-left">Date</th>
@@ -106,6 +134,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                   <th className="px-5 py-3 text-right">Tax</th>
                   <th className="px-5 py-3 text-right">Total</th>
                   <th className="px-5 py-3 text-left">Status</th>
+                  <th className="px-5 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -128,9 +157,32 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                       {formatCurrency(r.total)}
                     </td>
                     <td className="px-5 py-4">
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        Received
-                      </span>
+                      {(statuses[r.invoiceNo] ?? "Dispatched") ===
+                      "Received" ? (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                          Received
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                          Dispatched
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      {(statuses[r.invoiceNo] ?? "Dispatched") ===
+                      "Dispatched" ? (
+                        <button
+                          type="button"
+                          onClick={() => markReceived(r.invoiceNo)}
+                          className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                        >
+                          Mark Received
+                        </button>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-400">
+                          Completed
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

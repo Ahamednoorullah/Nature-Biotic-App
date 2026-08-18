@@ -1,49 +1,87 @@
-import { useState, useMemo } from 'react';
-import { Card, Badge, Button, Input, Select, EmptyState, Icon } from '@/components/ui';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { stores } from '@/lib/data';
+import { useState, useMemo } from "react";
+import {
+  Card,
+  Badge,
+  Button,
+  Input,
+  Select,
+  EmptyState,
+  Icon,
+} from "@/components/ui";
+import { formatCurrency, formatDate } from "@/lib/format";
+import {
+  stores,
+  getCompanyCreditNotes,
+  saveCompanyCreditNotes,
+  type CompanyCreditNoteRecord,
+} from "@/lib/data";
 
-
-type CreditNoteStatus = 'Approved' | 'Pending' | 'Rejected';
+type CreditNoteStatus = "Approved" | "Pending" | "Rejected";
 
 type CreditNote = {
   id: string;
   creditNoteNo: string;
   party: string;
   returnDate: string;
-  amount: number;     // Without Tax
+  amount: number;
   sgst: number;
   cgst: number;
   igst: number;
   total: number;
   storeLocation: string;
   placeofreturn: string;
-
+  storeId?: string;
+  purchaseRef?: string;
+  product?: string;
+  quantity?: number;
+  reason?: string;
+  status?: "Pending" | "Approved" | "Rejected";
 };
 
-const productNames = ['Electra', 'Aalga', 'Astra', 'Alpha', 'Neutra', 'Rootra', 'Ultra'];
-const allProducts = productNames.map((name, i) => ({ 
-  id: `p${i}`, 
+const productNames = [
+  "Electra",
+  "Aalga",
+  "Astra",
+  "Alpha",
+  "Neutra",
+  "Rootra",
+  "Ultra",
+];
+const allProducts = productNames.map((name, i) => ({
+  id: `p${i}`,
   name,
-  size: '500ml',
-  hsnCode: '3101',
-  mrp: 250 + (i * 50),
-  taxType: 'GST',
+  size: "500ml",
+  hsnCode: "3101",
+  mrp: 250 + i * 50,
+  taxType: "GST",
   taxPercentage: 18,
   sgst: 9,
   cgst: 9,
-  imageColor: ['blue', 'green', 'red', 'amber', 'purple', 'pink', 'indigo'][i % 7]
+  imageColor: ["blue", "green", "red", "amber", "purple", "pink", "indigo"][
+    i % 7
+  ],
 }));
-const parties = ['Murugan Farms', 'Sairam Agri Inputs', 'Selvam Agri Mart', 'Karthikeyan Estates', 'Green Harvest Agro'];
-const reasons = ['Damaged Product', 'Expired Stock', 'Wrong Item Supplied', 'Quality Issue', 'Customer Return'];
-const statuses: CreditNoteStatus[] = ['Approved', 'Pending', 'Rejected'];
+const parties = [
+  "Murugan Farms",
+  "Sairam Agri Inputs",
+  "Selvam Agri Mart",
+  "Karthikeyan Estates",
+  "Green Harvest Agro",
+];
+const reasons = [
+  "Damaged Product",
+  "Expired Stock",
+  "Wrong Item Supplied",
+  "Quality Issue",
+  "Customer Return",
+];
+const statuses: CreditNoteStatus[] = ["Approved", "Pending", "Rejected"];
 
-const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
+const seedCreditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   const d = new Date();
   d.setDate(d.getDate() - (i * 3 + 1));
 
-  const withoutTax =
-    (1 + (i % 5)) * (300 + (i % 4) * 80);
+  const withoutTax = (1 + (i % 5)) * (300 + (i % 4) * 80);
 
   // Example: alternate between Tamil Nadu and Other State
   const isTamilNadu = i % 2 === 0;
@@ -58,39 +96,63 @@ const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
     id: `cn${i}`,
     creditNoteNo: `CN-${String(2001 + i)}`,
     party: parties[i % parties.length],
-    returnDate: d.toISOString().split('T')[0],
+    returnDate: d.toISOString().split("T")[0],
     amount: withoutTax,
     sgst,
     cgst,
     igst,
     total,
     storeLocation: stores[i % stores.length].location,
-    placeofreturn: stores[i % stores.length].location?.split(',')[0] || '',
+    placeofreturn: stores[i % stores.length].location?.split(",")[0] || "",
   };
 });
 
-
-const statusColor: Record<CreditNoteStatus, 'green' | 'amber' | 'red'> = {
-  Approved: 'green',
-  Pending: 'amber',
-  Rejected: 'red',
+const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red"> = {
+  Approved: "green",
+  Pending: "amber",
+  Rejected: "red",
 };
 
 export default function CompanyCreditNotes() {
-  const [search, setSearch] = useState('');
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
+    const saved = getCompanyCreditNotes();
+    if (saved.length > 0) {
+      return saved.map((x) => ({
+        id: x.id,
+        creditNoteNo: x.creditNoteNo,
+        party: x.storeName,
+        returnDate: x.returnDate,
+        amount: x.amount,
+        sgst: x.sgst,
+        cgst: x.cgst,
+        igst: x.igst,
+        total: x.total,
+        storeLocation: "",
+        placeofreturn: "",
+        storeId: x.storeId,
+        purchaseRef: x.purchaseRef,
+        product: x.product,
+        quantity: x.quantity,
+        reason: x.reason,
+        status: x.status,
+      }));
+    }
+    return seedCreditNotes;
+  });
+  const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  
+
   // Form state
-  const [returnDate, setreturnDate] = useState('');
-  const [invoiceNo, setCreditno] = useState('');
-  const [storeId, setStoreId] = useState('');
-  const [placeOfSupply, setPlaceOfSupply] = useState('');
-  const [remarks, setRemarks] = useState('');
+  const [returnDate, setreturnDate] = useState("");
+  const [invoiceNo, setCreditno] = useState("");
+  const [storeId, setStoreId] = useState("");
+  const [placeOfSupply, setPlaceOfSupply] = useState("");
+  const [remarks, setRemarks] = useState("");
   const [entry, setEntry] = useState({
-    productId: '',
-    pkgsize: '',
-    batchNo: '',
-    expiryDate: '',
+    productId: "",
+    pkgsize: "",
+    batchNo: "",
+    expiryDate: "",
     quantity: 0,
     sellingPrice: 0,
     discount: 0,
@@ -98,21 +160,23 @@ export default function CompanyCreditNotes() {
   const [added, setAdded] = useState<any[]>([]);
 
   const selectedStore = stores.find((s) => s.id === storeId);
-  const entryProduct = allProducts.find(
-  (p) => p.id === entry.productId
-);
-  
-  const canAdd = entry.productId && entry.batchNo && entry.expiryDate && entry.quantity > 0;
+  const entryProduct = allProducts.find((p) => p.id === entry.productId);
+
+  const canAdd =
+    entry.productId && entry.batchNo && entry.expiryDate && entry.quantity > 0;
   const canCreate = storeId && invoiceNo && added.length > 0;
-  
+
   const totals = {
-    subtotal: 0,
-    totalDiscount: 0,
-    totalTax: 0,
-    sgst: 0,
-    cgst: 0,
-    igst: 0,
-    grandTotal: 0,
+    subtotal: added.reduce((s, r) => s + (r.amount || 0), 0),
+    totalDiscount: added.reduce((s, r) => s + (r.discount || 0), 0),
+    totalTax: added.reduce(
+      (s, r) => s + (r.sgst || 0) + (r.cgst || 0) + (r.igst || 0),
+      0,
+    ),
+    sgst: added.reduce((s, r) => s + (r.sgst || 0), 0),
+    cgst: added.reduce((s, r) => s + (r.cgst || 0), 0),
+    igst: added.reduce((s, r) => s + (r.igst || 0), 0),
+    grandTotal: added.reduce((s, r) => s + (r.total || 0), 0),
   };
 
   function selectProduct(productId: string) {
@@ -120,15 +184,54 @@ export default function CompanyCreditNotes() {
   }
 
   function addProduct() {
-    // Implementation
+    const product = allProducts.find((p) => p.id === entry.productId);
+    if (!product || !canAdd) return;
+
+    const gross = entry.quantity * entry.sellingPrice;
+    const taxable = Math.max(0, gross - entry.discount);
+    const taxRate = product.taxPercentage || 0;
+    const taxAmount = Math.round(taxable * (taxRate / 100) * 100) / 100;
+    const isTamilNadu = placeOfSupply === "Tamil Nadu";
+
+    setAdded((prev) => [
+      ...prev,
+      {
+        key: Math.random().toString(36).slice(2),
+        productId: product.id,
+        productName: product.name,
+        pkgsize: entry.pkgsize || product.size,
+        batchNo: entry.batchNo,
+        expiryDate: entry.expiryDate,
+        quantity: entry.quantity,
+        sellingPrice: entry.sellingPrice,
+        discount: entry.discount,
+        amount: taxable,
+        sgst: isTamilNadu ? taxAmount / 2 : 0,
+        cgst: isTamilNadu ? taxAmount / 2 : 0,
+        igst: isTamilNadu ? 0 : taxAmount,
+        total: taxable + taxAmount,
+      },
+    ]);
+
+    setEntry({
+      productId: "",
+      pkgsize: "",
+      batchNo: "",
+      expiryDate: "",
+      quantity: 0,
+      sellingPrice: 0,
+      discount: 0,
+    });
   }
 
   function updateAdded(key: string, updates: any) {
-    // Implementation
+    setAdded((prev) =>
+      prev.map((row) => (row.key === key ? { ...row, ...updates } : row)),
+    );
   }
 
   function removeAdded(key: string) {
-    // Implementation
+    setAdded((prev) => prev.filter((row) => row.key !== key));
   }
 
   function handleSaveDraft() {
@@ -136,7 +239,58 @@ export default function CompanyCreditNotes() {
   }
 
   function handleCreate() {
-    // Implementation
+    if (!canCreate || !selectedStore) return;
+
+    const newRows: CreditNote[] = added.map((row, i) => ({
+      id: `cn-${Date.now()}-${i}`,
+      creditNoteNo: invoiceNo,
+      party: selectedStore.name,
+      returnDate,
+      amount: row.amount || 0,
+      sgst: row.sgst || 0,
+      cgst: row.cgst || 0,
+      igst: row.igst || 0,
+      total: row.total || 0,
+      storeLocation: selectedStore.location,
+      placeofreturn: selectedStore.location?.split(",")[0] || "",
+      storeId: selectedStore.id,
+      purchaseRef: invoiceNo,
+      product: row.productName || "",
+      quantity: row.quantity || 0,
+      reason: remarks || "Product Return",
+      status: "Approved",
+    }));
+
+    const next = [...newRows, ...creditNotes];
+    setCreditNotes(next);
+
+    const synced: CompanyCreditNoteRecord[] = next
+      .filter((row) => row.storeId)
+      .map((row) => ({
+        id: row.id,
+        creditNoteNo: row.creditNoteNo,
+        storeId: row.storeId || "",
+        storeName: row.party,
+        returnDate: row.returnDate,
+        purchaseRef: row.purchaseRef || row.creditNoteNo,
+        product: row.product || "",
+        quantity: row.quantity || 0,
+        reason: row.reason || "Product Return",
+        amount: row.amount,
+        sgst: row.sgst,
+        cgst: row.cgst,
+        igst: row.igst,
+        total: row.total,
+        status: row.status || "Approved",
+      }));
+
+    saveCompanyCreditNotes(synced);
+    setAdded([]);
+    setRemarks("");
+    setStoreId("");
+    setCreditno("");
+    setreturnDate("");
+    setShowCreate(false);
   }
 
   const DetailField = ({ label, value }: any) => (
@@ -148,8 +302,14 @@ export default function CompanyCreditNotes() {
 
   const SummaryRow = ({ label, value, muted }: any) => (
     <div className="flex items-center justify-between">
-      <span className={muted ? 'text-slate-500' : 'text-slate-700'}>{label}</span>
-      <span className={`font-semibold tabular-nums ${muted ? 'text-slate-500' : 'text-slate-800'}`}>{value}</span>
+      <span className={muted ? "text-slate-500" : "text-slate-700"}>
+        {label}
+      </span>
+      <span
+        className={`font-semibold tabular-nums ${muted ? "text-slate-500" : "text-slate-800"}`}
+      >
+        {value}
+      </span>
     </div>
   );
 
@@ -160,7 +320,7 @@ export default function CompanyCreditNotes() {
           c.creditNoteNo.toLowerCase().includes(search.toLowerCase()) ||
           c.party.toLowerCase().includes(search.toLowerCase()),
       ),
-    [search],
+    [search, creditNotes],
   );
 
   function closeForm() {
@@ -171,8 +331,12 @@ export default function CompanyCreditNotes() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Credit Notes (Returns)</h1>
-          <p className="text-slate-500 mt-1">Manage product returns and credit note records.</p>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+            Credit Notes (Returns)
+          </h1>
+          <p className="text-slate-500 mt-1">
+            Manage product returns and credit note records.
+          </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>
           <Icon name="add" size={20} fill />
@@ -182,100 +346,108 @@ export default function CompanyCreditNotes() {
 
       <Card className="p-4 mb-5">
         <div className="flex-1 max-w-md">
-          <Input value={search} onChange={setSearch} placeholder="Search by credit note, invoice, party..." icon="search" />
+          <Input
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by credit note, invoice, party..."
+            icon="search"
+          />
         </div>
       </Card>
 
       {filtered.length === 0 ? (
         <Card className="p-0">
-          <EmptyState icon="undo" title="No credit notes found" description="Adjust your search or create a new credit note." />
+          <EmptyState
+            icon="undo"
+            title="No credit notes found"
+            description="Adjust your search or create a new credit note."
+          />
         </Card>
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm border-collapse">
               <thead>
-              <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+                <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+                  <th
+                    rowSpan={2}
+                    className="w-[6%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                  >
+                    S.No
+                  </th>
 
-                <th
-                  rowSpan={2}
-                  className="w-[6%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                >
-                  S.No
-                </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Return Date
+                  </th>
 
-                <th
-                  rowSpan={2}
-                  className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                >
-                  Return Date
-                </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Credit Note No.
+                  </th>
 
-                <th
-                  rowSpan={2}
-                  className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                >
-                  Credit Note No.
-                </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Store
+                  </th>
 
-                <th
-                  rowSpan={2}
-                  className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                >
-                  Store
-                </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Place of Return
+                  </th>
 
-                <th
-                  rowSpan={2}
-                  className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                >
-                  Place of Return
-                </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Without Tax
+                  </th>
 
-                <th
-                  rowSpan={2}
-                  className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                >
-                  Without Tax
-                </th>
+                  {/* Tax - Main Heading */}
+                  <th
+                    colSpan={3}
+                    className="px-4 py-2 text-center font-semibold border-r border-slate-200"
+                  >
+                    Tax
+                  </th>
 
-                {/* Tax - Main Heading */}
-                <th
-                  colSpan={3}
-                  className="px-4 py-2 text-center font-semibold border-r border-slate-200"
-                >
-                  Tax
-                </th>
+                  <th
+                    rowSpan={2}
+                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Total
+                  </th>
+                </tr>
 
-                <th
-                  rowSpan={2}
-                  className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                >
-                  Total
-                </th>
-              </tr>
+                {/* Tax Sub Headings */}
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
+                    SGST
+                  </th>
 
-              {/* Tax Sub Headings */}
-              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
+                    CGST
+                  </th>
 
-                <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                  SGST
-                </th>
-
-                <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                  CGST
-                </th>
-
-                <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                  IGST
-                </th>
-
-              </tr>
-            </thead>
+                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
+                    IGST
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 {filtered.map((c, i) => (
-                  <tr key={c.id} className="hover:bg-slate-50/50 transition-base">
-
+                  <tr
+                    key={c.id}
+                    className="hover:bg-slate-50/50 transition-base"
+                  >
                     <td className="px-2 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
                       {i + 1}
                     </td>
@@ -324,294 +496,294 @@ export default function CompanyCreditNotes() {
       )}
 
       {/* Create Invoice — full-screen form */}
-    
+
       {showCreate && (
-      <div className="fixed inset-0 z-50 bg-black/40">
+        <div className="fixed inset-0 z-50 bg-black/40">
+          <div className="relative bg-white w-full h-full shadow-elevated flex flex-col animate-scale-in">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">
+                  Create Credit Note
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  Create a new credit note for product returns.
+                </p>
+              </div>
 
-      <div className="relative bg-white w-full h-full shadow-elevated flex flex-col animate-scale-in">
+              <button
+                type="button"
+                onClick={() => setShowCreate(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <Icon name="close" size={20} />
+              </button>
+            </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800">
-            Create Credit Note
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Create a new credit note for product returns.
-          </p>
-        </div>
+            {/* Form */}
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Return Date"
+                  type="date"
+                  value={returnDate}
+                  onChange={setreturnDate}
+                />
 
-        <button
-          type="button"
-          onClick={() => setShowCreate(false)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-        >
-          <Icon name="close" size={20} />
-        </button>
-      </div>
+                <Input
+                  label="Credit Note Number"
+                  placeholder="e.g. CN-2050"
+                  value={invoiceNo}
+                  onChange={setCreditno}
+                />
 
-      {/* Form */}
-      <div className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
+                <Select
+                  label="Select Store"
+                  value={storeId}
+                  onChange={(value) => {
+                    setStoreId(value);
 
-          <Input
-            label="Return Date"
-            type="date"
-            value={returnDate}
-            onChange={setreturnDate}
-          />
+                    const store = stores.find((s) => s.id === value);
 
-          <Input
-            label="Credit Note Number"
-            placeholder="e.g. CN-2050"
-            value={invoiceNo}
-            onChange={setCreditno}
-          />
+                    if (store?.location?.toLowerCase().includes("kerala")) {
+                      setPlaceOfSupply("Others");
+                    } else {
+                      setPlaceOfSupply("Tamil Nadu");
+                    }
+                  }}
+                  placeholder="Choose a registered store"
+                  options={stores.map((s) => ({
+                    value: s.id,
+                    label: `${s.name} — ${s.location}`,
+                  }))}
+                  required
+                />
 
-          <Select 
-            label="Select Store" 
-            value={storeId} 
-            onChange={(value) => {
-              setStoreId(value);
+                <Select
+                  label="Place of Supply"
+                  value={placeOfSupply}
+                  onChange={setPlaceOfSupply}
+                  options={[
+                    { value: "Tamil Nadu", label: "Tamil Nadu" },
+                    { value: "Others", label: "Others" },
+                  ]}
+                />
 
-              const store = stores.find((s) => s.id === value);
+                <Input
+                  label="Store Address"
+                  value={selectedStore?.address || ""}
+                  onChange={() => {}}
+                  placeholder="Auto-filled from store"
+                  readOnly
+                />
+                <Input
+                  label="GST Number"
+                  value={selectedStore?.gst || ""}
+                  onChange={() => {}}
+                  placeholder="Auto-filled from store"
+                  readOnly
+                />
 
-              if (store?.location?.toLowerCase().includes('kerala')) {
-                setPlaceOfSupply('Others');
-              } else {
-                setPlaceOfSupply('Tamil Nadu');
-              }
-            }}
-            placeholder="Choose a registered store" 
-            options={stores.map((s) => ({ 
-              value: s.id, 
-              label: `${s.name} — ${s.location}` 
-            }))} 
-            required 
-          />
+                <Input
+                  label="Returned Product"
+                  placeholder="Enter product"
+                  value={entry.productId}
+                  onChange={(v) => setEntry({ ...entry, productId: v })}
+                />
 
-          <Select
-            label="Place of Supply"
-            value={placeOfSupply}
-            onChange={setPlaceOfSupply}
-            options={[
-              { value: "Tamil Nadu", label: "Tamil Nadu" },
-              { value: "Others", label: "Others" },
-          ]}
-          />
+                <Input
+                  label="Reason"
+                  placeholder="Reason for return"
+                  value={remarks}
+                  onChange={setRemarks}
+                />
+              </div>
+            </div>
 
-          <Input label="Store Address" value={selectedStore?.address || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
-          <Input label="GST Number" value={selectedStore?.gst || ''} onChange={() => {}} placeholder="Auto-filled from store" readOnly />
+            {/* Product Entry */}
+            <section>
+              <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 px-5">
+                Add Product
+              </h4>
 
-          
-          <Input
-            label="Returned Product"
-            placeholder="Enter product"
-            value={entry.productId}
-            onChange={(v) => setEntry({ ...entry, productId: v })}
-          />
+              <div className="mx-4 rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
+                {/* Entry row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-end">
+                  {/* Select Product */}
+                  <Select
+                    label="Select Product"
+                    value={entry.productId}
+                    onChange={selectProduct}
+                    placeholder="Choose product"
+                    options={allProducts.map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                    }))}
+                  />
 
-          <Input
-            label="Reason"
-            placeholder="Reason for return"
-            value={remarks}
-            onChange={setRemarks}
-          />
+                  {/* PKG Size */}
+                  <Select
+                    label="PKG Size"
+                    value={entry.pkgsize}
+                    onChange={(v) =>
+                      setEntry((p) => ({
+                        ...p,
+                        pkgsize: v,
+                      }))
+                    }
+                    placeholder="Select size"
+                    options={[
+                      { value: "100ml", label: "100 ml" },
+                      { value: "250ml", label: "250 ml" },
+                      { value: "500ml", label: "500 ml" },
+                      { value: "1l", label: "1 L" },
+                      { value: "100g", label: "100 g" },
+                      { value: "250g", label: "250 g" },
+                      { value: "500g", label: "500 g" },
+                      { value: "1kg", label: "1 Kg" },
+                      { value: "5kg", label: "5 Kg" },
+                      { value: "10kg", label: "10 Kg" },
+                      { value: "25kg", label: "25 Kg" },
+                    ]}
+                  />
 
-        </div>
-      </div>
+                  {/* Batch No */}
+                  <Input
+                    label="Batch No"
+                    value={entry.batchNo}
+                    onChange={(v) =>
+                      setEntry((p) => ({
+                        ...p,
+                        batchNo: v,
+                      }))
+                    }
+                    placeholder="e.g. BAT-001"
+                    required
+                  />
 
+                  {/* Expiry Date */}
+                  <Input
+                    label="Expiry Date"
+                    type="date"
+                    value={entry.expiryDate}
+                    onChange={(v) =>
+                      setEntry((p) => ({
+                        ...p,
+                        expiryDate: v,
+                      }))
+                    }
+                    required
+                  />
 
-      {/* Product Entry */}
-      <section>
-  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 px-5">
-    Add Product
-  </h4>
+                  {/* Quantity */}
+                  <Input
+                    label="Quantity"
+                    type="number"
+                    value={String(entry.quantity)}
+                    onChange={(v) =>
+                      setEntry((p) => ({
+                        ...p,
+                        quantity: Number(v) || 0,
+                      }))
+                    }
+                  />
 
-  <div className="mx-4 rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
+                  {/* Selling Price */}
+                  <Input
+                    label="Selling Price"
+                    type="number"
+                    value={String(entry.sellingPrice)}
+                    onChange={(v) =>
+                      setEntry((p) => ({
+                        ...p,
+                        sellingPrice: Number(v) || 0,
+                      }))
+                    }
+                  />
 
-    {/* Entry row */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-end">
+                  {/* Discount */}
+                  <Input
+                    label="Discount"
+                    type="number"
+                    value={String(entry.discount)}
+                    onChange={(v) =>
+                      setEntry((p) => ({
+                        ...p,
+                        discount: Number(v) || 0,
+                      }))
+                    }
+                  />
 
-      {/* Select Product */}
-      <Select
-        label="Select Product"
-        value={entry.productId}
-        onChange={selectProduct}
-        placeholder="Choose product"
-        options={allProducts.map((p) => ({
-          value: p.id,
-          label: p.name,
-        }))}
-      />
+                  {/* Add Product */}
+                  <Button
+                    onClick={addProduct}
+                    disabled={!canAdd}
+                    className="w-full h-[50px] px-3"
+                  >
+                    <Icon name="add" size={18} />
+                    <span className="whitespace-nowrap">Add Product</span>
+                  </Button>
+                </div>
+              </div>
 
-      {/* PKG Size */}
-      <Select
-        label="PKG Size"
-        value={entry.pkgsize}
-        onChange={(v) =>
-          setEntry((p) => ({
-            ...p,
-            pkgsize: v,
-          }))
-        }
-        placeholder="Select size"
-        options={[
-          { value: "100ml", label: "100 ml" },
-          { value: "250ml", label: "250 ml" },
-          { value: "500ml", label: "500 ml" },
-          { value: "1l", label: "1 L" },
-          { value: "100g", label: "100 g" },
-          { value: "250g", label: "250 g" },
-          { value: "500g", label: "500 g" },
-          { value: "1kg", label: "1 Kg" },
-          { value: "5kg", label: "5 Kg" },
-          { value: "10kg", label: "10 Kg" },
-          { value: "25kg", label: "25 Kg" },
-        ]}
-      />
+              {/* Auto-loaded product details */}
+              {entryProduct && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
+                  <div className="col-span-2 sm:col-span-1 flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                      <Icon name="image" size={20} className="text-slate-600" />
+                    </div>
 
-      {/* Batch No */}
-      <Input
-        label="Batch No"
-        value={entry.batchNo}
-        onChange={(v) =>
-          setEntry((p) => ({
-            ...p,
-            batchNo: v,
-          }))
-        }
-        placeholder="e.g. BAT-001"
-        required
-      />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-slate-400 font-medium">
+                        Product Image
+                      </p>
 
-      {/* Expiry Date */}
-      <Input
-        label="Expiry Date"
-        type="date"
-        value={entry.expiryDate}
-        onChange={(v) =>
-          setEntry((p) => ({
-            ...p,
-            expiryDate: v,
-          }))
-        }
-        required
-      />
+                      <p className="text-xs font-semibold text-slate-700 truncate">
+                        {entryProduct.name}
+                      </p>
+                    </div>
+                  </div>
 
-      {/* Quantity */}
-      <Input
-        label="Quantity"
-        type="number"
-        value={String(entry.quantity)}
-        onChange={(v) =>
-          setEntry((p) => ({
-            ...p,
-            quantity: Number(v) || 0,
-          }))
-        }
-      />
+                  <DetailField
+                    label="Pack Size"
+                    value={entryProduct?.size || "-"}
+                  />
 
-      {/* Selling Price */}
-      <Input
-        label="Selling Price"
-        type="number"
-        value={String(entry.sellingPrice)}
-        onChange={(v) =>
-          setEntry((p) => ({
-            ...p,
-            sellingPrice: Number(v) || 0,
-          }))
-        }
-      />
+                  <DetailField
+                    label="HSN / SAC"
+                    value={entryProduct?.hsnCode || "-"}
+                  />
 
-      {/* Discount */}
-      <Input
-        label="Discount"
-        type="number"
-        value={String(entry.discount)}
-        onChange={(v) =>
-          setEntry((p) => ({
-            ...p,
-            discount: Number(v) || 0,
-          }))
-        }
-      />
+                  <DetailField
+                    label="MRP"
+                    value={formatCurrency(entryProduct?.mrp || 0)}
+                  />
 
-      {/* Add Product */}
-      <Button
-        onClick={addProduct}
-        disabled={!canAdd}
-        className="w-full h-[50px] px-3"
-      >
-        <Icon name="add" size={18} />
-        <span className="whitespace-nowrap">Add Product</span>
-      </Button>
+                  <DetailField
+                    label="Tax Type"
+                    value={entryProduct?.taxType || "-"}
+                  />
 
-    </div>
-    </div>
+                  <DetailField
+                    label="Tax %"
+                    value={`${entryProduct?.taxPercentage ?? 0}%`}
+                  />
 
-    {/* Auto-loaded product details */}
-    {entryProduct && (
-      <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
+                  <DetailField
+                    label="SGST"
+                    value={`${entryProduct?.sgst ?? 0}%`}
+                  />
 
-        <div className="col-span-2 sm:col-span-1 flex items-center gap-2">
-          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-            <Icon name="image" size={20} className="text-slate-600" />
+                  <DetailField
+                    label="CGST"
+                    value={`${entryProduct?.cgst ?? 0}%`}
+                  />
+                </div>
+              )}
+            </section>
           </div>
-
-          <div className="min-w-0">
-            <p className="text-[11px] text-slate-400 font-medium">
-              Product Image
-            </p>
-
-            <p className="text-xs font-semibold text-slate-700 truncate">
-              {entryProduct.name}
-            </p>
-          </div>
         </div>
-
-        <DetailField
-          label="Pack Size"
-          value={entryProduct?.size || "-"}
-        />
-
-        <DetailField
-          label="HSN / SAC"
-          value={entryProduct?.hsnCode || "-"}
-        />
-
-        <DetailField
-          label="MRP"
-          value={formatCurrency(entryProduct?.mrp || 0)}
-        />
-
-        <DetailField
-          label="Tax Type"
-          value={entryProduct?.taxType || "-"}
-        />
-
-        <DetailField
-          label="Tax %"
-          value={`${entryProduct?.taxPercentage ?? 0}%`}
-        />
-
-        <DetailField
-          label="SGST"
-          value={`${entryProduct?.sgst ?? 0}%`}
-        />
-
-        <DetailField
-          label="CGST"
-          value={`${entryProduct?.cgst ?? 0}%`}
-        />
-
-      </div>
-    )}
-      </section>
-      </div>
-      </div>
       )}
     </div>
   );
