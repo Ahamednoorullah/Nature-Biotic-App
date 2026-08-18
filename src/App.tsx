@@ -35,6 +35,7 @@ import StoreDeliveryChallan from "@/pages/StoreDeliveryChallan";
 import StoreReturnChallan from "@/pages/StoreReturnChallan";
 import StoreReceipt from "@/pages/StoreReceipt";
 import StoreRefund from "@/pages/StoreRefund";
+import StoreReturnStock from "@/pages/StoreReturnStock";
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -80,7 +81,7 @@ function AppContent() {
       {route.page === "payments" && <StorePayments storeId={route.storeId} />}
       {route.page === "expenses" && <StoreExpenses storeId={route.storeId} />}
       {route.page === "return-stock" && (
-        <StorePlaceholder title="Return Stock" description="Purchase return stock details for this store." icon="assignment_return" />
+        <StoreReturnStock storeId={route.storeId} />
       )}
       {route.page === "sales" && <StoreSales storeId={route.storeId} />}
       {route.page === "credit-notes" && (
@@ -92,9 +93,15 @@ function AppContent() {
       )}
       {route.page === "farmers" && <StoreFarmers storeId={route.storeId} />}
       {route.page === "quotation" && <StoreQuotation storeId={route.storeId} />}
-      {route.page === "delivery-challan" && <StoreDeliveryChallan storeId={route.storeId} />}
-      {route.page === "return-challan" && <StoreReturnChallan storeId={route.storeId} />}
-      {route.page === "sales-invoice" && <StoreSalesInvoice storeId={route.storeId} />}
+      {route.page === "delivery-challan" && (
+        <StoreDeliveryChallan storeId={route.storeId} />
+      )}
+      {route.page === "return-challan" && (
+        <StoreReturnChallan storeId={route.storeId} />
+      )}
+      {route.page === "sales-invoice" && (
+        <StoreSalesInvoice storeId={route.storeId} />
+      )}
       {route.page === "receipt" && <StoreReceipt storeId={route.storeId} />}
       {route.page === "refund" && <StoreRefund storeId={route.storeId} />}
       {route.page === "attendance" && (

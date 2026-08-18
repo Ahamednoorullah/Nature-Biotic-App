@@ -155,6 +155,41 @@ export type StockMovement = {
   remarks: string;
 };
 
+export type DeliveryChallanItem = {
+  productId: string;
+  productName: string;
+  packSize: string;
+  batchNo: string;
+  issuedQty: number;
+  soldQty: number;
+  returnedQty: number;
+};
+
+export type DeliveryChallan = {
+  id: string;
+  storeId: string;
+  challanNo: string;
+  date: string;
+  executiveName: string;
+  issuedBy: string;
+  status: "Open" | "Partially Returned" | "Closed";
+  remarks: string;
+  items: DeliveryChallanItem[];
+};
+
+export type ExecutiveStockReturn = {
+  id: string;
+  storeId: string;
+  returnNo: string;
+  date: string;
+  challanNo: string;
+  executiveName: string;
+  productName: string;
+  packSize: string;
+  quantity: number;
+  remarks: string;
+};
+
 export type StockStatus = "Healthy" | "Low Stock" | "Out of Stock";
 
 export type AdjustmentType = "Increase" | "Decrease";
@@ -825,6 +860,52 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
   },
 ];
 
+export type CompanyStoreSaleRecord = {
+  id: string;
+  invoiceNo: string;
+  date: string;
+  storeId: string;
+  storeName: string;
+  storeLocation: string;
+  placeOfSupply: string;
+  product: string;
+  packSize: string;
+  quantity: number;
+  rate: number;
+  withoutTax: number;
+  taxAmount: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+};
+
+const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
+
+export function getCompanyStoreSales(): CompanyStoreSaleRecord[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const saved = localStorage.getItem(COMPANY_STORE_SALES_KEY);
+
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCompanyStoreSales(rows: CompanyStoreSaleRecord[]) {
+  try {
+    localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(rows));
+
+    window.dispatchEvent(new Event("company-store-sales-updated"));
+  } catch {}
+}
+
+export function getStorePurchasesFromCompanySales(storeId: string) {
+  return getCompanyStoreSales().filter((sale) => sale.storeId === storeId);
+}
+
 export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
   ...f,
   id: `f${i}`,
@@ -971,6 +1052,148 @@ export const staff: Staff[] = staffNames.map((name, i) => ({
   role: roles[i % roles.length],
   status: i === 3 ? "On Leave" : "Active",
 }));
+
+export const deliveryChallans: DeliveryChallan[] = [
+  {
+    id: "dc1",
+    storeId: "s1",
+    challanNo: "DC-2026-001",
+    date: "2026-08-14",
+    executiveName: "Ram Kumar",
+    issuedBy: "Store Manager",
+    status: "Open",
+    remarks: "Morning field stock issue",
+    items: [
+      {
+        productId: "p0",
+        productName: "Electra",
+        packSize: "500 ml",
+        batchNo: "ELE140826",
+        issuedQty: 20,
+        soldQty: 12,
+        returnedQty: 3,
+      },
+      {
+        productId: "p2",
+        productName: "Astra",
+        packSize: "100 ml",
+        batchNo: "AST140826",
+        issuedQty: 10,
+        soldQty: 6,
+        returnedQty: 1,
+      },
+    ],
+  },
+  {
+    id: "dc2",
+    storeId: "s1",
+    challanNo: "DC-2026-002",
+    date: "2026-08-14",
+    executiveName: "Ajith Kumar",
+    issuedBy: "Store Manager",
+    status: "Open",
+    remarks: "Field visit stock",
+    items: [
+      {
+        productId: "p0",
+        productName: "Electra",
+        packSize: "500 ml",
+        batchNo: "ELE140826",
+        issuedQty: 15,
+        soldQty: 8,
+        returnedQty: 2,
+      },
+      {
+        productId: "p1",
+        productName: "Aalga",
+        packSize: "250 ml",
+        batchNo: "AAL140826",
+        issuedQty: 12,
+        soldQty: 7,
+        returnedQty: 1,
+      },
+    ],
+  },
+  {
+    id: "dc3",
+    storeId: "s1",
+    challanNo: "DC-2026-003",
+    date: "2026-08-13",
+    executiveName: "PeriyaSamy",
+    issuedBy: "Store Manager",
+    status: "Partially Returned",
+    remarks: "Route stock issue",
+    items: [
+      {
+        productId: "p3",
+        productName: "Alpha",
+        packSize: "5 Kg",
+        batchNo: "ALP130826",
+        issuedQty: 8,
+        soldQty: 3,
+        returnedQty: 2,
+      },
+      {
+        productId: "p4",
+        productName: "Nuetra",
+        packSize: "1 L",
+        batchNo: "NUE130826",
+        issuedQty: 6,
+        soldQty: 2,
+        returnedQty: 1,
+      },
+    ],
+  },
+];
+
+export const executiveStockReturns: ExecutiveStockReturn[] = [
+  {
+    id: "ret1",
+    storeId: "s1",
+    returnNo: "RET-001",
+    date: "2026-08-14",
+    challanNo: "DC-2026-001",
+    executiveName: "Ram Kumar",
+    productName: "Electra",
+    packSize: "500 ml",
+    quantity: 3,
+    remarks: "Unsold stock returned",
+  },
+  {
+    id: "ret2",
+    storeId: "s1",
+    returnNo: "RET-002",
+    date: "2026-08-14",
+    challanNo: "DC-2026-002",
+    executiveName: "Ajith Kumar",
+    productName: "Electra",
+    packSize: "500 ml",
+    quantity: 2,
+    remarks: "Balance returned",
+  },
+  {
+    id: "ret3",
+    storeId: "s1",
+    returnNo: "RET-003",
+    date: "2026-08-13",
+    challanNo: "DC-2026-003",
+    executiveName: "PeriyaSamy",
+    productName: "Alpha",
+    packSize: "5 Kg",
+    quantity: 2,
+    remarks: "Route return",
+  },
+];
+
+export function getDeliveryChallansByStore(storeId: string): DeliveryChallan[] {
+  return deliveryChallans.filter((challan) => challan.storeId === storeId);
+}
+
+export function getExecutiveStockReturnsByStore(
+  storeId: string,
+): ExecutiveStockReturn[] {
+  return executiveStockReturns.filter((item) => item.storeId === storeId);
+}
 
 export function getSalesTrend(
   storeId: string,

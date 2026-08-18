@@ -168,7 +168,7 @@ export default function CompanyStores() {
       </div>
 
       {selectedStore &&
-  createPortal(
+    createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
       <div className="flex w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
 
