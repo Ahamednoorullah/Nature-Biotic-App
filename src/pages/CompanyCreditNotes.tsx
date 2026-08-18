@@ -10,7 +10,7 @@ type CreditNote = {
   id: string;
   creditNoteNo: string;
   party: string;
-  returnDate: string;
+  Date: string;
   amount: number;     // Without Tax
   sgst: number;
   cgst: number;
@@ -72,7 +72,7 @@ const creditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
     id: `cn${i}`,
     creditNoteNo: `CN-${String(2001 + i)}`,
     party: parties[i % parties.length],
-    returnDate: d.toISOString().split('T')[0],
+    Date: d.toISOString().split('T')[0],
     amount: withoutTax,
     sgst,
     cgst,
@@ -94,7 +94,7 @@ export default function CompanyCreditNotes() {
   const [showCreate, setShowCreate] = useState(false);
 
   // Form state
-  const [returnDate, setreturnDate] = useState('');
+  const [Date, setDate] = useState('');
   const [invoiceNo, setCreditno] = useState('');
   const [storeId, setStoreId] = useState('');
   const [placeOfSupply, setPlaceOfSupply] = useState('');
@@ -116,7 +116,7 @@ export default function CompanyCreditNotes() {
 
   const canAdd =
     entry.productId && entry.batchNo && entry.expiryDate && entry.quantity > 0 && entry.sellingPrice > 0;
-  const canCreate = storeId && invoiceNo && returnDate && added.length > 0;
+  const canCreate = storeId && invoiceNo && Date && added.length > 0;
 
   // ---- Totals: calculated live from the added products list ----
   const totals = useMemo(() => {
@@ -173,7 +173,7 @@ export default function CompanyCreditNotes() {
     const computed = computeLine(entry.productId, entry.quantity, entry.sellingPrice, entry.discount);
 
     const newItem: AddedProduct = {
-      key: `${entry.productId}-${entry.batchNo}-${Date.now()}`,
+      key: `${entry.productId}-${entry.batchNo}-${new Date().getTime()}`,
       productId: entry.productId,
       productName: product.name,
       pkgsize: entry.pkgsize,
@@ -217,7 +217,7 @@ export default function CompanyCreditNotes() {
   }
 
   function resetForm() {
-    setreturnDate('');
+    setDate('');
     setCreditno('');
     setStoreId('');
     setPlaceOfSupply('');
@@ -238,14 +238,14 @@ export default function CompanyCreditNotes() {
   function handleSaveDraft() {
     if (!storeId || !invoiceNo) return;
     // TODO: persist as a draft (status: 'Pending') via your API / store
-    console.log('Saved as draft', { returnDate, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
+    console.log('Saved as draft', { Date, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
     closeForm();
   }
 
   function handleCreate() {
     if (!canCreate) return;
     // TODO: push into creditNotes / call your create-credit-note API here
-    console.log('Creating credit note', { returnDate, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
+    console.log('Creating credit note', { Date, invoiceNo, storeId, placeOfSupply, remarks, added, totals });
     closeForm();
   }
 
@@ -345,7 +345,7 @@ export default function CompanyCreditNotes() {
                       {i + 1}
                     </td>
                     <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
-                      {formatDate(c.returnDate)}
+                      {formatDate(c.Date)}
                     </td>
                     <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
                       {c.creditNoteNo}
@@ -402,7 +402,7 @@ export default function CompanyCreditNotes() {
                 {/* Basic details */}
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Input label="Return Date" type="date" value={returnDate} onChange={setreturnDate} required />
+                    <Input label="Return Date" type="date" value={Date} onChange={setDate} required />
 
                     <Input
                       label="Credit Note Number"
