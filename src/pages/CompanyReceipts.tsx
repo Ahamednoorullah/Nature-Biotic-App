@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, Badge, Button, Input, Select, Modal, EmptyState, Icon } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { stores } from '@/lib/data';
+
 
 type ReceiptStatus = 'Completed' | 'Pending';
 
@@ -46,26 +48,71 @@ export default function CompanyReceipts() {
   const [storeFilter, setStoreFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [viewReceipt, setViewReceipt] = useState<Receipt | null>(null);
+  const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>([]);
+const [showCreate, setShowCreate] = useState(false);
+const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+const [receiptNo, setReceiptNo] = useState('');
+const [createStoreId, setCreateStoreId] = useState('');
+const [method, setMethod] = useState('');
+const [invoiceAmount, setInvoiceAmount] = useState(0);
+const [amountReceived, setAmountReceived] = useState(0);
+const [receivedBy, setReceivedBy] = useState('');
+const [remarks, setRemarks] = useState('');
+
+const createStore = stores.find((s) => s.id === createStoreId);
+const canCreate = !!createStoreId && !!receiptNo && !!method && amountReceived > 0;
+
+function resetCreateForm() {
+  setReceiptDate(new Date().toISOString().split('T')[0]);
+  setReceiptNo('');
+  setCreateStoreId('');
+  setMethod('');
+  setInvoiceAmount(0);
+  setAmountReceived(0);
+  setReceivedBy('');
+  setRemarks('');
+}
+
+function closeCreateForm() {
+  setShowCreate(false);
+  resetCreateForm();
+}
+
+function handleCreateReceipt() {
+  if (!canCreate || !createStore) return;
+  const newReceipt: Receipt = {
+    id: `r-new-${Date.now()}`,
+    receiptNo,
+    date: receiptDate,
+    storeId: createStore.id,
+    storeName: createStore.name,
+    method,
+    invoiceAmount,
+    amount: amountReceived,
+  };
+  setCreatedReceipts((prev) => [newReceipt, ...prev]);
+  closeCreateForm();
+}
 
   const filtered = useMemo(
-    () =>
-      receipts.filter((r) => {
-        const ms =
-          r.receiptNo.toLowerCase().includes(search.toLowerCase()) ||
-          r.storeName.toLowerCase().includes(search.toLowerCase());
-        const mt = storeFilter === 'all' || r.storeId === storeFilter;
-        let md = true;
-        if (dateFilter !== 'all') {
-          const d = new Date(r.date);
-          const now = new Date();
-          if (dateFilter === 'week') md = (now.getTime() - d.getTime()) / 86400000 <= 7;
-          else if (dateFilter === 'month') md = (now.getTime() - d.getTime()) / 86400000 <= 30;
-          else if (dateFilter === 'quarter') md = (now.getTime() - d.getTime()) / 86400000 <= 90;
-        }
-        return ms && mt && md;
-      }),
-    [search, storeFilter, dateFilter],
-  );
+  () =>
+    [...createdReceipts, ...receipts].filter((r) => {
+      const ms =
+        r.receiptNo.toLowerCase().includes(search.toLowerCase()) ||
+        r.storeName.toLowerCase().includes(search.toLowerCase());
+      const mt = storeFilter === 'all' || r.storeId === storeFilter;
+      let md = true;
+      if (dateFilter !== 'all') {
+        const d = new Date(r.date);
+        const now = new Date();
+        if (dateFilter === 'week') md = (now.getTime() - d.getTime()) / 86400000 <= 7;
+        else if (dateFilter === 'month') md = (now.getTime() - d.getTime()) / 86400000 <= 30;
+        else if (dateFilter === 'quarter') md = (now.getTime() - d.getTime()) / 86400000 <= 90;
+      }
+      return ms && mt && md;
+    }),
+  [search, storeFilter, dateFilter, createdReceipts],
+);
 
   return (
     <div>
@@ -77,7 +124,7 @@ export default function CompanyReceipts() {
 
         {/* Buttons */}
         <div className="flex items-center gap-3">
-        <Button>
+        <Button onClick={() => setShowCreate(true)}>
           <Icon name="add" size={20} fill /> Create Receipt
         </Button>
         <Button variant="secondary">
@@ -229,6 +276,113 @@ export default function CompanyReceipts() {
           </div>
         )}
       </Modal>
+
+
+        {/* Create Receipt — same popup shell as Credit Note / Sales */}
+{showCreate &&
+  createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[92vh] w-[94vw] max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        {/* Fixed header */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Create Receipt</h2>
+            <p className="text-sm text-slate-500 mt-1">Record a payment receipt collected from a store.</p>
+          </div>
+          <button
+            type="button"
+            onClick={closeCreateForm}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <Icon name="close" size={20} />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input label="Receipt Date" type="date" value={receiptDate} onChange={setReceiptDate} required />
+
+            <Input
+              label="Receipt Number"
+              placeholder="e.g. RCP-3050"
+              value={receiptNo}
+              onChange={setReceiptNo}
+              required
+            />
+
+            <Select
+              label="Select Store"
+              value={createStoreId}
+              onChange={setCreateStoreId}
+              placeholder="Choose a registered store"
+              options={stores.map((s) => ({ value: s.id, label: s.name }))}
+              required
+            />
+
+            <Select
+              label="Payment Method"
+              value={method}
+              onChange={setMethod}
+              placeholder="Select method"
+              options={methods.map((m) => ({ value: m, label: m }))}
+              required
+            />
+
+            <Input
+              label="Invoice Amount"
+              type="number"
+              value={String(invoiceAmount)}
+              onChange={(v) => setInvoiceAmount(Number(v) || 0)}
+              placeholder="Total invoice value"
+            />
+
+            <Input
+              label="Amount Received"
+              type="number"
+              value={String(amountReceived)}
+              onChange={(v) => setAmountReceived(Number(v) || 0)}
+              placeholder="Amount collected now"
+              required
+            />
+
+            <Select
+              label="Received By"
+              value={receivedBy}
+              onChange={setReceivedBy}
+              placeholder="Select staff"
+              options={receivers.map((p) => ({ value: p, label: p }))}
+            />
+
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1">Balance</p>
+              <p className="text-base font-bold text-slate-800">
+                {formatCurrency(Math.max(invoiceAmount - amountReceived, 0))}
+              </p>
+            </div>
+
+            <div className="sm:col-span-2">
+              <Input label="Remarks" value={remarks} onChange={setRemarks} placeholder="Optional notes" />
+            </div>
+          </div>
+        </div>
+
+        {/* Fixed footer */}
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <Button variant="secondary" onClick={closeCreateForm}>
+            Cancel
+          </Button>
+          <Button onClick={handleCreateReceipt} disabled={!canCreate}>
+            <Icon name="save" size={18} />
+            Create Receipt
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )}
+
+
     </div>
   );
 }
