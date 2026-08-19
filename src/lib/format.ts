@@ -14,11 +14,9 @@ export function formatCompact(n: number): string {
 }
 
 export function formatDate(d: string): string {
-  return new Date(d).toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  const [yyyy, mm, dd] = d.split('-');
+  if (!yyyy || !mm || !dd) return d;
+  return `${dd}/${mm}/${yyyy.slice(-2)}`;
 }
 
 export function initials(name: string): string {

@@ -163,7 +163,7 @@ export default function CompanyCreditNotes() {
   const [showCreate, setShowCreate] = useState(false);
 
   // Form state
-  const [Date, setDate] = useState("");
+  const [returnDate, setReturnDate] = useState("");
   const [invoiceNo, setCreditno] = useState("");
   const [storeId, setStoreId] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
@@ -189,7 +189,7 @@ export default function CompanyCreditNotes() {
     entry.expiryDate &&
     entry.quantity > 0 &&
     entry.sellingPrice > 0;
-  const canCreate = storeId && invoiceNo && Date && added.length > 0;
+  const canCreate = storeId && invoiceNo && returnDate && added.length > 0;
 
   // ---- Totals: calculated live from the added products list ----
   const totals = useMemo(() => {
@@ -320,7 +320,7 @@ export default function CompanyCreditNotes() {
   }
 
   function resetForm() {
-    setDate("");
+    setReturnDate("");
     setCreditno("");
     setStoreId("");
     setPlaceOfSupply("");
@@ -342,7 +342,7 @@ export default function CompanyCreditNotes() {
     if (!storeId || !invoiceNo) return;
     // TODO: persist as a draft (status: 'Pending') via your API / store
     console.log("Saved as draft", {
-      Date,
+      returnDate,
       invoiceNo,
       storeId,
       placeOfSupply,
@@ -365,7 +365,7 @@ export default function CompanyCreditNotes() {
         creditNoteNo: invoiceNo,
         storeId: selectedStore.id,
         storeName: selectedStore.name,
-        returnDate: Date,
+        returnDate,
         purchaseRef: invoiceNo,
         product: item.productName,
         quantity: item.quantity,
@@ -382,7 +382,8 @@ export default function CompanyCreditNotes() {
       id: syncRows[index].id,
       creditNoteNo: invoiceNo,
       party: selectedStore.name,
-      Date,
+      Date: returnDate,
+      returnDate,
       amount: item.taxableAmount,
       sgst: item.sgst,
       cgst: item.cgst,
@@ -485,105 +486,86 @@ export default function CompanyCreditNotes() {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                  <th
-                    rowSpan={2}
-                    className="w-[6%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                  >
-                    S.No
-                  </th>
-                  <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
-                    Date
-                  </th>
-                  <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
-                    CN No.
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Store
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Place of Return
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Without Tax
-                  </th>
-                  <th
-                    colSpan={3}
-                    className="px-4 py-2 text-center font-semibold border-r border-slate-200"
-                  >
-                    Tax
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Total
-                  </th>
-                </tr>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                    SGST
-                  </th>
-                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                    CGST
-                  </th>
-                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                    IGST
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c, i) => (
-                  <tr
-                    key={c.id}
-                    className="hover:bg-slate-50/50 transition-base"
-                  >
-                    <td className="px-2 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
-                      {i + 1}
-                    </td>
-                    <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
-                      {formatDate(c.Date)}
-                    </td>
-                    <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
-                      {c.creditNoteNo}
-                    </td>
-                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">{c.party}</td>
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
-                      {c.placeofreturn}
-                    </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
-                      {formatCurrency(c.amount)}
-                    </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
-                      {formatCurrency(c.sgst)}
-                    </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
-                      {formatCurrency(c.cgst)}
-                    </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
-                      {formatCurrency(c.igst)}
-                    </td>
-                    <td className="px-3 py-3 text-center font-bold text-slate-600 border-r border-slate-100">
-                      {formatCurrency(c.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+  <div className="overflow-x-auto">
+    <table className="w-full table-fixed text-sm border-collapse">
+      <thead>
+        <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+          <th rowSpan={2} className="w-[5%] text-center font-semibold px-2 py-3 border-r border-slate-200">
+            S.No
+          </th>
+          <th rowSpan={2} className="w-[9%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+            Date
+          </th>
+          <th rowSpan={2} className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+            CN No.
+          </th>
+          <th rowSpan={2} className="w-[15%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+            Store
+          </th>
+          <th rowSpan={2} className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+            Place of Return
+          </th>
+          <th rowSpan={2} className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+            Without Tax
+          </th>
+          <th colSpan={3} className="w-[24%] text-center font-semibold px-2 py-2 border-r border-slate-200">
+            Tax
+          </th>
+          <th rowSpan={2} className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+            Total
+          </th>
+        </tr>
+        <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+          <th className="w-[8%] text-center font-semibold px-1 py-2 border-r border-slate-200">
+            SGST
+          </th>
+          <th className="w-[8%] text-center font-semibold px-1 py-2 border-r border-slate-200">
+            CGST
+          </th>
+          <th className="w-[8%] text-center font-semibold px-1 py-2 border-r border-slate-200">
+            IGST
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {filtered.map((c, i) => (
+          <tr key={c.id} className="hover:bg-slate-50/50 transition-base">
+            <td className="px-2 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
+              {i + 1}
+            </td>
+            <td className="px-2 py-3 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">
+              {formatDate(c.Date)}
+            </td>
+            <td className="px-2 py-3 text-center font-semibold text-slate-800 border-r border-slate-100 whitespace-nowrap">
+              {c.creditNoteNo}
+            </td>
+            <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
+              {c.party}
+            </td>
+            <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
+              {c.placeofreturn}
+            </td>
+            <td className="px-2 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(c.amount)}
+            </td>
+            <td className="px-1 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(c.sgst)}
+            </td>
+            <td className="px-1 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(c.cgst)}
+            </td>
+            <td className="px-1 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(c.igst)}
+            </td>
+            <td className="px-2 py-3 text-center font-bold text-slate-600 border-r border-slate-100 whitespace-nowrap">
+              {formatCurrency(c.total)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</Card>
       )}
 
       {/* Create Creditnote — full-screen form, rendered via portal so it always sits above everything and scrolls properly */}
@@ -618,8 +600,8 @@ export default function CompanyCreditNotes() {
                     <Input
                       label="Return Date"
                       type="date"
-                      value={Date}
-                      onChange={setDate}
+                      value={returnDate}
+                      onChange={setReturnDate}
                       required
                     />
 
