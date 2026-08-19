@@ -173,7 +173,7 @@ export default function CompanyCreditNotes() {
     const computed = computeLine(entry.productId, entry.quantity, entry.sellingPrice, entry.discount);
 
     const newItem: AddedProduct = {
-      key: `${entry.productId}-${entry.batchNo}-${String(Date.now())}-${Math.random().toString(36).slice(2, 6)}`,
+      key: `${entry.productId}-${entry.batchNo}-${String(globalThis.Date.now())}-${Math.random().toString(36).slice(2, 6)}`,
       productId: entry.productId,
       productName: product.name,
       pkgsize: entry.pkgsize,
