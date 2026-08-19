@@ -23,7 +23,8 @@ const navItems: NavItem[] = [
     label: "Purchases",
     icon: "shopping_cart",
     children: [
-      { key: "purchases", label: "Purchase", icon: "shopping_cart" },
+      { key: "purchase-order", label: "Purchase Order", icon: "description" },
+      { key: "purchases", label: "Purchase Bills", icon: "shopping_cart" },
       { key: "debit-notes", label: "Debit Notes", icon: "request_quote" },
       {
         key: "return-stock",
@@ -59,6 +60,7 @@ const navItems: NavItem[] = [
         icon: "assignment_return",
       },
       { key: "sales-invoice", label: "Sales Invoice", icon: "receipt_long" },
+      { key: "sales-return", label: "Sales Return", icon: "assignment_return" },
       { key: "credit-notes", label: "Credit Note", icon: "request_quote" },
       { key: "receipt", label: "Receipt", icon: "receipt" },
       { key: "refund", label: "Refund", icon: "currency_exchange" },

@@ -36,6 +36,8 @@ import StoreReturnChallan from "@/pages/StoreReturnChallan";
 import StoreReceipt from "@/pages/StoreReceipt";
 import StoreRefund from "@/pages/StoreRefund";
 import StoreReturnStock from "@/pages/StoreReturnStock";
+import StorePurchaseOrder from "@/pages/StorePurchaseOrder";
+import StoreSalesReturn from "@/pages/StoreSalesReturn";
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -74,6 +76,9 @@ function AppContent() {
       {route.page === "stock-management" && (
         <StoreInventory storeId={route.storeId} />
       )}
+      {route.page === "purchase-order" && (
+        <StorePurchaseOrder storeId={route.storeId} />
+      )}
       {route.page === "purchases" && <StorePurchases storeId={route.storeId} />}
       {route.page === "debit-notes" && (
         <StoreDebitNotes storeId={route.storeId} />
@@ -101,6 +106,9 @@ function AppContent() {
       )}
       {route.page === "sales-invoice" && (
         <StoreSalesInvoice storeId={route.storeId} />
+      )}
+      {route.page === "sales-return" && (
+        <StoreSalesReturn storeId={route.storeId} />
       )}
       {route.page === "receipt" && <StoreReceipt storeId={route.storeId} />}
       {route.page === "refund" && <StoreRefund storeId={route.storeId} />}

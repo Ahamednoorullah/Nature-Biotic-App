@@ -1,0 +1,720 @@
+import { useMemo, useState } from "react";
+import { Card, Button, Icon, Input, Select } from "@/components/ui";
+
+type AddedProduct = {
+  id: string;
+  product: string;
+  packSize: string;
+  quantity: number;
+  price: number;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+};
+
+type PurchaseOrderRow = {
+  id: string;
+  poNo: string;
+  date: string;
+  totalProduct: number;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+  status: "Pending" | "Approved";
+  items: AddedProduct[];
+};
+
+const productMaster = [
+  {
+    value: "Electra",
+    label: "Electra",
+    price: 450,
+    tax: 12,
+    taxType: "Intrastate",
+  },
+  { value: "Aalga", label: "Aalga", price: 380, tax: 5, taxType: "Intrastate" },
+  {
+    value: "Astra",
+    label: "Astra",
+    price: 560,
+    tax: 18,
+    taxType: "Interstate",
+  },
+  {
+    value: "Rootra",
+    label: "Rootra",
+    price: 420,
+    tax: 5,
+    taxType: "Intrastate",
+  },
+];
+
+const packSizes = [
+  { value: "100 ml", label: "100 ml" },
+  { value: "250 ml", label: "250 ml" },
+  { value: "500 ml", label: "500 ml" },
+  { value: "1 L", label: "1 L" },
+  { value: "100 g", label: "100 g" },
+  { value: "250 g", label: "250 g" },
+  { value: "500 g", label: "500 g" },
+  { value: "1 Kg", label: "1 Kg" },
+];
+
+const initialRows: PurchaseOrderRow[] = [
+  {
+    id: "po1",
+    poNo: "SAI-PO-0001",
+    date: "2026-08-18",
+    totalProduct: 20,
+    withoutTax: 5000,
+    sgst: 20,
+    cgst: 20,
+    igst: 0,
+    total: 5040,
+    status: "Pending",
+    items: [],
+  },
+  {
+    id: "po2",
+    poNo: "SAI-PO-0002",
+    date: "2026-08-19",
+    totalProduct: 50,
+    withoutTax: 8000,
+    sgst: 0,
+    cgst: 0,
+    igst: 460,
+    total: 8460,
+    status: "Approved",
+    items: [],
+  },
+];
+
+export default function StorePurchaseOrder({
+  storeId: _storeId,
+}: {
+  storeId: string;
+}) {
+  const [rows, setRows] = useState<PurchaseOrderRow[]>(initialRows);
+  const [showCreate, setShowCreate] = useState(false);
+  const [date, setDate] = useState("");
+  const [poNo, setPoNo] = useState("");
+  const [product, setProduct] = useState("");
+  const [packSize, setPackSize] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [added, setAdded] = useState<AddedProduct[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderRow | null>(
+    null,
+  );
+
+  const selectedProduct = productMaster.find((p) => p.value === product);
+  const price = selectedProduct?.price ?? 0;
+
+  const computed = useMemo(() => {
+    const qty = Number(quantity) || 0;
+    const withoutTax = qty * price;
+    if (!selectedProduct || qty <= 0) {
+      return { withoutTax: 0, sgst: 0, cgst: 0, igst: 0, total: 0 };
+    }
+
+    if (selectedProduct.taxType === "Intrastate") {
+      const tax = withoutTax * (selectedProduct.tax / 100);
+      return {
+        withoutTax,
+        sgst: tax / 2,
+        cgst: tax / 2,
+        igst: 0,
+        total: withoutTax + tax,
+      };
+    }
+
+    const igst = withoutTax * (selectedProduct.tax / 100);
+    return { withoutTax, sgst: 0, cgst: 0, igst, total: withoutTax + igst };
+  }, [quantity, price, selectedProduct]);
+
+  const totals = useMemo(
+    () => ({
+      totalProduct: added.reduce((sum, item) => sum + item.quantity, 0),
+      withoutTax: added.reduce((sum, item) => sum + item.withoutTax, 0),
+      sgst: added.reduce((sum, item) => sum + item.sgst, 0),
+      cgst: added.reduce((sum, item) => sum + item.cgst, 0),
+      igst: added.reduce((sum, item) => sum + item.igst, 0),
+      total: added.reduce((sum, item) => sum + item.total, 0),
+    }),
+    [added],
+  );
+
+  const canAdd = product && packSize && Number(quantity) > 0 && price > 0;
+  const canSave = date && poNo.trim() && added.length > 0;
+
+  function addProduct() {
+    if (!canAdd || !selectedProduct) return;
+
+    setAdded((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${product}-${packSize}`,
+        product,
+        packSize,
+        quantity: Number(quantity),
+        price,
+        withoutTax: computed.withoutTax,
+        sgst: computed.sgst,
+        cgst: computed.cgst,
+        igst: computed.igst,
+        total: computed.total,
+      },
+    ]);
+
+    setProduct("");
+    setPackSize("");
+    setQuantity("");
+  }
+
+  function removeProduct(id: string) {
+    setAdded((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function resetForm() {
+    setDate("");
+    setPoNo("");
+    setProduct("");
+    setPackSize("");
+    setQuantity("");
+    setAdded([]);
+  }
+
+  function saveOrder() {
+    if (!canSave) return;
+
+    setRows((prev) => [
+      {
+        id: `po-${Date.now()}`,
+        poNo: poNo.trim(),
+        date,
+        totalProduct: totals.totalProduct,
+        withoutTax: totals.withoutTax,
+        sgst: totals.sgst,
+        cgst: totals.cgst,
+        igst: totals.igst,
+        total: totals.total,
+        status: "Pending",
+        items: added,
+      },
+      ...prev,
+    ]);
+
+    resetForm();
+    setShowCreate(false);
+  }
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
+            Purchase Order
+          </h1>
+          <p className="mt-1 text-slate-500">
+            Create and track purchase orders raised by this store.
+          </p>
+        </div>
+
+        <Button onClick={() => setShowCreate(true)}>
+          <Icon name="add" size={18} />
+          Create PO
+        </Button>
+      </div>
+
+      {showCreate && (
+        <Card className="mb-6 overflow-hidden p-0">
+          <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <h2 className="font-bold text-slate-800">Create Purchase Order</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Add one or multiple products to this purchase order.
+            </p>
+          </div>
+
+          <div className="p-6">
+            <div className="mb-5 grid gap-4 md:grid-cols-2">
+              <Input
+                label="Date"
+                type="date"
+                value={date}
+                onChange={setDate}
+                required
+              />
+              <Input
+                label="PO No"
+                value={poNo}
+                onChange={setPoNo}
+                placeholder="e.g. SAI-PO-0003"
+                required
+              />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <Select
+                  label="Product"
+                  value={product}
+                  onChange={setProduct}
+                  placeholder="Select product"
+                  options={productMaster.map((p) => ({
+                    value: p.value,
+                    label: p.label,
+                  }))}
+                />
+                <Select
+                  label="Pack Size"
+                  value={packSize}
+                  onChange={setPackSize}
+                  placeholder="Select size"
+                  options={packSizes}
+                />
+                <Input
+                  label="Qty"
+                  type="number"
+                  value={quantity}
+                  onChange={setQuantity}
+                  placeholder="Enter qty"
+                />
+                <Input
+                  label="Price"
+                  value={price ? String(price) : ""}
+                  onChange={() => {}}
+                  placeholder="Auto"
+                  readOnly
+                />
+                <div className="flex items-end">
+                  <Button
+                    onClick={addProduct}
+                    disabled={!canAdd}
+                    className="w-full"
+                  >
+                    <Icon name="add" size={17} />
+                    Add Product
+                  </Button>
+                </div>
+              </div>
+
+              {selectedProduct && (
+                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm md:grid-cols-5">
+                  <MiniInfo label="Tax %" value={`${selectedProduct.tax}%`} />
+                  <MiniInfo
+                    label="Without Tax"
+                    value={formatMoney(computed.withoutTax)}
+                  />
+                  <MiniInfo label="SGST" value={formatMoney(computed.sgst)} />
+                  <MiniInfo label="CGST" value={formatMoney(computed.cgst)} />
+                  <MiniInfo label="IGST" value={formatMoney(computed.igst)} />
+                </div>
+              )}
+            </div>
+
+            {added.length > 0 && (
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+                <table className="w-full table-fixed text-sm">
+                  <thead>
+                    <tr className="bg-slate-100 text-xs uppercase text-slate-500">
+                      <th className="w-[18%] px-3 py-3 text-left">Product</th>
+                      <th className="w-[12%] px-3 py-3 text-left">Pack Size</th>
+                      <th className="w-[8%] px-2 py-3 text-center">Qty</th>
+                      <th className="w-[10%] px-2 py-3 text-right">Price</th>
+                      <th className="w-[12%] px-2 py-3 text-right">
+                        Without Tax
+                      </th>
+                      <th className="w-[9%] px-2 py-3 text-right">SGST</th>
+                      <th className="w-[9%] px-2 py-3 text-right">CGST</th>
+                      <th className="w-[9%] px-2 py-3 text-right">IGST</th>
+                      <th className="w-[11%] px-2 py-3 text-right">Total</th>
+                      <th className="w-[6%] px-2 py-3 text-center"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {added.map((item) => (
+                      <tr key={item.id}>
+                        <td className="truncate px-3 py-3 font-semibold text-slate-700">
+                          {item.product}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600">
+                          {item.packSize}
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          {item.quantity}
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          {formatMoney(item.price)}
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          {formatMoney(item.withoutTax)}
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          {formatMoney(item.sgst)}
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          {formatMoney(item.cgst)}
+                        </td>
+                        <td className="px-2 py-3 text-right">
+                          {formatMoney(item.igst)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-bold">
+                          {formatMoney(item.total)}
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => removeProduct(item.id)}
+                            className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Icon name="delete" size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {added.length > 0 && (
+              <div className="mt-4 ml-auto w-full max-w-md rounded-xl bg-slate-50 p-4 text-sm">
+                <Summary
+                  label="Total Product"
+                  value={String(totals.totalProduct)}
+                />
+                <Summary
+                  label="Without Tax"
+                  value={formatMoney(totals.withoutTax)}
+                />
+                <Summary label="SGST" value={formatMoney(totals.sgst)} />
+                <Summary label="CGST" value={formatMoney(totals.cgst)} />
+                <Summary label="IGST" value={formatMoney(totals.igst)} />
+                <div className="mt-2 border-t border-slate-200 pt-2">
+                  <Summary
+                    label="Total"
+                    value={formatMoney(totals.total)}
+                    bold
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  resetForm();
+                  setShowCreate(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={saveOrder} disabled={!canSave}>
+                <Icon name="save" size={17} />
+                Save Purchase Order
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card className="overflow-hidden p-0">
+        <table className="w-full table-fixed border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-300 bg-slate-100 text-xs font-semibold text-slate-600">
+              <th
+                rowSpan={2}
+                className="w-[6%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                S.No
+              </th>
+              <th
+                rowSpan={2}
+                className="w-[11%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                Date
+              </th>
+              <th
+                rowSpan={2}
+                className="w-[14%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                PO No
+              </th>
+              <th
+                rowSpan={2}
+                className="w-[10%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                Total Product
+              </th>
+              <th
+                rowSpan={2}
+                className="w-[13%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                Without Tax
+              </th>
+              <th
+                colSpan={3}
+                className="w-[27%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                Tax
+              </th>
+              <th
+                rowSpan={2}
+                className="w-[11%] border-r border-slate-300 px-2 py-2 text-center"
+              >
+                Total
+              </th>
+              <th rowSpan={2} className="w-[8%] px-2 py-2 text-center">
+                Status
+              </th>
+            </tr>
+            <tr className="border-b border-slate-300 bg-slate-50 text-xs text-slate-600">
+              <th className="border-r border-slate-300 px-2 py-2 text-center">
+                SGST
+              </th>
+              <th className="border-r border-slate-300 px-2 py-2 text-center">
+                CGST
+              </th>
+              <th className="border-r border-slate-300 px-2 py-2 text-center">
+                IGST
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr
+                key={row.id}
+                onClick={() => setSelectedOrder(row)}
+                className="cursor-pointer border-b border-slate-200 transition hover:bg-brand-50/50"
+              >
+                <td className="border-r border-slate-200 px-2 py-3 text-center">
+                  {index + 1}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-center">
+                  {formatDate(row.date)}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                  {row.poNo}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-center">
+                  {row.totalProduct}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-right">
+                  {formatMoney(row.withoutTax)}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-right">
+                  {formatMoney(row.sgst)}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-right">
+                  {formatMoney(row.cgst)}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-right">
+                  {formatMoney(row.igst)}
+                </td>
+                <td className="border-r border-slate-200 px-2 py-3 text-right font-bold">
+                  {formatMoney(row.total)}
+                </td>
+                <td className="px-2 py-3 text-center">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === "Approved" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                  >
+                    {row.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {selectedOrder && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[88vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">
+                  Purchase Order Details
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {selectedOrder.poNo} · {formatDate(selectedOrder.date)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedOrder(null)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-slate-700"
+              >
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-6">
+              <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <DetailBox label="PO No" value={selectedOrder.poNo} />
+                <DetailBox
+                  label="Date"
+                  value={formatDate(selectedOrder.date)}
+                />
+                <DetailBox
+                  label="Total Qty"
+                  value={String(selectedOrder.totalProduct)}
+                />
+                <DetailBox label="Status" value={selectedOrder.status} />
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <table className="w-full table-fixed text-sm">
+                  <thead>
+                    <tr className="bg-slate-100 text-xs uppercase text-slate-500">
+                      <th className="w-[6%] px-2 py-3 text-center">S.No</th>
+                      <th className="w-[18%] px-3 py-3 text-left">Product</th>
+                      <th className="w-[12%] px-3 py-3 text-left">Pack Size</th>
+                      <th className="w-[8%] px-2 py-3 text-center">Qty</th>
+                      <th className="w-[10%] px-2 py-3 text-right">Price</th>
+                      <th className="w-[12%] px-2 py-3 text-right">
+                        Without Tax
+                      </th>
+                      <th className="w-[9%] px-2 py-3 text-right">SGST</th>
+                      <th className="w-[9%] px-2 py-3 text-right">CGST</th>
+                      <th className="w-[9%] px-2 py-3 text-right">IGST</th>
+                      <th className="w-[11%] px-2 py-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedOrder.items.length > 0 ? (
+                      selectedOrder.items.map((item, index) => (
+                        <tr key={item.id}>
+                          <td className="px-2 py-3 text-center">{index + 1}</td>
+                          <td className="px-3 py-3 font-semibold">
+                            {item.product}
+                          </td>
+                          <td className="px-3 py-3">{item.packSize}</td>
+                          <td className="px-2 py-3 text-center">
+                            {item.quantity}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            {formatMoney(item.price)}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            {formatMoney(item.withoutTax)}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            {formatMoney(item.sgst)}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            {formatMoney(item.cgst)}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            {formatMoney(item.igst)}
+                          </td>
+                          <td className="px-2 py-3 text-right font-bold">
+                            {formatMoney(item.total)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={10}
+                          className="px-4 py-10 text-center text-slate-400"
+                        >
+                          Product details are not available for this order.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-5 ml-auto w-full max-w-md rounded-xl bg-slate-50 p-4 text-sm">
+                <Summary
+                  label="Without Tax"
+                  value={formatMoney(selectedOrder.withoutTax)}
+                />
+                <Summary label="SGST" value={formatMoney(selectedOrder.sgst)} />
+                <Summary label="CGST" value={formatMoney(selectedOrder.cgst)} />
+                <Summary label="IGST" value={formatMoney(selectedOrder.igst)} />
+                <div className="mt-2 border-t border-slate-200 pt-2">
+                  <Summary
+                    label="Grand Total"
+                    value={formatMoney(selectedOrder.total)}
+                    bold
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <Button
+                variant="secondary"
+                onClick={() => setSelectedOrder(null)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function MiniInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className="mt-1 font-semibold text-slate-700">{value}</p>
+    </div>
+  );
+}
+
+function Summary({
+  label,
+  value,
+  bold = false,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-slate-500">{label}</span>
+      <span
+        className={
+          bold ? "font-bold text-slate-800" : "font-semibold text-slate-700"
+        }
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function formatMoney(value: number) {
+  return `₹${Math.round(value).toLocaleString("en-IN")}`;
+}
+
+function formatDate(value: string) {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+}
