@@ -173,7 +173,7 @@ export default function CompanyCreditNotes() {
     const computed = computeLine(entry.productId, entry.quantity, entry.sellingPrice, entry.discount);
 
     const newItem: AddedProduct = {
-      key: `${entry.productId}-${entry.batchNo}-${new Date().getTime()}`,
+      key: `${entry.productId}-${entry.batchNo}-${String(Date.now())}-${Math.random().toString(36).slice(2, 6)}`,
       productId: entry.productId,
       productName: product.name,
       pkgsize: entry.pkgsize,
@@ -311,10 +311,10 @@ export default function CompanyCreditNotes() {
                     S.No
                   </th>
                   <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
-                    Return Date
+                    Date
                   </th>
                   <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
-                    Credit Note No.
+                    CN.No.
                   </th>
                   <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
                     Store
@@ -350,8 +350,10 @@ export default function CompanyCreditNotes() {
                     <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
                       {c.creditNoteNo}
                     </td>
-                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">{c.party}</td>
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
+                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">
+                      {c.party}
+                      </td>
+                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-200 truncate">
                       {c.placeofreturn}
                     </td>
                     <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
@@ -589,14 +591,14 @@ export default function CompanyCreditNotes() {
                             <th className="px-3 py-2 text-left font-semibold">Product</th>
                             <th className="px-3 py-2 text-left font-semibold">Batch</th>
                             <th className="px-3 py-2 text-center font-semibold">Qty</th>
-                            <th className="px-3 py-2 text-center font-semibold">Price</th>
-                            <th className="px-3 py-2 text-center font-semibold">Disc %</th>
-                            <th className="px-3 py-2 text-center font-semibold">Taxable</th>
-                            <th className="px-3 py-2 text-center font-semibold">SGST</th>
-                            <th className="px-3 py-2 text-center font-semibold">CGST</th>
-                            <th className="px-3 py-2 text-center font-semibold">IGST</th>
-                            <th className="px-3 py-2 text-center font-semibold">Total</th>
-                            <th className="px-3 py-2 text-center font-semibold"></th>
+                            <th className="px-3 py-2 text-right font-semibold">Price</th>
+                            <th className="px-3 py-2 text-right font-semibold">Disc %</th>
+                            <th className="px-3 py-2 text-right font-semibold">Taxable</th>
+                            <th className="px-3 py-2 text-right font-semibold">SGST</th>
+                            <th className="px-3 py-2 text-right font-semibold">CGST</th>
+                            <th className="px-3 py-2 text-right font-semibold">IGST</th>
+                            <th className="px-3 py-2 text-right font-semibold">Total</th>
+                            <th className="px-3 py-2 text-right font-semibold"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -630,13 +632,13 @@ export default function CompanyCreditNotes() {
                                   onChange={(e) => updateAdded(item.key, { discount: Number(e.target.value) || 0 })}
                                 />
                               </td>
-                              <td className="px-3 py-2 text-center text-slate-600">
+                              <td className="px-3 py-2 text-right text-slate-600">
                                 {formatCurrency(item.taxableAmount)}
                               </td>
-                              <td className="px-3 py-2 text-center text-slate-600">{formatCurrency(item.sgst)}</td>
-                              <td className="px-3 py-2 text-center text-slate-600">{formatCurrency(item.cgst)}</td>
-                              <td className="px-3 py-2 text-center text-slate-600">{formatCurrency(item.igst)}</td>
-                              <td className="px-3 py-2 text-center font-bold text-slate-700">
+                              <td className="px-3 py-2 text-right text-slate-600">{formatCurrency(item.sgst)}</td>
+                              <td className="px-3 py-2 text-right text-slate-600">{formatCurrency(item.cgst)}</td>
+                              <td className="px-3 py-2 text-right text-slate-600">{formatCurrency(item.igst)}</td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-700">
                                 {formatCurrency(item.total)}
                               </td>
                               <td className="px-3 py-2 text-center">
