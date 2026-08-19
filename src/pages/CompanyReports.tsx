@@ -49,22 +49,22 @@ export default function CompanyReports() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="text-left font-semibold px-5 py-3">Store</th>
-                  <th className="text-left font-semibold px-5 py-3">Manager</th>
-                  <th className="text-right font-semibold px-5 py-3">Monthly Sales</th>
-                  <th className="text-right font-semibold px-5 py-3">Profit</th>
-                  <th className="text-right font-semibold px-5 py-3">Outstanding</th>
-                  <th className="text-center font-semibold px-5 py-3">Status</th>
+                  <th className="text-left font-semibold border-r border px-5 py-3">Store</th>
+                  <th className="text-left font-semibold border-r border px-5 py-3">Manager</th>
+                  <th className="text-right font-semibold border-r border px-5 py-3">Monthly Sales</th>
+                  <th className="text-right font-semibold border-r border px-5 py-3">Profit</th>
+                  <th className="text-right font-semibold border-r border px-5 py-3">Outstanding</th>
+                  <th className="text-center font-semibold border-r border px-5 py-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sorted.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50/50 transition-base">
-                    <td className="px-5 py-3.5 font-semibold text-slate-800">{s.name}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{s.manager}</td>
-                    <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{formatCurrency(s.monthlySales)}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{formatCurrency(s.totalProfit)}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{formatCurrency(s.outstanding)}</td>
+                    <td className="px-5 py-3.5 font-semibold border-r border-text-slate-800">{s.name}</td>
+                    <td className="px-5 py-3.5 border-r border-text-slate-600">{s.manager}</td>
+                    <td className="px-5 py-3.5 text-right font-semibold border-r border-text-slate-700">{formatCurrency(s.monthlySales)}</td>
+                    <td className="px-5 py-3.5 text-right border-r border-text-slate-600">{formatCurrency(s.totalProfit)}</td>
+                    <td className="px-5 py-3.5 text-right border-r border-text-slate-600">{formatCurrency(s.outstanding)}</td>
                     <td className="px-5 py-3.5 text-center">
                       <Badge color={s.status === 'Active' ? 'green' : 'slate'}>{s.status}</Badge>
                     </td>

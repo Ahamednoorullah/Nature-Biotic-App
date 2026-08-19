@@ -173,7 +173,7 @@ function handleCreateReceipt() {
               <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
 
                 <th className="w-[16%] text-center font-semibold px-3 py-3 border-r border-slate-200">
-                  Receipt Date
+                  Date
                 </th>
 
                 <th className="w-[20%] text-center font-semibold px-3 py-3 border-r border-slate-200">
@@ -224,11 +224,11 @@ function handleCreateReceipt() {
                     {r.method}
                   </td>
 
-                  <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800 border-r border-slate-100">
+                  <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">
                     {formatCurrency(r.amount)}
                   </td>
 
-                  <td className="px-3 py-3 text-center tabular-nums font-bold text-slate-800">
+                  <td className="px-3 py-3 text-right tabular-nums font-bold text-slate-800">
                     {formatCurrency(
                       Math.max(r.invoiceAmount - r.amount, 0)
                     )}
@@ -301,7 +301,7 @@ function handleCreateReceipt() {
         {/* Scrollable body */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input label="Receipt Date" type="date" value={receiptDate} onChange={setReceiptDate} required />
+            <Input label="Date" type="date" value={receiptDate} onChange={setReceiptDate} required />
 
             <Input
               label="Receipt Number"

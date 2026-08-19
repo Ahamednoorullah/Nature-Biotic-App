@@ -545,19 +545,19 @@ export default function CompanyCreditNotes() {
             <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
               {c.placeofreturn}
             </td>
-            <td className="px-2 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+            <td className="px-2 py-3.5 text-right text-slate-600 border-r border-slate-100 whitespace-nowrap">
               {formatCurrency(c.amount)}
             </td>
-            <td className="px-1 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+            <td className="px-1 py-3.5 text-right text-slate-600 border-r border-slate-100 whitespace-nowrap">
               {formatCurrency(c.sgst)}
             </td>
-            <td className="px-1 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+            <td className="px-1 py-3.5 text-right text-slate-600 border-r border-slate-100 whitespace-nowrap">
               {formatCurrency(c.cgst)}
             </td>
-            <td className="px-1 py-3.5 text-center text-slate-600 border-r border-slate-100 whitespace-nowrap">
+            <td className="px-1 py-3.5 text-right text-slate-600 border-r border-slate-100 whitespace-nowrap">
               {formatCurrency(c.igst)}
             </td>
-            <td className="px-2 py-3 text-center font-bold text-slate-600 border-r border-slate-100 whitespace-nowrap">
+            <td className="px-2 py-3 text-right font-bold text-slate-600 border-r border-slate-100 whitespace-nowrap">
               {formatCurrency(c.total)}
             </td>
           </tr>
@@ -598,7 +598,7 @@ export default function CompanyCreditNotes() {
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Input
-                      label="Return Date"
+                      label="Date"
                       type="date"
                       value={returnDate}
                       onChange={setReturnDate}
@@ -634,7 +634,7 @@ export default function CompanyCreditNotes() {
                     />
 
                     <Select
-                      label="Place of Supply"
+                      label="Place of Return"
                       value={placeOfSupply}
                       onChange={setPlaceOfSupply}
                       options={[

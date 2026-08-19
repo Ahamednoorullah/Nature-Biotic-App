@@ -207,7 +207,7 @@ export default function CompanyStaffManagement() {
                   "DOJ",
                   "View",
                 ].map((h) => (
-                  <th key={h} className="px-3 py-3 text-left font-semibold">
+                  <th key={h} className="px-3 py-3 text-left font-semibold border-r border">
                     {h}
                   </th>
                 ))}
@@ -216,9 +216,9 @@ export default function CompanyStaffManagement() {
             <tbody className="divide-y divide-slate-100">
               {staffList.map((m, i) => (
                 <tr key={m.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-3">{i + 1}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 font-bold text-brand-700">
+                  <td className="px-3 py-3 border-r border">{i + 1}</td>
+                  <td className="px-3 py-3 border-r border">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 font-bold border-r border text-brand-700">
                       {m.name
                         .split(" ")
                         .map((x) => x[0])
@@ -226,14 +226,14 @@ export default function CompanyStaffManagement() {
                         .slice(0, 2)}
                     </div>
                   </td>
-                  <td className="px-3 py-3 font-semibold">{m.name}</td>
-                  <td className="px-3 py-3">{m.phone}</td>
-                  <td className="px-3 py-3">{m.designation}</td>
-                  <td className="px-3 py-3">{storeName(m.storeId)}</td>
-                  <td className="px-3 py-3">{storeLocation(m.storeId)}</td>
-                  <td className="px-3 py-3">{m.level}</td>
-                  <td className="px-3 py-3">{m.joinedDate}</td>
-                  <td className="px-3 py-3">
+                  <td className="px-3 py-3 font-semibold border-r border">{m.name}</td>
+                  <td className="px-3 py-3 border-r border">{m.phone}</td>
+                  <td className="px-3 py-3 border-r border">{m.designation}</td>
+                  <td className="px-3 py-3 border-r border">{storeName(m.storeId)}</td>
+                  <td className="px-3 py-3 border-r border">{storeLocation(m.storeId)}</td>
+                  <td className="px-3 py-3 border-r border">{m.level}</td>
+                  <td className="px-3 py-3 border-r border">{m.joinedDate}</td>
+                  <td className="px-3 py-3 border-r border">
                     <button
                       onClick={() => setSelectedStaff(m)}
                       className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200"
