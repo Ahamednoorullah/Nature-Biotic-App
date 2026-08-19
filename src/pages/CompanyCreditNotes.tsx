@@ -490,34 +490,25 @@ export default function CompanyCreditNotes() {
             <table className="w-full table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                  <th
-                    rowSpan={2}
-                    className="w-[6%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                  >
+                  <th rowSpan={2} className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200">
                     S.No
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Return Date
+                  <th rowSpan={2} className="w-[7%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap">
+                  Date
                   </th>
                   <th
                     rowSpan={2}
                     className="px-4 py-3 text-center font-semibold border-r border-slate-200"
                   >
-                    Credit Note No.
+                    CN No.
                   </th>
                   <th
                     rowSpan={2}
                     className="px-4 py-3 text-center font-semibold border-r border-slate-200"
                   >
-                    Store
+                    Store Name
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
+                  <th rowSpan={2} className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
                     Place of Return
                   </th>
                   <th
@@ -557,7 +548,7 @@ export default function CompanyCreditNotes() {
                     key={c.id}
                     className="hover:bg-slate-50/50 transition-base"
                   >
-                    <td className="px-2 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
+                    <td className="px-1 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
                       {i + 1}
                     </td>
                     <td className="px-3 py-3 text-center text-slate-500 border-r border-slate-100">
@@ -566,25 +557,25 @@ export default function CompanyCreditNotes() {
                     <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
                       {c.creditNoteNo}
                     </td>
-                    <td className="px-3 py-3 text-center text-slate-700 border-r border-slate-100">
+                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
                       {c.party}
                     </td>
                     <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
                       {c.placeofreturn}
                     </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
+                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.amount)}
                     </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
+                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.sgst)}
                     </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
+                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.cgst)}
                     </td>
-                    <td className="px-5 py-3.5 text-center text-slate-600 border-r border-slate-100">
+                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.igst)}
                     </td>
-                    <td className="px-3 py-3 text-center font-bold text-slate-600 border-r border-slate-100">
+                    <td className="px-3 py-3 text-right font-bold text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.total)}
                     </td>
                   </tr>
