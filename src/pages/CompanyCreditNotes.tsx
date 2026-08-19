@@ -950,19 +950,19 @@ export default function CompanyCreditNotes() {
                               <td className="px-3 py-2 text-right text-slate-600">
                                 {formatCurrency(item.taxableAmount)}
                               </td>
-                              <td className="px-3 py-2 text-center text-slate-600">
+                              <td className="px-3 py-2 text-right text-slate-600">
                                 {formatCurrency(item.sgst)}
                               </td>
-                              <td className="px-3 py-2 text-center text-slate-600">
+                              <td className="px-3 py-2 text-right text-slate-600">
                                 {formatCurrency(item.cgst)}
                               </td>
-                              <td className="px-3 py-2 text-center text-slate-600">
+                              <td className="px-3 py-2 text-right text-slate-600">
                                 {formatCurrency(item.igst)}
                               </td>
-                              <td className="px-3 py-2 text-center font-bold text-slate-700">
+                              <td className="px-3 py-2 text-right font-bold text-slate-700">
                                 {formatCurrency(item.total)}
                               </td>
-                              <td className="px-3 py-2 text-center">
+                              <td className="px-3 py-2 text-right">
                                 <button
                                   type="button"
                                   onClick={() => removeAdded(item.key)}
