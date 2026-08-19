@@ -496,10 +496,10 @@ export default function CompanyCreditNotes() {
                     S.No
                   </th>
                   <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
-                    Return Date
+                    Date
                   </th>
                   <th rowSpan={2} className="px-4 py-3 text-center font-semibold border-r border-slate-200">
-                    Credit Note No.
+                    CN No.
                   </th>
                   <th
                     rowSpan={2}
