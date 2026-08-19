@@ -201,6 +201,10 @@ export type CompanyCreditNoteSyncRecord = {
   purchaseRef: string;
   product: string;
   quantity: number;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
   returnAmount: number;
   reason: string;
   status: "Pending" | "Approved" | "Rejected";

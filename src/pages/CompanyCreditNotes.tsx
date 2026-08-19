@@ -134,27 +134,27 @@ export default function CompanyCreditNotes() {
     const synced = getCompanyCreditNoteSyncRecords();
 
     const createdNotes: CreditNote[] = synced.map((row) => {
-      const store = stores.find((item) => item.id === row.storeId);
+    const store = stores.find((item) => item.id === row.storeId);
 
-      return {
-        id: row.id,
-        creditNoteNo: row.creditNoteNo,
-        party: row.storeName,
-        Date: row.returnDate,
-        amount: row.returnAmount,
-        sgst: 0,
-        cgst: 0,
-        igst: 0,
-        total: row.returnAmount,
-        storeLocation: store?.location || "",
-        placeofreturn: store?.location?.split(",")[0] || "",
-        storeId: row.storeId,
-        product: row.product,
-        quantity: row.quantity,
-        reason: row.reason,
-        status: row.status,
-      };
-    });
+  return {
+    id: row.id,
+    creditNoteNo: row.creditNoteNo,
+    party: row.storeName,
+    Date: row.returnDate,
+    amount: row.withoutTax ?? row.returnAmount,
+    sgst: row.sgst ?? 0,
+    cgst: row.cgst ?? 0,
+    igst: row.igst ?? 0,
+    total: row.returnAmount,
+    storeLocation: store?.location || "",
+    placeofreturn: store?.location?.split(",")[0] || "",
+    storeId: row.storeId,
+    product: row.product,
+    quantity: row.quantity,
+    reason: row.reason,
+    status: row.status,
+  };
+});
 
     return [...createdNotes, ...seedCreditNotes];
   });
@@ -360,20 +360,24 @@ export default function CompanyCreditNotes() {
 
     // Company Credit Note -> selected Store Debit Note sync
     const syncRows: CompanyCreditNoteSyncRecord[] = added.map(
-      (item, index) => ({
-        id: `${invoiceNo}-${item.key}-${createdAt}-${index}`,
-        creditNoteNo: invoiceNo,
-        storeId: selectedStore.id,
-        storeName: selectedStore.name,
-        returnDate,
-        purchaseRef: invoiceNo,
-        product: item.productName,
-        quantity: item.quantity,
-        returnAmount: item.total,
-        reason: item.reason || remarks || "Product Return",
-        status: "Pending",
-      }),
-    );
+    (item, index) => ({
+    id: `${invoiceNo}-${item.key}-${createdAt}-${index}`,
+    creditNoteNo: invoiceNo,
+    storeId: selectedStore.id,
+    storeName: selectedStore.name,
+    returnDate,
+    purchaseRef: invoiceNo,
+    product: item.productName,
+    quantity: item.quantity,
+    withoutTax: item.taxableAmount,
+    sgst: item.sgst,
+    cgst: item.cgst,
+    igst: item.igst,
+    returnAmount: item.total,
+    reason: item.reason || remarks || "Product Return",
+    status: "Pending",
+  }),
+);
 
     addCompanyCreditNoteSyncRecords(syncRows);
 
@@ -487,7 +491,7 @@ export default function CompanyCreditNotes() {
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full table-fixed text-sm border-collapse">
+            <table className="w-full min-w-[1100px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
                   <th rowSpan={2} className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200">
@@ -502,10 +506,7 @@ export default function CompanyCreditNotes() {
                   >
                     CN No.
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
+                  <th rowSpan={2} className="w-[150px] text-center font-semibold px-3 py-3 border-r border-slate-200 whitespace-nowrap">
                     Store Name
                   </th>
                   <th rowSpan={2} className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
@@ -557,7 +558,7 @@ export default function CompanyCreditNotes() {
                     <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
                       {c.creditNoteNo}
                     </td>
-                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis">
+                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 whitespace-nowrap">
                       {c.party}
                     </td>
                     <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
