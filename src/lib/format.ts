@@ -1,8 +1,9 @@
 export function formatCurrency(n: number): string {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 0,
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(n);
 }
 
@@ -14,16 +15,16 @@ export function formatCompact(n: number): string {
 }
 
 export function formatDate(d: string): string {
-  const [yyyy, mm, dd] = d.split('-');
+  const [yyyy, mm, dd] = d.split("-");
   if (!yyyy || !mm || !dd) return d;
   return `${dd}/${mm}/${yyyy.slice(-2)}`;
 }
 
 export function initials(name: string): string {
   return name
-    .split(' ')
+    .split(" ")
     .map((w) => w[0])
     .slice(0, 2)
-    .join('')
+    .join("")
     .toUpperCase();
 }
