@@ -1482,3 +1482,48 @@ export const purpose: Purpose[] = [
   "Botanical fungicide",
   "Insecticide (Suckingpest)",
 ];
+
+
+// Store Purchase Order / Purchase Return -> Company Approval sync
+export type StoreApprovalRequestType = "Purchase Order" | "Purchase Return";
+export type StoreApprovalRequestStatus = "Pending" | "Approved" | "Rejected";
+export type StoreApprovalRequest = {
+  id: string; type: StoreApprovalRequestType; storeId: string; storeName: string;
+  date: string; referenceNo: string; amount: number;
+  status: StoreApprovalRequestStatus; createdAt: number;
+};
+const STORE_APPROVAL_REQUESTS_KEY = "nature-biotic-store-approval-requests-v1";
+const STORE_APPROVAL_EVENT = "store-approval-requests-updated";
+
+export function getStoreApprovalRequests(): StoreApprovalRequest[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(STORE_APPROVAL_REQUESTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+export function saveStoreApprovalRequests(rows: StoreApprovalRequest[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORE_APPROVAL_REQUESTS_KEY, JSON.stringify(rows));
+    window.dispatchEvent(new Event(STORE_APPROVAL_EVENT));
+  } catch {}
+}
+export function addStoreApprovalRequest(
+  row: Omit<StoreApprovalRequest, "status" | "createdAt"> &
+    Partial<Pick<StoreApprovalRequest, "status" | "createdAt">>,
+) {
+  const existing = getStoreApprovalRequests();
+  const next: StoreApprovalRequest = { ...row, status: row.status ?? "Pending", createdAt: row.createdAt ?? Date.now() };
+  saveStoreApprovalRequests([next, ...existing.filter((item) => item.id !== next.id)]);
+  return next;
+}
+export function updateStoreApprovalRequestStatus(id: string, status: StoreApprovalRequestStatus) {
+  const updated = getStoreApprovalRequests().map((row) => row.id === id ? { ...row, status } : row);
+  saveStoreApprovalRequests(updated);
+  return updated;
+}
+export function getStoreApprovalRequest(type: StoreApprovalRequestType, storeId: string, referenceNo: string) {
+  return getStoreApprovalRequests().find((row) => row.type === type && row.storeId === storeId && row.referenceNo === referenceNo);
+}
+export const storeApprovalRequestsUpdatedEvent = STORE_APPROVAL_EVENT;

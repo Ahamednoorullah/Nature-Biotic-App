@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
+import { addStoreApprovalRequest, getStoreApprovalRequest, storeApprovalRequestsUpdatedEvent, stores } from "@/lib/data";
 
 type AddedProduct = {
   id: string;
@@ -94,11 +95,19 @@ const initialRows: PurchaseOrderRow[] = [
 ];
 
 export default function StorePurchaseOrder({
-  storeId: _storeId,
+  storeId,
 }: {
   storeId: string;
 }) {
-  const [rows, setRows] = useState<PurchaseOrderRow[]>(initialRows);
+  const storageKey = `naturebiotic:purchase-orders:${storeId}`;
+  const [rows, setRows] = useState<PurchaseOrderRow[]>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? (JSON.parse(saved) as PurchaseOrderRow[]) : initialRows;
+    } catch {
+      return initialRows;
+    }
+  });
   const [showCreate, setShowCreate] = useState(false);
   const [date, setDate] = useState("");
   const [poNo, setPoNo] = useState("");
@@ -109,6 +118,24 @@ export default function StorePurchaseOrder({
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderRow | null>(
     null,
   );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(rows));
+    } catch (error) {
+      console.error("Failed to persist store data:", error);
+    }
+  }, [rows, storageKey]);
+
+  useEffect(() => {
+    const syncStatuses = () => setRows((current) => current.map((row) => {
+      const request = getStoreApprovalRequest("Purchase Order", storeId, row.poNo);
+      return request?.status === "Approved" ? { ...row, status: "Approved" } : row;
+    }));
+    syncStatuses();
+    window.addEventListener(storeApprovalRequestsUpdatedEvent, syncStatuses);
+    return () => window.removeEventListener(storeApprovalRequestsUpdatedEvent, syncStatuses);
+  }, [storeId]);
 
   const selectedProduct = productMaster.find((p) => p.value === product);
   const price = selectedProduct?.price ?? 0;
@@ -189,26 +216,20 @@ export default function StorePurchaseOrder({
 
   function saveOrder() {
     if (!canSave) return;
-
-    setRows((prev) => [
-      {
-        id: `po-${Date.now()}`,
-        poNo: poNo.trim(),
-        date,
-        totalProduct: totals.totalProduct,
-        withoutTax: totals.withoutTax,
-        sgst: totals.sgst,
-        cgst: totals.cgst,
-        igst: totals.igst,
-        total: totals.total,
-        status: "Pending",
-        items: added,
-      },
-      ...prev,
-    ]);
-
-    resetForm();
-    setShowCreate(false);
+    const newRow: PurchaseOrderRow = {
+      id: `po-${Date.now()}`, poNo: poNo.trim(), date,
+      totalProduct: totals.totalProduct, withoutTax: totals.withoutTax,
+      sgst: totals.sgst, cgst: totals.cgst, igst: totals.igst,
+      total: totals.total, status: "Pending", items: added,
+    };
+    setRows((prev) => [newRow, ...prev]);
+    const store = stores.find((item) => item.id === storeId);
+    addStoreApprovalRequest({
+      id: `purchase-order-${storeId}-${newRow.poNo}`, type: "Purchase Order",
+      storeId, storeName: store?.name ?? storeId, date: newRow.date,
+      referenceNo: newRow.poNo, amount: newRow.total,
+    });
+    resetForm(); setShowCreate(false);
   }
 
   return (

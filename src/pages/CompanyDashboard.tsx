@@ -1,5 +1,11 @@
-import { useState, useMemo } from "react";
-import { stores as allStores } from "@/lib/data";
+import { useEffect, useState, useMemo } from "react";
+import {
+  stores as allStores,
+  getStoreApprovalRequests,
+  updateStoreApprovalRequestStatus,
+  storeApprovalRequestsUpdatedEvent,
+  type StoreApprovalRequest,
+} from "@/lib/data";
 import { useNav } from "@/context/NavContext";
 import { Card, StatCard, Button, Icon } from "@/components/ui";
 import { formatCurrency, formatCompact, initials } from "@/lib/format";
@@ -315,6 +321,21 @@ export default function CompanyDashboard() {
   const [actualDetailView, setActualDetailView] =
     useState<ActualDetailView>(null);
 
+  const [approvalRequests, setApprovalRequests] = useState<StoreApprovalRequest[]>([]);
+  const [showApprovals, setShowApprovals] = useState(false);
+
+  useEffect(() => {
+    const refresh = () => setApprovalRequests(getStoreApprovalRequests());
+    refresh();
+    window.addEventListener(storeApprovalRequestsUpdatedEvent, refresh);
+    return () => window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
+  }, []);
+
+  const pendingApprovals = approvalRequests.filter((row) => row.status === "Pending");
+  const approveRequest = (id: string) => {
+    setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
+  };
+
   const data = useMemo(() => dashboardData[dateFilter], [dateFilter]);
   const store = allStores[0];
 
@@ -334,6 +355,73 @@ export default function CompanyDashboard() {
       )}
 
       <div className="h-[30px]" />
+
+      <section className="mb-8">
+        <button
+          type="button"
+          onClick={() => setShowApprovals((v) => !v)}
+          className="w-full rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:shadow-md"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <Icon name="notifications_active" size={22} />
+              </div>
+              <div>
+                <h2 className="font-bold text-slate-800">Store Approvals</h2>
+                <p className="text-sm text-slate-500">Purchase orders and purchase returns waiting for company approval.</p>
+              </div>
+            </div>
+            <div className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-700">
+              {pendingApprovals.length} Pending
+            </div>
+          </div>
+        </button>
+
+        {showApprovals && (
+          <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {pendingApprovals.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">No pending store approvals.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Type</th>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Store</th>
+                      <th className="px-4 py-3 text-left">Ref No</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingApprovals.map((row) => (
+                      <tr key={row.id}>
+                        <td className="px-4 py-3 font-semibold text-slate-700">{row.type}</td>
+                        <td className="px-4 py-3 text-slate-600">{row.date}</td>
+                        <td className="px-4 py-3 text-slate-600">{row.storeName}</td>
+                        <td className="px-4 py-3 font-medium text-slate-700">{row.referenceNo}</td>
+                        <td className="px-4 py-3 text-right font-semibold">{formatCurrency(row.amount)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Pending</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button type="button" onClick={() => approveRequest(row.id)}
+                            className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700">
+                            Approve
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
       {/* SECTION 1 — Actual Sales */}
       <section className="mb-12">
         <div className="mb-5">

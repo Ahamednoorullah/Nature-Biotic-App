@@ -86,34 +86,41 @@ export default function StorePayments({ storeId: _storeId }: { storeId: string }
         <Card className="p-0"><EmptyState icon="payments" title="No payments found" description="Adjust your search or filters to find payment records." /></Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1200px] border-collapse">
+          <div className="w-full">
+            <table className="w-full table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
-                  {['Payment No', 'Date', 'Vendor', 'Purchase / Invoice Ref', 'Payment Method', 'Amount', 'Balance', 'Status', 'View'].map((h, i) => (
-                    <th key={h} className={`font-semibold px-3 py-3 border-r border-slate-200 last:border-r-0 ${i === 5 || i === 6 ? 'text-right' : i === 8 ? 'text-center' : 'text-left'}`}>{h}</th>
-                  ))}
+                  <th className="w-[6%] font-semibold px-2 py-3 border-r border-slate-200 text-center">S.No</th>
+                  <th className="w-[10%] font-semibold px-2 py-3 border-r border-slate-200 text-left">Date</th>
+                  <th className="w-[12%] font-semibold px-2 py-3 border-r border-slate-200 text-left">Pay No</th>
+                  <th className="w-[16%] font-semibold px-2 py-3 border-r border-slate-200 text-left">Vendor</th>
+                  <th className="w-[15%] font-semibold px-2 py-3 border-r border-slate-200 text-left">Inv / Pur No</th>
+                  <th className="w-[13%] font-semibold px-2 py-3 border-r border-slate-200 text-left">Pay Method</th>
+                  <th className="w-[11%] font-semibold px-2 py-3 border-r border-slate-200 text-right">Amount</th>
+                  <th className="w-[9%] font-semibold px-2 py-3 border-r border-slate-200 text-right">Balance</th>
+                  <th className="w-[8%] font-semibold px-2 py-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((p, i) => (
-                  <tr key={p.id} className={`border-b border-slate-100 last:border-b-0 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/40 transition-base`}>
-                    <td className="px-3 py-3 border-r border-slate-100 font-semibold text-slate-800">{p.paymentNo}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-slate-500">{formatDate(p.date)}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-slate-700">{p.vendor}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-slate-600">{p.invoiceRef}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-slate-600">{p.method}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-right tabular-nums font-semibold text-slate-700">{formatCurrency(p.amount)}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-right tabular-nums text-slate-600">{formatCurrency(p.balance)}</td>
-                    <td className="px-3 py-3 border-r border-slate-100 text-center">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                  <tr
+                    key={p.id}
+                    onClick={() => setViewing(p)}
+                    title="Click to view payment details"
+                    className={`cursor-pointer border-b border-slate-100 last:border-b-0 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-brand-50/50 transition-base`}
+                  >
+                    <td className="px-2 py-3 border-r border-slate-100 text-center text-slate-500">{i + 1}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 text-slate-500 whitespace-nowrap">{formatDate(p.date)}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 font-semibold text-slate-800 whitespace-nowrap">{p.paymentNo}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 text-slate-700 truncate">{p.vendor}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 text-slate-600 truncate">{p.invoiceRef}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 text-slate-600 truncate">{p.method}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">{formatCurrency(p.amount)}</td>
+                    <td className="px-2 py-3 border-r border-slate-100 text-right tabular-nums text-slate-600 whitespace-nowrap">{formatCurrency(p.balance)}</td>
+                    <td className="px-2 py-3 text-center">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
                         statusColor[p.status] === 'green' ? 'bg-brand-50 text-brand-700' : 'bg-amber-50 text-amber-600'
                       }`}>{p.status}</span>
-                    </td>
-                    <td className="px-3 py-3 text-center">
-                      <button onClick={() => setViewing(p)} className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base" title="View">
-                        <Icon name="visibility" size={18} />
-                      </button>
                     </td>
                   </tr>
                 ))}
@@ -128,7 +135,7 @@ export default function StorePayments({ storeId: _storeId }: { storeId: string }
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={() => setViewing(null)} />
           <div className="relative bg-white rounded-2xl shadow-elevated w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800">Payment Detail</h3>
+              <div><h3 className="text-lg font-bold text-slate-800">Payment Details</h3><p className="text-sm text-slate-500 mt-0.5">{viewing.paymentNo}</p></div>
               <button onClick={() => setViewing(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-base"><Icon name="close" size={22} /></button>
             </div>
             <div className="px-6 py-5 grid grid-cols-2 gap-4">
