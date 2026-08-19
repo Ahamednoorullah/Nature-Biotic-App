@@ -432,7 +432,7 @@ export default function CompanyDashboard() {
             Nature Biotic direct and company sales overview
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 stagger">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 stagger [&_p]:!text-sm">
           <button
             type="button"
             onClick={() =>
@@ -509,7 +509,7 @@ export default function CompanyDashboard() {
             Combined sales overview from all stores
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 stagger">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 stagger [&_p]:!text-sm">
           <StatCard
             label="Sales"
             value={formatCurrency(data.market.receivable)}
@@ -893,7 +893,7 @@ function StoreKpi({
         <Icon name={icon} size={18} />
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-bold text-slate-800 tracking-tight leading-tight truncate">
+        <p className="text-[10px] font-bold text-slate-800 tracking-tight leading-tight truncate">
           {value}
         </p>
         <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
