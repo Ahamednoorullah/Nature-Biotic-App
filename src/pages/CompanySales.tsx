@@ -123,7 +123,7 @@ export default function CompanySales() {
     [sales, search, storeFilter],
   );
 
-  const totals = useMemo(() => {
+    const totals = useMemo(() => {
     const subtotal = added.reduce((s, r) => s + r.quantity * r.sellingPrice, 0);
     const totalDiscount = added.reduce((s, r) => s + r.discount, 0);
     const totalTax = added.reduce((s, r) => s + r.taxAmount, 0);
@@ -264,17 +264,13 @@ export default function CompanySales() {
         storeId: store.id,
         storeName: store.name,
         storeLocation: store.location,
-
         placeOfSupply,
-
         product: r.product?.name || "",
         packSize: r.packSize,
         quantity: r.quantity,
         rate: r.sellingPrice,
-
         withoutTax,
         taxAmount,
-
         sgst,
         cgst,
         igst,
