@@ -16,7 +16,7 @@ type ReturnChallan = {
 
 export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   const [rows, setRows] = useState<ReturnChallan[]>([
-    { id: "1", rcNo: "RC-001", date: "17 Aug 2026", dcNo: "DC-1001", executive: "Ram Kumar", product: "Electra", packSize: "250 ml", qty: 3 },
+    { id: "1", rcNo: "RC-001", date: "17/08/2026", dcNo: "DC-1001", executive: "Ram Kumar", product: "Electra", packSize: "250 ml", qty: 3 },
   ]);
   const [showAdd, setShowAdd] = useState(false);
   const [dcNo, setDcNo] = useState("");

@@ -28,7 +28,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const [rows, setRows] = useState<Row[]>([
     {
       id: "1",
-      date: "17 Aug 2026",
+      date: "17/08/2026",
       quotationNo: "QT-1001",
       farmer: "Murugan",
       village: "Rajapalayam",
@@ -37,7 +37,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     },
     {
       id: "2",
-      date: "16 Aug 2026",
+      date: "16/08/2026",
       quotationNo: "QT-1000",
       farmer: "Selvam",
       village: "Seithur",

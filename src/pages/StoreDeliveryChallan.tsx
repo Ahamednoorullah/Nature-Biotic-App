@@ -23,7 +23,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     {
       id: "1",
       dcNo: "DC-1001",
-      date: "17 Aug 2026",
+      date: "17/08/2026",
       executive: "Ram Kumar",
       items: [{ product: "Electra", packSize: "250 ml", qty: "10" }],
     },
