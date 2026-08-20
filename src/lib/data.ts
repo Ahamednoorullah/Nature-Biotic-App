@@ -96,6 +96,8 @@ export type Farmer = {
   aadhar: string;
   gst: string;
   village: string;
+  through?: 'Direct' | 'Executive';
+  executiveName?: string;
   landmark: string;
   district: string;
   state: string;

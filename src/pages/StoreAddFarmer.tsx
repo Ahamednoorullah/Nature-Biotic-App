@@ -302,14 +302,6 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               icon="call"
             />
             <Input
-              label="Email"
-              type="email"
-              value={form.email}
-              onChange={(v) => update("email", v)}
-              placeholder="e.g. murugan.farm@gmail.com"
-              icon="mail"
-            />
-            <Input
               label="Aadhar Number (Optional)"
               value={form.aadhar}
               onChange={(v) => update("aadhar", v)}
@@ -323,26 +315,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               placeholder="33ABCDE1234F1Z5"
               icon="receipt_long"
             />
-            <div className="sm:col-span-2">
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                Customer Category
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {customerCategories.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => update("customerCategory", cat)}
-                    className={`px-3 py-3 rounded-xl text-sm font-semibold transition-base border ${
-                      form.customerCategory === cat
-                        ? "bg-brand-50 text-brand-700 border-brand-300"
-                        : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
+            
               <div className="sm:col-span-2">
                 <Textarea
                   label="Farmer Address"
@@ -354,7 +327,6 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
                 />
               </div>
             </div>
-          </div>
         </Card>
 
         {/* FARM DETAILS */}
@@ -379,6 +351,13 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               onChange={(v) => update("landmark", v)}
               placeholder="e.g. Near Temple"
               icon="near_me"
+            />
+            <Input
+              label="Land Size (Acres)"
+              type="number"
+              value={cropLandSize}
+              onChange={setCropLandSize}
+              placeholder="e.g. 2.5"
             />
             <Input
               label="District"
@@ -414,19 +393,21 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
           />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Select
-              label="Crop Type"
+              label="Crop"
               value={cropType}
               onChange={setCropType}
               placeholder="Select crop"
               options={cropTypes.map((c) => ({ value: c, label: c }))}
             />
-            <Input
-              label="Land Size (Acres)"
-              type="number"
-              value={cropLandSize}
-              onChange={setCropLandSize}
-              placeholder="e.g. 2.5"
+
+            <Select
+              label="Crop 2"
+              value={cropType}
+              onChange={setCropType}
+              placeholder="Select crop"
+              options={cropTypes.map((c) => ({ value: c, label: c }))}
             />
+            
             <Select
               label="Soil Type"
               value={soilType}
@@ -441,14 +422,14 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               placeholder="Select water source"
               options={waterSources.map((w) => ({ value: w, label: w }))}
             />
-            <div className="flex items-end">
+            <div className="flex items-end translate-y-[-4px]">
               <Button
                 type="button"
                 onClick={addCrop}
                 disabled={!canAddCrop}
                 className="w-full"
               >
-                <Icon name="add" size={18} /> Add Crop
+                <Icon name="add" size={25} /> Add Crop
               </Button>
             </div>
           </div>

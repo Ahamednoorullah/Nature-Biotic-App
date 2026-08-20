@@ -14,15 +14,12 @@ import { useNav } from '@/context/NavContext';
 import { Card, Badge, Button, EmptyState, Icon, Input, Select, Textarea, Modal } from '@/components/ui';
 import { formatCurrency, formatDate, initials } from '@/lib/format';
 
-type Tab = 'overview' | 'purchases' | 'invoices' | 'payments' | 'crop' | 'documents';
+type Tab = 'overview' | 'purchases' | 'invoices' | 'payments' | 'documents';
 
 const tabs: { key: Tab; label: string; icon: string }[] = [
   { key: 'overview', label: 'Overview', icon: 'dashboard' },
-  { key: 'purchases', label: 'Purchase History', icon: 'shopping_cart' },
   { key: 'invoices', label: 'Invoices', icon: 'receipt_long' },
   { key: 'payments', label: 'Payment History', icon: 'payments' },
-  { key: 'crop', label: 'Crop Details', icon: 'agriculture' },
-  { key: 'documents', label: 'Documents', icon: 'folder' },
 ];
 
 const colorMap: Record<string, string> = {
@@ -88,12 +85,6 @@ export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { st
             <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
               <Icon name="edit" size={16} /> Edit Farmer
             </Button>
-            <div className="text-center sm:text-right">
-              <p className="text-xs text-slate-400 font-medium">Outstanding Amount</p>
-              <p className={`text-xl font-bold ${farmer.outstanding > 0 ? 'text-amber-600' : 'text-brand-600'}`}>
-                {farmer.outstanding > 0 ? formatCurrency(farmer.outstanding) : 'Clear'}
-              </p>
-            </div>
             <Badge color={farmer.status === 'Active' ? 'green' : 'slate'}>
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'currentColor' }} />{farmer.status}
             </Badge>
@@ -119,7 +110,6 @@ export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { st
         {tab === 'purchases' && <PurchasesTab purchases={purchases} />}
         {tab === 'invoices' && <InvoicesTab invoices={invoices} />}
         {tab === 'payments' && <PaymentsTab payments={payments} />}
-        {tab === 'crop' && <CropTab farmer={farmer} />}
         {tab === 'documents' && <DocumentsTab />}
       </div>
       <EditFarmerModal
@@ -153,7 +143,6 @@ function OverviewTab({ farmer, purchases, payments }: { farmer: ReturnType<typeo
   const infoItems = [
     { icon: 'badge', label: 'Customer Category', value: farmer.customerCategory },
     { icon: 'call', label: 'Alternative Mobile', value: farmer.altMobile || '—' },
-    { icon: 'mail', label: 'Email', value: farmer.email || '—' },
     { icon: 'receipt_long', label: 'GST Number', value: farmer.gst || '—' },
     { icon: 'home', label: 'Farmer Address', value: farmer.farmAddress || '—' },
     { icon: 'location_on', label: 'Village', value: farmer.village || '—' },
@@ -316,80 +305,9 @@ function PaymentsTab({ payments }: { payments: ReturnType<typeof getPaymentsByFa
   );
 }
 
-function CropTab({ farmer }: { farmer: ReturnType<typeof getFarmerById> }) {
-  if (!farmer) return null;
 
-  const crops =
-    farmer.crops?.length
-      ? farmer.crops
-      : farmer.cropType
-        ? [
-            {
-              id: `${farmer.id}-legacy-crop`,
-              cropType: farmer.cropType,
-              landSize: farmer.landSize,
-              soilType: farmer.soilType,
-              waterSource: farmer.waterSource,
-            },
-          ]
-        : [];
-
-  return (
-    <div className="space-y-5">
-      <Card className="p-6">
-        <h3 className="font-bold text-slate-800 mb-4">Farm Location Details</h3>
-
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <DetailItem icon="home" label="Farmer Address" value={farmer.farmAddress || '—'} />
-          <DetailItem icon="location_on" label="Village" value={farmer.village || '—'} />
-          <DetailItem icon="near_me" label="Landmark" value={farmer.landmark || '—'} />
-          <DetailItem icon="location_city" label="District" value={farmer.district || '—'} />
-          <DetailItem icon="public" label="State" value={farmer.state || '—'} />
-          <DetailItem icon="mark_email_read" label="Pincode" value={farmer.pincode || '—'} />
-        </div>
-      </Card>
-
-      <Card className="p-0 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-          <h3 className="font-bold text-slate-800">Crop Details</h3>
-          <p className="text-sm text-slate-500 mt-1">
-            All crops registered for this farmer.
-          </p>
-        </div>
-
-        {crops.length === 0 ? (
-          <div className="p-8 text-center text-slate-400">
-            No crop details available.
-          </div>
-        ) : (
-          <table className="w-full table-fixed text-sm">
-            <thead>
-              <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                <th className="w-[8%] px-3 py-3 text-center">S.No</th>
-                <th className="w-[30%] px-3 py-3 text-left">Crop</th>
-                <th className="w-[20%] px-3 py-3 text-center">Land (Acres)</th>
-                <th className="w-[20%] px-3 py-3 text-left">Soil Type</th>
-                <th className="w-[22%] px-3 py-3 text-left">Water Source</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100">
-              {crops.map((crop, index) => (
-                <tr key={crop.id}>
-                  <td className="px-3 py-3 text-center text-slate-500">{index + 1}</td>
-                  <td className="px-3 py-3 font-semibold text-slate-800">{crop.cropType}</td>
-                  <td className="px-3 py-3 text-center text-slate-700">{crop.landSize}</td>
-                  <td className="px-3 py-3 text-slate-600">{crop.soilType || '—'}</td>
-                  <td className="px-3 py-3 text-slate-600">{crop.waterSource || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  );
-}
+        
+  
 
 function DetailItem({
   icon,
@@ -543,7 +461,6 @@ function EditFarmerModal({
             <Input label="Farmer Name" value={form.name} onChange={(v) => change('name', v)} required />
             <Input label="Mobile Number" value={form.phone} onChange={(v) => change('phone', v)} required />
             <Input label="Alternative Mobile" value={form.altMobile} onChange={(v) => change('altMobile', v)} />
-            <Input label="Email" value={form.email} onChange={(v) => change('email', v)} />
             <Input label="Aadhar Number" value={form.aadhar} onChange={(v) => change('aadhar', v)} />
             <Input label="GST Number" value={form.gst} onChange={(v) => change('gst', v)} />
             <Select label="Customer Category" value={form.customerCategory}

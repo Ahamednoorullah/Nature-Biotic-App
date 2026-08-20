@@ -4,6 +4,7 @@ import { useNav } from '@/context/NavContext';
 import { Card, Button, Input, Select, Modal, EmptyState, StatCard, Icon } from '@/components/ui';
 import { formatCurrency, formatCompact, initials } from '@/lib/format';
 
+
 const colorMap: Record<string, string> = {
   emerald: 'from-emerald-400 to-emerald-600',
   teal: 'from-teal-400 to-teal-600',
@@ -106,14 +107,15 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
             <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="w-[6%] text-center font-semibold px-3 py-3.5">S.No</th>
-                  <th className="w-[8%] text-left font-semibold px-3 py-3.5">Profile</th>
-                  <th className="w-[18%] text-left font-semibold px-3 py-3.5">Farmer Details</th>
-                  <th className="w-[14%] text-left font-semibold px-3 py-3.5">Mobile Number</th>
-                  <th className="w-[18%] text-left font-semibold px-3 py-3.5">Village</th>
-                  <th className="w-[10%] text-right font-semibold px-3 py-3.5">Land (Acres)</th>
-                  <th className="w-[10%] text-left font-semibold px-3 py-3.5">Crop Type</th>
-                  <th className="w-[10%] text-right font-semibold px-3 py-3.5">Outstanding</th>
+                  <th className="w-[6%] text-center font-semibold px-3 py-3.5 border-r">S.No</th>
+                  <th className="w-[8%] text-center font-semibold px-3 py-3.5 border-r">Profile</th>
+                  <th className="w-[18%] text-center font-semibold px-3 py-3.5 border-r">Farmer Details</th>
+                  <th className="w-[14%] text-center font-semibold px-3 py-3.5 border-r">Mobile Number</th>
+                  <th className="w-[18%] text-center font-semibold px-3 py-3.5 border-r">Village</th>
+                  <th className="w-[14%] text-center font-semibold px-3 py-3.5 border-r">Through</th>
+                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Land (Acres)</th>
+                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Crops</th>
+                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Outstanding</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -124,40 +126,45 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                     onClick={() => goFarmerProfile(f.id)}
                     title="Click to view farmer details"
                   >
-                    <td className="px-3 py-3.5 text-center font-medium text-slate-500">{index + 1}</td>
-                    <td className="px-3 py-3.5">
+                    <td className="px-3 py-3.5 text-center font-medium text-slate-500 border-r">{index + 1}</td>
+                    <td className="px-3 py-3.5 border-r">
                       {f.profileImage ? (
                         <img
                           src={f.profileImage}
                           alt={f.name}
-                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200 border-r"
                         />
                       ) : (
-                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br border-r ${colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600 border-r'} flex items-center justify-center text-white font-bold text-xs shrink-0 border-r`}>
                           {initials(f.name)}
                         </div>
                       )}
                     </td>
                     <td className="px-3 py-3.5">
-                      <p className="font-semibold text-slate-800">{f.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="font-semibold text-slate-800 border-r">{f.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 border-r">
                         {f.village || '-'}
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-xs text-slate-400 mt-0.5 border-r">
                         {f.phone}
                       </p>
                     </td>
-                    <td className="px-3 py-3.5 text-slate-600">{f.phone}</td>
-                   <td className="px-3 py-3.5 text-slate-600">
+                    <td className="px-3 py-3.5 text-slate-600 border-r">{f.phone}</td>
+                   <td className="px-3 py-3.5 text-slate-600 border-r">
                       <p className="line-clamp-2">{f.village || '-'}</p>
                     </td>
-                    <td className="px-3 py-3.5 text-right font-semibold text-slate-700">{f.landSize}</td>
-                    <td className="px-3 py-3.5">
+                    <td className="px-3 py-3.5 text-slate-600 border-r">
+                      {f.through === 'Executive'
+                        ? `${f.executiveName || '-'}`
+                        : 'Direct'}
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-semibold text-slate-700 border-r">{f.landSize}</td>
+                    <td className="px-3 py-3.5 border-r">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs">
                         {f.cropType || '-'}
                       </span>
                     </td>
-                    <td className="px-3 py-3.5 text-right">
+                    <td className="px-3 py-3.5 text-right border-r">
                       {f.outstanding > 0
                         ? <span className="font-bold text-amber-600">{formatCurrency(f.outstanding)}</span>
                         : <span className="text-slate-400">Clear</span>}
