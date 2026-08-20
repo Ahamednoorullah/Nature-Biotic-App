@@ -129,38 +129,59 @@ const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red"> = {
   Rejected: "red",
 };
 
+function CreditInfo({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 break-words font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
 export default function CompanyCreditNotes() {
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
     const synced = getCompanyCreditNoteSyncRecords();
 
     const createdNotes: CreditNote[] = synced.map((row) => {
-    const store = stores.find((item) => item.id === row.storeId);
+      const store = stores.find((item) => item.id === row.storeId);
 
-  return {
-    id: row.id,
-    creditNoteNo: row.creditNoteNo,
-    party: row.storeName,
-    Date: row.returnDate,
-    amount: row.withoutTax ?? row.returnAmount,
-    sgst: row.sgst ?? 0,
-    cgst: row.cgst ?? 0,
-    igst: row.igst ?? 0,
-    total: row.returnAmount,
-    storeLocation: store?.location || "",
-    placeofreturn: store?.location?.split(",")[0] || "",
-    storeId: row.storeId,
-    product: row.product,
-    quantity: row.quantity,
-    reason: row.reason,
-    status: row.status,
-  };
-});
+      return {
+        id: row.id,
+        creditNoteNo: row.creditNoteNo,
+        party: row.storeName,
+        Date: row.returnDate,
+        amount: row.withoutTax ?? row.returnAmount,
+        sgst: row.sgst ?? 0,
+        cgst: row.cgst ?? 0,
+        igst: row.igst ?? 0,
+        total: row.returnAmount,
+        storeLocation: store?.location || "",
+        placeofreturn: store?.location?.split(",")[0] || "",
+        storeId: row.storeId,
+        product: row.product,
+        quantity: row.quantity,
+        reason: row.reason,
+        status: row.status,
+      };
+    });
 
     return [...createdNotes, ...seedCreditNotes];
   });
 
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [selectedCreditNote, setSelectedCreditNote] = useState<{
+    header: CreditNote;
+    rows: CreditNote[];
+  } | null>(null);
 
   // Form state
   const [returnDate, setReturnDate] = useState("");
@@ -319,6 +340,20 @@ export default function CompanyCreditNotes() {
     setAdded((prev) => prev.filter((item) => item.key !== key));
   }
 
+  function openCreditNote(row: CreditNote) {
+    const relatedRows = creditNotes.filter(
+      (item) =>
+        item.creditNoteNo === row.creditNoteNo &&
+        (item.storeId || item.party) === (row.storeId || row.party) &&
+        item.Date === row.Date,
+    );
+
+    setSelectedCreditNote({
+      header: row,
+      rows: relatedRows.length > 0 ? relatedRows : [row],
+    });
+  }
+
   function resetForm() {
     setReturnDate("");
     setCreditno("");
@@ -360,25 +395,25 @@ export default function CompanyCreditNotes() {
 
     // Company Credit Note -> selected Store Debit Note sync
     const syncRows: CompanyCreditNoteSyncRecord[] = added.map(
-    (item, index) => ({
-    id: `${invoiceNo}-${item.key}-${createdAt}-${index}`,
-    creditNoteNo: invoiceNo,
-    storeId: selectedStore.id,
-    storeName: selectedStore.name,
-    returnDate,
-    purchaseRef: invoiceNo,
-    product: item.productName,
-    quantity: item.quantity,
-    withoutTax: item.taxableAmount,
-    sgst: item.sgst,
-    cgst: item.cgst,
-    igst: item.igst,
-    returnAmount: item.total,
-    reason: item.reason || remarks || "Product Return",
-    placeOfReturn: selectedStore.location?.split(",")[0] || "",
-    status: "Pending",
-  }),
-);
+      (item, index) => ({
+        id: `${invoiceNo}-${item.key}-${createdAt}-${index}`,
+        creditNoteNo: invoiceNo,
+        storeId: selectedStore.id,
+        storeName: selectedStore.name,
+        returnDate,
+        purchaseRef: invoiceNo,
+        product: item.productName,
+        quantity: item.quantity,
+        withoutTax: item.taxableAmount,
+        sgst: item.sgst,
+        cgst: item.cgst,
+        igst: item.igst,
+        returnAmount: item.total,
+        reason: item.reason || remarks || "Product Return",
+        placeOfReturn: selectedStore.location?.split(",")[0] || "",
+        status: "Pending",
+      }),
+    );
 
     addCompanyCreditNoteSyncRecords(syncRows);
 
@@ -492,14 +527,20 @@ export default function CompanyCreditNotes() {
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] table-fixed text-sm border-collapse">
+            <table className="w-full min-w-[1000px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                  <th rowSpan={2} className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200">
+                  <th
+                    rowSpan={2}
+                    className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200"
+                  >
                     S.No
                   </th>
-                  <th rowSpan={2} className="w-[7%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap">
-                  Date
+                  <th
+                    rowSpan={2}
+                    className="w-[8%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap"
+                  >
+                    Date
                   </th>
                   <th
                     rowSpan={2}
@@ -507,10 +548,16 @@ export default function CompanyCreditNotes() {
                   >
                     CN No.
                   </th>
-                  <th rowSpan={2} className="w-[150px] text-center font-semibold px-3 py-3 border-r border-slate-200 whitespace-nowrap">
+                  <th
+                    rowSpan={2}
+                    className="w-[150px] text-center font-semibold px-3 py-3 border-r border-slate-200 whitespace-nowrap"
+                  >
                     Store Name
                   </th>
-                  <th rowSpan={2} className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+                  <th
+                    rowSpan={2}
+                    className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 "
+                  >
                     Place of Return
                   </th>
                   <th
@@ -548,7 +595,9 @@ export default function CompanyCreditNotes() {
                 {filtered.map((c, i) => (
                   <tr
                     key={c.id}
-                    className="hover:bg-slate-50/50 transition-base"
+                    onClick={() => openCreditNote(c)}
+                    title="Click to view credit note details"
+                    className="cursor-pointer hover:bg-brand-50/40 transition-base"
                   >
                     <td className="px-1 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
                       {i + 1}
@@ -587,6 +636,202 @@ export default function CompanyCreditNotes() {
           </div>
         </Card>
       )}
+
+      {selectedCreditNote &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                    Credit Note
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                    {selectedCreditNote.header.creditNoteNo}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Nature Biotic → {selectedCreditNote.header.party}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedCreditNote(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <CreditInfo
+                    label="CN No."
+                    value={selectedCreditNote.header.creditNoteNo}
+                  />
+                  <CreditInfo
+                    label="Date"
+                    value={formatDate(selectedCreditNote.header.Date)}
+                  />
+                  <CreditInfo
+                    label="Store Name"
+                    value={selectedCreditNote.header.party}
+                  />
+                  <CreditInfo
+                    label="Place of Return"
+                    value={selectedCreditNote.header.placeofreturn || "-"}
+                  />
+                  <CreditInfo
+                    label="Store Location"
+                    value={selectedCreditNote.header.storeLocation || "-"}
+                  />
+                  <CreditInfo
+                    label="Products"
+                    value={String(selectedCreditNote.rows.length)}
+                  />
+                  <CreditInfo
+                    label="Total Qty"
+                    value={String(
+                      selectedCreditNote.rows.reduce(
+                        (sum, row) => sum + Number(row.quantity || 0),
+                        0,
+                      ),
+                    )}
+                  />
+                  <CreditInfo
+                    label="Status"
+                    value={selectedCreditNote.header.status || "Pending"}
+                  />
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-slate-200">
+                  <table className="w-full table-fixed text-sm">
+                    <thead>
+                      <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                        <th className="w-[6%] px-2 py-3 text-center">S.No</th>
+                        <th className="w-[19%] px-3 py-3 text-left">Product</th>
+                        <th className="w-[9%] px-2 py-3 text-center">Qty</th>
+                        <th className="w-[16%] px-2 py-3 text-left">Reason</th>
+                        <th className="w-[12%] px-2 py-3 text-right">Without Tax</th>
+                        <th className="w-[9%] px-2 py-3 text-right">SGST</th>
+                        <th className="w-[9%] px-2 py-3 text-right">CGST</th>
+                        <th className="w-[9%] px-2 py-3 text-right">IGST</th>
+                        <th className="w-[11%] px-2 py-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedCreditNote.rows.map((row, index) => (
+                        <tr key={row.id}>
+                          <td className="px-2 py-3 text-center text-slate-500">
+                            {index + 1}
+                          </td>
+                          <td className="px-3 py-3 font-semibold text-slate-800">
+                            {row.product || "-"}
+                          </td>
+                          <td className="px-2 py-3 text-center tabular-nums">
+                            {row.quantity ?? "-"}
+                          </td>
+                          <td className="px-2 py-3 text-slate-600">
+                            {row.reason || "-"}
+                          </td>
+                          <td className="px-2 py-3 text-right tabular-nums">
+                            {formatCurrency(row.amount)}
+                          </td>
+                          <td className="px-2 py-3 text-right tabular-nums">
+                            {formatCurrency(row.sgst)}
+                          </td>
+                          <td className="px-2 py-3 text-right tabular-nums">
+                            {formatCurrency(row.cgst)}
+                          </td>
+                          <td className="px-2 py-3 text-right tabular-nums">
+                            {formatCurrency(row.igst)}
+                          </td>
+                          <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                            {formatCurrency(row.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-5 ml-auto w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <h3 className="mb-3 text-sm font-bold text-slate-800">
+                    Credit Note Summary
+                  </h3>
+
+                  <div className="space-y-2 text-sm">
+                    <SummaryRow
+                      label="Without Tax"
+                      value={formatCurrency(
+                        selectedCreditNote.rows.reduce(
+                          (sum, row) => sum + Number(row.amount || 0),
+                          0,
+                        ),
+                      )}
+                    />
+                    <SummaryRow
+                      label="SGST"
+                      value={formatCurrency(
+                        selectedCreditNote.rows.reduce(
+                          (sum, row) => sum + Number(row.sgst || 0),
+                          0,
+                        ),
+                      )}
+                    />
+                    <SummaryRow
+                      label="CGST"
+                      value={formatCurrency(
+                        selectedCreditNote.rows.reduce(
+                          (sum, row) => sum + Number(row.cgst || 0),
+                          0,
+                        ),
+                      )}
+                    />
+                    <SummaryRow
+                      label="IGST"
+                      value={formatCurrency(
+                        selectedCreditNote.rows.reduce(
+                          (sum, row) => sum + Number(row.igst || 0),
+                          0,
+                        ),
+                      )}
+                    />
+
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
+                      <span className="font-bold text-slate-800">
+                        Grand Total
+                      </span>
+                      <span className="text-lg font-bold text-brand-700">
+                        {formatCurrency(
+                          selectedCreditNote.rows.reduce(
+                            (sum, row) => sum + Number(row.total || 0),
+                            0,
+                          ),
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedCreditNote(null)}
+                >
+                  Close
+                </Button>
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print Credit Note
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* Create Creditnote — full-screen form, rendered via portal so it always sits above everything and scrolls properly */}
       {showCreate &&
