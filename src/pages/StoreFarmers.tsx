@@ -108,7 +108,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                   <th className="w-[6%] text-center font-semibold px-3 py-3.5">S.No</th>
                   <th className="w-[8%] text-left font-semibold px-3 py-3.5">Profile</th>
-                  <th className="w-[18%] text-left font-semibold px-3 py-3.5">Farmer Name</th>
+                  <th className="w-[18%] text-left font-semibold px-3 py-3.5">Farmer Details</th>
                   <th className="w-[14%] text-left font-semibold px-3 py-3.5">Mobile Number</th>
                   <th className="w-[18%] text-left font-semibold px-3 py-3.5">Village</th>
                   <th className="w-[10%] text-right font-semibold px-3 py-3.5">Land (Acres)</th>
