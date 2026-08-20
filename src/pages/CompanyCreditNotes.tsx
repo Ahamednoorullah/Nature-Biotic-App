@@ -375,6 +375,7 @@ export default function CompanyCreditNotes() {
     igst: item.igst,
     returnAmount: item.total,
     reason: item.reason || remarks || "Product Return",
+    placeOfReturn: selectedStore.location?.split(",")[0] || "",
     status: "Pending",
   }),
 );

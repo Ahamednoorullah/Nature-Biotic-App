@@ -207,6 +207,7 @@ export type CompanyCreditNoteSyncRecord = {
   igst: number;
   returnAmount: number;
   reason: string;
+  placeOfReturn: string;
   status: "Pending" | "Approved" | "Rejected";
 };
 
