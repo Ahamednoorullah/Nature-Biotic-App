@@ -142,25 +142,25 @@ export default function StoreSalesReturn({ storeId: _storeId }: { storeId: strin
         <table className="w-full table-fixed text-sm">
           <thead>
             <tr className="border-b bg-slate-100 text-xs uppercase text-slate-500">
-              <th className="px-4 py-3 text-left">Return No</th>
-              <th className="px-4 py-3 text-left">Date</th>
-              <th className="px-4 py-3 text-left">Invoice No</th>
-              <th className="px-4 py-3 text-left">Farmer</th>
-              <th className="px-4 py-3 text-left">Product</th>
-              <th className="px-4 py-3 text-center">Qty</th>
-              <th className="px-4 py-3 text-right">Amount</th>
+              <th className="px-4 py-3 border-b border text-left">Return No</th>
+              <th className="px-4 py-3 border-b border text-left">Date</th>
+              <th className="px-4 py-3 border-b border text-left">Invoice No</th>
+              <th className="px-4 py-3 border-b border text-left">Farmer</th>
+              <th className="px-4 py-3 border-b border text-left">Product</th>
+              <th className="px-4 py-3 border-b border text-center">Qty</th>
+              <th className="px-4 py-3 border-b border text-right">Amount</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((row) => (
               <tr key={row.id}>
-                <td className="px-4 py-3 font-semibold">{row.returnNo}</td>
-                <td className="px-4 py-3">{row.date}</td>
-                <td className="px-4 py-3">{row.invoiceNo}</td>
-                <td className="px-4 py-3">{row.farmer}</td>
-                <td className="px-4 py-3">{row.product}</td>
-                <td className="px-4 py-3 text-center">{row.quantity}</td>
-                <td className="px-4 py-3 text-right font-semibold">₹{row.amount.toLocaleString("en-IN")}</td>
+                <td className="px-4 py-3 border-b border font-semibold">{row.returnNo}</td>
+                <td className="px-4 py-3 border-b border">{row.date}</td>
+                <td className="px-4 py-3 border-b border">{row.invoiceNo}</td>
+                <td className="px-4 py-3 border-b border">{row.farmer}</td>
+                <td className="px-4 py-3 border-b border">{row.product}</td>
+                <td className="px-4 py-3 border-b border text-center">{row.quantity}</td>
+                <td className="px-4 py-3 border-b border text-right font-semibold">₹{row.amount.toLocaleString("en-IN")}</td>
               </tr>
             ))}
           </tbody>

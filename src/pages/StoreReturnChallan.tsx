@@ -96,23 +96,23 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <thead><tr className="bg-slate-50 text-xs uppercase text-slate-500">
-              <th className="px-5 py-3 text-left">Date</th>
-              <th className="px-5 py-3 text-left">RC No</th>
-              <th className="px-5 py-3 text-left">DC No</th>
-              <th className="px-5 py-3 text-left">Executive</th>
-              <th className="px-5 py-3 text-left">Product</th>
-              <th className="px-5 py-3 text-left">Pack Size</th>
-              <th className="px-5 py-3 text-center">Return Qty</th>
+              <th className="px-5 py-3 border-b border text-left">Date</th>
+              <th className="px-5 py-3 border-b border text-left">RC No</th>
+              <th className="px-5 py-3 border-b border text-left">DC No</th>
+              <th className="px-5 py-3 border-b border text-left">Executive</th>
+              <th className="px-5 py-3 border-b border text-left">Product</th>
+              <th className="px-5 py-3 border-b border text-left">Pack Size</th>
+              <th className="px-5 py-3 border-b border text-center">Return Qty</th>
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((r) => <tr key={r.id}>
-                <td className="px-5 py-4">{r.date}</td>
-                <td className="px-5 py-4 font-semibold">{r.rcNo}</td>
-                <td className="px-5 py-4">{r.dcNo}</td>
-                <td className="px-5 py-4">{r.executive}</td>
-                <td className="px-5 py-4 font-semibold">{r.product}</td>
-                <td className="px-5 py-4">{r.packSize}</td>
-                <td className="px-5 py-4 text-center font-bold">{r.qty}</td>
+                <td className="px-5 py-4 border-b border">{r.date}</td>
+                <td className="px-5 py-4 border-b border font-semibold">{r.rcNo}</td>
+                <td className="px-5 py-4 border-b border">{r.dcNo}</td>
+                <td className="px-5 py-4 border-b border">{r.executive}</td>
+                <td className="px-5 py-4 border-b border font-semibold">{r.product}</td>
+                <td className="px-5 py-4 border-b border">{r.packSize}</td>
+                <td className="px-5 py-4 border-b border text-center font-bold">{r.qty}</td>
               </tr>)}
             </tbody>
           </table>

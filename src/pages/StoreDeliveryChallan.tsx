@@ -92,21 +92,21 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="bg-slate-50 text-xs uppercase text-slate-500">
-                <th className="px-5 py-3 text-left">Date</th>
-                <th className="px-5 py-3 text-left">DC No</th>
-                <th className="px-5 py-3 text-left">Executive</th>
-                <th className="px-5 py-3 text-center">Products</th>
-                <th className="px-5 py-3 text-center">Total Qty</th>
+                <th className="px-5 py-3 border-b border text-left">Date</th>
+                <th className="px-5 py-3 border-b border text-left">DC No</th>
+                <th className="px-5 py-3 border-b border text-left">Executive</th>
+                <th className="px-5 py-3 border-b border text-center">Products</th>
+                <th className="px-5 py-3 border-b bordertext-center">Total Qty</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {challans.map((c) => (
                 <tr key={c.id}>
-                  <td className="px-5 py-4">{c.date}</td>
-                  <td className="px-5 py-4 font-semibold">{c.dcNo}</td>
-                  <td className="px-5 py-4">{c.executive}</td>
-                  <td className="px-5 py-4 text-center">{c.items.length}</td>
-                  <td className="px-5 py-4 text-center font-bold">
+                  <td className="px-5 py-4 border-b border">{c.date}</td>
+                  <td className="px-5 py-4 border-b border font-semibold">{c.dcNo}</td>
+                  <td className="px-5 py-4 border-b border">{c.executive}</td>
+                  <td className="px-5 py-4 border-b border text-center">{c.items.length}</td>
+                  <td className="px-5 py-4 border-b border text-center font-bold">
                     {c.items.reduce((s, x) => s + Number(x.qty || 0), 0)}
                   </td>
                 </tr>

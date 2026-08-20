@@ -233,12 +233,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 text-xs uppercase text-slate-500">
-              <th className="px-5 py-3 text-left">Date</th>
-              <th className="px-5 py-3 text-left">Quotation No</th>
-              <th className="px-5 py-3 text-left">Farmer</th>
-              <th className="px-5 py-3 text-left">Village</th>
-              <th className="px-5 py-3 text-right">Amount</th>
-              <th className="px-5 py-3 text-left">Status</th>
+              <th className="px-5 py-3 border-b border text-left">Date</th>
+              <th className="px-5 py-3 border-b border text-left">Quotation No</th>
+              <th className="px-5 py-3 border-b border text-left">Farmer</th>
+              <th className="px-5 py-3 border-b border text-left">Village</th>
+              <th className="px-5 py-3 border-b border text-right">Amount</th>
+              <th className="px-5 py-3 border-b border text-left">Status</th>
             </tr>
           </thead>
 
@@ -247,19 +247,19 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               <tr key={r.id} className="hover:bg-slate-50">
                 <td className="px-5 py-4">{r.date}</td>
 
-                <td className="px-5 py-4 font-semibold text-slate-800">
+                <td className="px-5 py-4 border-b border font-semibold text-slate-800">
                   {r.quotationNo}
                 </td>
 
-                <td className="px-5 py-4">{r.farmer}</td>
+                <td className="px-5 py-4 border-b border">{r.farmer}</td>
 
-                <td className="px-5 py-4">{r.village}</td>
+                <td className="px-5 py-4 border-b border">{r.village}</td>
 
-                <td className="px-5 py-4 text-right font-bold">
+                <td className="px-5 py-4 border-b border text-right font-bold">
                   {formatCurrency(r.amount)}
                 </td>
 
-                <td className="px-5 py-4">
+                <td className="px-5 py-4 border-b border">
                   <span
                     className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                       r.status === "Converted"
