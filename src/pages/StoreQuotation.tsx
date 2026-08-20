@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { Card, Button, Icon, Input } from "@/components/ui";
+import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { createPortal } from "react-dom"; 
+import { products as allProducts } from "@/lib/data";
 
 
 type ProductRow = {
   id: string;
   product: string;
+  pkgsize: string;
   qty: string;
   rate: string;
 };
@@ -50,12 +52,15 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const [mobile, setMobile] = useState("");
   const [village, setVillage] = useState("");
   const [crop, setCrop] = useState("");
+  const [placeOfSupply, setPlaceOfSupply] = useState("");
+  const [acre, setAcre] = useState("");
 
   // Products
   const [products, setProducts] = useState<ProductRow[]>([
     {
       id: String(Date.now()),
       product: "",
+      pkgsize: "",
       qty: "1",
       rate: "",
     },
@@ -108,6 +113,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       {
         id: String(Date.now()),
         product: "",
+        pkgsize: "",
         qty: "1",
         rate: "",
       },
@@ -147,11 +153,14 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     setCgst("0");
     setSgst("0");
     setIgst("0");
+    setPlaceOfSupply("");
+    setAcre("");
 
     setProducts([
       {
         id: String(Date.now()),
         product: "",
+        pkgsize: "",
         qty: "1",
         rate: "",
       },
@@ -238,7 +247,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               <th className="px-5 py-3 border-b border text-left">Farmer</th>
               <th className="px-5 py-3 border-b border text-left">Village</th>
               <th className="px-5 py-3 border-b border text-right">Amount</th>
-              <th className="px-5 py-3 border-b border text-left">Status</th>
             </tr>
           </thead>
 
@@ -257,18 +265,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
                 <td className="px-5 py-4 border-b border text-right font-bold">
                   {formatCurrency(r.amount)}
-                </td>
-
-                <td className="px-5 py-4 border-b border">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      r.status === "Converted"
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-emerald-50 text-emerald-700"
-                    }`}
-                  >
-                    {r.status}
-                  </span>
                 </td>
               </tr>
             ))}
@@ -307,38 +303,81 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             {/* MODAL BODY */}
             <div className="flex-1 overflow-y-auto">
               <div className="space-y-6 p-6">
+
+
                 {/* FARMER DETAILS */}
                 <div>
                   <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
                     Farmer Details
                   </h3>
 
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                    <Input
-                      label="Farmer Name"
-                      value={farmer}
-                      onChange={setFarmer}
-                    />
+                  <div className="grid gap-4 md:grid-cols-3">
+                  {/* ROW 1 */}
 
-                    <Input
-                      label="Mobile Number"
-                      type="tel"
-                      value={mobile}
-                      onChange={setMobile}
-                    />
+                  <Input
+                    label="Farmer Name"
+                    value={farmer}
+                    onChange={setFarmer}
+                  />
 
-                    <Input
-                      label="Village"
-                      value={village}
-                      onChange={setVillage}
-                    />
+                  <Input
+                    label="Mobile Number"
+                    type="tel"
+                    value={mobile}
+                    onChange={setMobile}
+                  />
 
-                    <Input
-                      label="Crop"
-                      value={crop}
-                      onChange={setCrop}
-                    />
-                  </div>
+                  <Input
+                    label="Village"
+                    value={village}
+                    onChange={setVillage}
+                  />
+
+                  {/* ROW 2 */}
+
+                  <Input
+                    label="Crop"
+                    value={crop}
+                    onChange={setCrop}
+                  />
+
+                  <Select
+                    label="Place of Supply"
+                    value={placeOfSupply}
+                    onChange={(value) => {
+                      setPlaceOfSupply(value);
+
+                      if (value === "Tamil Nadu") {
+                        setCgst("9");
+                        setSgst("9");
+                        setIgst("0");
+                      } else {
+                        setCgst("0");
+                        setSgst("0");
+                        setIgst("18");
+                      }
+                    }}
+                    placeholder="Select Place of Supply"
+                    options={[
+                      {
+                        value: "Tamil Nadu",
+                        label: "Tamil Nadu",
+                      },
+                      {
+                        value: "Others",
+                        label: "Others",
+                      },
+                    ]}
+                  />
+
+                  <Input
+                    label="Acre"
+                    type="number"
+                    value={acre}
+                    onChange={setAcre}
+                  />
+                </div>
+
                 </div>
 
                 {/* PRODUCTS */}
@@ -362,13 +401,14 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
                   <div className="overflow-hidden rounded-xl border border-slate-200">
                     {/* PRODUCT HEADER */}
-                    <div className="hidden grid-cols-[1fr_120px_150px_150px_50px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
-                      <div>Product</div>
-                      <div>Qty</div>
-                      <div>Rate</div>
-                      <div className="text-right">Amount</div>
-                      <div></div>
-                    </div>
+                    <div className="grid gap-3 px-4 py-3 grid-cols-[minmax(180px,1fr)_200px_120px_140px_130px_50px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
+                    <div>Product</div>
+                    <div>PKG Size</div>
+                    <div>Qty</div>
+                    <div>Price</div>
+                    <div className="text-right">Total Amount</div>
+                    <div></div>
+                  </div>
 
                     {/* PRODUCT ROWS */}
                     <div className="divide-y divide-slate-200">
@@ -380,25 +420,72 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         return (
                           <div
                             key={item.id}
-                            className="grid gap-3 px-4 py-4 md:grid-cols-[1fr_120px_150px_150px_50px] md:items-center"
-                          >
+                            className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(180px,1fr)_200px_120px_140px_130px_50px] md:items-center">
+                          
                             {/* PRODUCT */}
                             <div>
                               <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
                                 Product
                               </label>
 
-                              <Input
+                              <Select
                                 value={item.product}
-                                onChange={(value) =>
+                                onChange={(value) => {
+                                const selectedProduct = allProducts.find(
+                                  (p) => p.id === value
+                                );
+
+                                updateProduct(item.id, "product", value);
+
+                                if (selectedProduct) {
                                   updateProduct(
                                     item.id,
-                                    "product",
-                                    value
-                                  )
+                                    "pkgsize",
+                                    selectedProduct.size || ""
+                                  );
+
+                                  updateProduct(
+                                    item.id,
+                                    "rate",
+                                    String(selectedProduct.sellingPrice || 0)
+                                  );
                                 }
+                              }}
+                                placeholder="Select Product"
+                                options={allProducts.map((p) => ({
+                                  value: p.id,
+                                  label: `${p.name} (${p.size})`,
+                                }))}
                               />
                             </div>
+
+                          {/* PKG SIZE */}
+                          <div>
+                            <label className="mb-2 block text-xs font-semibold text-slate-500 md:hidden">
+                              PKG Size
+                            </label>
+
+                            <Select
+                              value={item.pkgsize}
+                              onChange={(value) =>
+                                updateProduct(item.id, "pkgsize", value)
+                              }
+                              placeholder="Select size"
+                              options={[
+                                { value: "100ml", label: "100 ml" },
+                                { value: "250ml", label: "250 ml" },
+                                { value: "500ml", label: "500 ml" },
+                                { value: "1l", label: "1 L" },
+                                { value: "100g", label: "100 g" },
+                                { value: "250g", label: "250 g" },
+                                { value: "500g", label: "500 g" },
+                                { value: "1kg", label: "1 Kg" },
+                                { value: "5kg", label: "5 Kg" },
+                                { value: "10kg", label: "10 Kg" },
+                                { value: "25kg", label: "25 Kg" },
+                              ]}
+                            />
+                          </div>
 
                             {/* QTY */}
                             <div>
@@ -480,9 +567,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
                     <textarea
                       value={remarks}
-                      onChange={(e) =>
-                        setRemarks(e.target.value)
-                      }
+                      onChange={(e) => setRemarks(e.target.value)}
                       placeholder="Enter any additional remarks..."
                       rows={7}
                       className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
@@ -495,102 +580,78 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                       Quotation Summary
                     </h3>
 
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-                      {/* SUBTOTAL */}
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                        <span className="text-sm text-slate-500">
-                          Subtotal
-                        </span>
-
-                        <span className="font-semibold text-slate-800">
-                          {formatCurrency(subtotal)}
-                        </span>
-                      </div>
-
-                      {/* CGST */}
-                      <div className="mt-4 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-slate-500">
-                            CGST
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="space-y-3 text-sm">
+                        {/* SUBTOTAL */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">
+                            Subtotal
                           </span>
 
-                          <div className="w-20">
-                            <Input
-                              type="number"
-                              value={cgst}
-                              onChange={setCgst}
-                            />
-                          </div>
-
-                          <span className="text-sm text-slate-400">
-                            %
+                          <span className="font-semibold text-slate-800">
+                            {formatCurrency(subtotal)}
                           </span>
                         </div>
 
-                        <span className="font-medium text-slate-700">
-                          {formatCurrency(cgstAmount)}
-                        </span>
-                      </div>
-
-                      {/* SGST */}
-                      <div className="mt-3 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-slate-500">
-                            SGST
+                        {/* TOTAL TAX */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">
+                            Total Tax
                           </span>
 
-                          <div className="w-20">
-                            <Input
-                              type="number"
-                              value={sgst}
-                              onChange={setSgst}
-                            />
-                          </div>
-
-                          <span className="text-sm text-slate-400">
-                            %
+                          <span className="font-semibold text-slate-800">
+                            {formatCurrency(
+                              cgstAmount + sgstAmount + igstAmount
+                            )}
                           </span>
                         </div>
 
-                        <span className="font-medium text-slate-700">
-                          {formatCurrency(sgstAmount)}
-                        </span>
-                      </div>
+                        {/* TAX BREAKDOWN */}
+                        <div className="space-y-2 border-t border-slate-200 pt-3 pl-4">
+                          {/* SGST */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">
+                              SGST
+                            </span>
 
-                      {/* IGST */}
-                      <div className="mt-3 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-slate-500">
-                            IGST
-                          </span>
-
-                          <div className="w-20">
-                            <Input
-                              type="number"
-                              value={igst}
-                              onChange={setIgst}
-                            />
+                            <span className="text-xs font-medium text-slate-600">
+                              {formatCurrency(sgstAmount)}
+                            </span>
                           </div>
 
-                          <span className="text-sm text-slate-400">
-                            %
-                          </span>
+                          {/* CGST */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">
+                              CGST
+                            </span>
+
+                            <span className="text-xs font-medium text-slate-600">
+                              {formatCurrency(cgstAmount)}
+                            </span>
+                          </div>
+
+                          {/* IGST */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-400">
+                              IGST
+                            </span>
+
+                            <span className="text-xs font-medium text-slate-600">
+                              {formatCurrency(igstAmount)}
+                            </span>
+                          </div>
                         </div>
 
-                        <span className="font-medium text-slate-700">
-                          {formatCurrency(igstAmount)}
-                        </span>
-                      </div>
+                        {/* GRAND TOTAL */}
+                        <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-4">
+                          <span className="font-bold text-slate-800">
+                            Grand Total
+                          </span>
 
-                      {/* GRAND TOTAL */}
-                      <div className="mt-5 flex items-center justify-between border-t border-slate-300 pt-4">
-                        <span className="text-base font-bold text-slate-800">
-                          Grand Total
-                        </span>
-
-                        <span className="text-xl font-bold text-emerald-700">
-                          {formatCurrency(grandTotal)}
-                        </span>
+                          <span className="text-lg font-bold text-emerald-700">
+                            {formatCurrency(grandTotal)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -608,13 +669,16 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                 Cancel
               </button>
 
-              <Button onClick={save} disabled={!canSave}>
+              <Button
+                onClick={save}
+                disabled={!canSave}
+              >
                 Save Quotation
               </Button>
             </div>
           </div>
         </div>,
-        document.body,
+        document.body
       )}
     </div>
   );
