@@ -344,7 +344,19 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <Select
                     label="Place of Supply"
                     value={placeOfSupply}
-                    onChange={setPlaceOfSupply}
+                    onChange={(value) => {
+                      setPlaceOfSupply(value);
+
+                      if (value === "Tamil Nadu") {
+                        setCgst("9");
+                        setSgst("9");
+                        setIgst("0");
+                      } else {
+                        setCgst("0");
+                        setSgst("0");
+                        setIgst("18");
+                      }
+                    }}
                     placeholder="Select Place of Supply"
                     options={[
                       {
