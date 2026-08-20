@@ -3,6 +3,7 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { createPortal } from "react-dom"; 
 import { products as allProducts } from "@/lib/data";
+import { formatDate } from "@/lib/format";
 
 
 type ProductRow = {
@@ -199,11 +200,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     const newQuotation: Row = {
       id: String(Date.now()),
-      date: new Date().toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
+      date: new Date().toISOString().split("T")[0],
       quotationNo: `QT-${1001 + rows.length}`,
       farmer,
       village,
@@ -253,7 +250,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
           <tbody className="divide-y">
             {rows.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50">
-                <td className="px-5 py-4">{r.date}</td>
+                <td className="px-5 py-4">{formatDate(r.date)}</td>
 
                 <td className="px-5 py-4 border-b border font-semibold text-slate-800">
                   {r.quotationNo}

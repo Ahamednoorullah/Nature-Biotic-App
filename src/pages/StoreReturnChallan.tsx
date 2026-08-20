@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
+import { formatDate } from "@/lib/format";
 
 type ReturnChallan = {
   id: string;
@@ -38,7 +39,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     setRows((prev) => [{
       id: String(Date.now()),
       rcNo: `RC-${String(prev.length + 1).padStart(3, "0")}`,
-      date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+      date: new Date().toISOString().split("T")[0],
       dcNo, executive, product, packSize, qty: Number(qty),
     }, ...prev]);
     closeForm();
@@ -106,7 +107,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((r) => <tr key={r.id}>
-                <td className="px-5 py-4 border-b border">{r.date}</td>
+                <td className="px-5 py-4 border-b border">{formatDate(r.date)}</td>
                 <td className="px-5 py-4 border-b border font-semibold">{r.rcNo}</td>
                 <td className="px-5 py-4 border-b border">{r.dcNo}</td>
                 <td className="px-5 py-4 border-b border">{r.executive}</td>

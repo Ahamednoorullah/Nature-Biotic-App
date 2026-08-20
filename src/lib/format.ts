@@ -15,9 +15,45 @@ export function formatCompact(n: number): string {
 }
 
 export function formatDate(d: string): string {
-  const [yyyy, mm, dd] = d.split("-");
-  if (!yyyy || !mm || !dd) return d;
-  return `${dd}/${mm}/${yyyy.slice(-2)}`;
+  if (!d) return "";
+
+  // YYYY-MM-DD
+  const isoMatch = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoMatch) {
+    const [, yyyy, mm, dd] = isoMatch;
+    return `${dd}/${mm}/${yyyy.slice(-2)}`;
+  }
+
+  // DD-MMM-YY / DD-MMM-YYYY
+  const shortMatch = d.match(/^(\d{2})-([A-Za-z]{3})-(\d{2,4})$/);
+
+  if (shortMatch) {
+    const [, dd, monthName, year] = shortMatch;
+
+    const months: Record<string, string> = {
+      Jan: "01",
+      Feb: "02",
+      Mar: "03",
+      Apr: "04",
+      May: "05",
+      Jun: "06",
+      Jul: "07",
+      Aug: "08",
+      Sep: "09",
+      Oct: "10",
+      Nov: "11",
+      Dec: "12",
+    };
+
+    const mm = months[monthName];
+
+    if (mm) {
+      return `${dd}/${mm}/${year.slice(-2)}`;
+    }
+  }
+
+  return d;
 }
 
 export function initials(name: string): string {

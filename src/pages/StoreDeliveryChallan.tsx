@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
+import { formatDate } from "@/lib/format";
 
 type Item = { product: string; packSize: string; qty: string };
 type Challan = {
@@ -58,11 +59,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       {
         id: String(Date.now()),
         dcNo: `DC-${1001 + prev.length}`,
-        date: new Date(date).toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
+        date: new Date().toISOString().split("T")[0],
         executive,
         items,
       },
@@ -102,7 +99,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
             <tbody className="divide-y divide-slate-100">
               {challans.map((c) => (
                 <tr key={c.id}>
-                  <td className="px-5 py-4 border-b border">{c.date}</td>
+                  <td className="px-5 py-4 border-b border">{formatDate(c.date)}</td>
                   <td className="px-5 py-4 border-b border font-semibold">{c.dcNo}</td>
                   <td className="px-5 py-4 border-b border">{c.executive}</td>
                   <td className="px-5 py-4 border-b border text-center">{c.items.length}</td>
