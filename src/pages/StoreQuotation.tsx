@@ -341,10 +341,21 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     onChange={setCrop}
                   />
 
-                  <Input
+                  <Select
                     label="Place of Supply"
                     value={placeOfSupply}
                     onChange={setPlaceOfSupply}
+                    placeholder="Select Place of Supply"
+                    options={[
+                      {
+                        value: "Tamil Nadu",
+                        label: "Tamil Nadu",
+                      },
+                      {
+                        value: "Others",
+                        label: "Others",
+                      },
+                    ]}
                   />
 
                   <Input
@@ -378,7 +389,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
                   <div className="overflow-hidden rounded-xl border border-slate-200">
                     {/* PRODUCT HEADER */}
-                    <div className="hidden grid-cols-[minmax(220px,1.4fr)_150px_90px_120px_140px_50px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
+                    <div className="grid gap-3 px-4 py-3 grid-cols-[minmax(180px,1fr)_200px_120px_140px_130px_50px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
                     <div>Product</div>
                     <div>PKG Size</div>
                     <div>Qty</div>
@@ -397,8 +408,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         return (
                           <div
                             key={item.id}
-                            className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(220px,1.4fr)_150px_90px_120px_140px_50px] md:items-center"
-                          >
+                            className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(180px,1fr)_200px_120px_140px_130px_50px] md:items-center">
+                          
                             {/* PRODUCT */}
                             <div>
                               <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
@@ -436,32 +447,33 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                               />
                             </div>
 
+                          {/* PKG SIZE */}
                           <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
-                            PKG Size
-                          </label>
+                            <label className="mb-2 block text-xs font-semibold text-slate-500 md:hidden">
+                              PKG Size
+                            </label>
 
-                          <Select
-                            value={item.pkgsize}
-                            onChange={(value) =>
-                              updateProduct(item.id, "pkgsize", value)
-                            }
-                            placeholder="Select size"
-                            options={[
-                              { value: "100ml", label: "100 ml" },
-                              { value: "250ml", label: "250 ml" },
-                              { value: "500ml", label: "500 ml" },
-                              { value: "1l", label: "1 L" },
-                              { value: "100g", label: "100 g" },
-                              { value: "250g", label: "250 g" },
-                              { value: "500g", label: "500 g" },
-                              { value: "1kg", label: "1 Kg" },
-                              { value: "5kg", label: "5 Kg" },
-                              { value: "10kg", label: "10 Kg" },
-                              { value: "25kg", label: "25 Kg" },
-                            ]}
-                          />
-                        </div>
+                            <Select
+                              value={item.pkgsize}
+                              onChange={(value) =>
+                                updateProduct(item.id, "pkgsize", value)
+                              }
+                              placeholder="Select size"
+                              options={[
+                                { value: "100ml", label: "100 ml" },
+                                { value: "250ml", label: "250 ml" },
+                                { value: "500ml", label: "500 ml" },
+                                { value: "1l", label: "1 L" },
+                                { value: "100g", label: "100 g" },
+                                { value: "250g", label: "250 g" },
+                                { value: "500g", label: "500 g" },
+                                { value: "1kg", label: "1 Kg" },
+                                { value: "5kg", label: "5 Kg" },
+                                { value: "10kg", label: "10 Kg" },
+                                { value: "25kg", label: "25 Kg" },
+                              ]}
+                            />
+                          </div>
 
                             {/* QTY */}
                             <div>
