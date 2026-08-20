@@ -158,6 +158,13 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     ]);
   }
 
+    const canSave =
+    farmer.trim() !== "" &&
+    mobile.trim() !== "" &&
+    products.some(
+      (item) => item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
+    );
+
   function save() {
     const hasValidProduct = products.some(
       (item) =>
@@ -601,7 +608,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                 Cancel
               </button>
 
-              <Button onClick={save}>
+              <Button onClick={save} disabled={!canSave}>
                 Save Quotation
               </Button>
             </div>
