@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
+import { createPortal } from "react-dom";
 
 type ReturnChallan = {
   id: string;
@@ -23,6 +24,15 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   const [packSize, setPackSize] = useState("");
   const [qty, setQty] = useState("");
 
+    function resetForm() {
+    setDcNo(""); setExecutive(""); setProduct(""); setPackSize(""); setQty("");
+  }
+
+  function closeForm() {
+    setShowAdd(false);
+    resetForm();
+  }
+
   function save() {
     if (!dcNo || !executive || !product || !qty) return;
     setRows((prev) => [{
@@ -31,7 +41,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       date: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
       dcNo, executive, product, packSize, qty: Number(qty),
     }, ...prev]);
-    setDcNo(""); setExecutive(""); setProduct(""); setPackSize(""); setQty(""); setShowAdd(false);
+    closeForm();
   }
 
   return (
@@ -46,26 +56,48 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
         </Button>
       </div>
 
-      {showAdd && <Card className="mb-6 p-5">
-        <div className="grid gap-4 md:grid-cols-5">
-          <Input label="Delivery Challan No" value={dcNo} onChange={setDcNo} placeholder="DC-1001" />
-          <Input label="Executive" value={executive} onChange={setExecutive} placeholder="Executive" />
-          <Input label="Product" value={product} onChange={setProduct} placeholder="Product" />
-          <Input label="Pack Size" value={packSize} onChange={setPackSize} placeholder="250 ml" />
-          <Input label="Return Qty" type="number" value={qty} onChange={setQty} placeholder="Qty" />
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
-          <Button onClick={save}>Save Return Challan</Button>
-        </div>
-      </Card>}
+            {showAdd &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Create Return Challan</h2>
+                  <p className="text-sm text-slate-500 mt-1">Record unsold products returned against a delivery challan.</p>
+                </div>
+                <button type="button" onClick={closeForm}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input label="DC No" value={dcNo} onChange={setDcNo} placeholder="DC-1001" required />
+                  <Input label="Executive" value={executive} onChange={setExecutive} placeholder="Executive" required />
+                  <Input label="Product" value={product} onChange={setProduct} placeholder="Product" required />
+                  <Input label="Pack Size" value={packSize} onChange={setPackSize} placeholder="250 ml" />
+                  <Input label="Return Qty" type="number" value={qty} onChange={setQty} placeholder="Qty" required />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={closeForm}>Cancel</Button>
+                <Button onClick={save} disabled={!dcNo || !executive || !product || !qty}>
+                  <Icon name="save" size={18} /> Save Return Challan
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <Card className="overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <thead><tr className="bg-slate-50 text-xs uppercase text-slate-500">
               <th className="px-5 py-3 text-left">Date</th>
-              <th className="px-5 py-3 text-left">Return Challan No</th>
+              <th className="px-5 py-3 text-left">RC No</th>
               <th className="px-5 py-3 text-left">DC No</th>
               <th className="px-5 py-3 text-left">Executive</th>
               <th className="px-5 py-3 text-left">Product</th>

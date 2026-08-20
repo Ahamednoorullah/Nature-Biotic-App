@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
+import { createPortal } from "react-dom";
 
 type SalesReturnRow = {
   id: string;
@@ -57,14 +58,18 @@ export default function StoreSalesReturn({ storeId: _storeId }: { storeId: strin
       amount: Number(amount),
     };
 
-    setRows((prev) => [next, ...prev]);
+        setRows((prev) => [next, ...prev]);
+    closeForm();
+  }
+
+  function closeForm() {
+    setShowCreate(false);
     setDate("");
     setInvoiceNo("");
     setFarmer("");
     setProduct("");
     setQuantity("");
     setAmount("");
-    setShowCreate(false);
   }
 
   return (
@@ -83,66 +88,55 @@ export default function StoreSalesReturn({ storeId: _storeId }: { storeId: strin
         </Button>
       </div>
 
-      {showCreate && (
-        <Card className="mb-6 p-5">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Input label="Date" type="date" value={date} onChange={setDate} required />
-            <Input
-              label="Invoice No"
-              value={invoiceNo}
-              onChange={setInvoiceNo}
-              placeholder="Enter invoice no"
-              required
-            />
-            <Input
-              label="Farmer"
-              value={farmer}
-              onChange={setFarmer}
-              placeholder="Farmer name"
-              required
-            />
-            <Select
-              label="Product"
-              value={product}
-              onChange={setProduct}
-              placeholder="Select product"
-              options={[
-                { value: "Electra", label: "Electra" },
-                { value: "Aalga", label: "Aalga" },
-                { value: "Astra", label: "Astra" },
-                { value: "Rootra", label: "Rootra" },
-              ]}
-              required
-            />
-            <Input
-              label="Quantity"
-              type="number"
-              value={quantity}
-              onChange={setQuantity}
-              placeholder="Returned qty"
-              required
-            />
-            <Input
-              label="Return Amount"
-              type="number"
-              value={amount}
-              onChange={setAmount}
-              placeholder="Enter amount"
-              required
-            />
-          </div>
+            {showCreate &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Create Sales Return</h2>
+                  <p className="text-sm text-slate-500 mt-1">Record products returned against store sales invoices.</p>
+                </div>
+                <button type="button" onClick={closeForm}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
 
-          <div className="mt-5 flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setShowCreate(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveReturn} disabled={!canSave}>
-              <Icon name="save" size={17} />
-              Save Sales Return
-            </Button>
-          </div>
-        </Card>
-      )}
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <Input label="Date" type="date" value={date} onChange={setDate} required />
+                  <Input label="Invoice No" value={invoiceNo} onChange={setInvoiceNo} placeholder="Enter invoice no" required />
+                  <Input label="Farmer" value={farmer} onChange={setFarmer} placeholder="Farmer name" required />
+                  <Select
+                    label="Product"
+                    value={product}
+                    onChange={setProduct}
+                    placeholder="Select product"
+                    options={[
+                      { value: "Electra", label: "Electra" },
+                      { value: "Aalga", label: "Aalga" },
+                      { value: "Astra", label: "Astra" },
+                      { value: "Rootra", label: "Rootra" },
+                    ]}
+                    required
+                  />
+                  <Input label="Quantity" type="number" value={quantity} onChange={setQuantity} placeholder="Returned qty" required />
+                  <Input label="Return Amount" type="number" value={amount} onChange={setAmount} placeholder="Enter amount" required />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={closeForm}>Cancel</Button>
+                <Button onClick={saveReturn} disabled={!canSave}>
+                  <Icon name="save" size={17} />
+                  Save Sales Return
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <Card className="overflow-hidden p-0">
         <table className="w-full table-fixed text-sm">

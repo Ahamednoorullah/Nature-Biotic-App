@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { addStoreApprovalRequest, getStoreApprovalRequest, storeApprovalRequestsUpdatedEvent, stores } from "@/lib/data";
+import { createPortal } from "react-dom";
 
 type AddedProduct = {
   id: string;
@@ -205,13 +206,18 @@ export default function StorePurchaseOrder({
     setAdded((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function resetForm() {
+    function resetForm() {
     setDate("");
     setPoNo("");
     setProduct("");
     setPackSize("");
     setQuantity("");
     setAdded([]);
+  }
+
+  function closeForm() {
+    setShowCreate(false);
+    resetForm();
   }
 
   function saveOrder() {
@@ -250,14 +256,27 @@ export default function StorePurchaseOrder({
         </Button>
       </div>
 
-      {showCreate && (
-        <Card className="mb-6 overflow-hidden p-0">
-          <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
-            <h2 className="font-bold text-slate-800">Create Purchase Order</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Add one or multiple products to this purchase order.
-            </p>
-          </div>
+            {showCreate &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Create Purchase Order</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Add one or multiple products to this purchase order.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-3 pb-6">
 
           <div className="p-6">
             <div className="mb-5 grid gap-4 md:grid-cols-2">
@@ -334,6 +353,7 @@ export default function StorePurchaseOrder({
                   <MiniInfo label="IGST" value={formatMoney(computed.igst)} />
                 </div>
               )}
+            </div>
             </div>
 
             {added.length > 0 && (
@@ -424,24 +444,21 @@ export default function StorePurchaseOrder({
               </div>
             )}
 
-            <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  resetForm();
-                  setShowCreate(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button onClick={saveOrder} disabled={!canSave}>
-                <Icon name="save" size={17} />
-                Save Purchase Order
-              </Button>
             </div>
-          </div>
-        </Card>
-      )}
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={closeForm}>
+                  Cancel
+                </Button>
+                <Button onClick={saveOrder} disabled={!canSave}>
+                  <Icon name="save" size={17} />
+                  Save Purchase Order
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <Card className="overflow-hidden p-0">
         <table className="w-full table-fixed border-collapse text-sm">

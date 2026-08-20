@@ -7,6 +7,7 @@ import {
   storeApprovalRequestsUpdatedEvent,
   stores,
 } from "@/lib/data";
+import { createPortal } from "react-dom";
 
 type ReturnItem = {
   id: string;
@@ -349,9 +350,10 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
         />
       </div>
 
-      {showCreate && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-          <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      {showCreate &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[95vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex shrink-0 items-start justify-between border-b border-slate-200 bg-slate-50 px-7 py-5">
               <div>
                 <h2 className="text-lg font-bold text-slate-800">
@@ -595,9 +597,10 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                 Save Purchase Return
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <Card className="overflow-hidden p-0">
         <div className="w-full">

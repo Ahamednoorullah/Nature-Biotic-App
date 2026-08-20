@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
+import { createPortal } from "react-dom"; 
+
 
 type ProductRow = {
   id: string;
@@ -270,9 +272,10 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       {/* =========================
           NEW QUOTATION POPUP
          ========================= */}
-      {show && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-[2px]">
-          <div className="mx-auto my-4 flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl max-h-[calc(100vh-2rem)]">
+      {show &&
+      createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             {/* MODAL HEADER */}
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
               <div>
@@ -603,7 +606,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               </Button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
