@@ -55,13 +55,6 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
         </Button>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Total Farmers" value={String(totalFarmers)} icon="groups" color="brand" />
-        <StatCard label="Outstanding Amount" value={formatCompact(totalOutstanding)} icon="payments" color="amber" />
-        <StatCard label="Total Purchase Value" value={formatCompact(totalPurchaseValue)} icon="account_balance_wallet" color="brand" />
-      </div>
-
       {/* Toolbar */}
       <Card className="p-4 mb-5">
         <div className="flex flex-col lg:flex-row gap-3">
@@ -117,7 +110,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                   <th className="w-[8%] text-left font-semibold px-3 py-3.5">Profile</th>
                   <th className="w-[18%] text-left font-semibold px-3 py-3.5">Farmer Name</th>
                   <th className="w-[14%] text-left font-semibold px-3 py-3.5">Mobile Number</th>
-                  <th className="w-[24%] text-left font-semibold px-3 py-3.5">Address</th>
+                  <th className="w-[18%] text-left font-semibold px-3 py-3.5">Village</th>
                   <th className="w-[10%] text-right font-semibold px-3 py-3.5">Land (Acres)</th>
                   <th className="w-[10%] text-left font-semibold px-3 py-3.5">Crop Type</th>
                   <th className="w-[10%] text-right font-semibold px-3 py-3.5">Outstanding</th>
@@ -147,11 +140,16 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                     </td>
                     <td className="px-3 py-3.5">
                       <p className="font-semibold text-slate-800">{f.name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{f.customerCategory}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {f.village || '-'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {f.phone}
+                      </p>
                     </td>
                     <td className="px-3 py-3.5 text-slate-600">{f.phone}</td>
-                    <td className="px-3 py-3.5 text-slate-600">
-                      <p className="line-clamp-2">{f.farmAddress || '-'}</p>
+                   <td className="px-3 py-3.5 text-slate-600">
+                      <p className="line-clamp-2">{f.village || '-'}</p>
                     </td>
                     <td className="px-3 py-3.5 text-right font-semibold text-slate-700">{f.landSize}</td>
                     <td className="px-3 py-3.5">

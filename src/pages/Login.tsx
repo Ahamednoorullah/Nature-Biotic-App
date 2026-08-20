@@ -6,6 +6,7 @@ export default function Login() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("admin@naturebiotic.com");
   const [password, setPassword] = useState("demo1234");
+  const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -99,13 +100,27 @@ export default function Login() {
 
                   <input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
                     required
-                    className="h-[60px] w-full rounded-2xl border border-slate-200 bg-white pl-20 pr-5 text-base text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 sm:text-lg"
+                    className="h-[60px] w-full rounded-2xl border border-slate-200 bg-white pl-20 pr-14 text-base text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 sm:text-lg"
                   />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex w-14 items-center justify-center text-slate-400 transition hover:text-brand-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    <span
+                      className="material-symbols-rounded"
+                      style={{ fontSize: 24 }}
+                    >
+                      {showPassword ? "visibility_off" : "visibility"}
+                    </span>
+                  </button>
                 </div>
               </div>
 
