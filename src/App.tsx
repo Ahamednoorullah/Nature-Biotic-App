@@ -38,6 +38,7 @@ import StoreRefund from "@/pages/StoreRefund";
 import StoreReturnStock from "@/pages/StoreReturnStock";
 import StorePurchaseOrder from "@/pages/StorePurchaseOrder";
 import StoreSalesReturn from "@/pages/StoreSalesReturn";
+import StoreCreditNotes from "@/pages/StoreCreditNotes";
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -90,11 +91,7 @@ function AppContent() {
       )}
       {route.page === "sales" && <StoreSales storeId={route.storeId} />}
       {route.page === "credit-notes" && (
-        <StorePlaceholder
-          title="Credit Notes"
-          description="Sales credit notes for this store."
-          icon="request_quote"
-        />
+        <StoreCreditNotes storeId={route.storeId} />
       )}
       {route.page === "farmers" && <StoreFarmers storeId={route.storeId} />}
       {route.page === "quotation" && <StoreQuotation storeId={route.storeId} />}
