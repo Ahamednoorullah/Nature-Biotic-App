@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { getFarmersByStore, cropTypes, type Farmer } from '@/lib/data';
 import { useNav } from '@/context/NavContext';
-import { Card, Badge, Button, Input, Select, Modal, EmptyState, StatCard, Icon } from '@/components/ui';
+import { Card, Button, Input, Select, Modal, EmptyState, StatCard, Icon } from '@/components/ui';
 import { formatCurrency, formatCompact, initials } from '@/lib/format';
 
 const colorMap: Record<string, string> = {
@@ -23,23 +23,19 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
   const [exporting, setExporting] = useState(false);
 
   const filtered = useMemo(() => farmers.filter((f) => {
+    const farmerAddress = (f.farmAddress || '').toLowerCase();
     const ms = f.name.toLowerCase().includes(search.toLowerCase()) ||
       f.phone.includes(search) ||
-      f.village.toLowerCase().includes(search.toLowerCase()) ||
-      f.district.toLowerCase().includes(search.toLowerCase());
+      farmerAddress.includes(search.toLowerCase());
     const mc = cropFilter === 'all' || f.cropType === cropFilter;
     const mst = statusFilter === 'all' || f.status === statusFilter;
     return ms && mc && mst;
   }), [farmers, search, cropFilter, statusFilter]);
 
   const totalFarmers = farmers.length;
-  const activeFarmers = farmers.filter((f) => f.status === 'Active').length;
   const totalOutstanding = farmers.reduce((s, f) => s + f.outstanding, 0);
   const totalPurchaseValue = farmers.reduce((s, f) => s + f.totalPurchases, 0);
 
-  function removeFarmer(id: string) {
-    setFarmers(farmers.filter((f) => f.id !== id));
-  }
 
   function handleExport() {
     setExporting(true);
@@ -60,9 +56,8 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard label="Total Farmers" value={String(totalFarmers)} icon="groups" color="brand" />
-        <StatCard label="Active Farmers" value={String(activeFarmers)} icon="verified" color="blue" trend={`${Math.round((activeFarmers / totalFarmers) * 100)}% active`} trendUp />
         <StatCard label="Outstanding Amount" value={formatCompact(totalOutstanding)} icon="payments" color="amber" />
         <StatCard label="Total Purchase Value" value={formatCompact(totalPurchaseValue)} icon="account_balance_wallet" color="brand" />
       </div>
@@ -71,7 +66,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
       <Card className="p-4 mb-5">
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="flex-1 max-w-md">
-            <Input value={search} onChange={setSearch} placeholder="Search farmers by name, phone, village..." icon="search" />
+            <Input value={search} onChange={setSearch} placeholder="Search farmers by name, phone, address..." icon="search" />
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="w-full sm:w-44">
@@ -114,63 +109,60 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1000px]">
+          <div className="w-full">
+            <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="text-left font-semibold px-5 py-3.5">Profile</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Farmer Name</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Mobile Number</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Village</th>
-                  <th className="text-left font-semibold px-5 py-3.5">District</th>
-                  <th className="text-right font-semibold px-5 py-3.5">Land (Acres)</th>
-                  <th className="text-left font-semibold px-5 py-3.5">Crop Type</th>
-                  <th className="text-right font-semibold px-5 py-3.5">Outstanding</th>
-                  <th className="text-center font-semibold px-5 py-3.5">Status</th>
-                  <th className="text-center font-semibold px-5 py-3.5">Actions</th>
+                  <th className="w-[6%] text-center font-semibold px-3 py-3.5">S.No</th>
+                  <th className="w-[8%] text-left font-semibold px-3 py-3.5">Profile</th>
+                  <th className="w-[18%] text-left font-semibold px-3 py-3.5">Farmer Name</th>
+                  <th className="w-[14%] text-left font-semibold px-3 py-3.5">Mobile Number</th>
+                  <th className="w-[24%] text-left font-semibold px-3 py-3.5">Address</th>
+                  <th className="w-[10%] text-right font-semibold px-3 py-3.5">Land (Acres)</th>
+                  <th className="w-[10%] text-left font-semibold px-3 py-3.5">Crop Type</th>
+                  <th className="w-[10%] text-right font-semibold px-3 py-3.5">Outstanding</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((f) => (
-                  <tr key={f.id} className="hover:bg-slate-50/50 transition-base cursor-pointer" onClick={() => goFarmerProfile(f.id)}>
-                    <td className="px-5 py-3.5">
-                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
-                        {initials(f.name)}
-                      </div>
+                {filtered.map((f, index) => (
+                  <tr
+                    key={f.id}
+                    className="hover:bg-slate-50/50 transition-base cursor-pointer"
+                    onClick={() => goFarmerProfile(f.id)}
+                    title="Click to view farmer details"
+                  >
+                    <td className="px-3 py-3.5 text-center font-medium text-slate-500">{index + 1}</td>
+                    <td className="px-3 py-3.5">
+                      {f.profileImage ? (
+                        <img
+                          src={f.profileImage}
+                          alt={f.name}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                        />
+                      ) : (
+                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+                          {initials(f.name)}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-3 py-3.5">
                       <p className="font-semibold text-slate-800">{f.name}</p>
                       <p className="text-xs text-slate-400 mt-0.5">{f.customerCategory}</p>
                     </td>
-                    <td className="px-5 py-3.5 text-slate-600">{f.phone}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{f.village}</td>
-                    <td className="px-5 py-3.5 text-slate-600">{f.district}</td>
-                    <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{f.landSize}</td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-3 py-3.5 text-slate-600">{f.phone}</td>
+                    <td className="px-3 py-3.5 text-slate-600">
+                      <p className="line-clamp-2">{f.farmAddress || '-'}</p>
+                    </td>
+                    <td className="px-3 py-3.5 text-right font-semibold text-slate-700">{f.landSize}</td>
+                    <td className="px-3 py-3.5">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs">
-                        {f.cropType}
+                        {f.cropType || '-'}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-right">
+                    <td className="px-3 py-3.5 text-right">
                       {f.outstanding > 0
                         ? <span className="font-bold text-amber-600">{formatCurrency(f.outstanding)}</span>
                         : <span className="text-slate-400">Clear</span>}
-                    </td>
-                    <td className="px-5 py-3.5 text-center">
-                      <Badge color={f.status === 'Active' ? 'green' : 'slate'}>
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'currentColor' }} />
-                        {f.status}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => goFarmerProfile(f.id)} className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-base" title="View Profile">
-                          <Icon name="visibility" size={18} />
-                        </button>
-                        <button onClick={() => removeFarmer(f.id)} className="p-2 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-base" title="Delete">
-                          <Icon name="delete" size={18} />
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 ))}

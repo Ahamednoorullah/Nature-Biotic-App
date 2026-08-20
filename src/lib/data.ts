@@ -78,6 +78,14 @@ export type Product = {
 
 export type CustomerCategory = "Retail" | "Wholesale" | "Dealer";
 
+export type FarmerCrop = {
+  id: string;
+  cropType: string;
+  landSize: number;
+  soilType: string;
+  waterSource: string;
+};
+
 export type Farmer = {
   id: string;
   storeId: string;
@@ -88,25 +96,31 @@ export type Farmer = {
   aadhar: string;
   gst: string;
   village: string;
-  taluk: string;
+  landmark: string;
   district: string;
   state: string;
   pincode: string;
   farmAddress: string;
+  customerCategory: CustomerCategory;
+  crops: FarmerCrop[];
+
+  // Legacy compatibility for existing farmer profile/list screens.
+  // New farmer entries should use crops[] instead.
+  taluk?: string;
   landSize: number;
   cropType: string;
   soilType: string;
   waterSource: string;
-  paymentMethod: string;
-  creditLimit: number;
+  paymentMethod?: string;
+  creditLimit?: number;
   outstanding: number;
-  customerCategory: CustomerCategory;
-  remarks: string;
-  internalNotes: string;
+  remarks?: string;
+  internalNotes?: string;
   totalPurchases: number;
   status: "Active" | "Inactive";
   joinedDate: string;
   profileColor: string;
+  profileImage?: string;
 };
 
 export type FarmerPurchase = {
@@ -659,7 +673,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-4521",
     gst: "",
     village: "Rajapalayam",
-    taluk: "Rajapalayam",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626117",
@@ -668,6 +682,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Cotton",
     soilType: "Black Soil",
     waterSource: "Borewell",
+    crops: [{ id: "crop-1", cropType: "Cotton", landSize: 4.5, soilType: "Black Soil", waterSource: "Borewell" }],
     paymentMethod: "Cash",
     creditLimit: 15000,
     outstanding: 8500,
@@ -687,7 +702,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-7832",
     gst: "33ABCDE1234F1Z5",
     village: "Srivilliputhur",
-    taluk: "Srivilliputhur",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626135",
@@ -696,6 +711,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Paddy",
     soilType: "Alluvial Soil",
     waterSource: "Canal",
+    crops: [{ id: "crop-1", cropType: "Paddy", landSize: 8.0, soilType: "Alluvial Soil", waterSource: "Canal" }],
     paymentMethod: "Bank Transfer",
     creditLimit: 30000,
     outstanding: 0,
@@ -715,7 +731,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-1290",
     gst: "",
     village: "Sivakasi",
-    taluk: "Sivakasi",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626123",
@@ -724,6 +740,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Chilli",
     soilType: "Red Soil",
     waterSource: "Borewell",
+    crops: [{ id: "crop-1", cropType: "Chilli", landSize: 3.0, soilType: "Red Soil", waterSource: "Borewell" }],
     paymentMethod: "Cash",
     creditLimit: 10000,
     outstanding: 4200,
@@ -743,7 +760,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-9034",
     gst: "33FGHIJ5678K1Z2",
     village: "Virudhunagar",
-    taluk: "Virudhunagar",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626001",
@@ -752,6 +769,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Sugarcane",
     soilType: "Loamy Soil",
     waterSource: "Canal",
+    crops: [{ id: "crop-1", cropType: "Sugarcane", landSize: 12.5, soilType: "Loamy Soil", waterSource: "Canal" }],
     paymentMethod: "Bank Transfer",
     creditLimit: 50000,
     outstanding: 12500,
@@ -771,7 +789,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-3378",
     gst: "",
     village: "Rajapalayam",
-    taluk: "Rajapalayam",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626117",
@@ -780,6 +798,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Paddy",
     soilType: "Clay Soil",
     waterSource: "Borewell",
+    crops: [{ id: "crop-1", cropType: "Paddy", landSize: 5.5, soilType: "Clay Soil", waterSource: "Borewell" }],
     paymentMethod: "Cash",
     creditLimit: 12000,
     outstanding: 0,
@@ -799,7 +818,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-6721",
     gst: "",
     village: "Srivilliputhur",
-    taluk: "Srivilliputhur",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626135",
@@ -808,6 +827,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Groundnut",
     soilType: "Red Loam",
     waterSource: "Borewell",
+    crops: [{ id: "crop-1", cropType: "Groundnut", landSize: 2.5, soilType: "Red Loam", waterSource: "Borewell" }],
     paymentMethod: "Cash",
     creditLimit: 8000,
     outstanding: 3100,
@@ -827,7 +847,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-5412",
     gst: "33LMNOP9012R1Z8",
     village: "Sivakasi",
-    taluk: "Sivakasi",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626123",
@@ -836,6 +856,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Banana",
     soilType: "Alluvial Soil",
     waterSource: "Drip Irrigation",
+    crops: [{ id: "crop-1", cropType: "Banana", landSize: 6.0, soilType: "Alluvial Soil", waterSource: "Drip Irrigation" }],
     paymentMethod: "Bank Transfer",
     creditLimit: 25000,
     outstanding: 7800,
@@ -855,7 +876,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-8901",
     gst: "",
     village: "Virudhunagar",
-    taluk: "Virudhunagar",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626001",
@@ -864,6 +885,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Cotton",
     soilType: "Black Soil",
     waterSource: "Borewell",
+    crops: [{ id: "crop-1", cropType: "Cotton", landSize: 3.5, soilType: "Black Soil", waterSource: "Borewell" }],
     paymentMethod: "Cash",
     creditLimit: 10000,
     outstanding: 0,
@@ -883,7 +905,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-2267",
     gst: "",
     village: "Rajapalayam",
-    taluk: "Rajapalayam",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626117",
@@ -892,6 +914,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Chilli",
     soilType: "Red Soil",
     waterSource: "Borewell",
+    crops: [{ id: "crop-1", cropType: "Chilli", landSize: 1.5, soilType: "Red Soil", waterSource: "Borewell" }],
     paymentMethod: "Cash",
     creditLimit: 5000,
     outstanding: 1800,
@@ -911,7 +934,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     aadhar: "XXXX-XXXX-4598",
     gst: "33VWXYZ3456S1Z9",
     village: "Srivilliputhur",
-    taluk: "Srivilliputhur",
+    landmark: "",
     district: "Virudhunagar",
     state: "Tamil Nadu",
     pincode: "626135",
@@ -920,6 +943,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Sugarcane",
     soilType: "Loamy Soil",
     waterSource: "Canal",
+    crops: [{ id: "crop-1", cropType: "Sugarcane", landSize: 10.0, soilType: "Loamy Soil", waterSource: "Canal" }],
     paymentMethod: "Bank Transfer",
     creditLimit: 40000,
     outstanding: 15600,
@@ -984,6 +1008,119 @@ export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
   id: `f${i}`,
   storeId: "s1",
 }));
+
+const STORE_FARMERS_KEY = "nature-biotic-store-farmers-v2";
+export const storeFarmersUpdatedEvent = "store-farmers-updated";
+
+function normalizeFarmer(farmer: Farmer): Farmer {
+  const crops =
+    Array.isArray(farmer.crops) && farmer.crops.length > 0
+      ? farmer.crops
+      : farmer.cropType
+        ? [{
+            id: `${farmer.id}-crop-1`,
+            cropType: farmer.cropType,
+            landSize: Number(farmer.landSize || 0),
+            soilType: farmer.soilType || "",
+            waterSource: farmer.waterSource || "",
+          }]
+        : [];
+
+  const totalLand = crops.reduce((sum, crop) => sum + Number(crop.landSize || 0), 0);
+  const firstCrop = crops[0];
+
+  return {
+    ...farmer,
+    landmark: farmer.landmark || farmer.taluk || "",
+    crops,
+    landSize: totalLand,
+    cropType: firstCrop?.cropType || farmer.cropType || "",
+    soilType: firstCrop?.soilType || farmer.soilType || "",
+    waterSource: firstCrop?.waterSource || farmer.waterSource || "",
+  };
+}
+
+export function getStoredFarmers(): Farmer[] {
+  if (typeof window === "undefined") return farmers.map(normalizeFarmer);
+
+  try {
+    const raw = window.localStorage.getItem(STORE_FARMERS_KEY);
+    if (!raw) return farmers.map(normalizeFarmer);
+    const saved = JSON.parse(raw) as Farmer[];
+    return saved.map(normalizeFarmer);
+  } catch {
+    return farmers.map(normalizeFarmer);
+  }
+}
+
+export function saveStoredFarmers(rows: Farmer[]) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      STORE_FARMERS_KEY,
+      JSON.stringify(rows.map(normalizeFarmer)),
+    );
+    window.dispatchEvent(new Event(storeFarmersUpdatedEvent));
+  } catch {}
+}
+
+export function addFarmer(
+  row: Omit<
+    Farmer,
+    | "id"
+    | "landSize"
+    | "cropType"
+    | "soilType"
+    | "waterSource"
+    | "outstanding"
+    | "totalPurchases"
+    | "status"
+    | "joinedDate"
+    | "profileColor"
+  > &
+    Partial<
+      Pick<
+        Farmer,
+        | "id"
+        | "outstanding"
+        | "totalPurchases"
+        | "status"
+        | "joinedDate"
+        | "profileColor"
+      >
+    >,
+): Farmer {
+  const existing = getStoredFarmers();
+  const crops = row.crops ?? [];
+  const firstCrop = crops[0];
+
+  const next: Farmer = normalizeFarmer({
+    ...row,
+    id: row.id ?? `f-${Date.now()}`,
+    landSize: crops.reduce((sum, crop) => sum + Number(crop.landSize || 0), 0),
+    cropType: firstCrop?.cropType || "",
+    soilType: firstCrop?.soilType || "",
+    waterSource: firstCrop?.waterSource || "",
+    outstanding: row.outstanding ?? 0,
+    totalPurchases: row.totalPurchases ?? 0,
+    status: row.status ?? "Active",
+    joinedDate: row.joinedDate ?? new Date().toISOString().split("T")[0],
+    profileColor: row.profileColor ?? "emerald",
+  } as Farmer);
+
+  saveStoredFarmers([next, ...existing.filter((farmer) => farmer.id !== next.id)]);
+  return next;
+}
+
+export function updateFarmer(updatedFarmer: Farmer): Farmer {
+  const next = normalizeFarmer(updatedFarmer);
+  const rows = getStoredFarmers().map((farmer) =>
+    farmer.id === next.id ? next : farmer,
+  );
+  saveStoredFarmers(rows);
+  return next;
+}
 
 const productNames = products.map((p) => p.name);
 
@@ -1380,11 +1517,11 @@ export function getOutOfStockProducts(storeId: string): Product[] {
 }
 
 export function getFarmersByStore(storeId: string): Farmer[] {
-  return farmers.filter((f) => f.storeId === storeId);
+  return getStoredFarmers().filter((f) => f.storeId === storeId);
 }
 
 export function getFarmerById(id: string): Farmer | undefined {
-  return farmers.find((f) => f.id === id);
+  return getStoredFarmers().find((f) => f.id === id);
 }
 
 export function getPurchasesByFarmer(farmerId: string): FarmerPurchase[] {

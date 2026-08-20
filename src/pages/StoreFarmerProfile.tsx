@@ -1,7 +1,17 @@
-import { useState } from 'react';
-import { getFarmerById, getPurchasesByFarmer, getPaymentsByFarmer } from '@/lib/data';
+import { useRef, useState } from 'react';
+import {
+  getFarmerById,
+  getPurchasesByFarmer,
+  getPaymentsByFarmer,
+  updateFarmer,
+  cropTypes,
+  soilTypes,
+  waterSources,
+  customerCategories,
+  type Farmer,
+} from '@/lib/data';
 import { useNav } from '@/context/NavContext';
-import { Card, Badge, Button, EmptyState, Icon } from '@/components/ui';
+import { Card, Badge, Button, EmptyState, Icon, Input, Select, Textarea, Modal } from '@/components/ui';
 import { formatCurrency, formatDate, initials } from '@/lib/format';
 
 type Tab = 'overview' | 'purchases' | 'invoices' | 'payments' | 'crop' | 'documents';
@@ -27,6 +37,8 @@ const colorMap: Record<string, string> = {
 export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { storeId: string; farmerId: string }) {
   const { goStorePage } = useNav();
   const [tab, setTab] = useState<Tab>('overview');
+  const [editOpen, setEditOpen] = useState(false);
+  const [, setRefresh] = useState(0);
   const farmer = getFarmerById(farmerId);
 
   if (!farmer) {
@@ -53,9 +65,17 @@ export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { st
       {/* Profile header */}
       <Card className="p-6 mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-          <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${colorMap[farmer.profileColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-2xl shrink-0 mx-auto sm:mx-0`}>
-            {initials(farmer.name)}
-          </div>
+          {farmer.profileImage ? (
+            <img
+              src={farmer.profileImage}
+              alt={farmer.name}
+              className="w-20 h-20 rounded-full object-cover border-2 border-slate-200 shrink-0 mx-auto sm:mx-0"
+            />
+          ) : (
+            <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${colorMap[farmer.profileColor] ?? 'from-slate-400 to-slate-600'} flex items-center justify-center text-white font-bold text-2xl shrink-0 mx-auto sm:mx-0`}>
+              {initials(farmer.name)}
+            </div>
+          )}
           <div className="flex-1 text-center sm:text-left min-w-0">
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">{farmer.name}</h1>
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 mt-2 text-sm text-slate-500">
@@ -65,6 +85,9 @@ export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { st
             </div>
           </div>
           <div className="flex flex-col sm:items-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditOpen(true)}>
+              <Icon name="edit" size={16} /> Edit Farmer
+            </Button>
             <div className="text-center sm:text-right">
               <p className="text-xs text-slate-400 font-medium">Outstanding Amount</p>
               <p className={`text-xl font-bold ${farmer.outstanding > 0 ? 'text-amber-600' : 'text-brand-600'}`}>
@@ -99,6 +122,15 @@ export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { st
         {tab === 'crop' && <CropTab farmer={farmer} />}
         {tab === 'documents' && <DocumentsTab />}
       </div>
+      <EditFarmerModal
+        open={editOpen}
+        farmer={farmer}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => {
+          setEditOpen(false);
+          setRefresh((value) => value + 1);
+        }}
+      />
     </div>
   );
 }
@@ -108,18 +140,29 @@ function OverviewTab({ farmer, purchases, payments }: { farmer: ReturnType<typeo
   const totalSpent = purchases.reduce((s, p) => s + p.amount, 0);
   const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
 
+  const totalLand = farmer.crops?.reduce(
+    (sum, crop) => sum + Number(crop.landSize || 0),
+    0,
+  ) ?? farmer.landSize;
+
+  const cropNames =
+    farmer.crops?.length
+      ? farmer.crops.map((crop) => crop.cropType).join(", ")
+      : farmer.cropType || "—";
+
   const infoItems = [
     { icon: 'badge', label: 'Customer Category', value: farmer.customerCategory },
     { icon: 'call', label: 'Alternative Mobile', value: farmer.altMobile || '—' },
     { icon: 'mail', label: 'Email', value: farmer.email || '—' },
     { icon: 'receipt_long', label: 'GST Number', value: farmer.gst || '—' },
-    { icon: 'location_city', label: 'District', value: farmer.district },
-    { icon: 'public', label: 'State', value: farmer.state },
-    { icon: 'crop_square', label: 'Land Size', value: `${farmer.landSize} acres` },
-    { icon: 'grass', label: 'Crop Type', value: farmer.cropType },
-    { icon: 'water_drop', label: 'Water Source', value: farmer.waterSource },
-    { icon: 'payments', label: 'Payment Method', value: farmer.paymentMethod },
-    { icon: 'credit_card', label: 'Credit Limit', value: formatCurrency(farmer.creditLimit) },
+    { icon: 'home', label: 'Farmer Address', value: farmer.farmAddress || '—' },
+    { icon: 'location_on', label: 'Village', value: farmer.village || '—' },
+    { icon: 'near_me', label: 'Landmark', value: farmer.landmark || '—' },
+    { icon: 'location_city', label: 'District', value: farmer.district || '—' },
+    { icon: 'public', label: 'State', value: farmer.state || '—' },
+    { icon: 'mark_email_read', label: 'Pincode', value: farmer.pincode || '—' },
+    { icon: 'crop_square', label: 'Total Land', value: `${totalLand || 0} acres` },
+    { icon: 'grass', label: 'Crops', value: cropNames },
     { icon: 'calendar_month', label: 'Customer Since', value: formatDate(farmer.joinedDate) },
   ];
 
@@ -160,12 +203,6 @@ function OverviewTab({ farmer, purchases, payments }: { farmer: ReturnType<typeo
               </div>
             ))}
           </div>
-          {farmer.remarks && (
-            <div className="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="text-xs text-slate-400 font-semibold mb-1">Remarks</p>
-              <p className="text-sm text-slate-600">{farmer.remarks}</p>
-            </div>
-          )}
         </Card>
       </div>
     </div>
@@ -281,35 +318,98 @@ function PaymentsTab({ payments }: { payments: ReturnType<typeof getPaymentsByFa
 
 function CropTab({ farmer }: { farmer: ReturnType<typeof getFarmerById> }) {
   if (!farmer) return null;
-  const items = [
-    { icon: 'grass', label: 'Crop Type', value: farmer.cropType },
-    { icon: 'layers', label: 'Soil Type', value: farmer.soilType },
-    { icon: 'water_drop', label: 'Water Source', value: farmer.waterSource },
-    { icon: 'crop_square', label: 'Land Size', value: `${farmer.landSize} acres` },
-    { icon: 'location_on', label: 'Village', value: farmer.village },
-    { icon: 'map', label: 'Taluk', value: farmer.taluk },
-    { icon: 'location_city', label: 'District', value: farmer.district },
-    { icon: 'public', label: 'State', value: farmer.state },
-    { icon: 'mark_email_read', label: 'Pincode', value: farmer.pincode },
-    { icon: 'home', label: 'Farm Address', value: farmer.farmAddress },
-  ];
+
+  const crops =
+    farmer.crops?.length
+      ? farmer.crops
+      : farmer.cropType
+        ? [
+            {
+              id: `${farmer.id}-legacy-crop`,
+              cropType: farmer.cropType,
+              landSize: farmer.landSize,
+              soilType: farmer.soilType,
+              waterSource: farmer.waterSource,
+            },
+          ]
+        : [];
+
   return (
-    <Card className="p-6">
-      <h3 className="font-bold text-slate-800 mb-4">Crop & Farm Details</h3>
-      <div className="grid sm:grid-cols-2 gap-4">
-        {items.map((item) => (
-          <div key={item.label} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50">
-            <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
-              <Icon name={item.icon} size={18} className="text-brand-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-slate-400 font-medium">{item.label}</p>
-              <p className="text-sm font-semibold text-slate-700">{item.value}</p>
-            </div>
+    <div className="space-y-5">
+      <Card className="p-6">
+        <h3 className="font-bold text-slate-800 mb-4">Farm Location Details</h3>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <DetailItem icon="home" label="Farmer Address" value={farmer.farmAddress || '—'} />
+          <DetailItem icon="location_on" label="Village" value={farmer.village || '—'} />
+          <DetailItem icon="near_me" label="Landmark" value={farmer.landmark || '—'} />
+          <DetailItem icon="location_city" label="District" value={farmer.district || '—'} />
+          <DetailItem icon="public" label="State" value={farmer.state || '—'} />
+          <DetailItem icon="mark_email_read" label="Pincode" value={farmer.pincode || '—'} />
+        </div>
+      </Card>
+
+      <Card className="p-0 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 className="font-bold text-slate-800">Crop Details</h3>
+          <p className="text-sm text-slate-500 mt-1">
+            All crops registered for this farmer.
+          </p>
+        </div>
+
+        {crops.length === 0 ? (
+          <div className="p-8 text-center text-slate-400">
+            No crop details available.
           </div>
-        ))}
+        ) : (
+          <table className="w-full table-fixed text-sm">
+            <thead>
+              <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <th className="w-[8%] px-3 py-3 text-center">S.No</th>
+                <th className="w-[30%] px-3 py-3 text-left">Crop</th>
+                <th className="w-[20%] px-3 py-3 text-center">Land (Acres)</th>
+                <th className="w-[20%] px-3 py-3 text-left">Soil Type</th>
+                <th className="w-[22%] px-3 py-3 text-left">Water Source</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {crops.map((crop, index) => (
+                <tr key={crop.id}>
+                  <td className="px-3 py-3 text-center text-slate-500">{index + 1}</td>
+                  <td className="px-3 py-3 font-semibold text-slate-800">{crop.cropType}</td>
+                  <td className="px-3 py-3 text-center text-slate-700">{crop.landSize}</td>
+                  <td className="px-3 py-3 text-slate-600">{crop.soilType || '—'}</td>
+                  <td className="px-3 py-3 text-slate-600">{crop.waterSource || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function DetailItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50">
+      <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+        <Icon name={icon} size={18} className="text-brand-600" />
       </div>
-    </Card>
+      <div className="min-w-0">
+        <p className="text-xs text-slate-400 font-medium">{label}</p>
+        <p className="text-sm font-semibold text-slate-700 break-words">{value}</p>
+      </div>
+    </div>
   );
 }
 
@@ -344,5 +444,184 @@ function DocumentsTab() {
         </div>
       </Card>
     </div>
+  );
+}
+
+
+function EditFarmerModal({
+  open,
+  farmer,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  farmer: Farmer;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState<Farmer>(() => ({
+    ...farmer,
+    crops: farmer.crops?.map((crop) => ({ ...crop })) ?? [],
+  }));
+  const [cropType, setCropType] = useState('');
+  const [cropLandSize, setCropLandSize] = useState('');
+  const [soilType, setSoilType] = useState('');
+  const [waterSource, setWaterSource] = useState('');
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  if (!open) return null;
+
+  const change = (key: keyof Farmer, value: any) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  const uploadImage = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return alert('Please select an image file.');
+    if (file.size > 1024 * 1024) return alert('Profile image must be 1 MB or less.');
+    const reader = new FileReader();
+    reader.onload = () =>
+      setForm((current) => ({
+        ...current,
+        profileImage: typeof reader.result === 'string' ? reader.result : current.profileImage,
+      }));
+    reader.readAsDataURL(file);
+  };
+
+  const addCrop = () => {
+    if (!cropType || !cropLandSize) return;
+    setForm((current) => ({
+      ...current,
+      crops: [
+        ...(current.crops ?? []),
+        {
+          id: `crop-${Date.now()}`,
+          cropType,
+          landSize: Number(cropLandSize),
+          soilType,
+          waterSource,
+        },
+      ],
+    }));
+    setCropType('');
+    setCropLandSize('');
+    setSoilType('');
+    setWaterSource('');
+  };
+
+  const removeCrop = (id: string) =>
+    setForm((current) => ({
+      ...current,
+      crops: current.crops.filter((crop) => crop.id !== id),
+    }));
+
+  const save = () => {
+    if (!form.name.trim() || !form.phone.trim() || !form.farmAddress.trim()) return;
+    updateFarmer(form);
+    onSaved();
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit Farmer" size="xl">
+      <div className="max-h-[75vh] overflow-y-auto pr-1 space-y-6">
+        <div>
+          <h3 className="font-bold text-slate-800 mb-3">General Information</h3>
+          <div className="flex items-center gap-4 mb-5">
+            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => uploadImage(e.target.files?.[0])} />
+            <button type="button" onClick={() => fileRef.current?.click()}
+              className="w-20 h-20 rounded-full overflow-hidden border-2 border-dashed border-slate-300 flex items-center justify-center bg-slate-50">
+              {form.profileImage
+                ? <img src={form.profileImage} className="w-full h-full object-cover" alt="Profile" />
+                : <Icon name="add_a_photo" size={24} className="text-slate-400" />}
+            </button>
+            <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
+              <Icon name="upload" size={16} /> Change Photo
+            </Button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Input label="Farmer Name" value={form.name} onChange={(v) => change('name', v)} required />
+            <Input label="Mobile Number" value={form.phone} onChange={(v) => change('phone', v)} required />
+            <Input label="Alternative Mobile" value={form.altMobile} onChange={(v) => change('altMobile', v)} />
+            <Input label="Email" value={form.email} onChange={(v) => change('email', v)} />
+            <Input label="Aadhar Number" value={form.aadhar} onChange={(v) => change('aadhar', v)} />
+            <Input label="GST Number" value={form.gst} onChange={(v) => change('gst', v)} />
+            <Select label="Customer Category" value={form.customerCategory}
+              onChange={(v) => change('customerCategory', v)}
+              options={customerCategories.map((v) => ({ value: v, label: v }))} />
+            <div className="sm:col-span-2">
+              <Textarea label="Farmer Address" value={form.farmAddress}
+                onChange={(v) => change('farmAddress', v)} rows={2} required />
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200 pt-5">
+          <h3 className="font-bold text-slate-800 mb-3">Location Details</h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Input label="Village" value={form.village} onChange={(v) => change('village', v)} />
+            <Input label="Landmark" value={form.landmark} onChange={(v) => change('landmark', v)} />
+            <Input label="District" value={form.district} onChange={(v) => change('district', v)} />
+            <Input label="State" value={form.state} onChange={(v) => change('state', v)} />
+            <Input label="Pincode" value={form.pincode} onChange={(v) => change('pincode', v)} />
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200 pt-5">
+          <h3 className="font-bold text-slate-800 mb-3">Crop Details</h3>
+          <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-3">
+            <Select label="Crop" value={cropType} onChange={setCropType} placeholder="Select crop"
+              options={cropTypes.map((v) => ({ value: v, label: v }))} />
+            <Input label="Land (Acres)" type="number" value={cropLandSize} onChange={setCropLandSize} />
+            <Select label="Soil Type" value={soilType} onChange={setSoilType} placeholder="Select soil"
+              options={soilTypes.map((v) => ({ value: v, label: v }))} />
+            <Select label="Water Source" value={waterSource} onChange={setWaterSource} placeholder="Select source"
+              options={waterSources.map((v) => ({ value: v, label: v }))} />
+            <div className="flex items-end">
+              <Button type="button" className="w-full" onClick={addCrop}>
+                <Icon name="add" size={17} /> Add
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-3 text-left">Crop</th>
+                  <th className="px-3 py-3 text-center">Land</th>
+                  <th className="px-3 py-3 text-left">Soil</th>
+                  <th className="px-3 py-3 text-left">Water</th>
+                  <th className="px-3 py-3 text-center"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {form.crops.map((crop) => (
+                  <tr key={crop.id}>
+                    <td className="px-3 py-3 font-semibold">{crop.cropType}</td>
+                    <td className="px-3 py-3 text-center">{crop.landSize}</td>
+                    <td className="px-3 py-3">{crop.soilType || '—'}</td>
+                    <td className="px-3 py-3">{crop.waterSource || '—'}</td>
+                    <td className="px-3 py-3 text-center">
+                      <button type="button" onClick={() => removeCrop(crop.id)}
+                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50">
+                        <Icon name="delete" size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={!form.name.trim() || !form.phone.trim() || !form.farmAddress.trim()}>
+            <Icon name="save" size={17} /> Save Changes
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
