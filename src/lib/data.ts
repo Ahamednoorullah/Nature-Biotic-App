@@ -74,6 +74,12 @@ export type Product = {
   status: "Active" | "Inactive";
   sold: number;
   imageColor: string;
+  applicationMethods?: string[];
+  dosage?: number;
+  dosageUnit?: string;
+  filler?: number;
+  fillerUnit?: string;
+  fillerType?: "Water" | "NA" | "";
 };
 
 export type CustomerCategory = "Retail" | "Wholesale" | "Dealer";
@@ -96,7 +102,7 @@ export type Farmer = {
   aadhar: string;
   gst: string;
   village: string;
-  through?: 'Direct' | 'Executive';
+  through?: "Direct" | "Executive";
   executiveName?: string;
   landmark: string;
   district: string;
@@ -205,7 +211,6 @@ export type ExecutiveStockReturn = {
   quantity: number;
   remarks: string;
 };
-
 
 // Company Credit Note -> Store Debit Note sync
 export type CompanyCreditNoteSyncRecord = {
@@ -660,11 +665,82 @@ const productSeed: Omit<Product, "id" | "storeId">[] = [
   },
 ];
 
-export const products: Product[] = productSeed.map((p, i) => ({
+const PRODUCT_MASTER_KEY = "nature-biotic-product-master-v1";
+const PRODUCT_PARTY_OPTIONS_KEY = "nature-biotic-product-party-options-v1";
+export const productMasterUpdatedEvent = "product-master-updated";
+
+export let products: Product[] = productSeed.map((p, i) => ({
   ...p,
   id: `p${i}`,
   storeId: "s1",
 }));
+
+if (typeof window !== "undefined") {
+  try {
+    const raw = window.localStorage.getItem(PRODUCT_MASTER_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as Product[];
+      if (Array.isArray(saved) && saved.length > 0) products = saved;
+    }
+  } catch {}
+}
+
+export function getProductMaster(): Product[] {
+  return [...products];
+}
+
+export function saveProductMaster(rows: Product[]) {
+  products = rows;
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PRODUCT_MASTER_KEY, JSON.stringify(rows));
+    window.dispatchEvent(new Event(productMasterUpdatedEvent));
+  } catch {}
+}
+
+export function addProductMasterVariants(rows: Product[]) {
+  const existing = getProductMaster();
+  const ids = new Set(rows.map((row) => row.id));
+  const next = [...rows, ...existing.filter((row) => !ids.has(row.id))];
+  saveProductMaster(next);
+  return next;
+}
+
+export function getProductPartyOptions() {
+  const defaults = {
+    manufacturers: ["Nature Biotic Pvt. Ltd."],
+    vendors: ["Nature Biotic Distribution"],
+  };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const raw = window.localStorage.getItem(PRODUCT_PARTY_OPTIONS_KEY);
+    if (!raw) return defaults;
+    const saved = JSON.parse(raw) as typeof defaults;
+    return {
+      manufacturers: Array.from(
+        new Set([...defaults.manufacturers, ...(saved.manufacturers || [])]),
+      ),
+      vendors: Array.from(
+        new Set([...defaults.vendors, ...(saved.vendors || [])]),
+      ),
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+export function saveProductPartyOptions(options: {
+  manufacturers: string[];
+  vendors: string[];
+}) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      PRODUCT_PARTY_OPTIONS_KEY,
+      JSON.stringify(options),
+    );
+  } catch {}
+}
 
 const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
   {
@@ -684,7 +760,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Cotton",
     soilType: "Black Soil",
     waterSource: "Borewell",
-    crops: [{ id: "crop-1", cropType: "Cotton", landSize: 4.5, soilType: "Black Soil", waterSource: "Borewell" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Cotton",
+        landSize: 4.5,
+        soilType: "Black Soil",
+        waterSource: "Borewell",
+      },
+    ],
     paymentMethod: "Cash",
     creditLimit: 15000,
     outstanding: 8500,
@@ -713,7 +797,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Paddy",
     soilType: "Alluvial Soil",
     waterSource: "Canal",
-    crops: [{ id: "crop-1", cropType: "Paddy", landSize: 8.0, soilType: "Alluvial Soil", waterSource: "Canal" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Paddy",
+        landSize: 8.0,
+        soilType: "Alluvial Soil",
+        waterSource: "Canal",
+      },
+    ],
     paymentMethod: "Bank Transfer",
     creditLimit: 30000,
     outstanding: 0,
@@ -742,7 +834,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Chilli",
     soilType: "Red Soil",
     waterSource: "Borewell",
-    crops: [{ id: "crop-1", cropType: "Chilli", landSize: 3.0, soilType: "Red Soil", waterSource: "Borewell" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Chilli",
+        landSize: 3.0,
+        soilType: "Red Soil",
+        waterSource: "Borewell",
+      },
+    ],
     paymentMethod: "Cash",
     creditLimit: 10000,
     outstanding: 4200,
@@ -771,7 +871,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Sugarcane",
     soilType: "Loamy Soil",
     waterSource: "Canal",
-    crops: [{ id: "crop-1", cropType: "Sugarcane", landSize: 12.5, soilType: "Loamy Soil", waterSource: "Canal" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Sugarcane",
+        landSize: 12.5,
+        soilType: "Loamy Soil",
+        waterSource: "Canal",
+      },
+    ],
     paymentMethod: "Bank Transfer",
     creditLimit: 50000,
     outstanding: 12500,
@@ -800,7 +908,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Paddy",
     soilType: "Clay Soil",
     waterSource: "Borewell",
-    crops: [{ id: "crop-1", cropType: "Paddy", landSize: 5.5, soilType: "Clay Soil", waterSource: "Borewell" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Paddy",
+        landSize: 5.5,
+        soilType: "Clay Soil",
+        waterSource: "Borewell",
+      },
+    ],
     paymentMethod: "Cash",
     creditLimit: 12000,
     outstanding: 0,
@@ -829,7 +945,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Groundnut",
     soilType: "Red Loam",
     waterSource: "Borewell",
-    crops: [{ id: "crop-1", cropType: "Groundnut", landSize: 2.5, soilType: "Red Loam", waterSource: "Borewell" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Groundnut",
+        landSize: 2.5,
+        soilType: "Red Loam",
+        waterSource: "Borewell",
+      },
+    ],
     paymentMethod: "Cash",
     creditLimit: 8000,
     outstanding: 3100,
@@ -858,7 +982,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Banana",
     soilType: "Alluvial Soil",
     waterSource: "Drip Irrigation",
-    crops: [{ id: "crop-1", cropType: "Banana", landSize: 6.0, soilType: "Alluvial Soil", waterSource: "Drip Irrigation" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Banana",
+        landSize: 6.0,
+        soilType: "Alluvial Soil",
+        waterSource: "Drip Irrigation",
+      },
+    ],
     paymentMethod: "Bank Transfer",
     creditLimit: 25000,
     outstanding: 7800,
@@ -887,7 +1019,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Cotton",
     soilType: "Black Soil",
     waterSource: "Borewell",
-    crops: [{ id: "crop-1", cropType: "Cotton", landSize: 3.5, soilType: "Black Soil", waterSource: "Borewell" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Cotton",
+        landSize: 3.5,
+        soilType: "Black Soil",
+        waterSource: "Borewell",
+      },
+    ],
     paymentMethod: "Cash",
     creditLimit: 10000,
     outstanding: 0,
@@ -916,7 +1056,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Chilli",
     soilType: "Red Soil",
     waterSource: "Borewell",
-    crops: [{ id: "crop-1", cropType: "Chilli", landSize: 1.5, soilType: "Red Soil", waterSource: "Borewell" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Chilli",
+        landSize: 1.5,
+        soilType: "Red Soil",
+        waterSource: "Borewell",
+      },
+    ],
     paymentMethod: "Cash",
     creditLimit: 5000,
     outstanding: 1800,
@@ -945,7 +1093,15 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     cropType: "Sugarcane",
     soilType: "Loamy Soil",
     waterSource: "Canal",
-    crops: [{ id: "crop-1", cropType: "Sugarcane", landSize: 10.0, soilType: "Loamy Soil", waterSource: "Canal" }],
+    crops: [
+      {
+        id: "crop-1",
+        cropType: "Sugarcane",
+        landSize: 10.0,
+        soilType: "Loamy Soil",
+        waterSource: "Canal",
+      },
+    ],
     paymentMethod: "Bank Transfer",
     creditLimit: 40000,
     outstanding: 15600,
@@ -1019,16 +1175,21 @@ function normalizeFarmer(farmer: Farmer): Farmer {
     Array.isArray(farmer.crops) && farmer.crops.length > 0
       ? farmer.crops
       : farmer.cropType
-        ? [{
-            id: `${farmer.id}-crop-1`,
-            cropType: farmer.cropType,
-            landSize: Number(farmer.landSize || 0),
-            soilType: farmer.soilType || "",
-            waterSource: farmer.waterSource || "",
-          }]
+        ? [
+            {
+              id: `${farmer.id}-crop-1`,
+              cropType: farmer.cropType,
+              landSize: Number(farmer.landSize || 0),
+              soilType: farmer.soilType || "",
+              waterSource: farmer.waterSource || "",
+            },
+          ]
         : [];
 
-  const totalLand = crops.reduce((sum, crop) => sum + Number(crop.landSize || 0), 0);
+  const totalLand = crops.reduce(
+    (sum, crop) => sum + Number(crop.landSize || 0),
+    0,
+  );
   const firstCrop = crops[0];
 
   return {
@@ -1111,7 +1272,10 @@ export function addFarmer(
     profileColor: row.profileColor ?? "emerald",
   } as Farmer);
 
-  saveStoredFarmers([next, ...existing.filter((farmer) => farmer.id !== next.id)]);
+  saveStoredFarmers([
+    next,
+    ...existing.filter((farmer) => farmer.id !== next.id),
+  ]);
   return next;
 }
 
@@ -1627,14 +1791,19 @@ export const purpose: Purpose[] = [
   "Insecticide (Suckingpest)",
 ];
 
-
 // Store Purchase Order / Purchase Return -> Company Approval sync
 export type StoreApprovalRequestType = "Purchase Order" | "Purchase Return";
 export type StoreApprovalRequestStatus = "Pending" | "Approved" | "Rejected";
 export type StoreApprovalRequest = {
-  id: string; type: StoreApprovalRequestType; storeId: string; storeName: string;
-  date: string; referenceNo: string; amount: number;
-  status: StoreApprovalRequestStatus; createdAt: number;
+  id: string;
+  type: StoreApprovalRequestType;
+  storeId: string;
+  storeName: string;
+  date: string;
+  referenceNo: string;
+  amount: number;
+  status: StoreApprovalRequestStatus;
+  createdAt: number;
 };
 const STORE_APPROVAL_REQUESTS_KEY = "nature-biotic-store-approval-requests-v1";
 const STORE_APPROVAL_EVENT = "store-approval-requests-updated";
@@ -1644,12 +1813,17 @@ export function getStoreApprovalRequests(): StoreApprovalRequest[] {
   try {
     const raw = window.localStorage.getItem(STORE_APPROVAL_REQUESTS_KEY);
     return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 export function saveStoreApprovalRequests(rows: StoreApprovalRequest[]) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORE_APPROVAL_REQUESTS_KEY, JSON.stringify(rows));
+    window.localStorage.setItem(
+      STORE_APPROVAL_REQUESTS_KEY,
+      JSON.stringify(rows),
+    );
     window.dispatchEvent(new Event(STORE_APPROVAL_EVENT));
   } catch {}
 }
@@ -1658,16 +1832,37 @@ export function addStoreApprovalRequest(
     Partial<Pick<StoreApprovalRequest, "status" | "createdAt">>,
 ) {
   const existing = getStoreApprovalRequests();
-  const next: StoreApprovalRequest = { ...row, status: row.status ?? "Pending", createdAt: row.createdAt ?? Date.now() };
-  saveStoreApprovalRequests([next, ...existing.filter((item) => item.id !== next.id)]);
+  const next: StoreApprovalRequest = {
+    ...row,
+    status: row.status ?? "Pending",
+    createdAt: row.createdAt ?? Date.now(),
+  };
+  saveStoreApprovalRequests([
+    next,
+    ...existing.filter((item) => item.id !== next.id),
+  ]);
   return next;
 }
-export function updateStoreApprovalRequestStatus(id: string, status: StoreApprovalRequestStatus) {
-  const updated = getStoreApprovalRequests().map((row) => row.id === id ? { ...row, status } : row);
+export function updateStoreApprovalRequestStatus(
+  id: string,
+  status: StoreApprovalRequestStatus,
+) {
+  const updated = getStoreApprovalRequests().map((row) =>
+    row.id === id ? { ...row, status } : row,
+  );
   saveStoreApprovalRequests(updated);
   return updated;
 }
-export function getStoreApprovalRequest(type: StoreApprovalRequestType, storeId: string, referenceNo: string) {
-  return getStoreApprovalRequests().find((row) => row.type === type && row.storeId === storeId && row.referenceNo === referenceNo);
+export function getStoreApprovalRequest(
+  type: StoreApprovalRequestType,
+  storeId: string,
+  referenceNo: string,
+) {
+  return getStoreApprovalRequests().find(
+    (row) =>
+      row.type === type &&
+      row.storeId === storeId &&
+      row.referenceNo === referenceNo,
+  );
 }
 export const storeApprovalRequestsUpdatedEvent = STORE_APPROVAL_EVENT;

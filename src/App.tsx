@@ -7,6 +7,7 @@ import CompanyDashboard from "@/pages/CompanyDashboard";
 import CompanyProducts from "@/pages/CompanyProducts";
 import CompanyStores from "@/pages/CompanyStores";
 import CompanySales from "@/pages/CompanySales";
+import CompanyPurchaseOrders from "@/pages/CompanyPurchaseOrders";
 import CompanyStaffManagement from "@/pages/CompanyStaffManagement";
 import CompanyCreditNotes from "@/pages/CompanyCreditNotes";
 import CompanyReceipts from "@/pages/CompanyReceipts";
@@ -62,6 +63,7 @@ function AppContent() {
         {route.page === "products" && <CompanyProducts />}
         {route.page === "stores" && <CompanyStores />}
         {route.page === "sales" && <CompanySales />}
+        {route.page === "purchase-orders" && <CompanyPurchaseOrders />}
         {route.page === "staff-management" && <CompanyStaffManagement />}
         {route.page === "credit-notes" && <CompanyCreditNotes />}
         {route.page === "receipts" && <CompanyReceipts />}

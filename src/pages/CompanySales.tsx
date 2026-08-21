@@ -20,7 +20,13 @@ import {
 
 type TaxType = "Tamilnadu (SGST + CGST)" | "Others (IGST)";
 
-type SaleRow = CompanyStoreSaleRecord;
+type SaleRow = CompanyStoreSaleRecord & {
+  through?: string;
+  discount?: number;
+  pkgsize?: string;
+  batchNo?: string;
+  expiryDate?: string;
+};
 
 type AddedRow = {
   key: string;
@@ -90,6 +96,20 @@ export default function CompanySales() {
     header: SaleRow;
     rows: SaleRow[];
   } | null>(null);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [editingInvoiceNo, setEditingInvoiceNo] = useState<string | null>(null);
+  const [purchaseStatuses, setPurchaseStatuses] = useState<
+    Record<string, "Dispatched" | "Received">
+  >(() => {
+    try {
+      const raw = localStorage.getItem(
+        "nature-biotic-store-purchase-status-v1",
+      );
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
   const [invoiceNo, setInvoiceNo] = useState("");
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
@@ -99,6 +119,10 @@ export default function CompanySales() {
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
   const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
+  const [throughType, setThroughType] = useState<"Direct" | "Executive">(
+    "Direct",
+  );
+  const [executiveName, setExecutiveName] = useState("");
 
   const selectedStore = stores.find((s) => s.id === storeId);
   const entryProduct = allProducts.find((p) => p.id === entry.productId);
@@ -113,6 +137,33 @@ export default function CompanySales() {
       };
     }
   }, [showCreate]);
+
+  useEffect(() => {
+    const refreshPurchaseStatuses = () => {
+      try {
+        const raw = localStorage.getItem(
+          "nature-biotic-store-purchase-status-v1",
+        );
+        setPurchaseStatuses(raw ? JSON.parse(raw) : {});
+      } catch {
+        setPurchaseStatuses({});
+      }
+    };
+
+    window.addEventListener("focus", refreshPurchaseStatuses);
+    window.addEventListener(
+      "store-purchase-status-updated",
+      refreshPurchaseStatuses,
+    );
+
+    return () => {
+      window.removeEventListener("focus", refreshPurchaseStatuses);
+      window.removeEventListener(
+        "store-purchase-status-updated",
+        refreshPurchaseStatuses,
+      );
+    };
+  }, []);
 
   const filtered = useMemo(
     () =>
@@ -236,6 +287,131 @@ export default function CompanySales() {
     });
   }
 
+  function invoiceIsLocked(invoiceNo: string) {
+    return purchaseStatuses[invoiceNo] === "Received";
+  }
+
+  function buildFormRows(): SaleRow[] | null {
+    if (!storeId || !invoiceNo || added.length === 0) return null;
+
+    const store = stores.find((s) => s.id === storeId);
+    if (!store) return null;
+
+    return added.map((r, i) => {
+      const withoutTax = Math.max(0, r.quantity * r.sellingPrice - r.discount);
+      const taxAmount =
+        Math.round(withoutTax * (r.taxPercent / 100) * 100) / 100;
+      const isTamilNadu = placeOfSupply === "Tamil Nadu";
+      const sgst = isTamilNadu ? Math.round((taxAmount / 2) * 100) / 100 : 0;
+      const cgst = isTamilNadu ? Math.round((taxAmount / 2) * 100) / 100 : 0;
+      const igst = !isTamilNadu ? taxAmount : 0;
+
+      return {
+        id: `preview-${i}`,
+        invoiceNo,
+        date: saleDate,
+        storeId: store.id,
+        storeName: store.name,
+        storeLocation: store.location,
+        placeOfSupply,
+        through:
+          throughType === "Executive"
+            ? executiveName.trim() || "Executive"
+            : "Direct",
+        product: r.product?.name || "",
+        packSize: r.packSize,
+        pkgsize: r.pkgsize,
+        batchNo: r.batchNo,
+        expiryDate: r.expiryDate,
+        quantity: r.quantity,
+        rate: r.sellingPrice,
+        discount: r.discount,
+        withoutTax,
+        taxAmount,
+        sgst,
+        cgst,
+        igst,
+        total: Math.round((withoutTax + taxAmount) * 100) / 100,
+      };
+    });
+  }
+
+  function handlePreview() {
+    if (!canCreate) return;
+
+    const previewRows = buildFormRows();
+    if (!previewRows?.length) return;
+
+    setSelectedInvoice({
+      header: previewRows[0],
+      rows: previewRows,
+    });
+    setIsPreviewMode(true);
+    setShowCreate(false);
+  }
+
+  function closeInvoiceView() {
+    setSelectedInvoice(null);
+
+    if (isPreviewMode) {
+      setIsPreviewMode(false);
+      setShowCreate(true);
+    }
+  }
+
+  function openEditInvoice(invoice: { header: SaleRow; rows: SaleRow[] }) {
+    if (invoiceIsLocked(invoice.header.invoiceNo)) return;
+
+    const header = invoice.header;
+
+    setEditingInvoiceNo(header.invoiceNo);
+    setInvoiceNo(header.invoiceNo);
+    setSaleDate(header.date);
+    setStoreId(header.storeId);
+    setPlaceOfSupply(header.placeOfSupply || "Tamil Nadu");
+
+    if ((header.through || "Direct") === "Direct") {
+      setThroughType("Direct");
+      setExecutiveName("");
+    } else {
+      setThroughType("Executive");
+      setExecutiveName(header.through || "");
+    }
+
+    const nextAdded: AddedRow[] = invoice.rows.map((row, index) => {
+      const product = allProducts.find((p) => p.name === row.product);
+      const taxType: TaxType =
+        (row.placeOfSupply || "Tamil Nadu") === "Tamil Nadu"
+          ? "Tamilnadu (SGST + CGST)"
+          : "Others (IGST)";
+
+      return {
+        key: `edit-${index}-${Date.now()}`,
+        productId: product?.id || "",
+        pkgsize: row.pkgsize || row.packSize || product?.size || "",
+        product,
+        batchNo: row.batchNo || "",
+        expiryDate: row.expiryDate || "",
+        packSize: row.packSize || product?.size || "",
+        hsn: product?.hsnCode || "",
+        mrp: product?.mrp || 0,
+        taxType,
+        taxPercent: product?.taxPercentage || 0,
+        quantity: row.quantity,
+        sellingPrice: row.rate,
+        discount: row.discount || 0,
+        taxAmount: row.taxAmount,
+        rowTotal: row.total,
+      };
+    });
+
+    setAdded(nextAdded);
+    setRemarks("");
+    setSelectedInvoice(null);
+    setIsPreviewMode(false);
+    setShowCreate(true);
+  }
+
   function resetForm() {
     setInvoiceNo("");
     setSaleDate(new Date().toISOString().split("T")[0]);
@@ -243,6 +419,9 @@ export default function CompanySales() {
     setRemarks("");
     setEntry(emptyEntry());
     setAdded([]);
+    setThroughType("Direct");
+    setExecutiveName("");
+    setEditingInvoiceNo(null);
   }
 
   function closeForm() {
@@ -255,49 +434,30 @@ export default function CompanySales() {
   }
 
   function handleCreate() {
-    if (!storeId || !invoiceNo || added.length === 0) return;
+    if (!canCreate) return;
 
-    const store = stores.find((s) => s.id === storeId);
+    if (editingInvoiceNo && invoiceIsLocked(editingInvoiceNo)) {
+      window.alert(
+        "This invoice has already been received by the store and can no longer be edited.",
+      );
+      return;
+    }
 
-    if (!store) return;
+    const builtRows = buildFormRows();
+    if (!builtRows?.length) return;
 
-    const newRows: SaleRow[] = added.map((r, i) => {
-      const withoutTax = Math.max(0, r.quantity * r.sellingPrice - r.discount);
+    const newRows: SaleRow[] = builtRows.map((row, i) => ({
+      ...row,
+      id: editingInvoiceNo
+        ? `${editingInvoiceNo}-edit-${Date.now()}-${i}`
+        : `s${sales.length + i}-${Date.now()}`,
+    }));
 
-      const taxAmount =
-        Math.round(withoutTax * (r.taxPercent / 100) * 100) / 100;
+    const remainingSales = editingInvoiceNo
+      ? sales.filter((row) => row.invoiceNo !== editingInvoiceNo)
+      : sales;
 
-      const isTamilNadu = placeOfSupply === "Tamil Nadu";
-
-      const sgst = isTamilNadu ? Math.round((taxAmount / 2) * 100) / 100 : 0;
-
-      const cgst = isTamilNadu ? Math.round((taxAmount / 2) * 100) / 100 : 0;
-
-      const igst = !isTamilNadu ? taxAmount : 0;
-
-      return {
-        id: `s${sales.length + i}`,
-        invoiceNo,
-        date: saleDate,
-        storeId: store.id,
-        storeName: store.name,
-        storeLocation: store.location,
-        placeOfSupply,
-        product: r.product?.name || "",
-        packSize: r.packSize,
-        quantity: r.quantity,
-        rate: r.sellingPrice,
-        withoutTax,
-        taxAmount,
-        sgst,
-        cgst,
-        igst,
-
-        total: Math.round((withoutTax + taxAmount) * 100) / 100,
-      };
-    });
-
-    const nextSales = [...newRows, ...sales];
+    const nextSales = [...newRows, ...remainingSales];
     setSales(nextSales);
     saveCompanyStoreSales(nextSales);
 
@@ -311,7 +471,11 @@ export default function CompanySales() {
     !!entry.batchNo &&
     !!entry.expiryDate &&
     entry.quantity >= 1;
-  const canCreate = !!storeId && !!invoiceNo && added.length > 0;
+  const canCreate =
+    !!storeId &&
+    !!invoiceNo &&
+    added.length > 0 &&
+    (throughType === "Direct" || !!executiveName.trim());
 
   return (
     <div>
@@ -385,9 +549,16 @@ export default function CompanySales() {
 
                   <th
                     rowSpan={2}
-                    className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[12%] text-center font-semibold px-2 py-3 border-r border-slate-200"
                   >
                     Invoice No
+                  </th>
+
+                  <th
+                    rowSpan={2}
+                    className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                  >
+                    Through
                   </th>
 
                   <th
@@ -395,13 +566,6 @@ export default function CompanySales() {
                     className="w-[17%] text-center font-semibold px-2 py-3 border-r border-slate-200"
                   >
                     Store Name
-                  </th>
-
-                  <th
-                    rowSpan={2}
-                    className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                  >
-                    Place of Supply
                   </th>
 
                   <th
@@ -463,11 +627,11 @@ export default function CompanySales() {
                     </td>
 
                     <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
-                      {s.storeName}
+                      {s.through || "Direct"}
                     </td>
 
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
-                      {s.placeOfSupply || "-"}
+                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
+                      {s.storeName}
                     </td>
 
                     <td className="px-2 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
@@ -500,202 +664,320 @@ export default function CompanySales() {
       {selectedInvoice &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="flex max-h-[94vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
-                    Tax Invoice
+                    Invoice
                   </p>
                   <h2 className="mt-1 text-xl font-bold text-slate-800">
                     {selectedInvoice.header.invoiceNo}
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Nature Biotic → {selectedInvoice.header.storeName}
-                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {isPreviewMode ? (
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                        Preview
+                      </span>
+                    ) : invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                        Store Received · Locked
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                        Editable until Store Received
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setSelectedInvoice(null)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+                  onClick={closeInvoiceView}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
                 >
                   <Icon name="close" size={20} />
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
-                <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <InvoiceInfo
-                    label="Invoice No"
-                    value={selectedInvoice.header.invoiceNo}
-                  />
-                  <InvoiceInfo
-                    label="Date"
-                    value={formatDate(selectedInvoice.header.date)}
-                  />
-                  <InvoiceInfo
-                    label="Party Name"
-                    value={selectedInvoice.header.storeName}
-                  />
-                  <InvoiceInfo
-                    label="Place of Supply"
-                    value={selectedInvoice.header.placeOfSupply || "-"}
-                  />
-                  <InvoiceInfo
-                    label="Store Location"
-                    value={selectedInvoice.header.storeLocation || "-"}
-                  />
-                  <InvoiceInfo
-                    label="Products"
-                    value={String(selectedInvoice.rows.length)}
-                  />
-                  <InvoiceInfo
-                    label="Total Quantity"
-                    value={String(
-                      selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.quantity || 0),
-                        0,
-                      ),
-                    )}
-                  />
-                  <InvoiceInfo
-                    label="Invoice Value"
-                    value={formatCurrency(
-                      selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.total || 0),
-                        0,
-                      ),
-                    )}
-                  />
-                </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-2 border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-xl bg-white">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
 
-                <div className="overflow-hidden rounded-2xl border border-slate-200">
-                  <table className="w-full table-fixed text-sm">
+                        <div>
+                          <p className="text-sm font-extrabold text-slate-900">
+                            NATURE BIOTIC
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Rajapalayam, Tamil Nadu
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center p-5">
+                      <h3 className="text-2xl font-bold text-slate-900">
+                        Invoice
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-4 text-sm">
+                      <p>
+                        <span className="inline-block w-32 font-medium">
+                          Invoice No
+                        </span>
+                        : {selectedInvoice.header.invoiceNo}
+                      </p>
+
+                      <p className="mt-2">
+                        <span className="inline-block w-32 font-medium">
+                          Invoice Date
+                        </span>
+                        : {formatDate(selectedInvoice.header.date)}
+                      </p>
+                    </div>
+
+                    <div className="p-4 text-sm">
+                      <p>
+                        <span className="inline-block w-32 font-medium">
+                          Through
+                        </span>
+                        : {selectedInvoice.header.through || "Direct"}
+                      </p>
+
+                      <p className="mt-2">
+                        <span className="inline-block w-32 font-medium">
+                          Place of Supply
+                        </span>
+                        : {selectedInvoice.header.placeOfSupply || "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-4 text-sm">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Billed By
+                      </p>
+                      <p className="mt-2 font-bold text-slate-900">
+                        Nature Biotic
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        Rajapalayam, Tamil Nadu
+                      </p>
+                    </div>
+
+                    <div className="p-4 text-sm">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Billed To
+                      </p>
+                      <p className="mt-2 font-bold text-slate-900">
+                        {selectedInvoice.header.storeName}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        {selectedInvoice.header.storeLocation || "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <table className="w-full table-fixed border-collapse text-sm">
                     <thead>
-                      <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                        <th className="w-[6%] px-2 py-3 text-center">S.No</th>
-                        <th className="w-[19%] px-3 py-3 text-left">Product</th>
-                        <th className="w-[11%] px-2 py-3 text-center">
-                          Pack Size
+                      <tr className="border-b border-slate-300 bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                        <th className="w-[6%] border-r border-slate-300 px-2 py-3 text-center">
+                          S.No
                         </th>
-                        <th className="w-[9%] px-2 py-3 text-right">Qty</th>
-                        <th className="w-[11%] px-2 py-3 text-right">Rate</th>
-                        <th className="w-[12%] px-2 py-3 text-right">
-                          Without Tax
+                        <th className="w-[20%] border-r border-slate-300 px-3 py-3 text-left">
+                          Product
                         </th>
-                        <th className="w-[8%] px-2 py-3 text-right">SGST</th>
-                        <th className="w-[8%] px-2 py-3 text-right">CGST</th>
-                        <th className="w-[8%] px-2 py-3 text-right">IGST</th>
-                        <th className="w-[8%] px-2 py-3 text-right">Total</th>
+                        <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-center">
+                          Pack
+                        </th>
+                        <th className="w-[8%] border-r border-slate-300 px-2 py-3 text-right">
+                          Qty
+                        </th>
+                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-right">
+                          Rate
+                        </th>
+                        <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-right">
+                          Discount
+                        </th>
+                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-right">
+                          Taxable
+                        </th>
+                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-right">
+                          SGST
+                        </th>
+                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-right">
+                          CGST
+                        </th>
+                        <th className="w-[10%] px-3 py-3 text-right">Total</th>
                       </tr>
                     </thead>
 
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody>
                       {selectedInvoice.rows.map((row, index) => (
-                        <tr key={row.id}>
-                          <td className="px-2 py-3 text-center text-slate-500">
+                        <tr key={row.id} className="border-b border-slate-200">
+                          <td className="border-r border-slate-300 px-2 py-4 text-center">
                             {index + 1}
                           </td>
-                          <td className="px-3 py-3 font-semibold text-slate-800">
+
+                          <td className="border-r border-slate-300 px-3 py-4 font-semibold text-slate-800">
                             {row.product || "-"}
                           </td>
-                          <td className="px-2 py-3 text-center text-slate-600">
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-center text-slate-600">
                             {row.packSize || "-"}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums">
                             {row.quantity}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums">
                             {formatCurrency(row.rate)}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums text-red-600">
+                            {formatCurrency(row.discount || 0)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums">
                             {formatCurrency(row.withoutTax)}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums text-slate-600">
                             {formatCurrency(row.sgst)}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
+
+                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums text-slate-600">
                             {formatCurrency(row.cgst)}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
-                            {formatCurrency(row.igst)}
-                          </td>
-                          <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+
+                          <td className="px-3 py-4 text-right font-bold tabular-nums text-slate-900">
                             {formatCurrency(row.total)}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
 
-                <div className="mt-5 ml-auto w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                  <h3 className="mb-3 text-sm font-bold text-slate-800">
-                    Invoice Summary
-                  </h3>
+                  <div className="grid grid-cols-1 border-t border-slate-300 lg:grid-cols-[1fr_380px]">
+                    <div className="border-b border-slate-300 p-5 lg:border-b-0 lg:border-r">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Notes
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        This invoice is generated for goods supplied by Nature
+                        Biotic to the registered store shown above.
+                      </p>
+                    </div>
 
-                  <div className="space-y-2 text-sm">
-                    <SummaryRow
-                      label="Without Tax"
-                      value={formatCurrency(
-                        selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.withoutTax || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <SummaryRow
-                      label="SGST"
-                      value={formatCurrency(
-                        selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.sgst || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <SummaryRow
-                      label="CGST"
-                      value={formatCurrency(
-                        selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.cgst || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <SummaryRow
-                      label="IGST"
-                      value={formatCurrency(
-                        selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.igst || 0),
-                          0,
-                        ),
-                      )}
-                    />
+                    <div className="p-5">
+                      <div className="space-y-2.5 text-sm">
+                        <SummaryRow
+                          label="Without Tax"
+                          value={formatCurrency(
+                            selectedInvoice.rows.reduce(
+                              (sum, row) => sum + Number(row.withoutTax || 0),
+                              0,
+                            ),
+                          )}
+                        />
 
-                    <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
-                      <span className="font-bold text-slate-800">
-                        Grand Total
-                      </span>
-                      <span className="text-lg font-bold text-brand-700">
-                        {formatCurrency(
-                          selectedInvoice.rows.reduce(
-                            (sum, row) => sum + Number(row.total || 0),
-                            0,
-                          ),
-                        )}
-                      </span>
+                        <SummaryRow
+                          label="Discount"
+                          value={formatCurrency(
+                            selectedInvoice.rows.reduce(
+                              (sum, row) => sum + Number(row.discount || 0),
+                              0,
+                            ),
+                          )}
+                        />
+
+                        <SummaryRow
+                          label="SGST"
+                          value={formatCurrency(
+                            selectedInvoice.rows.reduce(
+                              (sum, row) => sum + Number(row.sgst || 0),
+                              0,
+                            ),
+                          )}
+                        />
+
+                        <SummaryRow
+                          label="CGST"
+                          value={formatCurrency(
+                            selectedInvoice.rows.reduce(
+                              (sum, row) => sum + Number(row.cgst || 0),
+                              0,
+                            ),
+                          )}
+                        />
+
+                        <SummaryRow
+                          label="IGST"
+                          value={formatCurrency(
+                            selectedInvoice.rows.reduce(
+                              (sum, row) => sum + Number(row.igst || 0),
+                              0,
+                            ),
+                          )}
+                        />
+
+                        <div className="mt-4 flex items-center justify-between border-t border-slate-300 pt-4">
+                          <span className="font-bold text-slate-900">
+                            Grand Total
+                          </span>
+                          <span className="text-xl font-extrabold text-brand-700">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.total || 0),
+                                0,
+                              ),
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end border-t border-slate-300 p-5">
+                    <div className="w-56 text-center">
+                      <div className="h-12 border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => setSelectedInvoice(null)}
-                >
+                <Button variant="secondary" onClick={closeInvoiceView}>
                   Close
                 </Button>
+
+                {!isPreviewMode &&
+                  !invoiceIsLocked(selectedInvoice.header.invoiceNo) && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => openEditInvoice(selectedInvoice)}
+                    >
+                      <Icon name="edit" size={18} />
+                      Edit Invoice
+                    </Button>
+                  )}
+
                 <Button onClick={() => window.print()}>
                   <Icon name="print" size={18} />
                   Print Invoice
@@ -715,10 +997,12 @@ export default function CompanySales() {
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">
-                    Create Store Sale
+                    {editingInvoiceNo ? "Edit Invoice" : "Create Store Sale"}
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Create a new Nature Biotic sale for a registered store
+                    {editingInvoiceNo
+                      ? "Update the invoice before the store receives it."
+                      : "Create a new Nature Biotic sale for a registered store"}
                   </p>
                 </div>
                 <button
@@ -749,8 +1033,31 @@ export default function CompanySales() {
                       value={invoiceNo}
                       onChange={setInvoiceNo}
                       placeholder="e.g. NB-INV-2050"
+                      readOnly={!!editingInvoiceNo}
                       required
                     />
+                    <Select
+                      label="Through"
+                      value={throughType}
+                      onChange={(value) => {
+                        setThroughType(value as "Direct" | "Executive");
+                        if (value === "Direct") setExecutiveName("");
+                      }}
+                      options={[
+                        { value: "Direct", label: "Direct" },
+                        { value: "Executive", label: "Executive" },
+                      ]}
+                    />
+
+                    {throughType === "Executive" && (
+                      <Input
+                        label="Executive Name"
+                        value={executiveName}
+                        onChange={setExecutiveName}
+                        placeholder="Enter executive name"
+                        required
+                      />
+                    )}
                     <Select
                       label="Select Store"
                       value={storeId}
@@ -1164,9 +1471,19 @@ export default function CompanySales() {
                 <Button variant="secondary" onClick={handleSaveDraft}>
                   Save Draft
                 </Button>
+
+                <Button
+                  variant="secondary"
+                  onClick={handlePreview}
+                  disabled={!canCreate}
+                >
+                  <Icon name="visibility" size={18} />
+                  Preview
+                </Button>
+
                 <Button onClick={handleCreate} disabled={!canCreate}>
                   <Icon name="check_circle" size={18} />
-                  Create Invoice
+                  {editingInvoiceNo ? "Update Invoice" : "Create Invoice"}
                 </Button>
               </div>
             </div>

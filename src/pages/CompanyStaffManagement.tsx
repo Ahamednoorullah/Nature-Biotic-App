@@ -1,13 +1,20 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { staff as staffSeed, stores, Staff } from "@/lib/data";
+import { staff as staffSeed, stores, type Staff } from "@/lib/data";
 import { formatCurrency } from "@/lib/format";
+
+type StaffWithProfile = Staff & {
+  familyRelation?: string;
+  profileImage?: string;
+};
 
 type StaffForm = {
   name: string;
   phone: string;
   alternativePhone: string;
+  familyRelation: string;
+  profileImage: string;
   email: string;
   dob: string;
   bloodGroup: string;
@@ -28,6 +35,8 @@ const emptyForm: StaffForm = {
   name: "",
   phone: "",
   alternativePhone: "",
+  familyRelation: "",
+  profileImage: "",
   email: "",
   dob: "",
   bloodGroup: "",
@@ -54,48 +63,113 @@ const designationOptions = [
   "HR",
   "Designer",
 ];
+
 const bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+
+const familyRelations = [
+  "Mother",
+  "Father",
+  "Brother",
+  "Sister",
+  "Guardian",
+  "Other",
+];
 
 function calculateAge(dob: string) {
   if (!dob) return 0;
-  const b = new Date(`${dob}T00:00:00`),
-    t = new Date();
-  let a = t.getFullYear() - b.getFullYear();
-  const m = t.getMonth() - b.getMonth();
-  if (m < 0 || (m === 0 && t.getDate() < b.getDate())) a--;
-  return Math.max(a, 0);
+
+  const birthDate = new Date(`${dob}T00:00:00`);
+  const today = new Date();
+
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const month = today.getMonth() - birthDate.getMonth();
+
+  if (month < 0 || (month === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+
+  return Math.max(age, 0);
 }
 
 export default function CompanyStaffManagement() {
-  const [staffList, setStaffList] = useState<Staff[]>(staffSeed);
+  const [staffList, setStaffList] = useState<StaffWithProfile[]>(
+    staffSeed as StaffWithProfile[],
+  );
   const [showAdd, setShowAdd] = useState(false);
-  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
-  const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<StaffWithProfile | null>(
+    null,
+  );
+  const [editingStaff, setEditingStaff] = useState<StaffWithProfile | null>(
+    null,
+  );
   const [form, setForm] = useState<StaffForm>(emptyForm);
+
   const age = useMemo(() => calculateAge(form.dob), [form.dob]);
+  const profileImageRef = useRef<HTMLInputElement | null>(null);
 
   function update<K extends keyof StaffForm>(key: K, value: StaffForm[K]) {
-    setForm((p) => ({ ...p, [key]: value }));
+    setForm((prev) => ({ ...prev, [key]: value }));
   }
+
+  function storeName(id: string) {
+    return stores.find((store) => store.id === id)?.name ?? "-";
+  }
+
+  function storeLocation(id: string) {
+    return stores.find((store) => store.id === id)?.location ?? "-";
+  }
+
+  function handleProfileImage(file?: File) {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      window.alert("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert("Profile image must be 2 MB or less.");
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+
+      setForm((prev) => ({
+        ...prev,
+        profileImage: result,
+        profileImageName: file.name,
+      }));
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  function openCreate() {
+    setEditingStaff(null);
+    setSelectedStaff(null);
+    setForm(emptyForm);
+    setShowAdd(true);
+  }
+
   function closeAdd() {
     setShowAdd(false);
     setEditingStaff(null);
     setForm(emptyForm);
   }
-  function storeName(id: string) {
-    return stores.find((s) => s.id === id)?.name ?? "-";
-  }
-  function storeLocation(id: string) {
-    return stores.find((s) => s.id === id)?.location ?? "-";
-  }
 
-  function openEdit(member: Staff) {
+  function openEdit(member: StaffWithProfile) {
     setEditingStaff(member);
     setSelectedStaff(null);
+
     setForm({
       name: member.name,
       phone: member.phone,
-      alternativePhone: member.alternativePhone,
+      alternativePhone: member.alternativePhone ?? "",
+      familyRelation: member.familyRelation ?? "",
+      profileImage: member.profileImage ?? "",
       email: member.email,
       dob: member.dob,
       bloodGroup: member.bloodGroup,
@@ -111,6 +185,7 @@ export default function CompanyStaffManagement() {
       targetFarms: String(member.targetFarms),
       targetVisits: String(member.targetVisits),
     });
+
     setShowAdd(true);
   }
 
@@ -137,12 +212,15 @@ export default function CompanyStaffManagement() {
       window.alert(`Please fill: ${missingRequiredFields.join(", ")}`);
       return;
     }
-    const member: Staff = {
+
+    const member: StaffWithProfile = {
       id: editingStaff?.id ?? `st-${Date.now()}`,
       storeId: form.storeId,
       name: form.name,
       phone: form.phone,
       alternativePhone: form.alternativePhone,
+      familyRelation: form.familyRelation,
+      profileImage: form.profileImage,
       email: form.email,
       dob: form.dob,
       age,
@@ -160,11 +238,13 @@ export default function CompanyStaffManagement() {
       role: form.designation,
       status: editingStaff?.status ?? "Active",
     };
-    setStaffList((p) =>
+
+    setStaffList((prev) =>
       editingStaff
-        ? p.map((x) => (x.id === editingStaff.id ? member : x))
-        : [...p, member],
+        ? prev.map((item) => (item.id === editingStaff.id ? member : item))
+        : [...prev, member],
     );
+
     closeAdd();
   }
 
@@ -179,67 +259,104 @@ export default function CompanyStaffManagement() {
             Manage staff, store assignments, levels and targets.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditingStaff(null);
-            setForm(emptyForm);
-            setShowAdd(true);
-          }}
-        >
-          <Icon name="add" size={20} fill /> Add Staff
+
+        <Button onClick={openCreate}>
+          <Icon name="add" size={20} fill />
+          Add Staff
         </Button>
       </div>
 
       <Card className="overflow-hidden p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] border-collapse text-sm">
+        <div className="w-full overflow-hidden">
+          <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
             <thead>
-              <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
-                {[
-                  "S.No",
-                  "Profile",
-                  "Staff Name",
-                  "Phone",
-                  "Designation",
-                  "Assigned Store",
-                  "Location",
-                  "Level",
-                  "DOJ",
-                  "View",
-                ].map((h) => (
-                  <th key={h} className="px-3 py-3 text-left font-semibold border-r border">
-                    {h}
-                  </th>
-                ))}
+              <tr className="border-b-2 border-slate-200 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500 xl:text-xs">
+                <th className="w-[4%] border-r border-slate-200 px-2 py-3 text-center">
+                  S.No
+                </th>
+                <th className="w-[7%] border-r border-slate-200 px-2 py-3 text-center">
+                  Profile
+                </th>
+                <th className="w-[15%] border-r border-slate-200 px-2 py-3 text-left">
+                  Staff Name
+                </th>
+                <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-left">
+                  Phone
+                </th>
+                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-left">
+                  Designation
+                </th>
+                <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-left">
+                  Assigned Store
+                </th>
+                <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-left">
+                  Location
+                </th>
+                <th className="w-[3%] border-r border-slate-200 px-2 py-3 text-center">
+                  Level
+                </th>
+                <th className="w-[8%] px-2 py-3 text-center">DOJ</th>
               </tr>
             </thead>
+
             <tbody className="divide-y divide-slate-100">
-              {staffList.map((m, i) => (
-                <tr key={m.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-3 border-r border">{i + 1}</td>
-                  <td className="px-3 py-3 border-r border">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 font-bold border-r border text-brand-700">
-                      {m.name
-                        .split(" ")
-                        .map((x) => x[0])
-                        .join("")
-                        .slice(0, 2)}
+              {staffList.map((member, index) => (
+                <tr
+                  key={member.id}
+                  onClick={() => setSelectedStaff(member)}
+                  title="Click to view staff details"
+                  className="cursor-pointer transition hover:bg-brand-50/40"
+                >
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    {index + 1}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    <div className="flex justify-center">
+                      {member.profileImage ? (
+                        <img
+                          src={member.profileImage}
+                          alt={member.name}
+                          className="h-10 w-10 rounded-xl border border-slate-200 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 font-bold text-brand-700">
+                          {member.name
+                            .split(" ")
+                            .map((part) => part[0])
+                            .join("")
+                            .slice(0, 2)}
+                        </div>
+                      )}
                     </div>
                   </td>
-                  <td className="px-3 py-3 font-semibold border-r border">{m.name}</td>
-                  <td className="px-3 py-3 border-r border">{m.phone}</td>
-                  <td className="px-3 py-3 border-r border">{m.designation}</td>
-                  <td className="px-3 py-3 border-r border">{storeName(m.storeId)}</td>
-                  <td className="px-3 py-3 border-r border">{storeLocation(m.storeId)}</td>
-                  <td className="px-3 py-3 border-r border">{m.level}</td>
-                  <td className="px-3 py-3 border-r border">{m.joinedDate}</td>
-                  <td className="px-3 py-3 border-r border">
-                    <button
-                      onClick={() => setSelectedStaff(m)}
-                      className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200"
-                    >
-                      <Icon name="visibility" size={17} />
-                    </button>
+
+                  <td className="truncate border-r border-slate-100 px-2 py-3 font-semibold">
+                    {member.name}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3">
+                    {member.phone}
+                  </td>
+
+                  <td className="truncate border-r border-slate-100 px-2 py-3">
+                    {member.designation}
+                  </td>
+
+                  <td className="truncate border-r border-slate-100 px-2 py-3">
+                    {storeName(member.storeId)}
+                  </td>
+
+                  <td className="truncate border-r border-slate-100 px-2 py-3">
+                    {storeLocation(member.storeId)}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    {member.level}
+                  </td>
+
+                  <td className="px-2 py-3 text-center text-[11px]">
+                    {member.joinedDate}
                   </td>
                 </tr>
               ))}
@@ -263,73 +380,182 @@ export default function CompanyStaffManagement() {
                       : "Enter personal, employment and target details."}
                   </p>
                 </div>
-                <button onClick={closeAdd}>
+
+                <button
+                  type="button"
+                  onClick={closeAdd}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-white"
+                >
                   <Icon name="close" size={19} />
                 </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6">
+
+              <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
                 <section>
                   <h3 className="mb-4 text-sm font-bold uppercase text-slate-500">
                     Personal Information
                   </h3>
+
+                  <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+                    <input
+                      ref={profileImageRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={(event) =>
+                        handleProfileImage(event.target.files?.[0])
+                      }
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => profileImageRef.current?.click()}
+                      className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-white"
+                    >
+                      {form.profileImage ? (
+                        <img
+                          src={form.profileImage}
+                          alt="Staff preview"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <Icon
+                          name="add_a_photo"
+                          size={30}
+                          className="text-slate-400"
+                        />
+                      )}
+                    </button>
+
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-700">
+                        Profile Image
+                      </p>
+                      <p className="mt-1 truncate text-xs text-slate-400">
+                        {form.profileImageName || "JPG, PNG or WEBP up to 2MB"}
+                      </p>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => profileImageRef.current?.click()}
+                        >
+                          <Icon name="upload" size={16} />
+                          {form.profileImage ? "Change Image" : "Choose Image"}
+                        </Button>
+
+                        {form.profileImage && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                profileImage: "",
+                                profileImageName: "",
+                              }))
+                            }
+                          >
+                            <Icon name="delete" size={16} />
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
                     <Input
                       label="Name"
                       value={form.name}
-                      onChange={(v) => update("name", v)}
+                      onChange={(value) => update("name", value)}
                       required
                     />
+
                     <Input
                       label="Phone Number"
                       value={form.phone}
-                      onChange={(v) => update("phone", v)}
+                      onChange={(value) => update("phone", value)}
                       required
                     />
-                    <Input
-                      label="Alternative Number"
-                      value={form.alternativePhone}
-                      onChange={(v) => update("alternativePhone", v)}
-                    />
+
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                        Family Contact
+                      </label>
+
+                      <div className="grid grid-cols-[1fr_145px] gap-2">
+                        <Input
+                          value={form.alternativePhone}
+                          onChange={(value) =>
+                            update("alternativePhone", value)
+                          }
+                          placeholder="Family number"
+                        />
+
+                        <Select
+                          value={form.familyRelation}
+                          onChange={(value) => update("familyRelation", value)}
+                          placeholder="Relation"
+                          options={familyRelations.map((relation) => ({
+                            value: relation,
+                            label: relation,
+                          }))}
+                        />
+                      </div>
+                    </div>
+
                     <Input
                       label="Email ID"
                       type="email"
                       value={form.email}
-                      onChange={(v) => update("email", v)}
+                      onChange={(value) => update("email", value)}
                       required
                     />
+
                     <Input
                       label="DOB"
                       type="date"
                       value={form.dob}
-                      onChange={(v) => update("dob", v)}
+                      onChange={(value) => update("dob", value)}
                       required
                     />
+
                     <Input
                       label="Age"
                       value={age ? String(age) : ""}
                       onChange={() => {}}
                       placeholder="Auto calculated"
                     />
+
                     <Select
                       label="Blood Group"
                       value={form.bloodGroup}
                       placeholder="Select Blood Group"
-                      onChange={(v) => update("bloodGroup", v)}
-                      options={bloodGroups.map((x) => ({ value: x, label: x }))}
+                      onChange={(value) => update("bloodGroup", value)}
+                      options={bloodGroups.map((group) => ({
+                        value: group,
+                        label: group,
+                      }))}
                       required
                     />
+
                     <Input
                       label="Date of Joining"
                       type="date"
                       value={form.joinedDate}
-                      onChange={(v) => update("joinedDate", v)}
+                      onChange={(value) => update("joinedDate", value)}
                       required
                     />
+
                     <div className="md:col-span-2 xl:col-span-4">
                       <Input
                         label="Address"
                         value={form.address}
-                        onChange={(v) => update("address", v)}
+                        onChange={(value) => update("address", value)}
                       />
                     </div>
                   </div>
@@ -337,20 +563,15 @@ export default function CompanyStaffManagement() {
 
                 <section className="border-t pt-6">
                   <h3 className="mb-4 text-sm font-bold uppercase text-slate-500">
-                    Documents & Profile
+                    Documents
                   </h3>
+
                   <div className="grid gap-5 md:grid-cols-2">
                     <UploadField
                       label="Proof ID"
                       accept=".pdf,.jpg,.jpeg,.png"
                       fileName={form.proofIdName}
-                      onFile={(n) => update("proofIdName", n)}
-                    />
-                    <UploadField
-                      label="Profile Image"
-                      accept="image/*"
-                      fileName={form.profileImageName}
-                      onFile={(n) => update("profileImageName", n)}
+                      onFile={(name) => update("proofIdName", name)}
                     />
                   </div>
                 </section>
@@ -359,37 +580,40 @@ export default function CompanyStaffManagement() {
                   <h3 className="mb-4 text-sm font-bold uppercase text-slate-500">
                     Employment Information
                   </h3>
+
                   <div className="grid gap-5 md:grid-cols-3">
                     <Select
                       label="Designation"
                       value={form.designation}
                       placeholder="Select Designation"
-                      onChange={(v) => update("designation", v)}
-                      options={designationOptions.map((x) => ({
-                        value: x,
-                        label: x,
+                      onChange={(value) => update("designation", value)}
+                      options={designationOptions.map((designation) => ({
+                        value: designation,
+                        label: designation,
                       }))}
                       required
                     />
+
                     <Select
                       label="Assign Store"
                       value={form.storeId}
                       placeholder="Select Store"
-                      onChange={(v) => update("storeId", v)}
-                      options={stores.map((s) => ({
-                        value: s.id,
-                        label: s.name,
+                      onChange={(value) => update("storeId", value)}
+                      options={stores.map((store) => ({
+                        value: store.id,
+                        label: store.name,
                       }))}
                       required
                     />
+
                     <Select
                       label="Level"
                       value={form.level}
                       placeholder="Select Level"
-                      onChange={(v) => update("level", v)}
-                      options={["1", "2", "3", "4"].map((x) => ({
-                        value: x,
-                        label: `Level ${x}`,
+                      onChange={(value) => update("level", value)}
+                      options={["1", "2", "3", "4"].map((level) => ({
+                        value: level,
+                        label: `Level ${level}`,
                       }))}
                       required
                     />
@@ -400,44 +624,50 @@ export default function CompanyStaffManagement() {
                   <h3 className="mb-4 text-sm font-bold uppercase text-slate-500">
                     Targets
                   </h3>
+
                   <div className="grid gap-5 md:grid-cols-4">
                     <Input
                       label="Sales Target"
                       type="number"
                       value={form.targetSales}
-                      onChange={(v) => update("targetSales", v)}
+                      onChange={(value) => update("targetSales", value)}
                       required
                     />
+
                     <Input
                       label="Farmers Target"
                       type="number"
                       value={form.targetFarmers}
-                      onChange={(v) => update("targetFarmers", v)}
+                      onChange={(value) => update("targetFarmers", value)}
                       required
                     />
+
                     <Input
                       label="Farms Target"
                       type="number"
                       value={form.targetFarms}
-                      onChange={(v) => update("targetFarms", v)}
+                      onChange={(value) => update("targetFarms", value)}
                       required
                     />
+
                     <Input
                       label="Visits Target"
                       type="number"
                       value={form.targetVisits}
-                      onChange={(v) => update("targetVisits", v)}
+                      onChange={(value) => update("targetVisits", value)}
                       required
                     />
                   </div>
                 </section>
               </div>
+
               <div className="flex justify-end gap-3 border-t bg-slate-50 px-6 py-4">
                 <Button variant="secondary" onClick={closeAdd}>
                   Cancel
                 </Button>
+
                 <Button onClick={handleSave}>
-                  <Icon name="save" size={18} />{" "}
+                  <Icon name="save" size={18} />
                   {editingStaff ? "Update Staff" : "Save Staff"}
                 </Button>
               </div>
@@ -448,66 +678,185 @@ export default function CompanyStaffManagement() {
 
       {selectedStaff &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4">
-            <div className="w-[92vw] max-w-4xl rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b px-6 py-4">
-                <div>
-                  <h2 className="text-lg font-bold">{selectedStaff.name}</h2>
-                  <p className="text-sm text-slate-500">
-                    {selectedStaff.designation} ·{" "}
-                    {storeName(selectedStaff.storeId)}
-                  </p>
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+                <div className="flex items-center gap-4">
+                  {selectedStaff.profileImage ? (
+                    <img
+                      src={selectedStaff.profileImage}
+                      alt={selectedStaff.name}
+                      className="h-16 w-16 rounded-2xl border border-slate-200 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-lg font-bold text-brand-700">
+                      {selectedStaff.name
+                        .split(" ")
+                        .map((part) => part[0])
+                        .join("")
+                        .slice(0, 2)}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                      Staff Profile
+                    </p>
+
+                    <h2 className="mt-1 text-xl font-bold text-slate-800">
+                      {selectedStaff.name}
+                    </h2>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {selectedStaff.designation} ·{" "}
+                      {storeName(selectedStaff.storeId)}
+                    </p>
+                  </div>
                 </div>
+
                 <div className="flex items-center gap-2">
                   <Button onClick={() => openEdit(selectedStaff)}>
-                    <Icon name="edit" size={16} /> Edit
+                    <Icon name="edit" size={16} />
+                    Edit Staff
                   </Button>
+
                   <button
+                    type="button"
                     onClick={() => setSelectedStaff(null)}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
                   >
-                    <Icon name="close" size={19} />
+                    <Icon name="close" size={20} />
                   </button>
                 </div>
               </div>
-              <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
-                <Info label="Phone" value={selectedStaff.phone} />
-                <Info
-                  label="Alternative No"
-                  value={selectedStaff.alternativePhone || "-"}
-                />
-                <Info label="Email" value={selectedStaff.email} />
-                <Info label="DOB" value={selectedStaff.dob} />
-                <Info label="Age" value={String(selectedStaff.age)} />
-                <Info label="Blood Group" value={selectedStaff.bloodGroup} />
-                <Info
-                  label="Date of Joining"
-                  value={selectedStaff.joinedDate}
-                />
-                <Info label="Level" value={`Level ${selectedStaff.level}`} />
-                <Info
-                  label="Sales Target"
-                  value={formatCurrency(selectedStaff.targetSales)}
-                />
-                <Info
-                  label="Farmers Target"
-                  value={String(selectedStaff.targetFarmers)}
-                />
-                <Info
-                  label="Farms Target"
-                  value={String(selectedStaff.targetFarms)}
-                />
-                <Info
-                  label="Visits Target"
-                  value={String(selectedStaff.targetVisits)}
-                />
-                <Info
-                  label="Proof ID"
-                  value={selectedStaff.proofIdName || "-"}
-                />
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <Info label="Address" value={selectedStaff.address || "-"} />
-                </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <section>
+                  <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Personal Information
+                  </h3>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <Info label="Phone" value={selectedStaff.phone} />
+
+                    <Info
+                      label="Family Contact"
+                      value={
+                        selectedStaff.alternativePhone
+                          ? `${selectedStaff.alternativePhone}${
+                              selectedStaff.familyRelation
+                                ? ` (${selectedStaff.familyRelation})`
+                                : ""
+                            }`
+                          : "-"
+                      }
+                    />
+
+                    <Info label="Email" value={selectedStaff.email} />
+
+                    <Info
+                      label="Blood Group"
+                      value={selectedStaff.bloodGroup}
+                    />
+
+                    <Info label="DOB" value={selectedStaff.dob} />
+
+                    <Info label="Age" value={String(selectedStaff.age)} />
+
+                    <Info
+                      label="Date of Joining"
+                      value={selectedStaff.joinedDate}
+                    />
+
+                    <Info
+                      label="Address"
+                      value={selectedStaff.address || "-"}
+                    />
+                  </div>
+                </section>
+
+                <section className="mt-6 border-t border-slate-200 pt-6">
+                  <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Employment Information
+                  </h3>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <Info
+                      label="Designation"
+                      value={selectedStaff.designation}
+                    />
+
+                    <Info
+                      label="Assigned Store"
+                      value={storeName(selectedStaff.storeId)}
+                    />
+
+                    <Info
+                      label="Location"
+                      value={storeLocation(selectedStaff.storeId)}
+                    />
+
+                    <Info
+                      label="Level"
+                      value={`Level ${selectedStaff.level}`}
+                    />
+                  </div>
+                </section>
+
+                <section className="mt-6 border-t border-slate-200 pt-6">
+                  <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Targets
+                  </h3>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <Info
+                      label="Sales Target"
+                      value={formatCurrency(selectedStaff.targetSales)}
+                    />
+
+                    <Info
+                      label="Farmers Target"
+                      value={String(selectedStaff.targetFarmers)}
+                    />
+
+                    <Info
+                      label="Farms Target"
+                      value={String(selectedStaff.targetFarms)}
+                    />
+
+                    <Info
+                      label="Visits Target"
+                      value={String(selectedStaff.targetVisits)}
+                    />
+                  </div>
+                </section>
+
+                <section className="mt-6 border-t border-slate-200 pt-6">
+                  <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">
+                    Documents
+                  </h3>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Info
+                      label="Proof ID"
+                      value={selectedStaff.proofIdName || "-"}
+                    />
+
+                    <Info
+                      label="Profile Image"
+                      value={selectedStaff.profileImageName || "-"}
+                    />
+                  </div>
+                </section>
+              </div>
+
+              <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedStaff(null)}
+                >
+                  Close
+                </Button>
               </div>
             </div>
           </div>,
@@ -526,31 +875,38 @@ function UploadField({
   label: string;
   accept: string;
   fileName: string;
-  onFile: (n: string) => void;
+  onFile: (name: string) => void;
 }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-sm font-semibold">{label}</span>
+
       <div className="cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4">
         <p className="text-sm font-semibold">{fileName || `Upload ${label}`}</p>
+
         <p className="text-xs text-slate-400">Click to choose file</p>
+
         <input
           type="file"
           accept={accept}
           className="hidden"
-          onChange={(e) => onFile(e.target.files?.[0]?.name ?? "")}
+          onChange={(event) => onFile(event.target.files?.[0]?.name ?? "")}
         />
       </div>
     </label>
   );
 }
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border bg-slate-50 p-4">
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
       <p className="text-[11px] font-semibold uppercase text-slate-400">
         {label}
       </p>
-      <p className="mt-1 text-sm font-bold text-slate-800">{value}</p>
+
+      <p className="mt-1 break-words text-sm font-bold text-slate-800">
+        {value}
+      </p>
     </div>
   );
 }
