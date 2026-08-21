@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Card,
@@ -18,6 +18,8 @@ type RefundRow = {
   refundNo: string;
   farmerId: string;
   farmerName: string;
+  phone: string;
+  village: string;
   referenceNo: string;
   reason: string;
   paymentMethod: string;
@@ -62,6 +64,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
         refundNo: "REF-101",
         farmerId: farmers[0]?.id || "",
         farmerName: farmers[0]?.name || "Selvam",
+        phone: farmers[0]?.phone || "",
+        village: farmers[0]?.village || "",
         referenceNo: "INV-D-1198",
         reason: "Product Return",
         paymentMethod: "Cash",
@@ -74,6 +78,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
         refundNo: "REF-100",
         farmerId: farmers[1]?.id || "",
         farmerName: farmers[1]?.name || "Kannan",
+        phone: farmers[1]?.phone || "",
+        village: farmers[1]?.village || "",
         referenceNo: "INV-RK-1038",
         reason: "Billing Correction",
         paymentMethod: "UPI",
@@ -151,17 +157,19 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     if (!canCreate || !selectedFarmer) return;
 
     const row: RefundRow = {
-      id: `refund-${Date.now()}`,
-      date,
-      refundNo: refundNo.trim(),
-      farmerId: selectedFarmer.id,
-      farmerName: selectedFarmer.name,
-      referenceNo: referenceNo.trim(),
-      reason,
-      paymentMethod,
-      amount,
-      remarks,
-    };
+  id: `refund-${Date.now()}`,
+  date,
+  refundNo: refundNo.trim(),
+  farmerId: selectedFarmer.id,
+  farmerName: selectedFarmer.name,
+  phone: selectedFarmer.phone || "",
+  village: selectedFarmer.village || "",
+  referenceNo: referenceNo.trim(),
+  reason,
+  paymentMethod,
+  amount,
+  remarks,
+};
 
     saveRows([row, ...rows]);
     closeForm();
@@ -219,7 +227,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   Ref No
                 </th>
                 <th className="w-[15%] border-r border-slate-200 px-2 py-3 text-center">
-                  Farmer
+                  Farmer Details
                 </th>
                 <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
                   Reference / Invoice
@@ -255,8 +263,19 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
                     {row.refundNo}
                   </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-700">
-                    {row.farmerName}
+                  {/* Farmer Details */}
+                    <td className="w-[15%] border-r border-slate-200 px-3 py-3.5 text-center">
+                    <p className="font-semibold text-slate-800">
+                      {row.farmerName}
+                    </p>
+
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {row.village || "-"}
+                    </p>
+
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {row.phone || "-"}
+                    </p>
                   </td>
                   <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
                     {row.referenceNo}
