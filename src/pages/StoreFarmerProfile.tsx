@@ -19,7 +19,7 @@ type Tab = 'overview' | 'purchases' | 'invoices' | 'payments' | 'documents';
 const tabs: { key: Tab; label: string; icon: string }[] = [
   { key: 'overview', label: 'Overview', icon: 'dashboard' },
   { key: 'invoices', label: 'Invoices', icon: 'receipt_long' },
-  { key: 'payments', label: 'Payment History', icon: 'payments' },
+  { key: 'payments', label: 'Payment Receipt', icon: 'payments' },
 ];
 
 const colorMap: Record<string, string> = {

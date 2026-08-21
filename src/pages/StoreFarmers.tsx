@@ -107,14 +107,13 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
             <table className="w-full table-fixed text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="w-[6%] text-center font-semibold px-3 py-3.5 border-r">S.No</th>
-                  <th className="w-[8%] text-center font-semibold px-3 py-3.5 border-r">Profile</th>
-                  <th className="w-[18%] text-center font-semibold px-3 py-3.5 border-r">Farmer Details</th>
-                  <th className="w-[14%] text-center font-semibold px-3 py-3.5 border-r">Mobile Number</th>
-                  <th className="w-[18%] text-center font-semibold px-3 py-3.5 border-r">Village</th>
-                  <th className="w-[14%] text-center font-semibold px-3 py-3.5 border-r">Through</th>
-                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Land (Acres)</th>
-                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Crops</th>
+                  <th className="w-[4%] text-center font-semibold px-3 py-3.5 border-r">S.No</th>
+                  <th className="w-[5%] text-center font-semibold px-3 py-3.5 border-r">Profile</th>
+                  <th className="w-[12%] text-center font-semibold px-3 py-3.5 border-r">Farmer Details</th>
+                  <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">Village</th>
+                  <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">Through</th>
+                  <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">Land (Acres)</th>
+                  <th className="w-[12%] text-center font-semibold px-3 py-3.5 border-r">Crops</th>
                   <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Outstanding</th>
                 </tr>
               </thead>
@@ -126,48 +125,74 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                     onClick={() => goFarmerProfile(f.id)}
                     title="Click to view farmer details"
                   >
-                    <td className="px-3 py-3.5 text-center font-medium text-slate-500 border-r">{index + 1}</td>
-                    <td className="px-3 py-3.5 border-r">
+                    {/* S.No */}
+                    <td className="w-[6%] px-3 py-3.5 text-center font-medium text-slate-500 border-r border-slate-200">
+                      {index + 1}
+                    </td>
+
+                    {/* Profile */}
+                    <td className="w-[8%] px-3 py-3.5 border-r border-slate-200">
                       {f.profileImage ? (
                         <img
                           src={f.profileImage}
                           alt={f.name}
-                          className="w-10 h-10 rounded-full object-cover border border-slate-200 border-r"
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
                         />
                       ) : (
-                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br border-r ${colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600 border-r'} flex items-center justify-center text-white font-bold text-xs shrink-0 border-r`}>
+                        <div
+                          className={`w-10 h-10 rounded-full bg-gradient-to-br ${
+                            colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600'
+                          } flex items-center justify-center text-white font-bold text-xs shrink-0`}
+                        >
                           {initials(f.name)}
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-3.5">
-                      <p className="font-semibold text-slate-800 border-r">{f.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5 border-r">
+
+                    {/* Farmer Details */}
+                    <td className="w-[12%] px-3 py-3.5 text-center border-r border-slate-200">
+                      <p className="font-semibold text-slate-800">{f.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
                         {f.village || '-'}
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5 border-r">
+                      <p className="text-xs text-slate-400 mt-0.5">
                         {f.phone}
                       </p>
                     </td>
-                    <td className="px-3 py-3.5 text-slate-600 border-r">{f.phone}</td>
-                   <td className="px-3 py-3.5 text-slate-600 border-r">
-                      <p className="line-clamp-2">{f.village || '-'}</p>
+
+                    {/* Village - smaller */}
+                    <td className="w-[3%] px-2 py-3.5 text-center text-slate-600 border-r border-slate-200">
+                      <p className="truncate">{f.village || '-'}</p>
                     </td>
-                    <td className="px-3 py-3.5 text-slate-600 border-r">
+
+                    {/* Through - smaller */}
+                    <td className="w-[7%] px-2 py-3.5 text-center text-slate-600 border-r border-slate-200">
                       {f.through === 'Executive'
-                        ? `${f.executiveName || '-'}`
+                        ? f.executiveName || '-'
                         : 'Direct'}
                     </td>
-                    <td className="px-3 py-3.5 text-right font-semibold text-slate-700 border-r">{f.landSize}</td>
-                    <td className="px-3 py-3.5 border-r">
+
+                    {/* Land */}
+                    <td className="w-[10%] px-3 py-3.5 text-right font-semibold text-slate-700 border-r border-slate-200">
+                      {f.landSize}
+                    </td>
+
+                    {/* Crops - more space */}
+                    <td className="w-[22%] px-3 py-3.5 border-r border-slate-200">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs">
                         {f.cropType || '-'}
                       </span>
                     </td>
-                    <td className="px-3 py-3.5 text-right border-r">
-                      {f.outstanding > 0
-                        ? <span className="font-bold text-amber-600">{formatCurrency(f.outstanding)}</span>
-                        : <span className="text-slate-400">Clear</span>}
+
+                    {/* Outstanding */}
+                    <td className="w-[14%] px-3 py-3.5 text-right border-r border-slate-200">
+                      {f.outstanding > 0 ? (
+                        <span className="font-bold text-amber-600">
+                          {formatCurrency(f.outstanding)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Clear</span>
+                      )}
                     </td>
                   </tr>
                 ))}

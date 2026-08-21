@@ -4,6 +4,7 @@ import { formatCurrency } from "@/lib/format";
 import { createPortal } from "react-dom"; 
 import { products as allProducts } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import { Phone } from "lucide-react";
 
 
 type ProductRow = {
@@ -19,7 +20,12 @@ type Row = {
   date: string;
   quotationNo: string;
   farmer: string;
+  phone: string;
   village: string;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
   amount: number;
   status: string;
 };
@@ -31,7 +37,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       date: "17/08/2026",
       quotationNo: "QT-1001",
       farmer: "Murugan",
+      phone: "",
       village: "Rajapalayam",
+      withoutTax: 8200,
+      sgst: 0,
+      cgst: 0,
+      igst: 0,
       amount: 8200,
       status: "Open",
     },
@@ -40,7 +51,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       date: "16/08/2026",
       quotationNo: "QT-1000",
       farmer: "Selvam",
+      phone: "",
       village: "Seithur",
+      withoutTax: 5600,
+      sgst: 0,
+      cgst: 0,
+      igst: 0,
       amount: 5600,
       status: "Converted",
     },
@@ -50,7 +66,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
   // Farmer details
   const [farmer, setFarmer] = useState("");
-  const [mobile, setMobile] = useState("");
+  const [phone, setMobile] = useState("");
   const [village, setVillage] = useState("");
   const [crop, setCrop] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
@@ -170,7 +186,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     const canSave =
     farmer.trim() !== "" &&
-    mobile.trim() !== "" &&
+    phone.trim() !== "" &&
     products.some(
       (item) => item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
     );
@@ -188,7 +204,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       return;
     }
 
-    if (!mobile.trim()) {
+    if (!phone.trim()) {
       alert("Please enter mobile number.");
       return;
     }
@@ -203,7 +219,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       date: new Date().toISOString().split("T")[0],
       quotationNo: `QT-${1001 + rows.length}`,
       farmer,
+      phone: phone,
       village,
+      withoutTax: subtotal,
+      sgst: sgstAmount,
+      cgst: cgstAmount,
+      igst: igstAmount,
       amount: grandTotal,
       status: "Open",
     };
@@ -238,12 +259,81 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       <Card className="overflow-hidden p-0">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-slate-50 text-xs uppercase text-slate-500">
-              <th className="px-5 py-3 border-b border text-left">Date</th>
-              <th className="px-5 py-3 border-b border text-left">Quotation No</th>
-              <th className="px-5 py-3 border-b border text-left">Farmer</th>
-              <th className="px-5 py-3 border-b border text-left">Village</th>
-              <th className="px-5 py-3 border-b border text-right">Amount</th>
+            {/* First Heading Row */}
+            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+
+              <th
+                rowSpan={2}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+              >
+                Date
+              </th>
+
+              <th
+                rowSpan={2}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+              >
+                Quotation No
+              </th>
+
+              <th
+                rowSpan={2}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+              >
+                Farmer Details
+              </th>
+
+              
+              <th
+                rowSpan={2}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+              >
+                Village
+              </th>
+
+              
+              <th
+                rowSpan={2}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+              >
+                Without Tax
+              </th>
+
+
+              {/* Other headings also rowSpan={2} */}
+              
+              <th
+                colSpan={3}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-200"
+              >
+                Tax
+              </th>
+
+              
+              <th
+                rowSpan={2}
+                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+              >
+                Total
+              </th>
+
+            </tr>
+
+            {/* Second Heading Row — Tax */}
+            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+
+              <th className="text-center font-semibold px-2 py-2 border-r border-slate-100">
+                SGST
+              </th>
+
+              <th className="text-center font-semibold px-2 py-2 border-r border-slate-100">
+                CGST
+              </th>
+
+              <th className="text-center font-semibold px-2 py-2 border-r border-slate-200">
+                IGST
+              </th>
+
             </tr>
           </thead>
 
@@ -256,9 +346,34 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   {r.quotationNo}
                 </td>
 
-                <td className="px-5 py-4 border-b border">{r.farmer}</td>
+                {/* Farmer Details */}
+                    <td className="w-[12%] px-3 py-3.5 text-center border-r border-slate-200">
+                      <p className="font-semibold text-slate-800">{r.farmer}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {r.village || '-'}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {r.phone}
+                      </p>
+                    </td>
 
                 <td className="px-5 py-4 border-b border">{r.village}</td>
+
+                <td className="px-2 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
+                      {formatCurrency(r.withoutTax)}
+                    </td>
+
+                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                      {formatCurrency(r.sgst)}
+                    </td>
+
+                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                      {formatCurrency(r.cgst)}
+                    </td>
+
+                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                      {formatCurrency(r.igst)}
+                    </td>
 
                 <td className="px-5 py-4 border-b border text-right font-bold">
                   {formatCurrency(r.amount)}
@@ -320,7 +435,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <Input
                     label="Mobile Number"
                     type="tel"
-                    value={mobile}
+                    value={phone}
                     onChange={setMobile}
                   />
 
@@ -604,7 +719,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         </div>
 
                         {/* TAX BREAKDOWN */}
-                        <div className="space-y-2 border-t border-slate-200 pt-3 pl-4">
+                        <div className="space-y-2 border-t border-slate-200 pt-3 pl-8">
                           {/* SGST */}
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-slate-400">

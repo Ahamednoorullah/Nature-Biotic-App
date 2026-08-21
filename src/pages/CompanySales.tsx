@@ -394,7 +394,7 @@ export default function CompanySales() {
                     rowSpan={2}
                     className="w-[17%] text-center font-semibold px-2 py-3 border-r border-slate-200"
                   >
-                    Party Name
+                    Store Name
                   </th>
 
                   <th
