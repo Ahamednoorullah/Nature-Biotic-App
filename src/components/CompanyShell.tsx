@@ -10,6 +10,7 @@ const navItems: { key: CompanyPage; label: string; icon: string }[] = [
 
   { key: "staff-management", label: "Staff Management", icon: "badge" },
   { key: "sales", label: "Sales ", icon: "point_of_sale" },
+  { key: "purchase-orders", label: "Purchase Orders", icon: "shopping_cart_checkout" },
   { key: "credit-notes", label: "Credit Notes", icon: "undo" },
   { key: "receipts", label: "Receipts", icon: "receipt" },
   { key: "reports", label: "Reports", icon: "bar_chart" },

@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
-  products as allProducts,
+  getProductMaster,
   productCategories,
+  productMasterUpdatedEvent,
   type Product,
 } from "@/lib/data";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
@@ -11,10 +12,16 @@ import ProductDetail from "@/pages/CompanyProductDetail";
 
 export default function CompanyProducts() {
   const [showAdd, setShowAdd] = useState(false);
-  const [selected, setSelected] = useState<Product | null>(null);
+  const [selected, setSelected] = useState<{ product: Product; variants: Product[] } | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [products, setProducts] = useState<Product[]>(allProducts);
+  const [products, setProducts] = useState<Product[]>(() => getProductMaster());
+
+  useEffect(() => {
+    const refresh = () => setProducts(getProductMaster());
+    window.addEventListener(productMasterUpdatedEvent, refresh);
+    return () => window.removeEventListener(productMasterUpdatedEvent, refresh);
+  }, []);
 
   const filtered = useMemo(
     () =>
@@ -123,6 +130,7 @@ export default function CompanyProducts() {
   }, [filtered]);
 
   function handleSaved() {
+    setProducts(getProductMaster());
     setShowAdd(false);
   }
 
@@ -157,7 +165,7 @@ export default function CompanyProducts() {
 
   if (selected) {
     return (
-      <ProductDetail product={selected} onBack={() => setSelected(null)} />
+      <ProductDetail product={selected.product} variants={selected.variants} onBack={() => setSelected(null)} />
     );
   }
 
@@ -281,7 +289,7 @@ export default function CompanyProducts() {
                   group.variants.map((variant, variantIndex) => (
                     <tr
                       key={variant.id}
-                      onClick={() => setSelected(variant)}
+                      onClick={() => setSelected({ product: variant, variants: group.variants })}
                       className={`cursor-pointer border-b border-slate-100 transition-base hover:bg-brand-50/40 ${
                         groupIndex % 2 === 0 ? "bg-white" : "bg-slate-50/60"
                       }`}

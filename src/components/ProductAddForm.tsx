@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Card,
   Button,
@@ -7,6 +7,13 @@ import {
   SectionTitle,
   Icon,
 } from "@/components/ui";
+
+import {
+  addProductMasterVariants,
+  getProductPartyOptions,
+  saveProductPartyOptions,
+  type Product,
+} from "@/lib/data";
 
 type PackingType = "Volume" | "Weight";
 
@@ -123,6 +130,37 @@ export default function ProductAddForm({
   ]);
   const [applicationMethods, setApplicationMethods] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  const [productImage, setProductImage] = useState("");
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const initialPartyOptions = getProductPartyOptions();
+  const [manufacturers, setManufacturers] = useState<string[]>(
+    initialPartyOptions.manufacturers,
+  );
+  const [vendors, setVendors] = useState<string[]>(initialPartyOptions.vendors);
+  const [newManufacturer, setNewManufacturer] = useState("");
+  const [newVendor, setNewVendor] = useState("");
+  const [addingManufacturer, setAddingManufacturer] = useState(false);
+  const [addingVendor, setAddingVendor] = useState(false);
+
+  function handleProductImage(file?: File) {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Product image must be 2 MB or less.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProductImage(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.readAsDataURL(file);
+  }
 
   const sizeOptions = useMemo(() => {
     if (form.packingType === "Volume") return volumeSizes;
@@ -222,6 +260,83 @@ export default function ProductAddForm({
     }));
   }
 
+  function addManufacturerOption() {
+    const value = newManufacturer.trim();
+    if (!value) return;
+    const next = Array.from(new Set([...manufacturers, value]));
+    setManufacturers(next);
+    update("manufacturer", value);
+    saveProductPartyOptions({ manufacturers: next, vendors });
+    setNewManufacturer("");
+    setAddingManufacturer(false);
+  }
+
+  function addVendorOption() {
+    const value = newVendor.trim();
+    if (!value) return;
+    const next = Array.from(new Set([...vendors, value]));
+    setVendors(next);
+    update("vendor", value);
+    saveProductPartyOptions({ manufacturers, vendors: next });
+    setNewVendor("");
+    setAddingVendor(false);
+  }
+
+  function buildProductVariants(): Product[] {
+    const now = Date.now();
+    const tax = Number(form.gstRate || 0);
+    return details.map(
+      (row, index) =>
+        ({
+          id: `master-${now}-${index}`,
+          storeId: "s1",
+          name: form.name.trim(),
+          purpose: form.productPurpose.trim() as Product["purpose"],
+          productCategory: form.productCategory as Product["productCategory"],
+          productType: form.productType as Product["productType"],
+          manufacturer: form.manufacturer,
+          vendor: form.vendor,
+          unit: form.packingType as Product["unit"],
+          size: row.size,
+          hsnCode: form.hsnCode.trim(),
+          purchasePrice: Number(row.purchaseprice || 0),
+          sellingPrice: Number(row.sellingPrice || 0),
+          mrp: Number(row.mrp || 0),
+          taxType: "Intrastate",
+          taxPercentage: tax,
+          sgst: tax / 2,
+          cgst: tax / 2,
+          igst: 0,
+          description: "",
+          usageInstructions: "",
+          safetyInfo: "",
+          storageInfo: "",
+          stock: 0,
+          minStock: Number(row.limitStock || 0),
+          maxStock: 0,
+          reservedStock: 0,
+          warehouse: "",
+          lastUpdated: new Date().toISOString().split("T")[0],
+          status: "Active",
+          sold: 0,
+          imageColor: "emerald",
+          productImage,
+          applicationMethods,
+          dosage: Number(form.dosage || 0),
+          dosageUnit: form.dosageUnit,
+          filler: form.fillerType === "NA" ? 0 : Number(form.filler || 0),
+          fillerUnit: form.fillerUnit,
+          fillerType: form.fillerType,
+        }) as Product & { productImage?: string },
+    );
+  }
+
+  function persistProduct() {
+    const variants = buildProductVariants();
+    addProductMasterVariants(variants);
+    return variants;
+  }
+
   function resetForm() {
     setForm(emptyForm);
     setDetails([
@@ -235,6 +350,7 @@ export default function ProductAddForm({
       },
     ]);
     setApplicationMethods([]);
+    setProductImage("");
   }
 
   function showSaved(callback?: () => void) {
@@ -246,10 +362,12 @@ export default function ProductAddForm({
   }
 
   function handleSave() {
+    persistProduct();
     showSaved(onSaved);
   }
 
   function handleSaveAndAdd() {
+    persistProduct();
     showSaved(resetForm);
   }
 
@@ -260,6 +378,8 @@ export default function ProductAddForm({
     form.packingType &&
     form.hsnCode &&
     form.gstRate &&
+    form.manufacturer &&
+    form.vendor &&
     form.productPurpose.trim();
 
   const productDetailsValid =
@@ -309,27 +429,72 @@ export default function ProductAddForm({
             <label className="mb-2 block text-sm font-semibold text-slate-700">
               Product Image
             </label>
+
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              className="hidden"
+              onChange={(e) => handleProductImage(e.target.files?.[0])}
+            />
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 transition-base hover:border-brand-400 hover:bg-brand-50/30">
-                <div className="text-center">
-                  <Icon
-                    name="add_a_photo"
-                    size={28}
-                    className="text-slate-400"
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                className="flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 transition-base hover:border-brand-400 hover:bg-brand-50/30"
+              >
+                {productImage ? (
+                  <img
+                    src={productImage}
+                    alt="Product preview"
+                    className="h-full w-full object-cover"
                   />
-                  <p className="mt-1 text-xs text-slate-400">Upload</p>
-                </div>
-              </div>
+                ) : (
+                  <div className="text-center">
+                    <Icon
+                      name="add_a_photo"
+                      size={28}
+                      className="text-slate-400"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">Upload</p>
+                  </div>
+                )}
+              </button>
+
               <div>
                 <p className="text-sm font-medium text-slate-600">
-                  Upload a product image
+                  {productImage
+                    ? "Product image selected"
+                    : "Upload a product image"}
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  PNG, JPG up to 2MB. Recommended 500 × 500px.
+                  PNG, JPG or WEBP up to 2MB. Recommended 500 × 500px.
                 </p>
-                <Button variant="secondary" size="sm" className="mt-3">
-                  <Icon name="upload" size={16} /> Choose File
-                </Button>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => imageInputRef.current?.click()}
+                  >
+                    <Icon name="upload" size={16} />
+                    {productImage ? "Change Image" : "Choose File"}
+                  </Button>
+
+                  {productImage && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setProductImage("")}
+                    >
+                      <Icon name="delete" size={16} />
+                      Remove
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -401,21 +566,82 @@ export default function ProductAddForm({
               required
             />
 
-            <Input
-              label="Manufacturer Name"
-              value={form.manufacturer}
-              onChange={(v) => update("manufacturer", v)}
-              placeholder="e.g. Nature Biotic Pvt. Ltd."
-              icon="factory"
-            />
+            <div>
+              <Select
+                label="Manufacturer Name"
+                value={form.manufacturer}
+                onChange={(v) => {
+                  if (v === "__add_new__") setAddingManufacturer(true);
+                  else update("manufacturer", v);
+                }}
+                placeholder="Select manufacturer"
+                options={[
+                  ...manufacturers.map((item) => ({
+                    value: item,
+                    label: item,
+                  })),
+                  { value: "__add_new__", label: "+ Add Manufacturer" },
+                ]}
+                required
+              />
+              {addingManufacturer && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={newManufacturer}
+                    onChange={(e) => setNewManufacturer(e.target.value)}
+                    placeholder="New manufacturer name"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                  />
+                  <Button size="sm" onClick={addManufacturerOption}>
+                    Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setAddingManufacturer(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
 
-            <Input
-              label="Vendor Name"
-              value={form.vendor}
-              onChange={(v) => update("vendor", v)}
-              placeholder="e.g. Nature Biotic Distribution"
-              icon="local_shipping"
-            />
+            <div>
+              <Select
+                label="Vendor Name"
+                value={form.vendor}
+                onChange={(v) => {
+                  if (v === "__add_new__") setAddingVendor(true);
+                  else update("vendor", v);
+                }}
+                placeholder="Select vendor"
+                options={[
+                  ...vendors.map((item) => ({ value: item, label: item })),
+                  { value: "__add_new__", label: "+ Add Vendor" },
+                ]}
+                required
+              />
+              {addingVendor && (
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={newVendor}
+                    onChange={(e) => setNewVendor(e.target.value)}
+                    placeholder="New vendor name"
+                    className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400"
+                  />
+                  <Button size="sm" onClick={addVendorOption}>
+                    Add
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setAddingVendor(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
 
             <Input
               label="Product Purpose"

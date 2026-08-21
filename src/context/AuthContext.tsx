@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 type MockUser = {
   name: string;
@@ -9,16 +9,19 @@ type MockUser = {
 type AuthContextValue = {
   user: MockUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (
+    email: string,
+    password: string,
+  ) => Promise<{ error: string | null }>;
   signOut: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const DEMO_USER: MockUser = {
-  name: 'Administrator',
-  email: 'admin@naturebiotic.com',
-  role: 'Company Administrator',
+  name: "Administrator",
+  email: "admin@naturebiotic.com",
+  role: "Company Administrator",
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -42,6 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 }

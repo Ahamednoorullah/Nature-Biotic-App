@@ -238,25 +238,25 @@ const actualSalesList = [
   {
     date: "08 Aug 2026",
     invoiceNo: "INV-1028",
-    partyName: "Sairam Agri Input",
+    storeName: "Sairam Agri Input",
     value: 48200,
   },
   {
     date: "08 Aug 2026",
     invoiceNo: "INV-1027",
-    partyName: "Shriya Tech",
+    storeName: "Shriya Tech",
     value: 36500,
   },
   {
     date: "07 Aug 2026",
     invoiceNo: "INV-1026",
-    partyName: "Nature Bio Mart",
+    storeName: "Nature Bio Mart",
     value: 52800,
   },
   {
     date: "07 Aug 2026",
     invoiceNo: "INV-1025",
-    partyName: "Sairam Agri Input",
+    storeName: "Sairam Agri Input",
     value: 46500,
   },
 ];
@@ -265,32 +265,32 @@ const actualCollectionList = [
   {
     date: "08 Aug 2026",
     receiptNo: "RCPT-0821",
-    partyName: "Sairam Agri Input",
+    storeName: "Sairam Agri Input",
     amount: 8500,
   },
   {
     date: "08 Aug 2026",
     receiptNo: "RCPT-0820",
-    partyName: "Shriya Tech",
+    storeName: "Shriya Tech",
     amount: 6200,
   },
   {
     date: "07 Aug 2026",
     receiptNo: "RCPT-0819",
-    partyName: "Nature Bio Mart",
+    storeName: "Nature Bio Mart",
     amount: 4800,
   },
   {
     date: "07 Aug 2026",
     receiptNo: "RCPT-0818",
-    partyName: "Sairam Agri Input",
+    storeName: "Sairam Agri Input",
     amount: 5000,
   },
 ];
 
 const actualOutstandingList = [
   {
-    partyName: "Sairam Agri Input",
+    storeName: "Sairam Agri Input",
     under30: 5000,
     over30: 5000,
     over60: 10000,
@@ -298,7 +298,7 @@ const actualOutstandingList = [
     totalAmount: 30000,
   },
   {
-    partyName: "Shriya Tech",
+    storeName: "Shriya Tech",
     under30: 4200,
     over30: 3600,
     over60: 5200,
@@ -306,7 +306,7 @@ const actualOutstandingList = [
     totalAmount: 16000,
   },
   {
-    partyName: "Nature Bio Mart",
+    storeName: "Nature Bio Mart",
     under30: 3000,
     over30: 2500,
     over60: 4000,
@@ -321,17 +321,22 @@ export default function CompanyDashboard() {
   const [actualDetailView, setActualDetailView] =
     useState<ActualDetailView>(null);
 
-  const [approvalRequests, setApprovalRequests] = useState<StoreApprovalRequest[]>([]);
+  const [approvalRequests, setApprovalRequests] = useState<
+    StoreApprovalRequest[]
+  >([]);
   const [showApprovals, setShowApprovals] = useState(false);
 
   useEffect(() => {
     const refresh = () => setApprovalRequests(getStoreApprovalRequests());
     refresh();
     window.addEventListener(storeApprovalRequestsUpdatedEvent, refresh);
-    return () => window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
+    return () =>
+      window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
   }, []);
 
-  const pendingApprovals = approvalRequests.filter((row) => row.status === "Pending");
+  const pendingApprovals = approvalRequests.filter(
+    (row) => row.status === "Pending",
+  );
   const approveRequest = (id: string) => {
     setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
   };
@@ -356,72 +361,95 @@ export default function CompanyDashboard() {
 
       <div className="h-[30px]" />
 
-      <section className="mb-8">
-        <button
-          type="button"
-          onClick={() => setShowApprovals((v) => !v)}
-          className="w-full rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:shadow-md"
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-                <Icon name="notifications_active" size={22} />
+      {pendingApprovals.length > 0 && (
+        <section className="mb-8">
+          <button
+            type="button"
+            onClick={() => setShowApprovals((v) => !v)}
+            className="w-full rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:shadow-md"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                  <Icon name="notifications_active" size={22} />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-800">Store Approvals</h2>
+                  <p className="text-sm text-slate-500">
+                    Purchase orders and purchase returns waiting for company
+                    approval.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="font-bold text-slate-800">Store Approvals</h2>
-                <p className="text-sm text-slate-500">Purchase orders and purchase returns waiting for company approval.</p>
+              <div className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-700">
+                {pendingApprovals.length} Pending
               </div>
             </div>
-            <div className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-700">
-              {pendingApprovals.length} Pending
-            </div>
-          </div>
-        </button>
+          </button>
 
-        {showApprovals && (
-          <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {pendingApprovals.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-500">No pending store approvals.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Type</th>
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Store</th>
-                      <th className="px-4 py-3 text-left">Ref No</th>
-                      <th className="px-4 py-3 text-right">Amount</th>
-                      <th className="px-4 py-3 text-center">Status</th>
-                      <th className="px-4 py-3 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {pendingApprovals.map((row) => (
-                      <tr key={row.id}>
-                        <td className="px-4 py-3 font-semibold text-slate-700">{row.type}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.date}</td>
-                        <td className="px-4 py-3 text-slate-600">{row.storeName}</td>
-                        <td className="px-4 py-3 font-medium text-slate-700">{row.referenceNo}</td>
-                        <td className="px-4 py-3 text-right font-semibold">{formatCurrency(row.amount)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Pending</span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button type="button" onClick={() => approveRequest(row.id)}
-                            className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700">
-                            Approve
-                          </button>
-                        </td>
+          {showApprovals && (
+            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {pendingApprovals.length === 0 ? (
+                <div className="p-6 text-center text-sm text-slate-500">
+                  No pending store approvals.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Type</th>
+                        <th className="px-4 py-3 text-left">Date</th>
+                        <th className="px-4 py-3 text-left">Store</th>
+                        <th className="px-4 py-3 text-left">Ref No</th>
+                        <th className="px-4 py-3 text-right">Amount</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                        <th className="px-4 py-3 text-center">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {pendingApprovals.map((row) => (
+                        <tr key={row.id}>
+                          <td className="px-4 py-3 font-semibold text-slate-700">
+                            {row.type}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {row.date}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {row.storeName}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-slate-700">
+                            {row.referenceNo}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold">
+                            {formatCurrency(row.amount)}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                              Pending
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => approveRequest(row.id)}
+                              className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700"
+                            >
+                              Approve
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* SECTION 1 — Actual Sales */}
       <section className="mb-12">
         <div className="mb-5">
@@ -445,8 +473,6 @@ export default function CompanyDashboard() {
               value={formatCurrency(data.actual.receivable)}
               icon="account_balance_wallet"
               color="brand"
-              trend={data.actual.trends.receivable}
-              trendUp
             />
           </button>
 
@@ -464,8 +490,6 @@ export default function CompanyDashboard() {
               value={formatCurrency(data.actual.revenue)}
               icon="payments"
               color="blue"
-              trend={data.actual.trends.revenue}
-              trendUp
             />
           </button>
 
@@ -483,8 +507,6 @@ export default function CompanyDashboard() {
               value={formatCurrency(data.actual.outstanding)}
               icon="receipt_long"
               color="amber"
-              trend={data.actual.trends.outstanding}
-              trendUp
             />
           </button>
         </div>
@@ -515,32 +537,24 @@ export default function CompanyDashboard() {
             value={formatCurrency(data.market.receivable)}
             icon="account_balance_wallet"
             color="brand"
-            trend={data.market.trends.receivable}
-            trendUp
           />
           <StatCard
             label="Collection"
             value={formatCurrency(data.market.revenue)}
             icon="payments"
             color="blue"
-            trend={data.market.trends.revenue}
-            trendUp
           />
           <StatCard
             label="Outstanding"
             value={formatCurrency(data.market.outstanding)}
             icon="receipt_long"
             color="amber"
-            trend={data.market.trends.outstanding}
-            trendUp
           />
           <StatCard
             label="No of Farmers"
             value={String(data.market.farmers)}
             icon="groups"
             color="purple"
-            trend={data.market.trends.farmers}
-            trendUp
           />
         </div>
       </section>
@@ -683,7 +697,7 @@ function ActualDetailsBox({
                   Invoice No
                 </th>
                 <th className="px-5 py-3 text-left font-semibold">
-                  Party Name
+                  Store Name
                 </th>
                 <th className="px-5 py-3 text-right font-semibold">Value</th>
               </tr>
@@ -695,7 +709,7 @@ function ActualDetailsBox({
                   <td className="px-5 py-3 font-semibold text-slate-700">
                     {row.invoiceNo}
                   </td>
-                  <td className="px-5 py-3 text-slate-700">{row.partyName}</td>
+                  <td className="px-5 py-3 text-slate-700">{row.storeName}</td>
                   <td className="px-5 py-3 text-right font-bold text-slate-800">
                     {formatCurrency(row.value)}
                   </td>
@@ -716,7 +730,7 @@ function ActualDetailsBox({
                   Receipt No
                 </th>
                 <th className="px-5 py-3 text-left font-semibold">
-                  Party Name
+                  Store Name
                 </th>
                 <th className="px-5 py-3 text-right font-semibold">Amount</th>
               </tr>
@@ -728,7 +742,7 @@ function ActualDetailsBox({
                   <td className="px-5 py-3 font-semibold text-slate-700">
                     {row.receiptNo}
                   </td>
-                  <td className="px-5 py-3 text-slate-700">{row.partyName}</td>
+                  <td className="px-5 py-3 text-slate-700">{row.storeName}</td>
                   <td className="px-5 py-3 text-right font-bold text-slate-800">
                     {formatCurrency(row.amount)}
                   </td>
@@ -745,7 +759,7 @@ function ActualDetailsBox({
             <thead>
               <tr className="border-b border-slate-200 bg-white text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-5 py-3 text-left font-semibold">
-                  Party Name
+                  Store Name
                 </th>
                 <th className="px-5 py-3 text-right font-semibold">
                   &lt; 30 Days
@@ -767,9 +781,9 @@ function ActualDetailsBox({
 
             <tbody className="divide-y divide-slate-100">
               {actualOutstandingList.map((row) => (
-                <tr key={row.partyName} className="hover:bg-slate-50">
+                <tr key={row.storeName} className="hover:bg-slate-50">
                   <td className="px-5 py-4 font-semibold text-slate-800">
-                    {row.partyName}
+                    {row.storeName}
                   </td>
                   <td className="px-5 py-4 text-right font-medium tabular-nums text-slate-700">
                     {formatCurrency(row.under30)}

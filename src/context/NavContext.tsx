@@ -5,6 +5,7 @@ export type CompanyPage =
   | "products"
   | "stores"
   | "sales"
+  | "purchase-orders"
   | "staff-management"
   | "credit-notes"
   | "receipts"
