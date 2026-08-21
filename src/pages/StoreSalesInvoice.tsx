@@ -289,7 +289,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                 rowSpan={2}
                 className="w-[15%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
               >
-                Party Name
+                Store Name
               </th>
               <th
                 rowSpan={2}

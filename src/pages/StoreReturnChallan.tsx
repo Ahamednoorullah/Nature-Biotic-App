@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select, EmptyState } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -12,6 +12,9 @@ type ReturnItem = {
 };
 
 type ReturnChallan = {
+  phone: string;
+  village: string;
+  farmer: ReactNode;
   id: string;
   rcNo: string;
   date: string;
@@ -66,6 +69,9 @@ export default function StoreReturnChallan({
         dcNo: "DC-1001",
         executive: "Ram Kumar",
         customerName: "Murugan",
+        phone: "9876543210",
+        village: "Rajapalayam",
+        farmer: "Murugan",
         placeOfSupply: "Tamil Nadu",
         items: [
           {
@@ -88,6 +94,8 @@ export default function StoreReturnChallan({
   const [dcNo, setDcNo] = useState("");
   const [executive, setExecutive] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [village, setVillage] = useState("");
+  const [phone, setPhone] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [items, setItems] = useState<ReturnItem[]>(emptyItems());
 
@@ -169,8 +177,11 @@ export default function StoreReturnChallan({
       dcNo: dcNo.trim(),
       executive,
       customerName: customerName.trim(),
+      village: village.trim(),
+      phone: phone.trim(),
       placeOfSupply: placeOfSupply.trim(),
       items,
+      farmer: undefined
     };
 
     persist([row, ...rows]);
@@ -205,89 +216,224 @@ export default function StoreReturnChallan({
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <table className="w-full table-fixed border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-                <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center">
-                  S.No
-                </th>
-                <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-center">
-                  Date
-                </th>
-                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
-                  RC No
-                </th>
-                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
-                  DC No
-                </th>
-                <th className="w-[18%] border-r border-slate-200 px-2 py-3 text-center">
-                  Executive
-                </th>
-                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
-                  Products
-                </th>
-                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
-                  Returned Qty
-                </th>
-                <th className="w-[18%] px-2 py-3 text-right">
-                  Return Value
-                </th>
-              </tr>
-            </thead>
+        <table className="w-full table-fixed border-collapse text-sm">
+          <thead>
+            {/* MAIN HEADER */}
+            <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600 border-b border-slate-200">
 
-            <tbody>
-              {rows.map((row, index) => {
-                const returnedQty = row.items.reduce(
-                  (sum, item) =>
-                    sum + Number(item.returnedQty || 0),
-                  0,
-                );
+              <th
+                rowSpan={2}
+                className="w-[5%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                S.No
+              </th>
 
-                const returnValue = row.items.reduce(
-                  (sum, item) =>
-                    sum +
-                    Number(item.returnedQty || 0) *
-                      Number(item.unitValue || 0),
-                  0,
-                );
+              <th
+                rowSpan={2}
+                className="w-[7%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Date
+              </th>
 
-                return (
-                  <tr
-                    key={row.id}
-                    onClick={() => setSelected(row)}
-                    className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
-                    title="Click to view return challan"
-                  >
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      {index + 1}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      {formatDate(row.date)}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold">
-                      {row.rcNo}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      {row.dcNo}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      {row.executive}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      {row.items.length}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-bold">
-                      {returnedQty}
-                    </td>
-                    <td className="px-2 py-3 text-right font-bold">
-                      {formatCurrency(returnValue)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
+              <th
+                rowSpan={2}
+                className="w-[8%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                RC No
+              </th>
+
+              <th
+                rowSpan={2}
+                className="w-[8%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                DC No
+              </th>
+
+              <th
+                rowSpan={2}
+                className="w-[9%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Executive
+              </th>
+
+              <th
+                rowSpan={2}
+                className="w-[11%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Farmer Details
+              </th>
+
+              <th
+                rowSpan={2}
+                className="w-[7%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Products
+              </th>
+
+              <th
+                rowSpan={2}
+                className="w-[8%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Returned Qty
+              </th>
+
+              {/* WITHOUT TAX */}
+              <th
+                rowSpan={2}
+                className="w-[9%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Without Tax
+              </th>
+
+              {/* TAX */}
+              <th
+                colSpan={3}
+                className="w-[18%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+              >
+                Tax
+              </th>
+
+              {/* TOTAL */}
+              <th
+                rowSpan={2}
+                className="w-[9%] px-1.5 py-2.5 text-right font-semibold"
+              >
+                Total
+              </th>
+            </tr>
+
+            {/* TAX SUB HEADINGS */}
+            <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
+
+              <th className="w-[6%] border-r border-slate-100 px-1.5 py-2 text-center font-semibold">
+                SGST
+              </th>
+
+              <th className="w-[6%] border-r border-slate-100 px-1.5 py-2 text-center font-semibold">
+                CGST
+              </th>
+
+              <th className="w-[6%] border-r border-slate-200 px-1.5 py-2 text-center font-semibold">
+                IGST
+              </th>
+
+            </tr>
+          </thead>
+
+          <tbody>
+            {rows.map((row, index) => {
+              const returnedQty = row.items.reduce(
+                (sum, item) =>
+                  sum + Number(item.returnedQty || 0),
+                0
+              );
+
+              const withoutTax = row.items.reduce(
+                (sum, item) =>
+                  sum +
+                  Number(item.returnedQty || 0) *
+                    Number(item.unitValue || 0),
+                0
+              );
+
+              // Tax values
+              const sgst = 0;
+              const cgst = 0;
+              const igst = 0;
+
+              const total =
+                withoutTax +
+                sgst +
+                cgst +
+                igst;
+
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => setSelected(row)}
+                  className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                  title="Click to view return challan"
+                >
+                  {/* S.NO */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
+                    {index + 1}
+                  </td>
+
+                  {/* DATE */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center whitespace-nowrap">
+                    {formatDate(row.date)}
+                  </td>
+
+                  {/* RC NO */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center font-semibold">
+                    {row.rcNo}
+                  </td>
+
+                  {/* DC NO */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
+                    {row.dcNo}
+                  </td>
+
+                  {/* EXECUTIVE */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
+                    {row.executive}
+                  </td>
+
+                  {/* FARMER DETAILS */}
+                  <td className="border-r border-slate-200 px-2 py-3 text-center">
+                    <p className="font-semibold text-slate-800 truncate">
+                      {row.customerName || "-"}
+                    </p>
+
+                    <p className="mt-0.5 text-xs text-slate-500 truncate">
+                      {row.village || "-"}
+                    </p>
+
+                    <p className="mt-0.5 text-xs text-slate-400 truncate">
+                      {row.phone || "-"}
+                    </p>
+                  </td>
+
+                  {/* PRODUCTS */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
+                    {row.items.length}
+                  </td>
+
+                  {/* RETURNED QTY */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-center font-bold">
+                    {returnedQty}
+                  </td>
+
+                  {/* WITHOUT TAX */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-right font-semibold text-slate-700 whitespace-nowrap">
+                    {formatCurrency(withoutTax)}
+                  </td>
+
+                  {/* SGST */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
+                    {formatCurrency(sgst)}
+                  </td>
+
+                  {/* CGST */}
+                  <td className="border-r border-slate-100 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
+                    {formatCurrency(cgst)}
+                  </td>
+
+                  {/* IGST */}
+                  <td className="border-r border-slate-200 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
+                    {formatCurrency(igst)}
+                  </td>
+
+                  {/* TOTAL */}
+                  <td className="px-1.5 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
+                    {formatCurrency(total)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
       )}
 
       {showAdd &&

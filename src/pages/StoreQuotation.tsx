@@ -37,7 +37,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       date: "17/08/2026",
       quotationNo: "QT-1001",
       farmer: "Murugan",
-      phone: "",
+      phone: "9876543210",
       village: "Rajapalayam",
       withoutTax: 8200,
       sgst: 0,
@@ -51,7 +51,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       date: "16/08/2026",
       quotationNo: "QT-1000",
       farmer: "Selvam",
-      phone: "",
+      phone: "9876543211",
       village: "Seithur",
       withoutTax: 5600,
       sgst: 0,
@@ -115,6 +115,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const grandTotal = useMemo(() => {
     return subtotal + cgstAmount + sgstAmount + igstAmount;
   }, [subtotal, cgstAmount, sgstAmount, igstAmount]);
+
+
+  
 
   function openQuotation() {
     setShow(true);
@@ -186,7 +189,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     const canSave =
     farmer.trim() !== "" &&
-    phone.trim() !== "" &&
+      phone.trim() !== "" &&
     products.some(
       (item) => item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
     );
@@ -219,7 +222,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       date: new Date().toISOString().split("T")[0],
       quotationNo: `QT-${1001 + rows.length}`,
       farmer,
-      phone: phone,
+      phone,
       village,
       withoutTax: subtotal,
       sgst: sgstAmount,
@@ -257,62 +260,63 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
       {/* QUOTATION TABLE */}
       <Card className="overflow-hidden p-0">
-        <table className="w-full text-sm">
+        <table className="w-full table-fixed border-collapse text-sm">
           <thead>
             {/* First Heading Row */}
-            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+            <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
 
+              {/* S.NO */}
               <th
                 rowSpan={2}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+                className="w-[5%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+              >
+                S.No
+              </th>
+
+              {/* DATE */}
+              <th
+                rowSpan={2}
+                className="w-[9%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
               >
                 Date
               </th>
 
+              {/* QUOTATION NO */}
               <th
                 rowSpan={2}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+                className="w-[11%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
               >
                 Quotation No
               </th>
 
+              {/* FARMER DETAILS */}
               <th
                 rowSpan={2}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+                className="w-[18%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
               >
                 Farmer Details
               </th>
 
-              
+              {/* WITHOUT TAX */}
               <th
                 rowSpan={2}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
-              >
-                Village
-              </th>
-
-              
-              <th
-                rowSpan={2}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+                className="w-[11%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
               >
                 Without Tax
               </th>
 
-
-              {/* Other headings also rowSpan={2} */}
-              
+              {/* TAX */}
               <th
                 colSpan={3}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-200"
+                className="w-[21%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
               >
                 Tax
               </th>
 
-              
+              {/* TOTAL */}
               <th
                 rowSpan={2}
-                className="text-center font-semibold px-2 py-2 border-r border-slate-100"
+                className="w-[13%] px-2 py-2 text-center font-semibold"
               >
                 Total
               </th>
@@ -320,64 +324,85 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             </tr>
 
             {/* Second Heading Row — Tax */}
-            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+            <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
 
-              <th className="text-center font-semibold px-2 py-2 border-r border-slate-100">
+              <th className="w-[7%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 SGST
               </th>
 
-              <th className="text-center font-semibold px-2 py-2 border-r border-slate-100">
+              <th className="w-[7%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 CGST
               </th>
 
-              <th className="text-center font-semibold px-2 py-2 border-r border-slate-200">
+              <th className="w-[7%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 IGST
               </th>
 
             </tr>
           </thead>
 
-          <tbody className="divide-y">
-            {rows.map((r) => (
-              <tr key={r.id} className="hover:bg-slate-50">
-                <td className="px-5 py-4">{formatDate(r.date)}</td>
+          <tbody>
+            {rows.map((r, index) => (
+              <tr
+                key={r.id}
+                className="border-b border-slate-100 transition hover:bg-slate-50"
+              >
 
-                <td className="px-5 py-4 border-b border font-semibold text-slate-800">
+                {/* S.NO */}
+                <td className="border-r border-slate-100 px-2 py-3 text-center">
+                  {index + 1}
+                </td>
+
+                {/* DATE */}
+                <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">
+                  {formatDate(r.date)}
+                </td>
+
+                {/* QUOTATION NO */}
+                <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
                   {r.quotationNo}
                 </td>
 
-                {/* Farmer Details */}
-                    <td className="w-[12%] px-3 py-3.5 text-center border-r border-slate-200">
-                      <p className="font-semibold text-slate-800">{r.farmer}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {r.village || '-'}
-                      </p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {r.phone}
-                      </p>
-                    </td>
+                {/* FARMER DETAILS */}
+                <td className="border-r border-slate-100 px-2 py-3 text-center">
+                  <p className="font-semibold text-slate-800">
+                    {r.farmer}
+                  </p>
 
-                <td className="px-5 py-4 border-b border">{r.village}</td>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {r.village || "-"}
+                  </p>
 
-                <td className="px-2 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
-                      {formatCurrency(r.withoutTax)}
-                    </td>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {r.phone || "-"}
+                  </p>
+                </td>
 
-                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-                      {formatCurrency(r.sgst)}
-                    </td>
+                {/* WITHOUT TAX */}
+                <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
+                  {formatCurrency(r.withoutTax)}
+                </td>
 
-                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-                      {formatCurrency(r.cgst)}
-                    </td>
+                {/* SGST */}
+                <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                  {formatCurrency(r.sgst)}
+                </td>
 
-                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-                      {formatCurrency(r.igst)}
-                    </td>
+                {/* CGST */}
+                <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                  {formatCurrency(r.cgst)}
+                </td>
 
-                <td className="px-5 py-4 border-b border text-right font-bold">
+                {/* IGST */}
+                <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                  {formatCurrency(r.igst)}
+                </td>
+
+                {/* TOTAL */}
+                <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
                   {formatCurrency(r.amount)}
                 </td>
+
               </tr>
             ))}
           </tbody>
