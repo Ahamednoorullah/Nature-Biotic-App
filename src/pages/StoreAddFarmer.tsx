@@ -399,14 +399,6 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               placeholder="Select crop"
               options={cropTypes.map((c) => ({ value: c, label: c }))}
             />
-
-            <Select
-              label="Crop 2"
-              value={cropType}
-              onChange={setCropType}
-              placeholder="Select crop"
-              options={cropTypes.map((c) => ({ value: c, label: c }))}
-            />
             
             <Select
               label="Soil Type"

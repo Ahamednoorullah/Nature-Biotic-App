@@ -149,48 +149,178 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       </div>
 
       <Card className="overflow-hidden p-0">
-        <table className="w-full table-fixed text-sm">
-          <thead>
-            <tr className="bg-slate-50 text-xs uppercase text-slate-500">
-              <th className="w-[6%] px-3 py-3 text-center">S.No</th>
-              <th className="w-[12%] px-3 py-3 text-center">Date</th>
-              <th className="w-[14%] px-3 py-3 text-center">DC No</th>
-              <th className="w-[18%] px-3 py-3 text-center">Executive</th>
-              <th className="w-[18%] px-3 py-3 text-center">Customer</th>
-              <th className="w-[12%] px-3 py-3 text-center">Products</th>
-              <th className="w-[10%] px-3 py-3 text-center">Qty</th>
-              <th className="w-[10%] px-3 py-3 text-right">Approx Value</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {challans.map((c, index) => {
-              const totalQty = c.items.reduce((s, x) => s + Number(x.qty || 0), 0);
-              const approx = c.items.reduce(
-                (s, x) => s + Number(x.qty || 0) * Number(x.unitValue || 0),
-                0,
-              );
+  <table className="w-full table-fixed border-collapse text-sm">
+    <thead>
+      {/* First Header Row */}
+      <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
+        <th rowSpan={2}className="w-[5%] border-r border-slate-200 px-2 py-2.5 text-center">
+          S.No
+        </th>
 
-              return (
-                <tr
-                  key={c.id}
-                  onClick={() => setSelected(c)}
-                  className="cursor-pointer hover:bg-brand-50/40 transition-base"
-                >
-                  <td className="px-3 py-4 text-center">{index + 1}</td>
-                  <td className="px-3 py-4 text-center">{formatDate(c.date)}</td>
-                  <td className="px-3 py-4 text-center font-semibold">{c.dcNo}</td>
-                  <td className="px-3 py-4 text-center">{c.executive}</td>
-                  <td className="px-3 py-4 text-center">{c.customerName}</td>
-                  <td className="px-3 py-4 text-center">{c.items.length}</td>
-                  <td className="px-3 py-4 text-center font-bold">{totalQty}</td>
-                  <td className="px-3 py-4 text-right font-bold">{formatCurrency(approx)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
+        <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2.5 text-center">
+          Date
+        </th>
 
+        <th rowSpan={2} className="w-[9%] border-r border-slate-200 px-2 py-2.5 text-center">
+          DC No
+        </th>
+
+        <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2.5 text-center">
+          Executive
+        </th>
+
+        <th rowSpan={2} className="w-[11%] border-r border-slate-200 px-2 py-2.5 text-center">
+          Farmer Details
+        </th>
+
+        <th rowSpan={2} className="w-[7%] border-r border-slate-200 px-2 py-2.5 text-center">
+          Products
+        </th>
+
+        <th rowSpan={2} className="w-[6%] border-r border-slate-200 px-2 py-2.5 text-center">
+          Qty
+        </th>
+
+        {/* Without Tax */}
+        <th
+          rowSpan={2}
+          className="w-[9%] border-r border-slate-200 px-2 py-2.5 text-center font-semibold"
+        >
+          Without Tax
+        </th>
+
+        {/* Tax */}
+        <th
+          colSpan={3}
+          className="w-[18%] border-r border-slate-200 px-2 py-2.5 text-center font-semibold"
+        >
+          Tax
+        </th>
+
+        {/* Total */}
+        <th
+          rowSpan={2}
+          className="w-[10%] px-2 py-2.5 text-right font-semibold"
+        >
+          Total Value
+        </th>
+      </tr>
+
+      {/* Second Header Row — Tax */}
+      <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+        
+        <th className="border-r border-slate-100 px-2 py-2 text-center font-semibold">
+          SGST
+        </th>
+
+        <th className="border-r border-slate-100 px-2 py-2 text-center font-semibold">
+          CGST
+        </th>
+
+        <th className="border-r border-slate-200 px-2 py-2 text-center font-semibold">
+          IGST
+        </th>
+      </tr>
+    </thead>
+
+    <tbody className="divide-y divide-slate-100">
+      {challans.map((c, index) => {
+        const totalQty = c.items.reduce(
+          (s, x) => s + Number(x.qty || 0),
+          0,
+        );
+
+        const withoutTax = c.items.reduce(
+          (s, x) =>
+            s +
+            Number(x.qty || 0) *
+              Number(x.unitValue || 0),
+          0,
+        );
+
+        // Tax values
+        const sgst = 0;
+        const cgst = 0;
+        const igst = 0;
+
+        const totalValue =
+          withoutTax + sgst + cgst + igst;
+
+        return (
+          <tr
+            key={c.id}
+            onClick={() => setSelected(c)}
+            className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+          >
+            <td className="border-r border-slate-100 px-2 py-3 text-center">
+              {index + 1}
+            </td>
+
+            <td className="border-r border-slate-100 px-2 py-3 text-center">
+              {formatDate(c.date)}
+            </td>
+
+            <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold">
+              {c.dcNo}
+            </td>
+
+            <td className="border-r border-slate-100 px-2 py-3 text-center">
+              {c.executive}
+            </td>
+
+            {/* Farmer Details */}
+            <td className="border-r border-slate-100 px-2 py-3 text-center">
+              <p className="font-semibold text-slate-800">
+                {c.customerName}
+              </p>
+
+              <p className="mt-0.5 text-xs text-slate-500">
+                {c.address || "-"}
+              </p>
+
+              <p className="mt-0.5 text-xs text-slate-400">
+                {c.contactNo || "-"}
+              </p>
+            </td>
+
+            <td className="border-r border-slate-100 px-2 py-3 text-center">
+              {c.items.length}
+            </td>
+
+            <td className="border-r border-slate-100 px-2 py-3 text-center font-bold">
+              {totalQty}
+            </td>
+
+            {/* WITHOUT TAX */}
+            <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold text-slate-700">
+              {formatCurrency(withoutTax)}
+            </td>
+
+            {/* SGST */}
+            <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
+              {formatCurrency(sgst)}
+            </td>
+
+            {/* CGST */}
+            <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
+              {formatCurrency(cgst)}
+            </td>
+
+            {/* IGST */}
+            <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
+              {formatCurrency(igst)}
+            </td>
+
+            {/* TOTAL VALUE */}
+            <td className="px-2 py-3 text-right font-bold text-slate-800">
+              {formatCurrency(totalValue)}
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+</Card>
       {/* Create Challan — popup, same shell as Credit Note / Sales / Quotation */}
       {showAdd &&
         createPortal(

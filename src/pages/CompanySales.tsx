@@ -558,7 +558,11 @@ export default function CompanySales() {
                     rowSpan={2}
                     className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
                   >
+<<<<<<< HEAD
                     Through
+=======
+                    Store Name
+>>>>>>> 8111f998682e33d98b1ddc03bf72ab6c12b45abe
                   </th>
 
                   <th
