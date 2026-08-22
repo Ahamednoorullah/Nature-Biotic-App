@@ -63,6 +63,8 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   const [saved, setSaved] = useState(false);
   const [profileImage, setProfileImage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [throughType, setThroughType] = useState<'Direct' | 'Executive'>('Direct');
+  const [executiveName, setExecutiveName] = useState('');
 
   function handleProfileUpload(file?: File) {
     if (!file) return;
@@ -119,35 +121,38 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   }
 
   function saveFarmerRecord() {
-    if (!isValid) return false;
+  if (!isValid) return false;
 
-    addFarmer({
-      storeId,
-      name: form.name.trim(),
-      phone: form.phone.trim(),
-      altMobile: form.altMobile.trim(),
-      email: form.email.trim(),
-      aadhar: form.aadhar.trim(),
-      gst: form.gst.trim(),
-      village: form.village.trim(),
-      landmark: form.landmark.trim(),
-      district: form.district.trim(),
-      state: form.state.trim(),
-      pincode: form.pincode.trim(),
-      farmAddress: form.farmerAddress.trim(),
-      customerCategory: form.customerCategory as
-        | "Retail"
-        | "Wholesale"
-        | "Dealer",
-      crops: crops.map((crop) => ({
-        ...crop,
-        landSize: Number(crop.landSize || 0),
-      })),
-      profileImage,
-    });
+  addFarmer({
+    storeId,
+    name: form.name.trim(),
+    phone: form.phone.trim(),
+    altMobile: form.altMobile.trim(),
+    email: form.email.trim(),
+    aadhar: form.aadhar.trim(),
+    gst: form.gst.trim(),
+    village: form.village.trim(),
+    landmark: form.landmark.trim(),
+    district: form.district.trim(),
+    state: form.state.trim(),
+    pincode: form.pincode.trim(),
+    farmAddress: form.farmerAddress.trim(),
+    customerCategory: form.customerCategory as "Retail" |
+      "Wholesale" |
+      "Dealer",
+    crops: crops.map((crop) => ({
+      ...crop,
+      landSize: Number(crop.landSize || 0),
+    })),
+    profileImage,
+    through: throughType,                                    
+    executiveName: throughType === 'Executive' ? executiveName.trim() : '',  
+    cropType3: undefined,
+    cropType2: undefined
+  });
 
-    return true;
-  }
+  return true;
+}
 
   function handleSave() {
     if (!saveFarmerRecord()) return;
@@ -160,16 +165,18 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   }
 
   function handleSaveAndAdd() {
-    if (!saveFarmerRecord()) return;
+  if (!saveFarmerRecord()) return;
 
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      setForm(emptyForm);
-      setCrops([]);
-      setProfileImage("");
-    }, 700);
-  }
+  setSaved(true);
+  setTimeout(() => {
+    setSaved(false);
+    setForm(emptyForm);
+    setCrops([]);
+    setProfileImage("");
+    setThroughType('Direct');     
+    setExecutiveName('');         
+  }, 700);
+}
 
   const isValid =
     form.name &&
@@ -315,6 +322,35 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               placeholder="33ABCDE1234F1Z5"
               icon="receipt_long"
             />
+
+            <Select
+              label="Through"
+              value={throughType}
+              onChange={(v) => {
+                setThroughType(v as 'Direct' | 'Executive');
+                if (v === 'Direct') setExecutiveName('');
+              }}
+              options={[
+                { value: 'Direct', label: 'Direct' },
+                { value: 'Executive', label: 'Executive' },
+              ]}
+            />
+
+            {throughType === 'Executive' && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  Executive Name<span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={executiveName}
+                  onChange={(e) => setExecutiveName(e.target.value)}
+                  placeholder="Enter executive name"
+                  autoComplete="off"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus"
+                />
+              </div>
+            )}
             
               <div className="sm:col-span-2">
                 <Textarea
@@ -400,20 +436,6 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               options={cropTypes.map((c) => ({ value: c, label: c }))}
             />
             
-            <Select
-              label="Soil Type"
-              value={soilType}
-              onChange={setSoilType}
-              placeholder="Select soil type"
-              options={soilTypes.map((s) => ({ value: s, label: s }))}
-            />
-            <Select
-              label="Water Source"
-              value={waterSource}
-              onChange={setWaterSource}
-              placeholder="Select water source"
-              options={waterSources.map((w) => ({ value: w, label: w }))}
-            />
             <div className="flex items-end translate-y-[-4px]">
               <Button
                 type="button"
@@ -432,14 +454,8 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
                 <thead>
                   <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <th className="w-[8%] px-3 py-3 text-center">S.No</th>
-                    <th className="w-[26%] px-3 py-3 text-left">Crop</th>
-                    <th className="w-[20%] px-3 py-3 text-center">
-                      Land (Acres)
-                    </th>
-                    <th className="w-[20%] px-3 py-3 text-left">Soil Type</th>
-                    <th className="w-[20%] px-3 py-3 text-left">
-                      Water Source
-                    </th>
+                    <th className="w-[26%] px-40 py-3 text-left">Crop</th>
+                    <th className="w-[20%] px-3 py-3 text-center">Land (Acres)</th>
                     <th className="w-[6%] px-2 py-3 text-center"></th>
                   </tr>
                 </thead>
@@ -449,17 +465,11 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
                       <td className="px-3 py-3 text-center text-slate-500">
                         {index + 1}
                       </td>
-                      <td className="px-3 py-3 font-semibold text-slate-800">
+                      <td className="px-40 py-3 font-semibold text-slate-800">
                         {crop.cropType}
                       </td>
                       <td className="px-3 py-3 text-center text-slate-700">
                         {crop.landSize}
-                      </td>
-                      <td className="px-3 py-3 text-slate-600">
-                        {crop.soilType || "-"}
-                      </td>
-                      <td className="px-3 py-3 text-slate-600">
-                        {crop.waterSource || "-"}
                       </td>
                       <td className="px-2 py-3 text-center">
                         <button
