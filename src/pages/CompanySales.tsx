@@ -800,27 +800,27 @@ export default function CompanySales() {
                           Product
                         </th>
                         <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-center">
-                          Pack
+                          PKG Size
                         </th>
-                        <th className="w-[8%] border-r border-slate-300 px-2 py-3 text-right">
-                          Qty
+                        <th className="w-[8%] border-r border-slate-300 px-2 py-3 text-center">
+                          Qty in NOS
                         </th>
-                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-right">
+                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-center">
                           Rate
                         </th>
-                        <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-right">
+                        <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-center">
                           Discount
                         </th>
-                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-right">
+                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-center">
                           Taxable
                         </th>
-                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-right">
+                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-center">
                           SGST
                         </th>
-                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-right">
+                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-center">
                           CGST
                         </th>
-                        <th className="w-[10%] px-3 py-3 text-right">Total</th>
+                        <th className="w-[10%] px-3 py-3 text-center">Total</th>
                       </tr>
                     </thead>
 

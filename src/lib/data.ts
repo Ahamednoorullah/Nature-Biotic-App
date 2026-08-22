@@ -93,6 +93,8 @@ export type FarmerCrop = {
 };
 
 export type Farmer = {
+  cropType3: any;
+  cropType2: any;
   id: string;
   storeId: string;
   name: string;
@@ -779,6 +781,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2022-03-15",
     profileColor: "emerald",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Ramesh",
@@ -816,6 +820,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2021-11-20",
     profileColor: "blue",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Selvam",
@@ -853,6 +859,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2023-01-08",
     profileColor: "red",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Karthikeyan",
@@ -890,6 +898,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2021-06-12",
     profileColor: "amber",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Arumugam",
@@ -927,6 +937,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2022-07-22",
     profileColor: "teal",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Palanisamy",
@@ -964,6 +976,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2023-04-03",
     profileColor: "blue",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Lakshmanan",
@@ -1001,6 +1015,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2022-01-18",
     profileColor: "emerald",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Sankaralingam",
@@ -1038,6 +1054,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2023-02-11",
     profileColor: "amber",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Thangapandi",
@@ -1075,6 +1093,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2023-09-05",
     profileColor: "red",
+    cropType3: undefined,
+    cropType2: undefined
   },
   {
     name: "Velmurugan",
@@ -1112,6 +1132,8 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     status: "Active",
     joinedDate: "2021-09-30",
     profileColor: "teal",
+    cropType3: undefined,
+    cropType2: undefined
   },
 ];
 

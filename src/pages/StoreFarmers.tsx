@@ -179,9 +179,18 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
 
                     {/* Crops - more space */}
                     <td className="w-[22%] px-3 py-3.5 border-r border-slate-200">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs">
-                        {f.cropType || '-'}
-                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[f.cropType, f.cropType2, f.cropType3]
+                          .filter(Boolean)
+                          .map((crop, index) => (
+                            <span
+                              key={index}
+                              className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs"
+                            >
+                              {crop}
+                            </span>
+                          ))}
+                      </div>
                     </td>
 
                     {/* Outstanding */}

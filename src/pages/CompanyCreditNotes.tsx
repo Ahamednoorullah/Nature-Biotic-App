@@ -558,7 +558,7 @@ export default function CompanyCreditNotes() {
                     rowSpan={2}
                     className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 "
                   >
-                    Place of Return
+                    Place
                   </th>
                   <th
                     rowSpan={2}
