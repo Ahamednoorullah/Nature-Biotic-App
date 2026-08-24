@@ -42,28 +42,20 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       const cgst = Number(source.cgst ?? 0);
       const igst = Number(source.igst ?? 0);
       const unitPrice = Number(
-        source.unitPrice ??
-          source.sellingPrice ??
-          source.price ??
-          0,
+        source.unitPrice ?? source.sellingPrice ?? source.price ?? 0,
       );
 
       const beforeDiscount = Number(
         source.beforeDiscount ??
-          (unitPrice > 0
-            ? unitPrice * Number(source.quantity ?? 0)
-            : 0),
+          (unitPrice > 0 ? unitPrice * Number(source.quantity ?? 0) : 0),
       );
 
       const discountPercent = Number(
-        source.discountPercent ??
-          source.discount ??
-          0,
+        source.discountPercent ?? source.discount ?? 0,
       );
 
       const discountAmount = Number(
-        source.discountAmount ??
-          (beforeDiscount * discountPercent) / 100,
+        source.discountAmount ?? (beforeDiscount * discountPercent) / 100,
       );
 
       const taxableAmount = Number(
@@ -898,12 +890,12 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           >
                             Qty
                           </th>
-                          <th
+                          {/* <th
                             rowSpan={2}
                             className="w-[12%] border-r border-slate-300 px-2 py-2 text-left"
                           >
                             Reason
-                          </th>
+                          </th> */}
                           <th
                             rowSpan={2}
                             className="w-[8%] border-r border-slate-300 px-2 py-2 text-right"
@@ -1013,9 +1005,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                               <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {item.quantity}
                               </td>
-                              <td className="border-r border-slate-300 px-2 py-2 text-slate-600">
+                              {/* <td className="border-r border-slate-300 px-2 py-2 text-slate-600">
                                 {item.reason || "-"}
-                              </td>
+                              </td> */}
                               <td className="border-r border-slate-300 px-2 py-2 text-right text-slate-700">
                                 {item.unitPrice.toLocaleString("en-IN", {
                                   minimumFractionDigits: 2,

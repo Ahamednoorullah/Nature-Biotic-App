@@ -724,47 +724,89 @@ export default function CompanyCreditNotes() {
             <table className="w-full min-w-[1000px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                  <th rowSpan={2} className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200">
+                  <th
+                    rowSpan={2}
+                    className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200"
+                  >
                     S.No
                   </th>
-                  <th rowSpan={2} className="w-[8%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap">
+                  <th
+                    rowSpan={2}
+                    className="w-[8%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap"
+                  >
                     Date
                   </th>
-                  <th rowSpan={2} className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200">
+                  <th
+                    rowSpan={2}
+                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                  >
                     CN No.
                   </th>
-                  <th rowSpan={2} className="w-[14%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
+                  <th
+                    rowSpan={2}
+                    className="w-[14%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap"
+                  >
                     Store Name
                   </th>
-                  <th rowSpan={2} className="w-[9%] text-center font-semibold px-2 py-3 border-r border-slate-200">
+                  <th
+                    rowSpan={2}
+                    className="w-[9%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                  >
                     Place
                   </th>
-                  <th rowSpan={2} className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200">
+                  <th
+                    rowSpan={2}
+                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                  >
                     Without Tax
                   </th>
 
-                  <th colSpan={2} className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200">
+                  <th
+                    colSpan={2}
+                    className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                  >
                     SGST
                   </th>
-                  <th colSpan={2} className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200">
+                  <th
+                    colSpan={2}
+                    className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                  >
                     CGST
                   </th>
-                  <th colSpan={2} className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200">
+                  <th
+                    colSpan={2}
+                    className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                  >
                     IGST
                   </th>
 
-                  <th rowSpan={2} className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200">
+                  <th
+                    rowSpan={2}
+                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                  >
                     Total
                   </th>
                 </tr>
 
                 <tr className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
-                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">%</th>
-                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">Amt</th>
-                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">%</th>
-                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">Amt</th>
-                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">%</th>
-                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">Amt</th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    %
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    Amt
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    %
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    Amt
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    %
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    Amt
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -999,31 +1041,117 @@ export default function CompanyCreditNotes() {
                     <table className="credit-note-table w-full min-w-[1300px] border-collapse text-[8px]">
                       <thead>
                         <tr className="border-b border-slate-300 bg-slate-50 text-slate-600">
-                          <th rowSpan={2} className="border-r border-slate-300 p-2">S.No</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-left">Product</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2">PKG Size</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2">Batch No</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2">Exp Date</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2">Qty</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-left">Reason</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-right">Unit Price</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-right">Before Discount</th>
-                          <th colSpan={2} className="border-r border-slate-300 p-1">Discount</th>
-                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-right">Taxable (₹)</th>
-                          <th colSpan={2} className="border-r border-slate-300 p-1">CGST</th>
-                          <th colSpan={2} className="border-r border-slate-300 p-1">SGST</th>
-                          <th colSpan={2} className="border-r border-slate-300 p-1">IGST</th>
-                          <th rowSpan={2} className="p-2 text-right">Line Total</th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2"
+                          >
+                            S.No
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2 text-left"
+                          >
+                            Product
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2"
+                          >
+                            PKG Size
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2"
+                          >
+                            Batch No
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2"
+                          >
+                            Exp Date
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2"
+                          >
+                            Qty
+                          </th>
+                          {/* <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2 text-left"
+                          >
+                            Reason
+                          </th> */}
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2 text-right"
+                          >
+                            Unit Price
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2 text-right"
+                          >
+                            Before Discount
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="border-r border-slate-300 p-1"
+                          >
+                            Discount
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="border-r border-slate-300 p-2 text-right"
+                          >
+                            Taxable (₹)
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="border-r border-slate-300 p-1"
+                          >
+                            CGST
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="border-r border-slate-300 p-1"
+                          >
+                            SGST
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="border-r border-slate-300 p-1"
+                          >
+                            IGST
+                          </th>
+                          <th rowSpan={2} className="p-2 text-right">
+                            Line Total
+                          </th>
                         </tr>
                         <tr className="border-b border-slate-300 bg-slate-50 text-slate-600">
                           <th className="border-r border-slate-300 p-1">%</th>
-                          <th className="border-r border-slate-300 p-1 text-right">Amt</th>
-                          <th className="border-r border-slate-300 p-1">Rate %</th>
-                          <th className="border-r border-slate-300 p-1 text-right">Amount</th>
-                          <th className="border-r border-slate-300 p-1">Rate %</th>
-                          <th className="border-r border-slate-300 p-1 text-right">Amount</th>
-                          <th className="border-r border-slate-300 p-1">Rate %</th>
-                          <th className="border-r border-slate-300 p-1 text-right">Amount</th>
+                          <th className="border-r border-slate-300 p-1 text-right">
+                            Amt
+                          </th>
+                          <th className="border-r border-slate-300 p-1">
+                            Rate %
+                          </th>
+                          <th className="border-r border-slate-300 p-1 text-right">
+                            Amount
+                          </th>
+                          <th className="border-r border-slate-300 p-1">
+                            Rate %
+                          </th>
+                          <th className="border-r border-slate-300 p-1 text-right">
+                            Amount
+                          </th>
+                          <th className="border-r border-slate-300 p-1">
+                            Rate %
+                          </th>
+                          <th className="border-r border-slate-300 p-1 text-right">
+                            Amount
+                          </th>
                         </tr>
                       </thead>
 
@@ -1041,28 +1169,73 @@ export default function CompanyCreditNotes() {
                           const taxPct = Number(row.taxPercent || 0);
 
                           return (
-                            <tr key={row.id} className="border-b border-slate-300">
-                              <td className="border-r border-slate-300 p-2 text-center">{index + 1}</td>
-                              <td className="border-r border-slate-300 p-2 font-semibold">{row.product || "-"}</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{row.pkgsize || "-"}</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{row.batchNo || "-"}</td>
+                            <tr
+                              key={row.id}
+                              className="border-b border-slate-300"
+                            >
                               <td className="border-r border-slate-300 p-2 text-center">
-                                {row.expiryDate ? formatDate(row.expiryDate) : "-"}
+                                {index + 1}
                               </td>
-                              <td className="border-r border-slate-300 p-2 text-center">{row.quantity ?? "-"}</td>
-                              <td className="border-r border-slate-300 p-2 text-slate-600">{row.reason || "-"}</td>
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(price)}</td>
-                              <td className="border-r border-slate-300 p-2 text-right font-semibold">{formatCurrency(beforeDiscount)}</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{discountPct.toFixed(2)}</td>
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(discountAmt)}</td>
-                              <td className="border-r border-slate-300 p-2 text-right font-semibold">{formatCurrency(taxable)}</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{row.cgst > 0 ? (taxPct / 2).toFixed(2) : "0.00"}</td>
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(row.cgst)}</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{row.sgst > 0 ? (taxPct / 2).toFixed(2) : "0.00"}</td>
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(row.sgst)}</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{row.igst > 0 ? taxPct.toFixed(2) : "0.00"}</td>
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(row.igst)}</td>
-                              <td className="p-2 text-right font-bold">{formatCurrency(row.total)}</td>
+                              <td className="border-r border-slate-300 p-2 font-semibold">
+                                {row.product || "-"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.pkgsize || "-"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.batchNo || "-"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.expiryDate
+                                  ? formatDate(row.expiryDate)
+                                  : "-"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.quantity ?? "-"}
+                              </td>
+                              {/* <td className="border-r border-slate-300 p-2 text-slate-600">
+                                {row.reason || "-"}
+                              </td> */}
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(price)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right font-semibold">
+                                {formatCurrency(beforeDiscount)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {discountPct.toFixed(2)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(discountAmt)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right font-semibold">
+                                {formatCurrency(taxable)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.cgst > 0
+                                  ? (taxPct / 2).toFixed(2)
+                                  : "0.00"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(row.cgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.sgst > 0
+                                  ? (taxPct / 2).toFixed(2)
+                                  : "0.00"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(row.sgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.igst > 0 ? taxPct.toFixed(2) : "0.00"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(row.igst)}
+                              </td>
+                              <td className="p-2 text-right font-bold">
+                                {formatCurrency(row.total)}
+                              </td>
                             </tr>
                           );
                         })}
@@ -1076,8 +1249,8 @@ export default function CompanyCreditNotes() {
                         Notes
                       </p>
                       <p className="mt-2 text-sm text-slate-500">
-                        This credit note is generated against returned goods from{" "}
-                        {selectedCreditNote.header.party}
+                        This credit note is generated against returned goods
+                        from {selectedCreditNote.header.party}
                         {selectedCreditNote.header.invoiceNo
                           ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
                           : "."}
@@ -1111,8 +1284,7 @@ export default function CompanyCreditNotes() {
                         label="Discount"
                         value={formatCurrency(
                           selectedCreditNote.rows.reduce(
-                            (sum, row) =>
-                              sum + Number(row.discountAmount || 0),
+                            (sum, row) => sum + Number(row.discountAmount || 0),
                             0,
                           ),
                         )}
