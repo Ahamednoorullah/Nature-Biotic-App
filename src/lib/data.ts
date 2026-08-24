@@ -210,6 +210,13 @@ export type ExecutiveStockReturn = {
   executiveName: string;
   productName: string;
   packSize: string;
+  pkgsize?: string;
+  batchNo?: string;
+  expiryDate?: string;
+  hsn?: string;
+  taxPercent?: number;
+  discount?: number;
+  discountPercent?: number;
   quantity: number;
   remarks: string;
 };
@@ -222,8 +229,14 @@ export type CompanyCreditNoteSyncRecord = {
   storeName: string;
   returnDate: string;
   purchaseRef: string;
+  invoiceNo?: string;
   product: string;
   quantity: number;
+  unitPrice?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  taxableAmount?: number;
+  taxPercent?: number;
   withoutTax: number;
   sgst: number;
   cgst: number;

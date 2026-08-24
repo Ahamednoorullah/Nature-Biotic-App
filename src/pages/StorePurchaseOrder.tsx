@@ -1,20 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { addStoreApprovalRequest, getStoreApprovalRequest, storeApprovalRequestsUpdatedEvent, stores } from "@/lib/data";
+import {
+  addStoreApprovalRequest,
+  getStoreApprovalRequest,
+  storeApprovalRequestsUpdatedEvent,
+  stores,
+  getProductMaster,
+  productMasterUpdatedEvent,
+  type Product,
+} from "@/lib/data";
 import { createPortal } from "react-dom";
 
 type AddedProduct = {
   id: string;
+  productId?: string;
   product: string;
+  hsnCode?: string;
+  unit?: string;
   packSize: string;
   quantity: number;
   price: number;
+  taxPercent?: number;
+  taxType?: string;
   withoutTax: number;
   sgst: number;
   cgst: number;
   igst: number;
   total: number;
 };
+
 
 type PurchaseOrderRow = {
   id: string;
@@ -29,42 +43,6 @@ type PurchaseOrderRow = {
   status: "Pending" | "Approved";
   items: AddedProduct[];
 };
-
-const productMaster = [
-  {
-    value: "Electra",
-    label: "Electra",
-    price: 450,
-    tax: 12,
-    taxType: "Intrastate",
-  },
-  { value: "Aalga", label: "Aalga", price: 380, tax: 5, taxType: "Intrastate" },
-  {
-    value: "Astra",
-    label: "Astra",
-    price: 560,
-    tax: 18,
-    taxType: "Interstate",
-  },
-  {
-    value: "Rootra",
-    label: "Rootra",
-    price: 420,
-    tax: 5,
-    taxType: "Intrastate",
-  },
-];
-
-const packSizes = [
-  { value: "100 ml", label: "100 ml" },
-  { value: "250 ml", label: "250 ml" },
-  { value: "500 ml", label: "500 ml" },
-  { value: "1 L", label: "1 L" },
-  { value: "100 g", label: "100 g" },
-  { value: "250 g", label: "250 g" },
-  { value: "500 g", label: "500 g" },
-  { value: "1 Kg", label: "1 Kg" },
-];
 
 const initialRows: PurchaseOrderRow[] = [
   {
@@ -109,6 +87,9 @@ export default function StorePurchaseOrder({
       return initialRows;
     }
   });
+  const [productMaster, setProductMaster] = useState<Product[]>(() =>
+    getProductMaster(),
+  );
   const [showCreate, setShowCreate] = useState(false);
   const [date, setDate] = useState("");
   const [poNo, setPoNo] = useState("");
@@ -119,6 +100,24 @@ export default function StorePurchaseOrder({
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderRow | null>(
     null,
   );
+
+  useEffect(() => {
+    const syncProductMaster = () => {
+      setProductMaster(getProductMaster());
+    };
+
+    syncProductMaster();
+    window.addEventListener(productMasterUpdatedEvent, syncProductMaster);
+    window.addEventListener("focus", syncProductMaster);
+
+    return () => {
+      window.removeEventListener(
+        productMasterUpdatedEvent,
+        syncProductMaster,
+      );
+      window.removeEventListener("focus", syncProductMaster);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -138,30 +137,91 @@ export default function StorePurchaseOrder({
     return () => window.removeEventListener(storeApprovalRequestsUpdatedEvent, syncStatuses);
   }, [storeId]);
 
-  const selectedProduct = productMaster.find((p) => p.value === product);
-  const price = selectedProduct?.price ?? 0;
+  const selectedProduct = productMaster.find((p) => p.id === product);
+  const price = selectedProduct?.sellingPrice ?? 0;
+  const currentStore = stores.find((item) => item.id === storeId);
+
+  const isTamilNaduStore = useMemo(() => {
+    const locationText = `${currentStore?.location ?? ""} ${currentStore?.address ?? ""}`.toLowerCase();
+
+    return (
+      locationText.includes("tamil nadu") ||
+      locationText.includes("rajapalayam") ||
+      locationText.includes("tenkasi") ||
+      locationText.includes("virudhunagar")
+    );
+  }, [currentStore]);
+
+  const productChoices = useMemo(() => {
+    const byName = new Map<string, Product>();
+
+    productMaster
+      .filter((item) => item.status === "Active")
+      .forEach((item) => {
+        if (!byName.has(item.name)) byName.set(item.name, item);
+      });
+
+    return Array.from(byName.values());
+  }, [productMaster]);
+
+  const selectedProductVariants = useMemo(() => {
+    if (!selectedProduct) return [];
+
+    return productMaster.filter(
+      (item) =>
+        item.name === selectedProduct.name &&
+        item.unit === selectedProduct.unit &&
+        item.status === "Active",
+    );
+  }, [productMaster, selectedProduct]);
+
+  const availablePackSizes = selectedProductVariants.map(
+    (variant) => variant.size,
+  );
 
   const computed = useMemo(() => {
     const qty = Number(quantity) || 0;
     const withoutTax = qty * price;
-    if (!selectedProduct || qty <= 0) {
-      return { withoutTax: 0, sgst: 0, cgst: 0, igst: 0, total: 0 };
-    }
 
-    if (selectedProduct.taxType === "Intrastate") {
-      const tax = withoutTax * (selectedProduct.tax / 100);
+    if (!selectedProduct || qty <= 0) {
       return {
-        withoutTax,
-        sgst: tax / 2,
-        cgst: tax / 2,
+        withoutTax: 0,
+        sgst: 0,
+        cgst: 0,
         igst: 0,
-        total: withoutTax + tax,
+        total: 0,
       };
     }
 
-    const igst = withoutTax * (selectedProduct.tax / 100);
-    return { withoutTax, sgst: 0, cgst: 0, igst, total: withoutTax + igst };
-  }, [quantity, price, selectedProduct]);
+    const taxPercent = Number(selectedProduct.taxPercentage || 0);
+    const totalTax =
+      Math.round(withoutTax * (taxPercent / 100) * 100) / 100;
+
+    if (isTamilNaduStore) {
+      const halfTax = Math.round((totalTax / 2) * 100) / 100;
+
+      return {
+        withoutTax,
+        sgst: halfTax,
+        cgst: totalTax - halfTax,
+        igst: 0,
+        total: withoutTax + totalTax,
+      };
+    }
+
+    return {
+      withoutTax,
+      sgst: 0,
+      cgst: 0,
+      igst: totalTax,
+      total: withoutTax + totalTax,
+    };
+  }, [
+    quantity,
+    price,
+    selectedProduct,
+    isTamilNaduStore,
+  ]);
 
   const totals = useMemo(
     () => ({
@@ -175,8 +235,33 @@ export default function StorePurchaseOrder({
     [added],
   );
 
-  const canAdd = product && packSize && Number(quantity) > 0 && price > 0;
+  const canAdd = !!selectedProduct && !!packSize && Number(quantity) > 0 && price > 0;
   const canSave = date && poNo.trim() && added.length > 0;
+
+  function changeProduct(value: string) {
+    const baseProduct = productMaster.find((item) => item.id === value);
+
+    setProduct(baseProduct?.id ?? "");
+    setPackSize(baseProduct?.size ?? "");
+  }
+
+  function changePackSize(value: string) {
+    if (!selectedProduct) {
+      setPackSize(value);
+      return;
+    }
+
+    const variant = productMaster.find(
+      (item) =>
+        item.name === selectedProduct.name &&
+        item.unit === selectedProduct.unit &&
+        item.size === value &&
+        item.status === "Active",
+    );
+
+    if (variant) setProduct(variant.id);
+    setPackSize(value);
+  }
 
   function addProduct() {
     if (!canAdd || !selectedProduct) return;
@@ -184,11 +269,16 @@ export default function StorePurchaseOrder({
     setAdded((prev) => [
       ...prev,
       {
-        id: `${Date.now()}-${product}-${packSize}`,
-        product,
-        packSize,
+        id: `${Date.now()}-${selectedProduct.id}-${packSize}`,
+        productId: selectedProduct.id,
+        product: selectedProduct.name,
+        hsnCode: selectedProduct.hsnCode,
+        unit: selectedProduct.unit,
+        packSize: selectedProduct.size || packSize,
         quantity: Number(quantity),
-        price,
+        price: selectedProduct.sellingPrice,
+        taxPercent: selectedProduct.taxPercentage,
+        taxType: isTamilNaduStore ? "Intrastate" : "Interstate",
         withoutTax: computed.withoutTax,
         sgst: computed.sgst,
         cgst: computed.cgst,
@@ -301,19 +391,29 @@ export default function StorePurchaseOrder({
                 <Select
                   label="Product"
                   value={product}
-                  onChange={setProduct}
-                  placeholder="Select product"
-                  options={productMaster.map((p) => ({
-                    value: p.value,
-                    label: p.label,
+                  onChange={changeProduct}
+                  placeholder={
+                    productMaster.length ? "Select product" : "No products in Product Management"
+                  }
+                  options={productChoices.map((p) => ({
+                    value: p.id,
+                    label: p.name,
                   }))}
                 />
                 <Select
                   label="Pack Size"
                   value={packSize}
-                  onChange={setPackSize}
-                  placeholder="Select size"
-                  options={packSizes}
+                  onChange={changePackSize}
+                  placeholder={
+                    selectedProduct
+                      ? `Select ${selectedProduct.unit} size`
+                      : "Select product first"
+                  }
+                  options={availablePackSizes.map((size) => ({
+                    value: size,
+                    label: `${size} (${selectedProduct?.unit ?? ""})`,
+                  }))}
+                  disabled={!selectedProduct}
                 />
                 <Input
                   label="Qty"
@@ -342,8 +442,21 @@ export default function StorePurchaseOrder({
               </div>
 
               {selectedProduct && (
-                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm md:grid-cols-5">
-                  <MiniInfo label="Tax %" value={`${selectedProduct.tax}%`} />
+                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm md:grid-cols-4 xl:grid-cols-8">
+                  <MiniInfo label="HSN Code" value={selectedProduct.hsnCode || "-"} />
+                  <MiniInfo label="Unit" value={selectedProduct.unit || "-"} />
+                  <MiniInfo
+                    label="GST %"
+                    value={`${selectedProduct.taxPercentage}%`}
+                  />
+                  <MiniInfo
+                    label="GST Applied"
+                    value={
+                      isTamilNaduStore
+                        ? `SGST ${selectedProduct.taxPercentage / 2}% + CGST ${selectedProduct.taxPercentage / 2}%`
+                        : `IGST ${selectedProduct.taxPercentage}%`
+                    }
+                  />
                   <MiniInfo
                     label="Without Tax"
                     value={formatMoney(computed.withoutTax)}
@@ -361,8 +474,9 @@ export default function StorePurchaseOrder({
                 <table className="w-full table-fixed text-sm">
                   <thead>
                     <tr className="bg-slate-100 text-xs uppercase text-slate-500">
-                      <th className="w-[18%] px-3 py-3 text-left">Product</th>
-                      <th className="w-[12%] px-3 py-3 text-left">Pack Size</th>
+                      <th className="w-[15%] px-3 py-3 text-left">Product</th>
+                      <th className="w-[9%] px-2 py-3 text-center">HSN</th>
+                      <th className="w-[10%] px-3 py-3 text-left">Pack Size</th>
                       <th className="w-[8%] px-2 py-3 text-center">Qty</th>
                       <th className="w-[10%] px-2 py-3 text-right">Price</th>
                       <th className="w-[12%] px-2 py-3 text-right">
@@ -380,6 +494,9 @@ export default function StorePurchaseOrder({
                       <tr key={item.id}>
                         <td className="truncate px-3 py-3 font-semibold text-slate-700">
                           {item.product}
+                        </td>
+                        <td className="px-2 py-3 text-center text-slate-600">
+                          {item.hsnCode || "-"}
                         </td>
                         <td className="px-3 py-3 text-slate-600">
                           {item.packSize}
@@ -609,8 +726,9 @@ export default function StorePurchaseOrder({
                   <thead>
                     <tr className="bg-slate-100 text-xs uppercase text-slate-500">
                       <th className="w-[6%] px-2 py-3 text-center">S.No</th>
-                      <th className="w-[18%] px-3 py-3 text-left">Product</th>
-                      <th className="w-[12%] px-3 py-3 text-left">Pack Size</th>
+                      <th className="w-[16%] px-3 py-3 text-left">Product</th>
+                      <th className="w-[9%] px-2 py-3 text-center">HSN</th>
+                      <th className="w-[11%] px-3 py-3 text-left">Pack Size</th>
                       <th className="w-[8%] px-2 py-3 text-center">Qty</th>
                       <th className="w-[10%] px-2 py-3 text-right">Price</th>
                       <th className="w-[12%] px-2 py-3 text-right">
@@ -630,6 +748,7 @@ export default function StorePurchaseOrder({
                           <td className="px-3 py-3 font-semibold">
                             {item.product}
                           </td>
+                          <td className="px-2 py-3 text-center">{item.hsnCode || "-"}</td>
                           <td className="px-3 py-3">{item.packSize}</td>
                           <td className="px-2 py-3 text-center">
                             {item.quantity}
@@ -657,7 +776,7 @@ export default function StorePurchaseOrder({
                     ) : (
                       <tr>
                         <td
-                          colSpan={10}
+                          colSpan={11}
                           className="px-4 py-10 text-center text-slate-400"
                         >
                           Product details are not available for this order.

@@ -14,6 +14,8 @@ import {
   addCompanyCreditNoteSyncRecords,
   getCompanyCreditNoteSyncRecords,
   type CompanyCreditNoteSyncRecord,
+  getCompanyStoreSales,
+  type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
 
@@ -49,6 +51,9 @@ type AddedProduct = {
   sellingPrice: number;
   discount: number;
   reason: string;
+  soldQuantity: number;
+  taxPercent: number;
+  discountAmount: number;
   taxableAmount: number;
   sgst: number;
   cgst: number;
@@ -56,29 +61,6 @@ type AddedProduct = {
   total: number;
 };
 
-const productNames = [
-  "Electra",
-  "Aalga",
-  "Astra",
-  "Alpha",
-  "Neutra",
-  "Rootra",
-  "Ultra",
-];
-const allProducts = productNames.map((name, i) => ({
-  id: `p${i}`,
-  name,
-  size: "500ml",
-  hsnCode: "3101",
-  mrp: 250 + i * 50,
-  taxType: "GST",
-  taxPercentage: 18,
-  sgst: 9,
-  cgst: 9,
-  imageColor: ["blue", "green", "red", "amber", "purple", "pink", "indigo"][
-    i % 7
-  ],
-}));
 const parties = [
   "Murugan Farms",
   "Sairam Agri Inputs",
@@ -129,13 +111,7 @@ const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red"> = {
   Rejected: "red",
 };
 
-function CreditInfo({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function CreditInfo({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -177,6 +153,11 @@ export default function CompanyCreditNotes() {
   });
 
   const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<
+    "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
+  >("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedCreditNote, setSelectedCreditNote] = useState<{
     header: CreditNote;
@@ -185,7 +166,11 @@ export default function CompanyCreditNotes() {
 
   // Form state
   const [returnDate, setReturnDate] = useState("");
-  const [invoiceNo, setCreditno] = useState("");
+  const [creditNoteNo, setCreditNoteNo] = useState("");
+  const [invoiceNo, setInvoiceNo] = useState("");
+  const [companySales] = useState<CompanyStoreSaleRecord[]>(() =>
+    getCompanyStoreSales(),
+  );
   const [storeId, setStoreId] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -202,7 +187,23 @@ export default function CompanyCreditNotes() {
   const [added, setAdded] = useState<AddedProduct[]>([]);
 
   const selectedStore = stores.find((s) => s.id === storeId);
-  const entryProduct = allProducts.find((p) => p.id === entry.productId);
+  const invoiceOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return companySales.filter((row) => {
+      if (seen.has(row.invoiceNo)) return false;
+      seen.add(row.invoiceNo);
+      return true;
+    });
+  }, [companySales]);
+
+  const selectedInvoiceRows = useMemo(
+    () => companySales.filter((row) => row.invoiceNo === invoiceNo),
+    [companySales, invoiceNo],
+  );
+
+  const entryProduct = selectedInvoiceRows.find(
+    (_, index) => String(index) === entry.productId,
+  );
 
   const canAdd =
     entry.productId &&
@@ -210,7 +211,8 @@ export default function CompanyCreditNotes() {
     entry.expiryDate &&
     entry.quantity > 0 &&
     entry.sellingPrice > 0;
-  const canCreate = storeId && invoiceNo && returnDate && added.length > 0;
+  const canCreate =
+    creditNoteNo && invoiceNo && storeId && returnDate && added.length > 0;
 
   // ---- Totals: calculated live from the added products list ----
   const totals = useMemo(() => {
@@ -246,19 +248,25 @@ export default function CompanyCreditNotes() {
     sellingPrice: number,
     discount: number,
   ) {
-    const product = allProducts.find((p) => p.id === productId);
+    const saleRow = selectedInvoiceRows[Number(productId)];
     const gross = sellingPrice * quantity;
     const discountAmt = (gross * discount) / 100;
     const taxableAmount = gross - discountAmt;
+    const taxPercent = Number(
+      (saleRow as any)?.taxPercent ??
+        (saleRow?.withoutTax > 0
+          ? (saleRow.taxAmount / saleRow.withoutTax) * 100
+          : 0),
+    );
 
     const sgstAmt = isTamilNaduSupply()
-      ? (taxableAmount * (product?.sgst ?? 0)) / 100
+      ? (taxableAmount * (taxPercent / 2)) / 100
       : 0;
     const cgstAmt = isTamilNaduSupply()
-      ? (taxableAmount * (product?.cgst ?? 0)) / 100
+      ? (taxableAmount * (taxPercent / 2)) / 100
       : 0;
     const igstAmt = !isTamilNaduSupply()
-      ? (taxableAmount * (product?.taxPercentage ?? 0)) / 100
+      ? (taxableAmount * taxPercent) / 100
       : 0;
 
     return {
@@ -271,18 +279,41 @@ export default function CompanyCreditNotes() {
   }
 
   function selectProduct(productId: string) {
-    const product = allProducts.find((p) => p.id === productId);
+    const saleRow = selectedInvoiceRows[Number(productId)];
+    if (!saleRow) return;
+    const gross = saleRow.quantity * saleRow.rate;
+    const discountPercent = Number(
+      (saleRow as any).discountPercent ??
+        (gross > 0
+          ? (Number((saleRow as any).discount || 0) / gross) * 100
+          : 0),
+    );
     setEntry((p) => ({
       ...p,
       productId,
-      sellingPrice: product?.mrp ?? p.sellingPrice,
+      pkgsize: (saleRow as any).pkgsize || saleRow.packSize || "",
+      batchNo: (saleRow as any).batchNo || "",
+      expiryDate: (saleRow as any).expiryDate || "",
+      quantity: 1,
+      sellingPrice: saleRow.rate,
+      discount: discountPercent,
     }));
   }
 
   function addProduct() {
     if (!canAdd) return;
-    const product = allProducts.find((p) => p.id === entry.productId);
-    if (!product) return;
+    const saleRow = selectedInvoiceRows[Number(entry.productId)];
+    if (!saleRow) return;
+    const alreadyReturned = getCompanyCreditNoteSyncRecords()
+      .filter(
+        (r: any) =>
+          r.invoiceNo === invoiceNo &&
+          r.product === saleRow.product &&
+          r.status !== "Rejected",
+      )
+      .reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+    const remainingQty = Math.max(0, saleRow.quantity - alreadyReturned);
+    if (entry.quantity > remainingQty) return;
 
     const computed = computeLine(
       entry.productId,
@@ -294,7 +325,7 @@ export default function CompanyCreditNotes() {
     const newItem: AddedProduct = {
       key: `${entry.productId}-${entry.batchNo}-${String(globalThis.Date.now())}-${Math.random().toString(36).slice(2, 6)}`,
       productId: entry.productId,
-      productName: product.name,
+      productName: saleRow.product,
       pkgsize: entry.pkgsize,
       batchNo: entry.batchNo,
       expiryDate: entry.expiryDate,
@@ -302,6 +333,15 @@ export default function CompanyCreditNotes() {
       sellingPrice: entry.sellingPrice,
       discount: entry.discount,
       reason: entry.reason,
+      soldQuantity: saleRow.quantity,
+      taxPercent: Number(
+        (saleRow as any).taxPercent ??
+          (saleRow.withoutTax > 0
+            ? (saleRow.taxAmount / saleRow.withoutTax) * 100
+            : 0),
+      ),
+      discountAmount:
+        (entry.sellingPrice * entry.quantity * entry.discount) / 100,
       ...computed,
     };
 
@@ -356,7 +396,8 @@ export default function CompanyCreditNotes() {
 
   function resetForm() {
     setReturnDate("");
-    setCreditno("");
+    setCreditNoteNo("");
+    setInvoiceNo("");
     setStoreId("");
     setPlaceOfSupply("");
     setRemarks("");
@@ -374,7 +415,7 @@ export default function CompanyCreditNotes() {
   }
 
   function handleSaveDraft() {
-    if (!storeId || !invoiceNo) return;
+    if (!storeId || !invoiceNo || !creditNoteNo) return;
     // TODO: persist as a draft (status: 'Pending') via your API / store
     console.log("Saved as draft", {
       returnDate,
@@ -396,14 +437,20 @@ export default function CompanyCreditNotes() {
     // Company Credit Note -> selected Store Debit Note sync
     const syncRows: CompanyCreditNoteSyncRecord[] = added.map(
       (item, index) => ({
-        id: `${invoiceNo}-${item.key}-${createdAt}-${index}`,
-        creditNoteNo: invoiceNo,
+        id: `${creditNoteNo}-${item.key}-${createdAt}-${index}`,
+        creditNoteNo,
         storeId: selectedStore.id,
         storeName: selectedStore.name,
         returnDate,
         purchaseRef: invoiceNo,
+        invoiceNo,
         product: item.productName,
         quantity: item.quantity,
+        unitPrice: item.sellingPrice,
+        discountPercent: item.discount,
+        discountAmount: item.discountAmount,
+        taxableAmount: item.taxableAmount,
+        taxPercent: item.taxPercent,
         withoutTax: item.taxableAmount,
         sgst: item.sgst,
         cgst: item.cgst,
@@ -420,10 +467,9 @@ export default function CompanyCreditNotes() {
     // Show newly created rows immediately in Company Credit Notes.
     const companyRows: CreditNote[] = added.map((item, index) => ({
       id: syncRows[index].id,
-      creditNoteNo: invoiceNo,
+      creditNoteNo,
       party: selectedStore.name,
       Date: returnDate,
-      returnDate,
       amount: item.taxableAmount,
       sgst: item.sgst,
       cgst: item.cgst,
@@ -473,15 +519,67 @@ export default function CompanyCreditNotes() {
     </div>
   );
 
-  const filtered = useMemo(
-    () =>
-      creditNotes.filter(
-        (c) =>
-          c.creditNoteNo.toLowerCase().includes(search.toLowerCase()) ||
-          c.party.toLowerCase().includes(search.toLowerCase()),
-      ),
-    [search, creditNotes],
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const today = new globalThis.Date();
+
+    const normalize = (value: string) =>
+      new globalThis.Date(`${value}T00:00:00`);
+
+    const isWithinDateFilter = (value: string) => {
+      const rowDate = normalize(value);
+
+      if (dateFilter === "all") return true;
+
+      if (dateFilter === "today") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowDate.getMonth() === today.getMonth() &&
+          rowDate.getDate() === today.getDate()
+        );
+      }
+
+      if (dateFilter === "monthly") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowDate.getMonth() === today.getMonth()
+        );
+      }
+
+      if (dateFilter === "quarterly") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          Math.floor(rowDate.getMonth() / 3) ===
+            Math.floor(today.getMonth() / 3)
+        );
+      }
+
+      if (dateFilter === "yearly") {
+        return rowDate.getFullYear() === today.getFullYear();
+      }
+
+      if (dateFilter === "custom") {
+        if (!customFrom && !customTo) return true;
+
+        const from = customFrom ? normalize(customFrom) : null;
+        const to = customTo ? normalize(customTo) : null;
+
+        if (from && rowDate < from) return false;
+        if (to && rowDate > to) return false;
+      }
+
+      return true;
+    };
+
+    return creditNotes.filter((c) => {
+      const matchesSearch =
+        !q ||
+        c.creditNoteNo.toLowerCase().includes(q) ||
+        c.party.toLowerCase().includes(q);
+
+      return matchesSearch && isWithinDateFilter(c.Date);
+    });
+  }, [search, creditNotes, dateFilter, customFrom, customTo]);
 
   function closeForm() {
     setShowCreate(false);
@@ -506,13 +604,79 @@ export default function CompanyCreditNotes() {
       </div>
 
       <Card className="p-4 mb-5">
-        <div className="flex-1 max-w-md">
-          <Input
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by credit note, invoice, party..."
-            icon="search"
-          />
+        <div className="flex flex-col gap-3 xl:flex-row xl:flex-nowrap xl:items-end xl:gap-2">
+          <div className="w-full xl:w-[245px] xl:shrink-0">
+            <Input
+              value={search}
+              onChange={setSearch}
+              placeholder="Search by CN no or store..."
+              icon="search"
+            />
+          </div>
+
+          <div className="w-full xl:w-[155px] xl:shrink-0">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) =>
+                setDateFilter(
+                  value as
+                    | "all"
+                    | "today"
+                    | "monthly"
+                    | "quarterly"
+                    | "yearly"
+                    | "custom",
+                )
+              }
+              options={[
+                { value: "all", label: "All Dates" },
+                { value: "today", label: "Today" },
+                { value: "monthly", label: "Monthly" },
+                { value: "quarterly", label: "Quarterly" },
+                { value: "yearly", label: "Yearly" },
+                { value: "custom", label: "Custom Date" },
+              ]}
+            />
+          </div>
+
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full xl:w-[140px] xl:shrink-0">
+                <Input
+                  label="From"
+                  type="date"
+                  value={customFrom}
+                  onChange={setCustomFrom}
+                />
+              </div>
+
+              <div className="w-full xl:w-[140px] xl:shrink-0">
+                <Input
+                  label="To"
+                  type="date"
+                  value={customTo}
+                  onChange={setCustomTo}
+                />
+              </div>
+            </>
+          )}
+
+          {(search || dateFilter !== "all" || customFrom || customTo) && (
+            <Button
+              variant="secondary"
+              className="xl:shrink-0"
+              onClick={() => {
+                setSearch("");
+                setDateFilter("all");
+                setCustomFrom("");
+                setCustomTo("");
+              }}
+            >
+              <Icon name="filter_alt_off" size={17} />
+              Clear
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -640,8 +804,59 @@ export default function CompanyCreditNotes() {
       {selectedCreditNote &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 6mm;
+                }
+
+                body * {
+                  visibility: hidden !important;
+                }
+
+                .credit-note-print-area,
+                .credit-note-print-area * {
+                  visibility: visible !important;
+                }
+
+                .credit-note-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                }
+
+                .credit-note-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                }
+
+                .credit-note-screen-only {
+                  display: none !important;
+                }
+
+                .credit-note-table {
+                  width: 100% !important;
+                  table-layout: auto !important;
+                  font-size: 8px !important;
+                }
+
+                .credit-note-table th,
+                .credit-note-table td {
+                  padding: 2px 3px !important;
+                  line-height: 1.15 !important;
+                }
+              }
+            `}</style>
+
+            <div className="credit-note-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
                     Credit Note
@@ -649,180 +864,364 @@ export default function CompanyCreditNotes() {
                   <h2 className="mt-1 text-xl font-bold text-slate-800">
                     {selectedCreditNote.header.creditNoteNo}
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Nature Biotic → {selectedCreditNote.header.party}
-                  </p>
+                  <div className="mt-2">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                        selectedCreditNote.header.status === "Approved"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : selectedCreditNote.header.status === "Rejected"
+                            ? "bg-red-50 text-red-700"
+                            : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {selectedCreditNote.header.status || "Pending"}
+                    </span>
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setSelectedCreditNote(null)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
                 >
                   <Icon name="close" size={20} />
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
-                <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <CreditInfo
-                    label="CN No."
-                    value={selectedCreditNote.header.creditNoteNo}
-                  />
-                  <CreditInfo
-                    label="Date"
-                    value={formatDate(selectedCreditNote.header.Date)}
-                  />
-                  <CreditInfo
-                    label="Store Name"
-                    value={selectedCreditNote.header.party}
-                  />
-                  <CreditInfo
-                    label="Place of Return"
-                    value={selectedCreditNote.header.placeofreturn || "-"}
-                  />
-                  <CreditInfo
-                    label="Store Location"
-                    value={selectedCreditNote.header.storeLocation || "-"}
-                  />
-                  <CreditInfo
-                    label="Products"
-                    value={String(selectedCreditNote.rows.length)}
-                  />
-                  <CreditInfo
-                    label="Total Qty"
-                    value={String(
-                      selectedCreditNote.rows.reduce(
-                        (sum, row) => sum + Number(row.quantity || 0),
-                        0,
-                      ),
-                    )}
-                  />
-                  <CreditInfo
-                    label="Status"
-                    value={selectedCreditNote.header.status || "Pending"}
-                  />
-                </div>
+              <div className="credit-note-scroll min-h-0 flex-1 overflow-y-auto p-3">
+                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
 
-                <div className="overflow-hidden rounded-2xl border border-slate-200">
-                  <table className="w-full table-fixed text-sm">
-                    <thead>
-                      <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                        <th className="w-[6%] px-2 py-3 text-center">S.No</th>
-                        <th className="w-[19%] px-3 py-3 text-left">Product</th>
-                        <th className="w-[9%] px-2 py-3 text-center">Qty</th>
-                        <th className="w-[16%] px-2 py-3 text-left">Reason</th>
-                        <th className="w-[12%] px-2 py-3 text-right">Without Tax</th>
-                        <th className="w-[9%] px-2 py-3 text-right">SGST</th>
-                        <th className="w-[9%] px-2 py-3 text-right">CGST</th>
-                        <th className="w-[9%] px-2 py-3 text-right">IGST</th>
-                        <th className="w-[11%] px-2 py-3 text-right">Total</th>
-                      </tr>
-                    </thead>
+                        <div className="leading-tight">
+                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                            NATURE BIOTIC
+                          </h3>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
+                            4/130/A1, Velavan Nagar, Velayudhampuram,
+                            Rajapalayam, Tamil Nadu - 626102
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-600">
+                            GSTIN: 33AEZPV5328P1ZC
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Cell: 96008 44446
+                          </p>
+                        </div>
+                      </div>
+                    </div>
 
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedCreditNote.rows.map((row, index) => (
-                        <tr key={row.id}>
-                          <td className="px-2 py-3 text-center text-slate-500">
-                            {index + 1}
+                    <div className="flex items-center justify-center p-3">
+                      <div className="text-center">
+                        <h3 className="text-2xl font-extrabold uppercase tracking-wide text-slate-900">
+                          Credit Note
+                        </h3>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Product Return / Adjustment
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-4">
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Issued To
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selectedCreditNote.header.party}
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        {selectedCreditNote.header.storeLocation || "-"}
+                      </p>
+                    </div>
+
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Return Details
+                      </p>
+                      <p className="text-slate-600">
+                        Place of Return:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedCreditNote.header.placeofreturn || "-"}
+                        </span>
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        Products:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedCreditNote.rows.length}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Total Qty:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedCreditNote.rows.reduce(
+                            (sum, row) => sum + Number(row.quantity || 0),
+                            0,
+                          )}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Credit Note Details
+                      </p>
+
+                      <div className="grid grid-cols-[92px_1fr] gap-y-1">
+                        <span className="text-slate-500">CN No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedCreditNote.header.creditNoteNo}
+                        </span>
+
+                        <span className="text-slate-500">Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selectedCreditNote.header.Date)}
+                        </span>
+
+                        <span className="text-slate-500">Store Name</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedCreditNote.header.party}
+                        </span>
+
+                        <span className="text-slate-500">Status</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedCreditNote.header.status || "Pending"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full overflow-hidden">
+                    <table className="credit-note-table w-full border-collapse text-[9px]">
+                      <thead>
+                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                          <th className="w-[4%] border-r border-slate-300 px-2 py-2 text-center">
+                            S.No
+                          </th>
+                          <th className="w-[17%] border-r border-slate-300 px-2 py-2 text-left">
+                            Product
+                          </th>
+                          <th className="w-[6%] border-r border-slate-300 px-2 py-2 text-center">
+                            Qty
+                          </th>
+                          <th className="w-[18%] border-r border-slate-300 px-2 py-2 text-left">
+                            Reason
+                          </th>
+                          <th className="w-[13%] border-r border-slate-300 px-2 py-2 text-right">
+                            Without Tax
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-right">
+                            SGST
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-right">
+                            CGST
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-right">
+                            IGST
+                          </th>
+                          <th className="w-[15%] px-2 py-2 text-right">
+                            Line Total
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {selectedCreditNote.rows.map((row, index) => (
+                          <tr
+                            key={row.id}
+                            className="border-b border-slate-200"
+                          >
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {index + 1}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
+                              {row.product || "-"}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-center tabular-nums">
+                              {row.quantity ?? "-"}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-slate-600">
+                              {row.reason || "-"}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
+                              {formatCurrency(row.amount)}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
+                              {formatCurrency(row.sgst)}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
+                              {formatCurrency(row.cgst)}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
+                              {formatCurrency(row.igst)}
+                            </td>
+
+                            <td className="px-2 py-2 text-right font-bold tabular-nums text-slate-900">
+                              {formatCurrency(row.total)}
+                            </td>
+                          </tr>
+                        ))}
+
+                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold">
+                          <td
+                            colSpan={4}
+                            className="border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Total
                           </td>
-                          <td className="px-3 py-3 font-semibold text-slate-800">
-                            {row.product || "-"}
+
+                          <td className="border-r border-slate-300 px-2 py-2 text-right">
+                            {formatCurrency(
+                              selectedCreditNote.rows.reduce(
+                                (sum, row) => sum + Number(row.amount || 0),
+                                0,
+                              ),
+                            )}
                           </td>
-                          <td className="px-2 py-3 text-center tabular-nums">
-                            {row.quantity ?? "-"}
+
+                          <td className="border-r border-slate-300 px-2 py-2 text-right">
+                            {formatCurrency(
+                              selectedCreditNote.rows.reduce(
+                                (sum, row) => sum + Number(row.sgst || 0),
+                                0,
+                              ),
+                            )}
                           </td>
-                          <td className="px-2 py-3 text-slate-600">
-                            {row.reason || "-"}
+
+                          <td className="border-r border-slate-300 px-2 py-2 text-right">
+                            {formatCurrency(
+                              selectedCreditNote.rows.reduce(
+                                (sum, row) => sum + Number(row.cgst || 0),
+                                0,
+                              ),
+                            )}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
-                            {formatCurrency(row.amount)}
+
+                          <td className="border-r border-slate-300 px-2 py-2 text-right">
+                            {formatCurrency(
+                              selectedCreditNote.rows.reduce(
+                                (sum, row) => sum + Number(row.igst || 0),
+                                0,
+                              ),
+                            )}
                           </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
-                            {formatCurrency(row.sgst)}
-                          </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
-                            {formatCurrency(row.cgst)}
-                          </td>
-                          <td className="px-2 py-3 text-right tabular-nums">
-                            {formatCurrency(row.igst)}
-                          </td>
-                          <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                            {formatCurrency(row.total)}
+
+                          <td className="px-2 py-2 text-right">
+                            {formatCurrency(
+                              selectedCreditNote.rows.reduce(
+                                (sum, row) => sum + Number(row.total || 0),
+                                0,
+                              ),
+                            )}
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </tbody>
+                    </table>
+                  </div>
 
-                <div className="mt-5 ml-auto w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                  <h3 className="mb-3 text-sm font-bold text-slate-800">
-                    Credit Note Summary
-                  </h3>
+                  <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Credit note issued by Nature Biotic against returned or
+                        adjusted products for {selectedCreditNote.header.party}.
+                      </p>
+                    </div>
 
-                  <div className="space-y-2 text-sm">
-                    <SummaryRow
-                      label="Without Tax"
-                      value={formatCurrency(
-                        selectedCreditNote.rows.reduce(
-                          (sum, row) => sum + Number(row.amount || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <SummaryRow
-                      label="SGST"
-                      value={formatCurrency(
-                        selectedCreditNote.rows.reduce(
-                          (sum, row) => sum + Number(row.sgst || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <SummaryRow
-                      label="CGST"
-                      value={formatCurrency(
-                        selectedCreditNote.rows.reduce(
-                          (sum, row) => sum + Number(row.cgst || 0),
-                          0,
-                        ),
-                      )}
-                    />
-                    <SummaryRow
-                      label="IGST"
-                      value={formatCurrency(
-                        selectedCreditNote.rows.reduce(
-                          (sum, row) => sum + Number(row.igst || 0),
-                          0,
-                        ),
-                      )}
-                    />
-
-                    <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
-                      <span className="font-bold text-slate-800">
-                        Grand Total
-                      </span>
-                      <span className="text-lg font-bold text-brand-700">
-                        {formatCurrency(
+                    <div className="p-4 text-sm">
+                      <SummaryRow
+                        label="Without Tax"
+                        value={formatCurrency(
                           selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.total || 0),
+                            (sum, row) => sum + Number(row.amount || 0),
                             0,
                           ),
                         )}
-                      </span>
+                      />
+
+                      <SummaryRow
+                        label="SGST"
+                        value={formatCurrency(
+                          selectedCreditNote.rows.reduce(
+                            (sum, row) => sum + Number(row.sgst || 0),
+                            0,
+                          ),
+                        )}
+                      />
+
+                      <SummaryRow
+                        label="CGST"
+                        value={formatCurrency(
+                          selectedCreditNote.rows.reduce(
+                            (sum, row) => sum + Number(row.cgst || 0),
+                            0,
+                          ),
+                        )}
+                      />
+
+                      <SummaryRow
+                        label="IGST"
+                        value={formatCurrency(
+                          selectedCreditNote.rows.reduce(
+                            (sum, row) => sum + Number(row.igst || 0),
+                            0,
+                          ),
+                        )}
+                      />
+
+                      <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-3">
+                        <span className="font-bold text-slate-900">
+                          Grand Total
+                        </span>
+                        <span className="text-lg font-extrabold text-brand-700">
+                          {formatCurrency(
+                            selectedCreditNote.rows.reduce(
+                              (sum, row) => sum + Number(row.total || 0),
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end border-t border-slate-300 p-4">
+                    <div className="w-52 text-center">
+                      <div className="h-12 border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <div className="credit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
                 <Button
                   variant="secondary"
                   onClick={() => setSelectedCreditNote(null)}
                 >
                   Close
                 </Button>
+
                 <Button onClick={() => window.print()}>
                   <Icon name="print" size={18} />
                   Print Credit Note
@@ -873,29 +1272,56 @@ export default function CompanyCreditNotes() {
                     <Input
                       label="Credit Note Number"
                       placeholder="e.g. CN-2050"
-                      value={invoiceNo}
-                      onChange={setCreditno}
+                      value={creditNoteNo}
+                      onChange={setCreditNoteNo}
                       required
                     />
 
                     <Select
-                      label="Select Store"
-                      value={storeId}
+                      label="Invoice No"
+                      value={invoiceNo}
                       onChange={(value) => {
-                        setStoreId(value);
-                        const store = stores.find((s) => s.id === value);
-                        if (store?.location?.toLowerCase().includes("kerala")) {
-                          setPlaceOfSupply("Others");
-                        } else {
-                          setPlaceOfSupply("Tamil Nadu");
+                        setInvoiceNo(value);
+                        setAdded([]);
+                        setEntry((p) => ({
+                          ...p,
+                          productId: "",
+                          pkgsize: "",
+                          batchNo: "",
+                          expiryDate: "",
+                          quantity: 0,
+                          sellingPrice: 0,
+                          discount: 0,
+                        }));
+                        const invoice = companySales.find(
+                          (row) => row.invoiceNo === value,
+                        );
+                        if (invoice) {
+                          setStoreId(invoice.storeId);
+                          setPlaceOfSupply(
+                            invoice.placeOfSupply ||
+                              (invoice.storeLocation
+                                ?.toLowerCase()
+                                .includes("kerala")
+                                ? "Others"
+                                : "Tamil Nadu"),
+                          );
                         }
                       }}
-                      placeholder="Choose a registered store"
-                      options={stores.map((s) => ({
-                        value: s.id,
-                        label: `${s.name} — ${s.location}`,
+                      placeholder="Select original sales invoice"
+                      options={invoiceOptions.map((row) => ({
+                        value: row.invoiceNo,
+                        label: `${row.invoiceNo} — ${row.storeName}`,
                       }))}
                       required
+                    />
+
+                    <Input
+                      label="Store"
+                      value={selectedStore?.name || ""}
+                      onChange={() => {}}
+                      readOnly
+                      placeholder="Auto-filled from invoice"
                     />
 
                     <Select
@@ -941,15 +1367,15 @@ export default function CompanyCreditNotes() {
                   </h4>
 
                   <div className="mx-6 rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-3 items-end">
                       <Select
                         label="Select Product"
                         value={entry.productId}
                         onChange={selectProduct}
                         placeholder="Select"
-                        options={allProducts.map((p) => ({
-                          value: p.id,
-                          label: p.name,
+                        options={selectedInvoiceRows.map((row, index) => ({
+                          value: String(index),
+                          label: `${row.product} — ${(row as any).pkgsize || row.packSize}`,
                         }))}
                       />
 
@@ -960,19 +1386,11 @@ export default function CompanyCreditNotes() {
                           setEntry((p) => ({ ...p, pkgsize: v }))
                         }
                         placeholder="Select size"
-                        options={[
-                          { value: "100ml", label: "100 ml" },
-                          { value: "250ml", label: "250 ml" },
-                          { value: "500ml", label: "500 ml" },
-                          { value: "1l", label: "1 L" },
-                          { value: "100g", label: "100 g" },
-                          { value: "250g", label: "250 g" },
-                          { value: "500g", label: "500 g" },
-                          { value: "1kg", label: "1 Kg" },
-                          { value: "5kg", label: "5 Kg" },
-                          { value: "10kg", label: "10 Kg" },
-                          { value: "25kg", label: "25 Kg" },
-                        ]}
+                        options={
+                          entry.pkgsize
+                            ? [{ value: entry.pkgsize, label: entry.pkgsize }]
+                            : []
+                        }
                       />
 
                       <Input
@@ -981,7 +1399,8 @@ export default function CompanyCreditNotes() {
                         onChange={(v) =>
                           setEntry((p) => ({ ...p, batchNo: v }))
                         }
-                        placeholder="e.g. BAT-001"
+                        placeholder="Auto from invoice"
+                        readOnly
                         required
                       />
 
@@ -992,6 +1411,7 @@ export default function CompanyCreditNotes() {
                         onChange={(v) =>
                           setEntry((p) => ({ ...p, expiryDate: v }))
                         }
+                        readOnly
                         required
                       />
 
@@ -1008,12 +1428,16 @@ export default function CompanyCreditNotes() {
                         label="Price"
                         type="number"
                         value={String(entry.sellingPrice)}
-                        onChange={(v) =>
-                          setEntry((p) => ({
-                            ...p,
-                            sellingPrice: Number(v) || 0,
-                          }))
-                        }
+                        onChange={() => {}}
+                        readOnly
+                      />
+
+                      <Input
+                        label="Discount %"
+                        type="number"
+                        value={String(entry.discount)}
+                        onChange={() => {}}
+                        readOnly
                       />
 
                       <Input
@@ -1034,54 +1458,44 @@ export default function CompanyCreditNotes() {
                       </Button>
                     </div>
 
-                    {/* Auto-loaded product details */}
+                    {/* Original invoice line details */}
                     {entryProduct && (
                       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
-                        <div className="col-span-2 sm:col-span-1 flex items-center gap-2 -translate-y-1">
-                          <div className="mt-1 w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                            <Icon
-                              name="image"
-                              size={20}
-                              className="text-slate-600"
-                            />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[11px] text-slate-400 font-medium">
-                              Product Image
-                            </p>
-                            <p className="text-xs font-semibold text-slate-700 truncate">
-                              {entryProduct.name}
-                            </p>
-                          </div>
-                        </div>
-
+                        <DetailField
+                          label="Product"
+                          value={entryProduct.product}
+                        />
                         <DetailField
                           label="Pack Size"
-                          value={entryProduct?.size || "-"}
+                          value={
+                            (entryProduct as any).pkgsize ||
+                            entryProduct.packSize ||
+                            "-"
+                          }
                         />
                         <DetailField
-                          label="HSN / SAC"
-                          value={entryProduct?.hsnCode || "-"}
+                          label="HSN"
+                          value={(entryProduct as any).hsn || "-"}
                         />
                         <DetailField
-                          label="MRP"
-                          value={formatCurrency(entryProduct?.mrp || 0)}
+                          label="Sold Qty"
+                          value={String(entryProduct.quantity)}
                         />
                         <DetailField
-                          label="Tax Type"
-                          value={entryProduct?.taxType || "-"}
+                          label="Unit Price"
+                          value={formatCurrency(entryProduct.rate)}
+                        />
+                        <DetailField
+                          label="Discount %"
+                          value={`${Number((entryProduct as any).discountPercent || 0).toFixed(2)}%`}
                         />
                         <DetailField
                           label="Tax %"
-                          value={`${entryProduct?.taxPercentage ?? 0}%`}
+                          value={`${Number((entryProduct as any).taxPercent || 0).toFixed(2)}%`}
                         />
                         <DetailField
-                          label="SGST"
-                          value={`${entryProduct?.sgst ?? 0}%`}
-                        />
-                        <DetailField
-                          label="CGST"
-                          value={`${entryProduct?.cgst ?? 0}%`}
+                          label="Invoice Total"
+                          value={formatCurrency(entryProduct.total)}
                         />
                       </div>
                     )}
@@ -1265,7 +1679,7 @@ export default function CompanyCreditNotes() {
                 <Button
                   variant="secondary"
                   onClick={handleSaveDraft}
-                  disabled={!storeId || !invoiceNo}
+                  disabled={!storeId || !invoiceNo || !creditNoteNo}
                 >
                   <Icon name="save" size={18} />
                   Save Draft

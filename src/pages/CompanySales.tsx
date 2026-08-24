@@ -9,7 +9,12 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { stores, products as allProducts, type Product } from "@/lib/data";
+import {
+  stores,
+  getProductMaster,
+  productMasterUpdatedEvent,
+  type Product,
+} from "@/lib/data";
 import { createPortal } from "react-dom";
 
 import {
@@ -21,11 +26,13 @@ import {
 type TaxType = "Tamilnadu (SGST + CGST)" | "Others (IGST)";
 
 type SaleRow = CompanyStoreSaleRecord & {
-  through?: string;
   discount?: number;
   pkgsize?: string;
   batchNo?: string;
   expiryDate?: string;
+  hsn?: string;
+  taxPercent?: number;
+  discountPercent?: number;
 };
 
 type AddedRow = {
@@ -42,7 +49,8 @@ type AddedRow = {
   taxPercent: number;
   quantity: number;
   sellingPrice: number;
-  discount: number;
+  discountPercent: number;
+  discountAmount: number;
   taxAmount: number;
   rowTotal: number;
 };
@@ -54,21 +62,30 @@ type EntryForm = {
   expiryDate: string;
   quantity: number;
   sellingPrice: number;
-  discount: number;
+  discountPercent: number;
 };
 
 const taxTypes: TaxType[] = ["Tamilnadu (SGST + CGST)", "Others (IGST)"];
 
 function computeAdded(
-  r: Omit<AddedRow, "key" | "taxAmount" | "rowTotal">,
+  r: Omit<AddedRow, "key" | "discountAmount" | "taxAmount" | "rowTotal">,
 ): AddedRow {
   const gross = r.quantity * r.sellingPrice;
-  const afterDiscount = Math.max(0, gross - r.discount);
+  const safeDiscountPercent = Math.min(
+    100,
+    Math.max(0, Number(r.discountPercent) || 0),
+  );
+  const discountAmount =
+    Math.round(gross * (safeDiscountPercent / 100) * 100) / 100;
+  const afterDiscount = Math.max(0, gross - discountAmount);
   const taxAmount =
     Math.round(afterDiscount * (r.taxPercent / 100) * 100) / 100;
   const rowTotal = Math.round((afterDiscount + taxAmount) * 100) / 100;
+
   return {
     ...r,
+    discountPercent: safeDiscountPercent,
+    discountAmount,
     key: Math.random().toString(36).slice(2),
     taxAmount,
     rowTotal,
@@ -82,7 +99,7 @@ function emptyEntry(): EntryForm {
     expiryDate: "",
     quantity: 1,
     sellingPrice: 0,
-    discount: 0,
+    discountPercent: 0,
     pkgsize: "",
   };
 }
@@ -91,6 +108,11 @@ export default function CompanySales() {
   const [sales, setSales] = useState<SaleRow[]>(() => getCompanyStoreSales());
   const [search, setSearch] = useState("");
   const [storeFilter, setStoreFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState<
+    "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
+  >("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<{
     header: SaleRow;
@@ -119,13 +141,35 @@ export default function CompanySales() {
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
   const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
-  const [throughType, setThroughType] = useState<"Direct" | "Executive">(
-    "Direct",
+  const [productMaster, setProductMaster] = useState<Product[]>(() =>
+    getProductMaster(),
   );
-  const [executiveName, setExecutiveName] = useState("");
 
   const selectedStore = stores.find((s) => s.id === storeId);
-  const entryProduct = allProducts.find((p) => p.id === entry.productId);
+  const entryProduct = productMaster.find((p) => p.id === entry.productId);
+
+  const productChoices = useMemo(() => {
+    const byName = new Map<string, Product>();
+
+    productMaster
+      .filter((product) => product.status !== "Inactive")
+      .forEach((product) => {
+        if (!byName.has(product.name)) byName.set(product.name, product);
+      });
+
+    return Array.from(byName.values());
+  }, [productMaster]);
+
+  const selectedProductVariants = useMemo(() => {
+    if (!entryProduct) return [];
+
+    return productMaster.filter(
+      (product) =>
+        product.name === entryProduct.name &&
+        product.unit === entryProduct.unit &&
+        product.status !== "Inactive",
+    );
+  }, [productMaster, entryProduct]);
 
   // Lock background scroll while the form is open
   useEffect(() => {
@@ -137,6 +181,23 @@ export default function CompanySales() {
       };
     }
   }, [showCreate]);
+
+  useEffect(() => {
+    const refreshProductMaster = () => {
+      setProductMaster(getProductMaster());
+    };
+
+    window.addEventListener(productMasterUpdatedEvent, refreshProductMaster);
+    window.addEventListener("focus", refreshProductMaster);
+
+    return () => {
+      window.removeEventListener(
+        productMasterUpdatedEvent,
+        refreshProductMaster,
+      );
+      window.removeEventListener("focus", refreshProductMaster);
+    };
+  }, []);
 
   useEffect(() => {
     const refreshPurchaseStatuses = () => {
@@ -165,22 +226,74 @@ export default function CompanySales() {
     };
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      sales.filter((s) => {
-        const ms =
-          s.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
-          s.storeName.toLowerCase().includes(search.toLowerCase()) ||
-          s.product.toLowerCase().includes(search.toLowerCase());
-        const mt = storeFilter === "all" || s.storeId === storeFilter;
-        return ms && mt;
-      }),
-    [sales, search, storeFilter],
-  );
+  const filtered = useMemo(() => {
+    const today = new Date();
+    const normalize = (value: string) => new Date(`${value}T00:00:00`);
+
+    const isWithinDateFilter = (dateValue: string) => {
+      const rowDate = normalize(dateValue);
+
+      if (dateFilter === "all") return true;
+
+      if (dateFilter === "today") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowDate.getMonth() === today.getMonth() &&
+          rowDate.getDate() === today.getDate()
+        );
+      }
+
+      if (dateFilter === "monthly") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowDate.getMonth() === today.getMonth()
+        );
+      }
+
+      if (dateFilter === "quarterly") {
+        const currentQuarter = Math.floor(today.getMonth() / 3);
+        const rowQuarter = Math.floor(rowDate.getMonth() / 3);
+
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowQuarter === currentQuarter
+        );
+      }
+
+      if (dateFilter === "yearly") {
+        return rowDate.getFullYear() === today.getFullYear();
+      }
+
+      if (dateFilter === "custom") {
+        if (!customFrom && !customTo) return true;
+
+        const fromDate = customFrom ? normalize(customFrom) : null;
+        const toDate = customTo ? normalize(customTo) : null;
+
+        if (fromDate && rowDate < fromDate) return false;
+        if (toDate && rowDate > toDate) return false;
+
+        return true;
+      }
+
+      return true;
+    };
+
+    return sales.filter((s) => {
+      const matchesSearch =
+        s.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
+        s.storeName.toLowerCase().includes(search.toLowerCase()) ||
+        s.product.toLowerCase().includes(search.toLowerCase());
+
+      const matchesStore = storeFilter === "all" || s.storeId === storeFilter;
+
+      return matchesSearch && matchesStore && isWithinDateFilter(s.date);
+    });
+  }, [sales, search, storeFilter, dateFilter, customFrom, customTo]);
 
   const totals = useMemo(() => {
     const subtotal = added.reduce((s, r) => s + r.quantity * r.sellingPrice, 0);
-    const totalDiscount = added.reduce((s, r) => s + r.discount, 0);
+    const totalDiscount = added.reduce((s, r) => s + r.discountAmount, 0);
     const totalTax = added.reduce((s, r) => s + r.taxAmount, 0);
     const sgst = added.reduce(
       (s, r) =>
@@ -209,12 +322,51 @@ export default function CompanySales() {
   }, [added]);
 
   function selectProduct(productId: string) {
-    const product = allProducts.find((p) => p.id === productId);
+    const product = productMaster.find((p) => p.id === productId);
+
+    if (!product) {
+      setEntry((prev) => ({
+        ...prev,
+        productId: "",
+        pkgsize: "",
+        sellingPrice: 0,
+      }));
+      return;
+    }
+
+    const variants = productMaster.filter(
+      (item) =>
+        item.name === product.name &&
+        item.unit === product.unit &&
+        item.status !== "Inactive",
+    );
+
+    const firstVariant = variants[0] || product;
+
     setEntry((prev) => ({
       ...prev,
-      productId,
-      pkgsize: product?.size || prev.pkgsize,
-      sellingPrice: product ? product.sellingPrice : 0,
+      productId: firstVariant.id,
+      pkgsize: firstVariant.size,
+      sellingPrice: firstVariant.sellingPrice,
+    }));
+  }
+
+  function selectPackSize(size: string) {
+    if (!entryProduct) return;
+
+    const variant = productMaster.find(
+      (item) =>
+        item.name === entryProduct.name &&
+        item.unit === entryProduct.unit &&
+        item.size === size &&
+        item.status !== "Inactive",
+    );
+
+    setEntry((prev) => ({
+      ...prev,
+      productId: variant?.id || prev.productId,
+      pkgsize: size,
+      sellingPrice: variant?.sellingPrice ?? prev.sellingPrice,
     }));
   }
 
@@ -229,7 +381,7 @@ export default function CompanySales() {
       return;
     }
 
-    const product = allProducts.find((p) => p.id === entry.productId);
+    const product = productMaster.find((p) => p.id === entry.productId);
 
     if (!product) return;
 
@@ -252,7 +404,7 @@ export default function CompanySales() {
       taxPercent: product.taxPercentage || 0,
       quantity: entry.quantity,
       sellingPrice: entry.sellingPrice,
-      discount: entry.discount,
+      discountPercent: entry.discountPercent,
     });
 
     setAdded((prev) => [...prev, newRow]);
@@ -264,7 +416,14 @@ export default function CompanySales() {
       prev.map((r) => {
         if (r.key !== key) return r;
         const merged = { ...r, ...patch };
-        return computeAdded(merged);
+        const {
+          key: _key,
+          discountAmount: _discountAmount,
+          taxAmount: _taxAmount,
+          rowTotal: _rowTotal,
+          ...recalculable
+        } = merged;
+        return computeAdded(recalculable);
       }),
     );
   }
@@ -298,7 +457,10 @@ export default function CompanySales() {
     if (!store) return null;
 
     return added.map((r, i) => {
-      const withoutTax = Math.max(0, r.quantity * r.sellingPrice - r.discount);
+      const withoutTax = Math.max(
+        0,
+        r.quantity * r.sellingPrice - r.discountAmount,
+      );
       const taxAmount =
         Math.round(withoutTax * (r.taxPercent / 100) * 100) / 100;
       const isTamilNadu = placeOfSupply === "Tamil Nadu";
@@ -314,18 +476,17 @@ export default function CompanySales() {
         storeName: store.name,
         storeLocation: store.location,
         placeOfSupply,
-        through:
-          throughType === "Executive"
-            ? executiveName.trim() || "Executive"
-            : "Direct",
         product: r.product?.name || "",
         packSize: r.packSize,
         pkgsize: r.pkgsize,
         batchNo: r.batchNo,
         expiryDate: r.expiryDate,
+        hsn: r.hsn,
+        taxPercent: r.taxPercent,
         quantity: r.quantity,
         rate: r.sellingPrice,
-        discount: r.discount,
+        discount: r.discountAmount,
+        discountPercent: r.discountPercent,
         withoutTax,
         taxAmount,
         sgst,
@@ -370,16 +531,8 @@ export default function CompanySales() {
     setStoreId(header.storeId);
     setPlaceOfSupply(header.placeOfSupply || "Tamil Nadu");
 
-    if ((header.through || "Direct") === "Direct") {
-      setThroughType("Direct");
-      setExecutiveName("");
-    } else {
-      setThroughType("Executive");
-      setExecutiveName(header.through || "");
-    }
-
     const nextAdded: AddedRow[] = invoice.rows.map((row, index) => {
-      const product = allProducts.find((p) => p.name === row.product);
+      const product = productMaster.find((p) => p.name === row.product);
       const taxType: TaxType =
         (row.placeOfSupply || "Tamil Nadu") === "Tamil Nadu"
           ? "Tamilnadu (SGST + CGST)"
@@ -393,13 +546,23 @@ export default function CompanySales() {
         batchNo: row.batchNo || "",
         expiryDate: row.expiryDate || "",
         packSize: row.packSize || product?.size || "",
-        hsn: product?.hsnCode || "",
+        hsn: row.hsn || product?.hsnCode || "",
         mrp: product?.mrp || 0,
         taxType,
-        taxPercent: product?.taxPercentage || 0,
+        taxPercent:
+          row.taxPercent ??
+          product?.taxPercentage ??
+          (row.withoutTax > 0
+            ? Math.round((row.taxAmount / row.withoutTax) * 10000) / 100
+            : 0),
         quantity: row.quantity,
         sellingPrice: row.rate,
-        discount: row.discount || 0,
+        discountPercent:
+          row.discountPercent ??
+          (row.quantity * row.rate > 0
+            ? (Number(row.discount || 0) / (row.quantity * row.rate)) * 100
+            : 0),
+        discountAmount: Number(row.discount || 0),
         taxAmount: row.taxAmount,
         rowTotal: row.total,
       };
@@ -419,8 +582,6 @@ export default function CompanySales() {
     setRemarks("");
     setEntry(emptyEntry());
     setAdded([]);
-    setThroughType("Direct");
-    setExecutiveName("");
     setEditingInvoiceNo(null);
   }
 
@@ -471,11 +632,7 @@ export default function CompanySales() {
     !!entry.batchNo &&
     !!entry.expiryDate &&
     entry.quantity >= 1;
-  const canCreate =
-    !!storeId &&
-    !!invoiceNo &&
-    added.length > 0 &&
-    (throughType === "Direct" || !!executiveName.trim());
+  const canCreate = !!storeId && !!invoiceNo && added.length > 0;
 
   return (
     <div>
@@ -499,8 +656,8 @@ export default function CompanySales() {
       </div>
 
       <Card className="p-4 mb-5">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="flex-1 max-w-md">
+        <div className="flex flex-col gap-3 xl:flex-row xl:flex-nowrap xl:items-end xl:gap-2">
+          <div className="w-full xl:w-[245px] xl:shrink-0">
             <Input
               value={search}
               onChange={setSearch}
@@ -508,14 +665,85 @@ export default function CompanySales() {
               icon="search"
             />
           </div>
-          <div className="w-full sm:w-60">
+
+          <div className="w-full xl:w-[175px] xl:shrink-0">
             <Select
+              label="Store"
               value={storeFilter}
               onChange={setStoreFilter}
               placeholder="All Stores"
               options={stores.map((s) => ({ value: s.id, label: s.name }))}
             />
           </div>
+
+          <div className="w-full xl:w-[155px] xl:shrink-0">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) =>
+                setDateFilter(
+                  value as
+                    | "all"
+                    | "today"
+                    | "monthly"
+                    | "quarterly"
+                    | "yearly"
+                    | "custom",
+                )
+              }
+              options={[
+                { value: "all", label: "All Dates" },
+                { value: "today", label: "Today" },
+                { value: "monthly", label: "Monthly" },
+                { value: "quarterly", label: "Quarterly" },
+                { value: "yearly", label: "Yearly" },
+                { value: "custom", label: "Custom Date" },
+              ]}
+            />
+          </div>
+
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full xl:w-[140px] xl:shrink-0">
+                <Input
+                  label="From"
+                  type="date"
+                  value={customFrom}
+                  onChange={setCustomFrom}
+                />
+              </div>
+
+              <div className="w-full xl:w-[140px] xl:shrink-0">
+                <Input
+                  label="To"
+                  type="date"
+                  value={customTo}
+                  onChange={setCustomTo}
+                />
+              </div>
+            </>
+          )}
+
+          {(storeFilter !== "all" ||
+            dateFilter !== "all" ||
+            customFrom ||
+            customTo ||
+            search) && (
+            <Button
+              variant="secondary"
+              className="xl:shrink-0"
+              onClick={() => {
+                setSearch("");
+                setStoreFilter("all");
+                setDateFilter("all");
+                setCustomFrom("");
+                setCustomTo("");
+              }}
+            >
+              <Icon name="filter_alt_off" size={17} />
+              Clear
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -530,76 +758,93 @@ export default function CompanySales() {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="w-full overflow-y-auto max-h-[600px]">
-            <table className="w-full table-fixed text-sm border-collapse">
+            <table className="w-full table-fixed border-collapse text-[11px] xl:text-xs">
               <thead>
-                <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
+                <tr className="border-b border-slate-200 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
                   <th
                     rowSpan={2}
-                    className="w-[6%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[5%] border-r border-slate-200 px-1 py-3 text-center font-semibold"
                   >
                     S.No
                   </th>
 
                   <th
                     rowSpan={2}
-                    className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[8%] border-r border-slate-200 px-1 py-3 text-center font-semibold"
                   >
                     Date
                   </th>
 
                   <th
                     rowSpan={2}
-                    className="w-[12%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[11%] border-r border-slate-200 px-1 py-3 text-center font-semibold"
                   >
                     Invoice No
                   </th>
 
                   <th
                     rowSpan={2}
-                    className="w-[13%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                  >
-                    Through
-                  </th>
-
-                  <th
-                    rowSpan={2}
-                    className="w-[17%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[17%] border-r border-slate-200 px-1 py-3 text-center font-semibold"
                   >
                     Store Name
                   </th>
 
                   <th
                     rowSpan={2}
-                    className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[11%] border-r border-slate-200 px-1 py-3 text-center font-semibold"
                   >
                     Without Tax
                   </th>
+
                   <th
-                    colSpan={3}
-                    className="w-[21%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    colSpan={2}
+                    className="w-[14%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
                   >
-                    Tax
+                    SGST
+                  </th>
+
+                  <th
+                    colSpan={2}
+                    className="w-[14%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                  >
+                    CGST
+                  </th>
+
+                  <th
+                    colSpan={2}
+                    className="w-[14%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                  >
+                    IGST
                   </th>
 
                   <th
                     rowSpan={2}
-                    className="w-[10%] text-center font-semibold px-2 py-3 border-r border-slate-200"
+                    className="w-[12%] px-1 py-3 text-center font-semibold"
                   >
                     Total
                   </th>
                 </tr>
 
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                  <th className="text-center font-semibold px-2 py-2 border-r border-slate-100">
-                    SGST
+                <tr className="border-b border-slate-200 bg-slate-50 text-[9px] uppercase tracking-wide text-slate-500">
+                  <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">
+                    %
+                  </th>
+                  <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">
+                    Amt
                   </th>
 
-                  <th className="text-center font-semibold px-2 py-2 border-r border-slate-100">
-                    CGST
+                  <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">
+                    %
+                  </th>
+                  <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">
+                    Amt
                   </th>
 
-                  <th className="text-center font-semibold px-2 py-2 border-r border-slate-200">
-                    IGST
+                  <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">
+                    %
+                  </th>
+                  <th className="border-r border-slate-200 px-1 py-2 text-center font-semibold">
+                    Amt
                   </th>
                 </tr>
               </thead>
@@ -614,43 +859,52 @@ export default function CompanySales() {
                       i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
                     } hover:bg-brand-50/40 transition-base`}
                   >
-                    <td className="px-2 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
+                    <td className="px-1.5 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
                       {i + 1}
                     </td>
 
-                    <td className="px-2 py-3 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">
+                    <td className="px-1.5 py-3 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">
                       {formatDate(s.date)}
                     </td>
 
-                    <td className="px-2 py-3 text-center font-semibold text-slate-800 border-r border-slate-100 truncate">
+                    <td className="px-1.5 py-3 text-center font-semibold text-slate-800 border-r border-slate-100 truncate">
                       {s.invoiceNo}
                     </td>
 
-                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
-                      {s.through || "Direct"}
-                    </td>
-
-                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
+                    <td className="px-1.5 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
                       {s.storeName}
                     </td>
 
-                    <td className="px-2 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
+                    <td className="px-1.5 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
                       {formatCurrency(s.withoutTax)}
                     </td>
 
-                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                    <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                      {s.sgst > 0
+                        ? `${((s.taxAmount / Math.max(s.withoutTax, 1)) * 50).toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                    <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
                       {formatCurrency(s.sgst)}
                     </td>
-
-                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                    <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                      {s.cgst > 0
+                        ? `${((s.taxAmount / Math.max(s.withoutTax, 1)) * 50).toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                    <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
                       {formatCurrency(s.cgst)}
                     </td>
-
-                    <td className="px-2 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                    <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                      {s.igst > 0
+                        ? `${((s.taxAmount / Math.max(s.withoutTax, 1)) * 100).toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                    <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
                       {formatCurrency(s.igst)}
                     </td>
 
-                    <td className="px-2 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">
+                    <td className="px-1.5 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">
                       {formatCurrency(s.total)}
                     </td>
                   </tr>
@@ -664,8 +918,83 @@ export default function CompanySales() {
       {selectedInvoice &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[94vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 6mm;
+                }
+
+                html,
+                body {
+                  width: 297mm;
+                  min-height: 210mm;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #fff !important;
+                  overflow: visible !important;
+                }
+
+                body * {
+                  visibility: hidden !important;
+                }
+
+                .invoice-print-area,
+                .invoice-print-area * {
+                  visibility: visible !important;
+                }
+
+                .invoice-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: #fff !important;
+                }
+
+                .invoice-print-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                }
+
+                .invoice-print-table {
+                  width: 100% !important;
+                  table-layout: auto !important;
+                  font-size: 8px !important;
+                }
+
+                .invoice-print-table th,
+                .invoice-print-table td {
+                  padding: 2px 3px !important;
+                  line-height: 1.15 !important;
+                }
+
+                .invoice-print-table th:not(:nth-child(2)),
+                .invoice-print-table td:not(:nth-child(2)) {
+                  white-space: nowrap !important;
+                }
+
+                .invoice-print-table th:nth-child(2),
+                .invoice-print-table td:nth-child(2) {
+                  white-space: normal !important;
+                  word-break: break-word !important;
+                }
+
+                .invoice-print-header {
+                  break-inside: avoid !important;
+                }
+
+                .invoice-screen-only {
+                  display: none !important;
+                }
+              }
+            `}</style>
+            <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
                     Invoice
@@ -699,180 +1028,451 @@ export default function CompanySales() {
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="invoice-print-scroll min-h-0 flex-1 overflow-y-auto p-3">
                 <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-xl bg-white">
-                          <img
-                            src="/logo_NB.webp"
-                            alt="Nature Biotic"
-                            className="max-h-14 max-w-full object-contain"
-                          />
-                        </div>
+                  <div className="invoice-print-header border-b border-slate-300">
+                    <div className="grid grid-cols-[1.2fr_.8fr]">
+                      <div className="border-r border-slate-300 p-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
+                            <img
+                              src="/logo_NB.webp"
+                              alt="Nature Biotic"
+                              className="max-h-14 max-w-full object-contain"
+                            />
+                          </div>
 
-                        <div>
-                          <p className="text-sm font-extrabold text-slate-900">
-                            NATURE BIOTIC
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            Rajapalayam, Tamil Nadu
+                          <div className="leading-tight">
+                            <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                              NATURE BIOTIC
+                            </h3>
+                            <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
+                              4/130/A1, Velavan Nagar, Velayudhampuram,
+                              Rajapalayam, Tamil Nadu - 626102
+                            </p>
+                            <p className="mt-1 text-[10px] text-slate-600">
+                              GSTIN: 33AEZPV5328P1ZC
+                            </p>
+                            <p className="text-[10px] text-slate-600">
+                              Cell: 96008 44446
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center p-3">
+                        <div className="text-center">
+                          <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
+                            Invoice
+                          </h2>
+                          <p className="mt-1 text-[10px] text-slate-500">
+                            Nature Biotic to Store
                           </p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-center p-5">
-                      <h3 className="text-2xl font-bold text-slate-900">
-                        Invoice
-                      </h3>
+                    <div className="grid grid-cols-3 border-t border-slate-300 text-[9px] leading-4">
+                      <div className="border-r border-slate-300 p-3">
+                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                          Billing Address
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {selectedInvoice.header.storeName}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          {selectedStore?.address ||
+                            selectedInvoice.header.storeLocation ||
+                            "-"}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          GSTIN: {selectedStore?.gst || "-"}
+                        </p>
+                        <p className="text-slate-600">
+                          Contact: {selectedStore?.phone || "-"}
+                        </p>
+                      </div>
+
+                      <div className="border-r border-slate-300 p-3">
+                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                          Delivery Address
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {selectedInvoice.header.storeName}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          {selectedStore?.address ||
+                            selectedInvoice.header.storeLocation ||
+                            "-"}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          Place of Supply:{" "}
+                          {selectedInvoice.header.placeOfSupply || "-"}
+                        </p>
+                      </div>
+
+                      <div className="p-3">
+                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                          Invoice Details
+                        </p>
+
+                        <div className="grid grid-cols-[92px_1fr] gap-y-1">
+                          <span className="text-slate-500">Invoice No</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedInvoice.header.invoiceNo}
+                          </span>
+
+                          <span className="text-slate-500">Invoice Date</span>
+                          <span className="font-semibold text-slate-800">
+                            {formatDate(selectedInvoice.header.date)}
+                          </span>
+
+                          <span className="text-slate-500">Store Code</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedStore?.code || "-"}
+                          </span>
+
+                          <span className="text-slate-500">
+                            Place of Supply
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedInvoice.header.placeOfSupply || "-"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-4 text-sm">
-                      <p>
-                        <span className="inline-block w-32 font-medium">
-                          Invoice No
-                        </span>
-                        : {selectedInvoice.header.invoiceNo}
-                      </p>
+                  <div className="w-full overflow-hidden">
+                    <table className="invoice-print-table w-full border-collapse text-[8.5px] xl:text-[9px]">
+                      <thead>
+                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            S.No
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Product
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            HSN Code
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            PKG Size
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Batch No
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Exp Date
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Qty
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Unit Price
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Before Discount
+                          </th>
 
-                      <p className="mt-2">
-                        <span className="inline-block w-32 font-medium">
-                          Invoice Date
-                        </span>
-                        : {formatDate(selectedInvoice.header.date)}
-                      </p>
-                    </div>
+                          <th
+                            colSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Discount
+                          </th>
 
-                    <div className="p-4 text-sm">
-                      <p>
-                        <span className="inline-block w-32 font-medium">
-                          Through
-                        </span>
-                        : {selectedInvoice.header.through || "Direct"}
-                      </p>
+                          <th
+                            rowSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Taxable (₹)
+                          </th>
 
-                      <p className="mt-2">
-                        <span className="inline-block w-32 font-medium">
-                          Place of Supply
-                        </span>
-                        : {selectedInvoice.header.placeOfSupply || "-"}
-                      </p>
-                    </div>
-                  </div>
+                          <th
+                            colSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            CGST
+                          </th>
 
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-4 text-sm">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                        Billed By
-                      </p>
-                      <p className="mt-2 font-bold text-slate-900">
-                        Nature Biotic
-                      </p>
-                      <p className="mt-1 text-slate-500">
-                        Rajapalayam, Tamil Nadu
-                      </p>
-                    </div>
+                          <th
+                            colSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            SGST (₹)
+                          </th>
 
-                    <div className="p-4 text-sm">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                        Billed To
-                      </p>
-                      <p className="mt-2 font-bold text-slate-900">
-                        {selectedInvoice.header.storeName}
-                      </p>
-                      <p className="mt-1 text-slate-500">
-                        {selectedInvoice.header.storeLocation || "-"}
-                      </p>
-                    </div>
-                  </div>
+                          <th
+                            colSpan={2}
+                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            IGST (₹)
+                          </th>
 
-                  <table className="w-full table-fixed border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-300 bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
-                        <th className="w-[6%] border-r border-slate-300 px-2 py-3 text-center">
-                          S.No
-                        </th>
-                        <th className="w-[20%] border-r border-slate-300 px-3 py-3 text-left">
-                          Product
-                        </th>
-                        <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-center">
-                          PKG Size
-                        </th>
-                        <th className="w-[8%] border-r border-slate-300 px-2 py-3 text-center">
-                          Qty in NOS
-                        </th>
-                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-center">
-                          Rate
-                        </th>
-                        <th className="w-[10%] border-r border-slate-300 px-2 py-3 text-center">
-                          Discount
-                        </th>
-                        <th className="w-[11%] border-r border-slate-300 px-2 py-3 text-center">
-                          Taxable
-                        </th>
-                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-center">
-                          SGST
-                        </th>
-                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-center">
-                          CGST
-                        </th>
-                        <th className="w-[10%] px-3 py-3 text-center">Total</th>
-                      </tr>
-                    </thead>
+                          <th rowSpan={2} className=" px-1 py-1.5 text-center">
+                            Line Total
+                          </th>
+                        </tr>
 
-                    <tbody>
-                      {selectedInvoice.rows.map((row, index) => (
-                        <tr key={row.id} className="border-b border-slate-200">
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">
-                            {index + 1}
+                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Amt
+                          </th>
+
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Rate %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Amount
+                          </th>
+
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Rate %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Amount
+                          </th>
+
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Rate %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            Amount
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {selectedInvoice.rows.map((row, index) => {
+                          const beforeDiscount =
+                            Number(row.quantity || 0) * Number(row.rate || 0);
+
+                          const discountAmount = Number(row.discount || 0);
+
+                          const discountPercent =
+                            beforeDiscount > 0
+                              ? (discountAmount / beforeDiscount) * 100
+                              : 0;
+
+                          const totalTaxRate =
+                            row.taxPercent ??
+                            (row.withoutTax > 0
+                              ? (Number(row.taxAmount || 0) /
+                                  Number(row.withoutTax || 1)) *
+                                100
+                              : 0);
+
+                          const cgstRate =
+                            Number(row.cgst || 0) > 0 ? totalTaxRate / 2 : 0;
+
+                          const sgstRate =
+                            Number(row.sgst || 0) > 0 ? totalTaxRate / 2 : 0;
+
+                          const igstRate =
+                            Number(row.igst || 0) > 0 ? totalTaxRate : 0;
+
+                          return (
+                            <tr
+                              key={row.id}
+                              className="border-b border-slate-300"
+                            >
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                {index + 1}
+                              </td>
+
+                              <td className="max-w-[78px] border-r border-slate-300 px-1 py-1.5 font-semibold leading-tight text-slate-800 whitespace-normal break-words">
+                                {row.product || "-"}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                {row.hsn || "-"}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                {row.pkgsize || row.packSize || "-"}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                {row.batchNo || "-"}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                {row.expiryDate
+                                  ? formatDate(row.expiryDate)
+                                  : "-"}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-center tabular-nums">
+                                {row.quantity}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {formatCurrency(row.rate)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold tabular-nums">
+                                {formatCurrency(beforeDiscount)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {discountPercent.toFixed(2)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {formatCurrency(discountAmount)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold tabular-nums">
+                                {formatCurrency(row.withoutTax)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {cgstRate.toFixed(2)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {formatCurrency(row.cgst)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {sgstRate.toFixed(2)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {formatCurrency(row.sgst)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {igstRate.toFixed(2)}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                {formatCurrency(row.igst)}
+                              </td>
+
+                              <td className="px-1 py-1.5 text-right font-bold tabular-nums text-slate-900">
+                                {formatCurrency(row.total)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                          <td
+                            colSpan={8}
+                            className="border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Total
                           </td>
 
-                          <td className="border-r border-slate-300 px-3 py-4 font-semibold text-slate-800">
-                            {row.product || "-"}
+                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) =>
+                                  sum +
+                                  Number(row.quantity || 0) *
+                                    Number(row.rate || 0),
+                                0,
+                              ),
+                            )}
                           </td>
 
-                          <td className="border-r border-slate-300 px-2 py-4 text-center text-slate-600">
-                            {row.packSize || "-"}
+                          <td className="border-r border-slate-300 px-1 py-1.5" />
+
+                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.discount || 0),
+                                0,
+                              ),
+                            )}
                           </td>
 
-                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums">
-                            {row.quantity}
+                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.withoutTax || 0),
+                                0,
+                              ),
+                            )}
                           </td>
 
-                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums">
-                            {formatCurrency(row.rate)}
+                          <td className="border-r border-slate-300 px-1 py-1.5" />
+                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.cgst || 0),
+                                0,
+                              ),
+                            )}
                           </td>
 
-                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums text-red-600">
-                            {formatCurrency(row.discount || 0)}
+                          <td className="border-r border-slate-300 px-1 py-1.5" />
+                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.sgst || 0),
+                                0,
+                              ),
+                            )}
                           </td>
 
-                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums">
-                            {formatCurrency(row.withoutTax)}
+                          <td className="border-r border-slate-300 px-1 py-1.5" />
+                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.igst || 0),
+                                0,
+                              ),
+                            )}
                           </td>
 
-                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums text-slate-600">
-                            {formatCurrency(row.sgst)}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-2 py-4 text-right tabular-nums text-slate-600">
-                            {formatCurrency(row.cgst)}
-                          </td>
-
-                          <td className="px-3 py-4 text-right font-bold tabular-nums text-slate-900">
-                            {formatCurrency(row.total)}
+                          <td className="px-1 py-1.5 text-right">
+                            {formatCurrency(
+                              selectedInvoice.rows.reduce(
+                                (sum, row) => sum + Number(row.total || 0),
+                                0,
+                              ),
+                            )}
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </tbody>
+                    </table>
+                  </div>
 
-                  <div className="grid grid-cols-1 border-t border-slate-300 lg:grid-cols-[1fr_380px]">
-                    <div className="border-b border-slate-300 p-5 lg:border-b-0 lg:border-r">
+                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-3">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                         Notes
                       </p>
@@ -882,72 +1482,96 @@ export default function CompanySales() {
                       </p>
                     </div>
 
-                    <div className="p-5">
-                      <div className="space-y-2.5 text-sm">
-                        <SummaryRow
-                          label="Without Tax"
-                          value={formatCurrency(
-                            selectedInvoice.rows.reduce(
-                              (sum, row) => sum + Number(row.withoutTax || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                    <div className="p-3 text-[10px]">
+                      {(() => {
+                        const totalBeforeDiscount = selectedInvoice.rows.reduce(
+                          (sum, row) =>
+                            sum +
+                            Number(row.quantity || 0) * Number(row.rate || 0),
+                          0,
+                        );
 
-                        <SummaryRow
-                          label="Discount"
-                          value={formatCurrency(
-                            selectedInvoice.rows.reduce(
-                              (sum, row) => sum + Number(row.discount || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                        const discount = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.discount || 0),
+                          0,
+                        );
 
-                        <SummaryRow
-                          label="SGST"
-                          value={formatCurrency(
-                            selectedInvoice.rows.reduce(
-                              (sum, row) => sum + Number(row.sgst || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                        const taxableTotal = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.withoutTax || 0),
+                          0,
+                        );
 
-                        <SummaryRow
-                          label="CGST"
-                          value={formatCurrency(
-                            selectedInvoice.rows.reduce(
-                              (sum, row) => sum + Number(row.cgst || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                        const cgst = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.cgst || 0),
+                          0,
+                        );
 
-                        <SummaryRow
-                          label="IGST"
-                          value={formatCurrency(
-                            selectedInvoice.rows.reduce(
-                              (sum, row) => sum + Number(row.igst || 0),
-                              0,
-                            ),
-                          )}
-                        />
+                        const sgst = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.sgst || 0),
+                          0,
+                        );
 
-                        <div className="mt-4 flex items-center justify-between border-t border-slate-300 pt-4">
-                          <span className="font-bold text-slate-900">
-                            Grand Total
-                          </span>
-                          <span className="text-xl font-extrabold text-brand-700">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.total || 0),
-                                0,
-                              ),
-                            )}
-                          </span>
-                        </div>
-                      </div>
+                        const igst = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.igst || 0),
+                          0,
+                        );
+
+                        const exactTotal = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.total || 0),
+                          0,
+                        );
+
+                        const roundedTotal = Math.round(exactTotal);
+                        const roundOff = roundedTotal - exactTotal;
+
+                        return (
+                          <div className="space-y-1.5">
+                            <SummaryRow
+                              label="Total Before Discount"
+                              value={formatCurrency(totalBeforeDiscount)}
+                            />
+
+                            <SummaryRow
+                              label="Discount"
+                              value={formatCurrency(discount)}
+                            />
+
+                            <SummaryRow
+                              label="Taxable Total"
+                              value={formatCurrency(taxableTotal)}
+                            />
+
+                            <SummaryRow
+                              label="CGST"
+                              value={formatCurrency(cgst)}
+                            />
+
+                            <SummaryRow
+                              label="SGST"
+                              value={formatCurrency(sgst)}
+                            />
+
+                            <SummaryRow
+                              label="IGST"
+                              value={formatCurrency(igst)}
+                            />
+
+                            <SummaryRow
+                              label="Round Off"
+                              value={formatCurrency(roundOff)}
+                            />
+
+                            <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
+                              <span className="font-bold text-slate-900">
+                                Total
+                              </span>
+                              <span className="text-base font-extrabold text-slate-900">
+                                {formatCurrency(roundedTotal)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -962,7 +1586,7 @@ export default function CompanySales() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <div className="invoice-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
                 <Button variant="secondary" onClick={closeInvoiceView}>
                   Close
                 </Button>
@@ -1037,28 +1661,6 @@ export default function CompanySales() {
                       required
                     />
                     <Select
-                      label="Through"
-                      value={throughType}
-                      onChange={(value) => {
-                        setThroughType(value as "Direct" | "Executive");
-                        if (value === "Direct") setExecutiveName("");
-                      }}
-                      options={[
-                        { value: "Direct", label: "Direct" },
-                        { value: "Executive", label: "Executive" },
-                      ]}
-                    />
-
-                    {throughType === "Executive" && (
-                      <Input
-                        label="Executive Name"
-                        value={executiveName}
-                        onChange={setExecutiveName}
-                        placeholder="Enter executive name"
-                        required
-                      />
-                    )}
-                    <Select
                       label="Select Store"
                       value={storeId}
                       onChange={setStoreId}
@@ -1109,9 +1711,9 @@ export default function CompanySales() {
                           value={entry.productId}
                           onChange={selectProduct}
                           placeholder="Choose product"
-                          options={allProducts.map((p) => ({
+                          options={productChoices.map((p) => ({
                             value: p.id,
-                            label: `${p.name} (${p.size})`,
+                            label: p.name,
                           }))}
                         />
                       </div>
@@ -1121,26 +1723,16 @@ export default function CompanySales() {
                         <Select
                           label="PKG Size"
                           value={entry.pkgsize}
-                          onChange={(v) =>
-                            setEntry((p) => ({
-                              ...p,
-                              pkgsize: v,
-                            }))
+                          onChange={selectPackSize}
+                          placeholder={
+                            entryProduct
+                              ? `Select ${entryProduct.unit} size`
+                              : "Select product first"
                           }
-                          placeholder="Select size"
-                          options={[
-                            { value: "100ml", label: "100 ml" },
-                            { value: "250ml", label: "250 ml" },
-                            { value: "500ml", label: "500 ml" },
-                            { value: "1l", label: "1 L" },
-                            { value: "100g", label: "100 g" },
-                            { value: "250g", label: "250 g" },
-                            { value: "500g", label: "500 g" },
-                            { value: "1kg", label: "1 Kg" },
-                            { value: "5kg", label: "5 Kg" },
-                            { value: "10kg", label: "10 Kg" },
-                            { value: "25kg", label: "25 Kg" },
-                          ]}
+                          options={selectedProductVariants.map((variant) => ({
+                            value: variant.size,
+                            label: `${variant.size} (${variant.unit})`,
+                          }))}
                         />
                       </div>
 
@@ -1174,20 +1766,23 @@ export default function CompanySales() {
                         label="Selling Price"
                         type="number"
                         value={String(entry.sellingPrice)}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                      <Input
+                        label="Discount %"
+                        type="number"
+                        value={String(entry.discountPercent)}
                         onChange={(v) =>
                           setEntry((p) => ({
                             ...p,
-                            sellingPrice: Number(v) || 0,
+                            discountPercent: Math.min(
+                              100,
+                              Math.max(0, Number(v) || 0),
+                            ),
                           }))
                         }
-                      />
-                      <Input
-                        label="Discount"
-                        type="number"
-                        value={String(entry.discount)}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, discount: Number(v) || 0 }))
-                        }
+                        placeholder="0 - 100"
                       />
                       <Button
                         onClick={addProduct}
@@ -1222,8 +1817,12 @@ export default function CompanySales() {
                           </div>
                         </div>
                         <DetailField
+                          label="Unit Type"
+                          value={entryProduct.unit}
+                        />
+                        <DetailField
                           label="Pack Size"
-                          value={entryProduct.size}
+                          value={entry.pkgsize || entryProduct.size}
                         />
                         <DetailField
                           label="HSN / SAC"
@@ -1306,7 +1905,7 @@ export default function CompanySales() {
                               Selling Price
                             </th>
                             <th className="text-right font-semibold px-3 py-2.5">
-                              Discount
+                              Discount %
                             </th>
                             <th className="text-right font-semibold px-3 py-2.5">
                               Tax
@@ -1370,10 +1969,16 @@ export default function CompanySales() {
                               <td className="px-3 py-2.5 text-right">
                                 <input
                                   type="number"
-                                  value={r.discount}
+                                  value={r.discountPercent}
                                   onChange={(e) =>
                                     updateAdded(r.key, {
-                                      discount: Number(e.target.value) || 0,
+                                      discountPercent: Math.min(
+                                        100,
+                                        Math.max(
+                                          0,
+                                          Number(e.target.value) || 0,
+                                        ),
+                                      ),
                                     })
                                   }
                                   className="w-20 text-right tabular-nums rounded-lg border border-slate-200 px-2 py-1 text-slate-700 focus:outline-none focus:border-brand-500"

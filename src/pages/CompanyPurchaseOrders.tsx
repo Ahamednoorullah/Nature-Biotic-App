@@ -5,15 +5,18 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getStoreApprovalRequests,
   updateStoreApprovalRequestStatus,
+  getProductMaster,
+  type Product,
   type StoreApprovalRequest,
 } from "@/lib/data";
 
 type PurchaseOrderItem = {
   id?: string;
   key?: string;
-  product?: { name?: string };
+  product?: { name?: string } | string;
   productName?: string;
   productId?: string;
+  hsnCode?: string;
   pkgsize?: string;
   packSize?: string;
   quantity?: number;
@@ -63,6 +66,47 @@ export default function CompanyPurchaseOrders() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<PurchaseRequestRow | null>(null);
 
+  const productMaster = useMemo<Product[]>(() => getProductMaster(), []);
+
+  function getPurchaseProductName(item: PurchaseOrderItem) {
+    if (typeof item.product === "string" && item.product.trim()) {
+      return item.product;
+    }
+
+    if (typeof item.product === "object" && item.product?.name?.trim()) {
+      return item.product.name;
+    }
+
+    if (item.productName?.trim()) {
+      return item.productName;
+    }
+
+    if (item.productId) {
+      const masterProduct = productMaster.find(
+        (product) => product.id === item.productId,
+      );
+
+      if (masterProduct?.name) {
+        return masterProduct.name;
+      }
+    }
+
+    return "-";
+  }
+
+  function getPurchaseProductHsn(item: PurchaseOrderItem) {
+    if (item.hsnCode?.trim()) return item.hsnCode;
+
+    if (item.productId) {
+      return (
+        productMaster.find((product) => product.id === item.productId)
+          ?.hsnCode ?? "-"
+      );
+    }
+
+    return "-";
+  }
+
   const rows = useMemo<PurchaseRequestRow[]>(
     () =>
       requests.map((request) => {
@@ -107,7 +151,9 @@ export default function CompanyPurchaseOrders() {
     }
   }
 
-  const pendingCount = requests.filter((row) => row.status === "Pending").length;
+  const pendingCount = requests.filter(
+    (row) => row.status === "Pending",
+  ).length;
 
   return (
     <div>
@@ -166,30 +212,73 @@ export default function CompanyPurchaseOrders() {
         <Card className="overflow-hidden p-0">
           <table className="w-full table-fixed border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-                <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center">
+              <tr className="border-b border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
+                <th
+                  rowSpan={2}
+                  className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
                   S.No
                 </th>
-                <th className="w-[11%] border-r border-slate-200 px-2 py-3 text-center">
+
+                <th
+                  rowSpan={2}
+                  className="w-[11%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
                   Date
                 </th>
-                <th className="w-[15%] border-r border-slate-200 px-2 py-3 text-center">
+
+                <th
+                  rowSpan={2}
+                  className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
                   PO No
                 </th>
-                <th className="w-[22%] border-r border-slate-200 px-2 py-3 text-center">
-                  Store Name
+
+                <th
+                  rowSpan={2}
+                  className="w-[10%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
+                  Total Product
                 </th>
-                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
-                  Products
+
+                <th
+                  rowSpan={2}
+                  className="w-[13%] border-r border-slate-200 px-2 py-3 text-right font-semibold"
+                >
+                  Without Tax
                 </th>
-                <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-right">
-                  Amount
+
+                <th
+                  colSpan={3}
+                  className="w-[27%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  Tax
                 </th>
-                <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-center">
+
+                <th
+                  rowSpan={2}
+                  className="w-[11%] border-r border-slate-200 px-2 py-3 text-right font-semibold"
+                >
+                  Total
+                </th>
+
+                <th
+                  rowSpan={2}
+                  className="w-[8%] px-2 py-3 text-center font-semibold"
+                >
                   Status
                 </th>
-                <th className="w-[10%] px-2 py-3 text-center">
-                  Action
+              </tr>
+
+              <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
+                  SGST
+                </th>
+                <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
+                  CGST
+                </th>
+                <th className="border-r border-slate-200 px-2 py-2 text-right font-semibold">
+                  IGST
                 </th>
               </tr>
             </thead>
@@ -205,44 +294,59 @@ export default function CompanyPurchaseOrders() {
                   <td className="border-r border-slate-100 px-2 py-3 text-center">
                     {index + 1}
                   </td>
+
                   <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
                     {formatDate(row.date)}
                   </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-center font-bold text-slate-800">
                     {row.referenceNo}
                   </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-700">
-                    {row.storeName}
-                  </td>
+
                   <td className="border-r border-slate-100 px-2 py-3 text-center">
                     {row.order?.items?.length ?? row.order?.totalProduct ?? "-"}
                   </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-right font-bold">
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold text-slate-700">
+                    {formatCurrency(row.order?.withoutTax ?? 0)}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                    {formatCurrency(row.order?.sgst ?? 0)}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                    {formatCurrency(row.order?.cgst ?? 0)}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                    {formatCurrency(row.order?.igst ?? 0)}
+                  </td>
+
+                  <td className="border-r border-slate-100 px-2 py-3 text-right font-bold text-slate-800">
                     {formatCurrency(row.order?.total ?? row.amount)}
                   </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        row.status === "Approved"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : row.status === "Rejected"
-                            ? "bg-red-50 text-red-700"
-                            : "bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
+
                   <td
                     className="px-2 py-3 text-center"
                     onClick={(event) => event.stopPropagation()}
                   >
                     {row.status === "Pending" ? (
-                      <Button size="sm" onClick={() => approve(row.id)}>
-                        Approve
-                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => approve(row.id)}
+                        className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100"
+                      >
+                        Pending
+                      </button>
                     ) : (
-                      <span className="text-xs font-semibold text-slate-400">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          row.status === "Approved"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-red-50 text-red-700"
+                        }`}
+                      >
                         {row.status}
                       </span>
                     )}
@@ -257,124 +361,268 @@ export default function CompanyPurchaseOrders() {
       {selected &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <div className="flex max-h-[94vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
-                    Store Purchase Order
+                    Purchase Order
                   </p>
                   <h2 className="mt-1 text-xl font-bold text-slate-800">
                     {selected.referenceNo}
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {selected.storeName}
-                  </p>
+
+                  <div className="mt-2">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                        selected.status === "Approved"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : selected.status === "Rejected"
+                            ? "bg-red-50 text-red-700"
+                            : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      {selected.status}
+                    </span>
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-slate-700"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
                 >
                   <Icon name="close" size={20} />
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
-                <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <Info label="PO No" value={selected.referenceNo} />
-                  <Info label="Date" value={formatDate(selected.date)} />
-                  <Info label="Store Name" value={selected.storeName} />
-                  <Info label="Status" value={selected.status} />
-                  <Info
-                    label="Products"
-                    value={String(
-                      selected.order?.items?.length ??
-                        selected.order?.totalProduct ??
-                        0,
-                    )}
-                  />
-                  <Info
-                    label="Without Tax"
-                    value={formatCurrency(selected.order?.withoutTax ?? 0)}
-                  />
-                  <Info
-                    label="Tax"
-                    value={formatCurrency(
-                      (selected.order?.sgst ?? 0) +
-                        (selected.order?.cgst ?? 0) +
-                        (selected.order?.igst ?? 0),
-                    )}
-                  />
-                  <Info
-                    label="Grand Total"
-                    value={formatCurrency(
-                      selected.order?.total ?? selected.amount,
-                    )}
-                  />
-                </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-2 border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
 
-                {selected.order?.items?.length ? (
-                  <div className="overflow-hidden rounded-2xl border border-slate-200">
-                    <table className="w-full table-fixed text-sm">
+                        <div>
+                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                            NATURE BIOTIC
+                          </h3>
+                          <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                            4/130/A1, Velavan Nagar, Velayudhampuram,
+                            Rajapalayam, Tamil Nadu - 626102
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            GSTIN: 33AEZPV5328P1ZC
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center p-4">
+                      <h3 className="text-2xl font-bold text-slate-900">
+                        Purchase Order
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 border-b border-slate-300 text-sm">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Ordered By
+                      </p>
+
+                      <p className="mt-2 font-bold text-slate-900">
+                        {selected.storeName}
+                      </p>
+
+                      <p className="mt-1 text-slate-500">
+                        Store Purchase Request
+                      </p>
+                    </div>
+
+                    <div className="p-4">
+                      <div className="grid grid-cols-[110px_1fr] gap-y-2">
+                        <span className="text-slate-500">PO No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selected.referenceNo}
+                        </span>
+
+                        <span className="text-slate-500">PO Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selected.date)}
+                        </span>
+
+                        <span className="text-slate-500">Store Name</span>
+                        <span className="font-semibold text-slate-800">
+                          {selected.storeName}
+                        </span>
+
+                        <span className="text-slate-500">Status</span>
+                        <span className="font-semibold text-slate-800">
+                          {selected.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selected.order?.items?.length ? (
+                    <table className="w-full table-fixed border-collapse text-[11px]">
                       <thead>
-                        <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                          <th className="w-[7%] px-2 py-3 text-center">S.No</th>
-                          <th className="w-[25%] px-3 py-3 text-left">Product</th>
-                          <th className="w-[14%] px-2 py-3 text-center">Pack Size</th>
-                          <th className="w-[12%] px-2 py-3 text-right">Qty</th>
-                          <th className="w-[14%] px-2 py-3 text-right">Price</th>
-                          <th className="w-[14%] px-2 py-3 text-right">Without Tax</th>
-                          <th className="w-[14%] px-2 py-3 text-right">Total</th>
+                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                          <th className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-center">
+                            S.No
+                          </th>
+                          <th className="w-[20%] border-r border-slate-300 px-2 py-2.5 text-left">
+                            Product
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2.5 text-center">
+                            HSN
+                          </th>
+                          <th className="w-[11%] border-r border-slate-300 px-2 py-2.5 text-center">
+                            Pack Size
+                          </th>
+                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                            Qty
+                          </th>
+                          <th className="w-[12%] border-r border-slate-300 px-2 py-2.5 text-right">
+                            Price
+                          </th>
+                          <th className="w-[12%] border-r border-slate-300 px-2 py-2.5 text-right">
+                            Without Tax
+                          </th>
+                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                            SGST
+                          </th>
+                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                            CGST
+                          </th>
+                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                            IGST
+                          </th>
+                          <th className="w-[12%] px-2 py-2.5 text-right">
+                            Total
+                          </th>
                         </tr>
                       </thead>
 
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody>
                         {selected.order.items.map((item, index) => (
-                          <tr key={item.id ?? item.key ?? index}>
-                            <td className="px-2 py-3 text-center text-slate-500">
+                          <tr
+                            key={item.id ?? item.key ?? index}
+                            className="border-b border-slate-200"
+                          >
+                            <td className="border-r border-slate-300 px-2 py-3 text-center">
                               {index + 1}
                             </td>
-                            <td className="px-3 py-3 font-semibold text-slate-800">
-                              {item.product?.name ||
-                                item.productName ||
-                                item.productId ||
-                                "-"}
+
+                            <td className="border-r border-slate-300 px-2 py-3 font-semibold text-slate-800">
+                              {getPurchaseProductName(item)}
                             </td>
-                            <td className="px-2 py-3 text-center text-slate-600">
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-center text-slate-600">
+                              {getPurchaseProductHsn(item)}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-center">
                               {item.packSize || item.pkgsize || "-"}
                             </td>
-                            <td className="px-2 py-3 text-right">
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-right">
                               {item.quantity ?? item.qty ?? 0}
                             </td>
-                            <td className="px-2 py-3 text-right">
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-right">
                               {formatCurrency(
                                 item.price ?? item.sellingPrice ?? 0,
                               )}
                             </td>
-                            <td className="px-2 py-3 text-right">
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-right">
                               {formatCurrency(item.withoutTax ?? 0)}
                             </td>
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-right">
+                              {formatCurrency(item.sgst ?? 0)}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-right">
+                              {formatCurrency(item.cgst ?? 0)}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-3 text-right">
+                              {formatCurrency(item.igst ?? 0)}
+                            </td>
+
                             <td className="px-2 py-3 text-right font-bold">
-                              {formatCurrency(
-                                item.total ?? item.rowTotal ?? 0,
-                              )}
+                              {formatCurrency(item.total ?? item.rowTotal ?? 0)}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  ) : (
+                    <div className="p-8 text-center text-sm text-slate-400">
+                      Product-level details are not available for this order.
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-[1fr_330px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Purchase order raised by {selected.storeName} for Nature
+                        Biotic approval.
+                      </p>
+                    </div>
+
+                    <div className="p-4 text-sm">
+                      <SummaryLine
+                        label="Without Tax"
+                        value={formatCurrency(selected.order?.withoutTax ?? 0)}
+                      />
+                      <SummaryLine
+                        label="SGST"
+                        value={formatCurrency(selected.order?.sgst ?? 0)}
+                      />
+                      <SummaryLine
+                        label="CGST"
+                        value={formatCurrency(selected.order?.cgst ?? 0)}
+                      />
+                      <SummaryLine
+                        label="IGST"
+                        value={formatCurrency(selected.order?.igst ?? 0)}
+                      />
+
+                      <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-3">
+                        <span className="font-bold text-slate-900">
+                          Grand Total
+                        </span>
+                        <span className="text-lg font-extrabold text-brand-700">
+                          {formatCurrency(
+                            selected.order?.total ?? selected.amount,
+                          )}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm text-slate-400">
-                    Product-level details are not available for this older order.
-                  </div>
-                )}
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 <Button variant="secondary" onClick={() => setSelected(null)}>
                   Close
+                </Button>
+
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print PO
                 </Button>
 
                 {selected.status === "Pending" && (
@@ -392,13 +640,11 @@ export default function CompanyPurchaseOrders() {
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function SummaryLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-        {label}
-      </p>
-      <p className="mt-1 break-words font-bold text-slate-800">{value}</p>
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-semibold text-slate-800">{value}</span>
     </div>
   );
 }
