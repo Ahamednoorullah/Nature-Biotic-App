@@ -1132,12 +1132,12 @@ export default function CompanySales() {
                             {selectedStore?.code || "-"}
                           </span>
 
-                          <span className="text-slate-500">
+                          {/* <span className="text-slate-500">
                             Place of Supply
                           </span>
                           <span className="font-semibold text-slate-800">
                             {selectedInvoice.header.placeOfSupply || "-"}
-                          </span>
+                          </span> */}
                         </div>
                       </div>
                     </div>
