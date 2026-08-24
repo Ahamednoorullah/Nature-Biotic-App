@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { Card, Button, Icon, EmptyState } from "@/components/ui";
+import { createPortal } from "react-dom";
+import { Card, Button, Icon, EmptyState, Input, Select } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getStoreDebitNotesFromCompanyCredits,
@@ -16,6 +17,11 @@ type DebitNote = {
   quantity: number;
   reason: string;
   placeOfReturn: string;
+  unitPrice: number;
+  beforeDiscount: number;
+  discountPercent: number;
+  discountAmount: number;
+  taxableAmount: number;
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -35,11 +41,44 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       const sgst = Number(source.sgst ?? 0);
       const cgst = Number(source.cgst ?? 0);
       const igst = Number(source.igst ?? 0);
-      const withoutTax = Number(
-        source.amount ??
-          source.withoutTax ??
-          Math.max(0, total - sgst - cgst - igst),
+      const unitPrice = Number(
+        source.unitPrice ??
+          source.sellingPrice ??
+          source.price ??
+          0,
       );
+
+      const beforeDiscount = Number(
+        source.beforeDiscount ??
+          (unitPrice > 0
+            ? unitPrice * Number(source.quantity ?? 0)
+            : 0),
+      );
+
+      const discountPercent = Number(
+        source.discountPercent ??
+          source.discount ??
+          0,
+      );
+
+      const discountAmount = Number(
+        source.discountAmount ??
+          (beforeDiscount * discountPercent) / 100,
+      );
+
+      const taxableAmount = Number(
+        source.taxableAmount ??
+          source.amount ??
+          source.withoutTax ??
+          Math.max(
+            0,
+            beforeDiscount > 0
+              ? beforeDiscount - discountAmount
+              : total - sgst - cgst - igst,
+          ),
+      );
+
+      const withoutTax = taxableAmount;
 
       return {
         id: source.id,
@@ -55,6 +94,11 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
           source.placeOfReturn ??
           source.storeLocation?.split?.(",")?.[0] ??
           "-",
+        unitPrice,
+        beforeDiscount,
+        discountPercent,
+        discountAmount,
+        taxableAmount,
         withoutTax,
         sgst,
         cgst,
@@ -71,6 +115,11 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState("");
   const [vendorFilter, setVendorFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState<
+    "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
+  >("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [selectedDebitNoteNo, setSelectedDebitNoteNo] = useState<string | null>(
     null,
   );
@@ -90,20 +139,80 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     };
   }, [storeId]);
 
-  const filtered = useMemo(
-    () =>
-      allNotes.filter((n) => {
-        const ms =
-          n.debitNoteNo.toLowerCase().includes(search.toLowerCase()) ||
-          n.vendor.toLowerCase().includes(search.toLowerCase()) ||
-          n.purchaseRef.toLowerCase().includes(search.toLowerCase()) ||
-          n.product.toLowerCase().includes(search.toLowerCase());
-        const mv = vendorFilter === "all" || n.vendor === vendorFilter;
-        const ms2 = statusFilter === "all" || n.status === statusFilter;
-        return ms && mv && ms2;
-      }),
-    [search, vendorFilter, statusFilter, allNotes],
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const today = new Date();
+    const normalize = (value: string) => new Date(`${value}T00:00:00`);
+
+    const matchesDate = (value: string) => {
+      const rowDate = normalize(value);
+
+      if (dateFilter === "all") return true;
+
+      if (dateFilter === "today") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowDate.getMonth() === today.getMonth() &&
+          rowDate.getDate() === today.getDate()
+        );
+      }
+
+      if (dateFilter === "monthly") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          rowDate.getMonth() === today.getMonth()
+        );
+      }
+
+      if (dateFilter === "quarterly") {
+        return (
+          rowDate.getFullYear() === today.getFullYear() &&
+          Math.floor(rowDate.getMonth() / 3) ===
+            Math.floor(today.getMonth() / 3)
+        );
+      }
+
+      if (dateFilter === "yearly") {
+        return rowDate.getFullYear() === today.getFullYear();
+      }
+
+      if (dateFilter === "custom") {
+        if (!customFrom && !customTo) return true;
+
+        const from = customFrom ? normalize(customFrom) : null;
+        const to = customTo ? normalize(customTo) : null;
+
+        if (from && rowDate < from) return false;
+        if (to && rowDate > to) return false;
+      }
+
+      return true;
+    };
+
+    return allNotes.filter((n) => {
+      const matchesSearch =
+        !q ||
+        n.debitNoteNo.toLowerCase().includes(q) ||
+        n.vendor.toLowerCase().includes(q) ||
+        n.purchaseRef.toLowerCase().includes(q) ||
+        n.product.toLowerCase().includes(q);
+
+      const matchesVendor = vendorFilter === "all" || n.vendor === vendorFilter;
+      const matchesStatus = statusFilter === "all" || n.status === statusFilter;
+
+      return (
+        matchesSearch && matchesVendor && matchesStatus && matchesDate(n.date)
+      );
+    });
+  }, [
+    search,
+    vendorFilter,
+    statusFilter,
+    dateFilter,
+    customFrom,
+    customTo,
+    allNotes,
+  ]);
 
   const groupedNotes = useMemo(() => {
     const map = new Map<string, any>();
@@ -111,6 +220,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     filtered.forEach((note) => {
       const existing = map.get(note.debitNoteNo);
       if (existing) {
+        existing.beforeDiscount += note.beforeDiscount;
+        existing.discountAmount += note.discountAmount;
+        existing.taxableAmount += note.taxableAmount;
         existing.withoutTax += note.withoutTax;
         existing.sgst += note.sgst;
         existing.cgst += note.cgst;
@@ -125,6 +237,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
           vendor: note.vendor,
           placeOfReturn: note.placeOfReturn,
           purchaseRef: note.purchaseRef,
+          beforeDiscount: note.beforeDiscount,
+          discountAmount: note.discountAmount,
+          taxableAmount: note.taxableAmount,
           withoutTax: note.withoutTax,
           sgst: note.sgst,
           cgst: note.cgst,
@@ -175,6 +290,18 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
         status: selectedItems.every((item) => item.status === "Approved")
           ? "Approved"
           : "Pending",
+        beforeDiscount: selectedItems.reduce(
+          (sum, item) => sum + item.beforeDiscount,
+          0,
+        ),
+        discountAmount: selectedItems.reduce(
+          (sum, item) => sum + item.discountAmount,
+          0,
+        ),
+        taxableAmount: selectedItems.reduce(
+          (sum, item) => sum + item.taxableAmount,
+          0,
+        ),
         withoutTax: selectedItems.reduce(
           (sum, item) => sum + item.withoutTax,
           0,
@@ -273,63 +400,116 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       </div>
 
       <Card className="p-4 mb-5">
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <span
-                className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                style={{ fontSize: 20 }}
-              >
-                search
-              </span>
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search debit notes..."
-                className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus"
-              />
-            </div>
+        <div className="flex flex-col gap-3 xl:flex-row xl:flex-nowrap xl:items-end xl:gap-2">
+          <div className="w-full xl:w-[230px] xl:shrink-0">
+            <Input
+              value={search}
+              onChange={setSearch}
+              placeholder="Search debit note..."
+              icon="search"
+            />
           </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="w-full sm:w-48">
-              <select
-                value={vendorFilter}
-                onChange={(e) => setVendorFilter(e.target.value)}
-                className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 transition-base focus:outline-none focus:border-brand-500 appearance-none cursor-pointer"
-              >
-                <option value="all">All Vendors</option>
-                {vendors.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="w-full sm:w-40">
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 transition-base focus:outline-none focus:border-brand-500 appearance-none cursor-pointer"
-              >
-                <option value="all">All Status</option>
-                {statuses.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
+
+          <div className="w-full xl:w-[165px] xl:shrink-0">
+            <Select
+              label="Vendor"
+              value={vendorFilter}
+              onChange={setVendorFilter}
+              options={[
+                { value: "all", label: "All Vendors" },
+                ...vendors.map((vendor) => ({
+                  value: vendor,
+                  label: vendor,
+                })),
+              ]}
+            />
+          </div>
+
+          <div className="w-full xl:w-[145px] xl:shrink-0">
+            <Select
+              label="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "all", label: "All Status" },
+                ...statuses.map((status) => ({
+                  value: status,
+                  label: status,
+                })),
+              ]}
+            />
+          </div>
+
+          <div className="w-full xl:w-[155px] xl:shrink-0">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) =>
+                setDateFilter(
+                  value as
+                    | "all"
+                    | "today"
+                    | "monthly"
+                    | "quarterly"
+                    | "yearly"
+                    | "custom",
+                )
+              }
+              options={[
+                { value: "all", label: "All Dates" },
+                { value: "today", label: "Today" },
+                { value: "monthly", label: "Monthly" },
+                { value: "quarterly", label: "Quarterly" },
+                { value: "yearly", label: "Yearly" },
+                { value: "custom", label: "Custom Date" },
+              ]}
+            />
+          </div>
+
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full xl:w-[140px] xl:shrink-0">
+                <Input
+                  label="From"
+                  type="date"
+                  value={customFrom}
+                  onChange={setCustomFrom}
+                />
+              </div>
+
+              <div className="w-full xl:w-[140px] xl:shrink-0">
+                <Input
+                  label="To"
+                  type="date"
+                  value={customTo}
+                  onChange={setCustomTo}
+                />
+              </div>
+            </>
+          )}
+
+          {(search ||
+            vendorFilter !== "all" ||
+            statusFilter !== "all" ||
+            dateFilter !== "all" ||
+            customFrom ||
+            customTo) && (
             <Button
               variant="secondary"
+              className="xl:shrink-0"
               onClick={() => {
                 setSearch("");
                 setVendorFilter("all");
                 setStatusFilter("all");
+                setDateFilter("all");
+                setCustomFrom("");
+                setCustomTo("");
               }}
             >
-              <Icon name="filter_alt_off" size={18} /> Clear
+              <Icon name="filter_alt_off" size={17} />
+              Clear
             </Button>
-          </div>
+          )}
         </div>
       </Card>
 
@@ -355,43 +535,63 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[10%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[9%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Return Date
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[13%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[12%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Debit Note No.
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[12%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Vendor
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[12%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[10%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
-                    Place of Return
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Without Tax
-                  </th>
-                  <th
-                    colSpan={3}
-                    className="w-[21%] px-2 py-2 text-center font-semibold border-r border-slate-200"
-                  >
-                    Tax
+                    Place
                   </th>
                   <th
                     rowSpan={2}
                     className="w-[9%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Discount
+                  </th>
+                  <th
+                    rowSpan={2}
+                    className="w-[10%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                  >
+                    Taxable
+                  </th>
+
+                  <th
+                    colSpan={2}
+                    className="w-[11%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                  >
+                    SGST
+                  </th>
+                  <th
+                    colSpan={2}
+                    className="w-[11%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                  >
+                    CGST
+                  </th>
+                  <th
+                    colSpan={2}
+                    className="w-[11%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                  >
+                    IGST
+                  </th>
+
+                  <th
+                    rowSpan={2}
+                    className="w-[10%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Total
                   </th>
@@ -402,15 +602,25 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                     Status
                   </th>
                 </tr>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+
+                <tr className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider border-b border-slate-200">
                   <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
-                    SGST
+                    %
                   </th>
                   <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
-                    CGST
+                    Amt
                   </th>
                   <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
-                    IGST
+                    %
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    Amt
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    %
+                  </th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    Amt
                   </th>
                 </tr>
               </thead>
@@ -440,16 +650,36 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                     <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
                       {note.placeOfReturn}
                     </td>
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100">
-                      {formatCurrency(note.withoutTax)}
+                    <td className="px-2 py-3 text-right text-slate-600 border-r border-slate-100">
+                      {formatCurrency(note.discountAmount || 0)}
+                    </td>
+                    <td className="px-2 py-3 text-right text-slate-600 border-r border-slate-100">
+                      {formatCurrency(note.taxableAmount ?? note.withoutTax)}
                     </td>
                     <td className="px-1 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {note.sgst > 0 && note.withoutTax > 0
+                        ? ((note.sgst / note.withoutTax) * 100).toFixed(2)
+                        : "0.00"}
+                    </td>
+                    <td className="px-1 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(note.sgst)}
                     </td>
+
                     <td className="px-1 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {note.cgst > 0 && note.withoutTax > 0
+                        ? ((note.cgst / note.withoutTax) * 100).toFixed(2)
+                        : "0.00"}
+                    </td>
+                    <td className="px-1 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(note.cgst)}
                     </td>
+
                     <td className="px-1 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {note.igst > 0 && note.withoutTax > 0
+                        ? ((note.igst / note.withoutTax) * 100).toFixed(2)
+                        : "0.00"}
+                    </td>
+                    <td className="px-1 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(note.igst)}
                     </td>
                     <td className="px-2 py-3 text-center font-bold text-slate-700 border-r border-slate-100">
@@ -482,172 +712,467 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
         </Card>
       )}
 
-      {selectedSummary && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-          <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            <div className="flex shrink-0 items-start justify-between border-b border-slate-200 bg-slate-50 px-7 py-5">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-brand-700">
-                  Debit Note Details
-                </p>
-                <h2 className="mt-1 text-xl font-bold text-slate-800">
-                  {selectedSummary.debitNoteNo}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Company Credit Note → Store Debit Note
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedDebitNoteNo(null)}
-                className="rounded-lg p-2 text-slate-400 transition hover:bg-white hover:text-slate-700"
-              >
-                <Icon name="close" size={21} />
-              </button>
-            </div>
+      {selectedSummary &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
+            <style>{`
+              @media print {
+                @page { size: A4 landscape; margin: 6mm; }
+                body * { visibility: hidden !important; }
+                .debit-note-print-area,
+                .debit-note-print-area * { visibility: visible !important; }
+                .debit-note-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                }
+                .debit-note-screen-only { display: none !important; }
+                .debit-note-scroll { overflow: visible !important; padding: 0 !important; }
+              }
+            `}</style>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-7">
-              <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Detail
-                  label="Debit Note No"
-                  value={selectedSummary.debitNoteNo}
-                />
-                <Detail
-                  label="Return Date"
-                  value={formatDate(selectedSummary.date)}
-                />
-                <Detail label="Vendor" value={selectedSummary.vendor} />
-                <Detail
-                  label="Purchase Ref"
-                  value={selectedSummary.purchaseRef}
-                />
-                <Detail
-                  label="Place of Return"
-                  value={selectedSummary.placeOfReturn}
-                />
-                <Detail
-                  label="No. of Products"
-                  value={String(selectedItems.length)}
-                />
-                <Detail
-                  label="Total Quantity"
-                  value={String(
-                    selectedItems.reduce((sum, item) => sum + item.quantity, 0),
-                  )}
-                />
-                <Detail label="Status" value={selectedSummary.status} />
-              </div>
-
-              <div className="overflow-hidden rounded-2xl border border-slate-200">
-                <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
-                  <h3 className="font-bold text-slate-800">
-                    Returned Product Details
-                  </h3>
+            <div className="debit-note-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="debit-note-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                    Debit Note
+                  </p>
+                  <h2 className="mt-1 text-2xl font-bold text-slate-800">
+                    {selectedSummary.debitNoteNo}
+                  </h2>
+                  <span
+                    className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
+                      selectedSummary.status === "Approved"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {selectedSummary.status}
+                  </span>
                 </div>
-                <table className="w-full table-fixed text-sm">
-                  <thead>
-                    <tr className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                      <th className="w-[7%] px-2 py-3 text-center">S.No</th>
-                      <th className="w-[25%] px-3 py-3 text-left">Product</th>
-                      <th className="w-[10%] px-2 py-3 text-center">Qty</th>
-                      <th className="w-[14%] px-2 py-3 text-right">
-                        Without Tax
-                      </th>
-                      <th className="w-[10%] px-2 py-3 text-right">SGST</th>
-                      <th className="w-[10%] px-2 py-3 text-right">CGST</th>
-                      <th className="w-[10%] px-2 py-3 text-right">IGST</th>
-                      <th className="w-[14%] px-2 py-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {selectedItems.map((item, index) => (
-                      <tr key={item.id}>
-                        <td className="px-2 py-3 text-center text-slate-500">
-                          {index + 1}
-                        </td>
-                        <td className="px-3 py-3">
-                          <p className="font-semibold text-slate-800">
-                            {item.product}
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-400">
-                            {item.reason}
-                          </p>
-                        </td>
-                        <td className="px-2 py-3 text-center font-semibold text-slate-700">
-                          {item.quantity}
-                        </td>
-                        <td className="px-2 py-3 text-right text-slate-600">
-                          {formatCurrency(item.withoutTax)}
-                        </td>
-                        <td className="px-2 py-3 text-right text-slate-600">
-                          {formatCurrency(item.sgst)}
-                        </td>
-                        <td className="px-2 py-3 text-right text-slate-600">
-                          {formatCurrency(item.cgst)}
-                        </td>
-                        <td className="px-2 py-3 text-right text-slate-600">
-                          {formatCurrency(item.igst)}
-                        </td>
-                        <td className="px-2 py-3 text-right font-bold text-slate-800">
-                          {formatCurrency(item.returnAmount)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
 
-              <div className="mt-6 ml-auto w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <TotalRow
-                  label="Without Tax"
-                  value={formatCurrency(selectedSummary.withoutTax)}
-                />
-                <TotalRow
-                  label="SGST"
-                  value={formatCurrency(selectedSummary.sgst)}
-                />
-                <TotalRow
-                  label="CGST"
-                  value={formatCurrency(selectedSummary.cgst)}
-                />
-                <TotalRow
-                  label="IGST"
-                  value={formatCurrency(selectedSummary.igst)}
-                />
-                <div className="mt-3 border-t border-slate-200 pt-3">
-                  <TotalRow
-                    label="Grand Total"
-                    value={formatCurrency(selectedSummary.total)}
-                    bold
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 justify-end gap-3 border-t border-slate-200 bg-slate-50 px-7 py-4">
-              {selectedSummary.status === "Pending" && (
                 <button
                   type="button"
-                  onClick={() => {
-                    approveDebitNoteGroup(selectedSummary.debitNoteNo);
-                    setSelectedDebitNoteNo(null);
-                  }}
-                  className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+                  onClick={() => setSelectedDebitNoteNo(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 >
-                  Approve Debit Note
+                  <Icon name="close" size={20} />
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setSelectedDebitNoteNo(null)}
-                className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-              >
-                Close
-              </button>
+              </div>
+
+              <div className="debit-note-scroll min-h-0 flex-1 overflow-y-auto p-3">
+                <div className="min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 px-6 py-3">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-extrabold tracking-wide text-slate-900">
+                            NATURE BIOTIC
+                          </h3>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
+                            4/130/A1, Velavan Nagar, Velayudhampuram,
+                            Rajapalayam, Tamil Nadu - 626102
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            GSTIN: 33AEZPV5328P1ZC
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Cell: 96008 44446
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center px-4 py-3">
+                      <div className="text-center">
+                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
+                          Debit Note
+                        </h3>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Store Purchase Return
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Vendor
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selectedSummary.vendor}
+                      </p>
+                      <p className="text-slate-600">
+                        Nature Biotic, Rajapalayam
+                      </p>
+                    </div>
+
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Return Details
+                      </p>
+                      <p className="text-slate-600">
+                        Purchase Ref:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedSummary.purchaseRef}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Place of Return:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedSummary.placeOfReturn}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Total Qty:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedItems.reduce(
+                            (sum, item) => sum + item.quantity,
+                            0,
+                          )}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Debit Note Details
+                      </p>
+                      <div className="grid grid-cols-[105px_1fr] gap-y-0.5">
+                        <span className="text-slate-500">Debit Note No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedSummary.debitNoteNo}
+                        </span>
+
+                        <span className="text-slate-500">Return Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selectedSummary.date)}
+                        </span>
+
+                        <span className="text-slate-500">Purchase Ref</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedSummary.purchaseRef}
+                        </span>
+
+                        <span className="text-slate-500">Status</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedSummary.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full overflow-hidden">
+                    <table className="w-full table-fixed border-collapse text-[9px]">
+                      <thead>
+                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                          <th
+                            rowSpan={2}
+                            className="w-[4%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            S.No
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[15%] border-r border-slate-300 px-2 py-2 text-left"
+                          >
+                            Product
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[6%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Qty
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[12%] border-r border-slate-300 px-2 py-2 text-left"
+                          >
+                            Reason
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-right"
+                          >
+                            Unit Price
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[9%] border-r border-slate-300 px-2 py-2 text-right"
+                          >
+                            Before Discount
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="w-[9%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            Discount
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[9%] border-r border-slate-300 px-2 py-2 text-right"
+                          >
+                            Taxable
+                          </th>
+
+                          <th
+                            colSpan={2}
+                            className="w-[11%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            SGST
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="w-[11%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            CGST
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="w-[11%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
+                            IGST
+                          </th>
+
+                          <th
+                            rowSpan={2}
+                            className="w-[12%] px-2 py-2 text-right"
+                          >
+                            Line Total
+                          </th>
+                        </tr>
+
+                        <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {selectedItems.map((item, index) => {
+                          const sgstRate =
+                            item.sgst > 0 && item.withoutTax > 0
+                              ? (item.sgst / item.withoutTax) * 100
+                              : 0;
+                          const cgstRate =
+                            item.cgst > 0 && item.withoutTax > 0
+                              ? (item.cgst / item.withoutTax) * 100
+                              : 0;
+                          const igstRate =
+                            item.igst > 0 && item.withoutTax > 0
+                              ? (item.igst / item.withoutTax) * 100
+                              : 0;
+
+                          return (
+                            <tr
+                              key={item.id}
+                              className="border-b border-slate-300"
+                            >
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {index + 1}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
+                                {item.product}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {item.quantity}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-slate-600">
+                                {item.reason || "-"}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right text-slate-700">
+                                {item.unitPrice.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right text-slate-700">
+                                {item.beforeDiscount.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                {item.discountPercent.toFixed(2)}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {item.discountAmount.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right font-semibold text-slate-700">
+                                {item.taxableAmount.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                {sgstRate.toFixed(2)}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {item.sgst.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                {cgstRate.toFixed(2)}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {item.cgst.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+
+                              <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                {igstRate.toFixed(2)}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {item.igst.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+
+                              <td className="px-2 py-2 text-right font-bold text-slate-800">
+                                {item.returnAmount.toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="grid min-h-[140px] grid-cols-[1fr_320px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Debit note generated against products returned to Nature
+                        Biotic.
+                      </p>
+                    </div>
+
+                    <div className="p-4 text-sm">
+                      <TotalRow
+                        label="Total Before Discount"
+                        value={formatCurrency(selectedSummary.beforeDiscount)}
+                      />
+                      <TotalRow
+                        label="Discount"
+                        value={formatCurrency(selectedSummary.discountAmount)}
+                      />
+                      <TotalRow
+                        label="Taxable Total"
+                        value={formatCurrency(selectedSummary.taxableAmount)}
+                      />
+                      <TotalRow
+                        label="SGST"
+                        value={formatCurrency(selectedSummary.sgst)}
+                      />
+                      <TotalRow
+                        label="CGST"
+                        value={formatCurrency(selectedSummary.cgst)}
+                      />
+                      <TotalRow
+                        label="IGST"
+                        value={formatCurrency(selectedSummary.igst)}
+                      />
+                      <div className="mt-3 border-t border-slate-300 pt-3">
+                        <TotalRow
+                          label="Grand Total"
+                          value={formatCurrency(selectedSummary.total)}
+                          bold
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
+                    <div className="mt-auto w-56 text-center">
+                      <div className="border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="debit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                {selectedSummary.status === "Pending" && (
+                  <Button
+                    onClick={() => {
+                      approveDebitNoteGroup(selectedSummary.debitNoteNo);
+                      setSelectedDebitNoteNo(null);
+                    }}
+                  >
+                    <Icon name="check_circle" size={18} />
+                    Approve Debit Note
+                  </Button>
+                )}
+
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedDebitNoteNo(null)}
+                >
+                  Close
+                </Button>
+
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print Debit Note
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

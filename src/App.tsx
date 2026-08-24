@@ -36,7 +36,7 @@ import StoreDeliveryChallan from "@/pages/StoreDeliveryChallan";
 import StoreReturnChallan from "@/pages/StoreReturnChallan";
 import StoreReceipt from "@/pages/StoreReceipt";
 import StoreRefund from "@/pages/StoreRefund";
-import StoreReturnStock from "@/pages/StoreReturnStock";
+import StorePurchaseReturn from "@/pages/StorePurchaseReturn";
 import StorePurchaseOrder from "@/pages/StorePurchaseOrder";
 import StoreSalesReturn from "@/pages/StoreSalesReturn";
 import StoreCreditNotes from "@/pages/StoreCreditNotes";
@@ -89,7 +89,7 @@ function AppContent() {
       {route.page === "payments" && <StorePayments storeId={route.storeId} />}
       {route.page === "expenses" && <StoreExpenses storeId={route.storeId} />}
       {route.page === "return-stock" && (
-        <StoreReturnStock storeId={route.storeId} />
+        <StorePurchaseReturn storeId={route.storeId} />
       )}
       {route.page === "sales" && <StoreSales storeId={route.storeId} />}
       {route.page === "credit-notes" && (

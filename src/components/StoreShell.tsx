@@ -9,7 +9,7 @@ type NavItem =
   | { type: "link"; key: StorePage; label: string; icon: string }
   | {
       type: "group";
-      key: "purchases" | "sales";
+      key: "purchases" | "stock-management" | "sales";
       label: string;
       icon: string;
       children: SubItem[];
@@ -36,19 +36,16 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    type: "link",
+    type: "group",
     key: "stock-management",
     label: "Stock Management",
     icon: "inventory_2",
-  },
-  {
-    type: "group",
-    key: "sales",
-    label: "Sales",
-    icon: "sell",
     children: [
-      { key: "farmers", label: "Farmer", icon: "groups" },
-      { key: "quotation", label: "Quotation", icon: "description" },
+      {
+        key: "stock-management",
+        label: "Stock Overview",
+        icon: "inventory_2",
+      },
       {
         key: "delivery-challan",
         label: "Delivery Challan",
@@ -59,6 +56,17 @@ const navItems: NavItem[] = [
         label: "Return Challan",
         icon: "assignment_return",
       },
+    ],
+  },
+  {
+    type: "group",
+    key: "sales",
+    label: "Sales",
+    icon: "sell",
+    children: [
+      { key: "farmers", label: "Farmer", icon: "groups" },
+      { key: "quotation", label: "Quotation", icon: "description" },
+
       { key: "sales-invoice", label: "Sales Invoice", icon: "receipt_long" },
       { key: "sales-return", label: "Sales Return", icon: "assignment_return" },
       { key: "credit-notes", label: "Credit Note", icon: "request_quote" },
@@ -70,10 +78,13 @@ const navItems: NavItem[] = [
   { type: "link", key: "reports", label: "Reports", icon: "bar_chart" },
 ];
 
-const groupKeys = ["purchases", "sales"] as const;
+const groupKeys = ["purchases", "stock-management", "sales"] as const;
 
-function activeGroupFor(page: StorePage): "purchases" | "sales" | null {
+function activeGroupFor(
+  page: StorePage,
+): "purchases" | "stock-management" | "sales" | null {
   if (page === "purchases") return "purchases";
+  if (page === "stock-management") return "stock-management";
   if (page === "sales") return "sales";
   for (const item of navItems) {
     if (item.type === "group" && item.children.some((c) => c.key === page))
@@ -223,11 +234,11 @@ function SidebarContent({
   onClose?: () => void;
 }) {
   const initialGroup = activeGroupFor(active);
-  const [openGroup, setOpenGroup] = useState<"purchases" | "sales" | null>(
-    initialGroup,
-  );
+  const [openGroup, setOpenGroup] = useState<
+    "purchases" | "stock-management" | "sales" | null
+  >(initialGroup);
 
-  function toggleGroup(key: "purchases" | "sales") {
+  function toggleGroup(key: "purchases" | "stock-management" | "sales") {
     setOpenGroup((cur) => (cur === key ? null : key));
   }
 

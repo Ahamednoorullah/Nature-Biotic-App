@@ -24,6 +24,7 @@ type PurchaseOrderItem = {
   price?: number;
   sellingPrice?: number;
   withoutTax?: number;
+  taxPercent?: number;
   sgst?: number;
   cgst?: number;
   igst?: number;
@@ -213,73 +214,47 @@ export default function CompanyPurchaseOrders() {
           <table className="w-full table-fixed border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
-                <th
-                  rowSpan={2}
-                  className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-                >
+                <th rowSpan={2} className="w-[5%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
                   S.No
                 </th>
-
-                <th
-                  rowSpan={2}
-                  className="w-[11%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-                >
+                <th rowSpan={2} className="w-[9%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
                   Date
                 </th>
-
-                <th
-                  rowSpan={2}
-                  className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-                >
+                <th rowSpan={2} className="w-[12%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
                   PO No
                 </th>
-
-                <th
-                  rowSpan={2}
-                  className="w-[10%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-                >
+                <th rowSpan={2} className="w-[9%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
                   Total Product
                 </th>
-
-                <th
-                  rowSpan={2}
-                  className="w-[13%] border-r border-slate-200 px-2 py-3 text-right font-semibold"
-                >
+                <th rowSpan={2} className="w-[11%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
                   Without Tax
                 </th>
 
-                <th
-                  colSpan={3}
-                  className="w-[27%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-                >
-                  Tax
+                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
+                  SGST
+                </th>
+                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
+                  CGST
+                </th>
+                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
+                  IGST
                 </th>
 
-                <th
-                  rowSpan={2}
-                  className="w-[11%] border-r border-slate-200 px-2 py-3 text-right font-semibold"
-                >
+                <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
                   Total
                 </th>
-
-                <th
-                  rowSpan={2}
-                  className="w-[8%] px-2 py-3 text-center font-semibold"
-                >
+                <th rowSpan={2} className="w-[8%] px-2 py-3 text-center font-semibold">
                   Status
                 </th>
               </tr>
 
               <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-                <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
-                  SGST
-                </th>
-                <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
-                  CGST
-                </th>
-                <th className="border-r border-slate-200 px-2 py-2 text-right font-semibold">
-                  IGST
-                </th>
+                <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">%</th>
+                <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">Amt</th>
+                <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">%</th>
+                <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">Amt</th>
+                <th className="border-r border-slate-100 px-1 py-2 text-center font-semibold">%</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center font-semibold">Amt</th>
               </tr>
             </thead>
 
@@ -311,14 +286,29 @@ export default function CompanyPurchaseOrders() {
                     {formatCurrency(row.order?.withoutTax ?? 0)}
                   </td>
 
+                  <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                    {(row.order?.sgst ?? 0) > 0 && (row.order?.withoutTax ?? 0) > 0
+                      ? `${(((row.order?.sgst ?? 0) / (row.order?.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                      : "0.00%"}
+                  </td>
                   <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
                     {formatCurrency(row.order?.sgst ?? 0)}
                   </td>
 
+                  <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                    {(row.order?.cgst ?? 0) > 0 && (row.order?.withoutTax ?? 0) > 0
+                      ? `${(((row.order?.cgst ?? 0) / (row.order?.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                      : "0.00%"}
+                  </td>
                   <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
                     {formatCurrency(row.order?.cgst ?? 0)}
                   </td>
 
+                  <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                    {(row.order?.igst ?? 0) > 0 && (row.order?.withoutTax ?? 0) > 0
+                      ? `${(((row.order?.igst ?? 0) / (row.order?.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                      : "0.00%"}
+                  </td>
                   <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
                     {formatCurrency(row.order?.igst ?? 0)}
                   </td>
@@ -474,39 +464,50 @@ export default function CompanyPurchaseOrders() {
                     <table className="w-full table-fixed border-collapse text-[11px]">
                       <thead>
                         <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
                             S.No
                           </th>
-                          <th className="w-[20%] border-r border-slate-300 px-2 py-2.5 text-left">
+                          <th rowSpan={2} className="w-[17%] border-r border-slate-300 px-2 py-2.5 text-left">
                             Product
                           </th>
-                          <th className="w-[9%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-center">
                             HSN
                           </th>
-                          <th className="w-[11%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="w-[9%] border-r border-slate-300 px-2 py-2.5 text-center">
                             Pack Size
                           </th>
-                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Qty
                           </th>
-                          <th className="w-[12%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[10%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Price
                           </th>
-                          <th className="w-[12%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[11%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Without Tax
                           </th>
-                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+
+                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-2 text-center">
                             SGST
                           </th>
-                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-2 text-center">
                             CGST
                           </th>
-                          <th className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-2 text-center">
                             IGST
                           </th>
-                          <th className="w-[12%] px-2 py-2.5 text-right">
+
+                          <th rowSpan={2} className="w-[10%] px-2 py-2.5 text-right">
                             Total
                           </th>
+                        </tr>
+
+                        <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
                         </tr>
                       </thead>
 
@@ -546,14 +547,29 @@ export default function CompanyPurchaseOrders() {
                               {formatCurrency(item.withoutTax ?? 0)}
                             </td>
 
+                            <td className="border-r border-slate-300 px-1 py-3 text-center">
+                              {(item.sgst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
+                                ? `${(((item.sgst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                                : "0.00%"}
+                            </td>
                             <td className="border-r border-slate-300 px-2 py-3 text-right">
                               {formatCurrency(item.sgst ?? 0)}
                             </td>
 
+                            <td className="border-r border-slate-300 px-1 py-3 text-center">
+                              {(item.cgst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
+                                ? `${(((item.cgst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                                : "0.00%"}
+                            </td>
                             <td className="border-r border-slate-300 px-2 py-3 text-right">
                               {formatCurrency(item.cgst ?? 0)}
                             </td>
 
+                            <td className="border-r border-slate-300 px-1 py-3 text-center">
+                              {(item.igst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
+                                ? `${(((item.igst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                                : "0.00%"}
+                            </td>
                             <td className="border-r border-slate-300 px-2 py-3 text-right">
                               {formatCurrency(item.igst ?? 0)}
                             </td>

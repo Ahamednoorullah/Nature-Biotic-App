@@ -38,6 +38,15 @@ type CreditNote = {
   quantity?: number;
   reason?: string;
   status?: CreditNoteStatus;
+  invoiceNo?: string;
+  pkgsize?: string;
+  batchNo?: string;
+  expiryDate?: string;
+  sellingPrice?: number;
+  discountPercent?: number;
+  discountAmount?: number;
+  taxableAmount?: number;
+  taxPercent?: number;
 };
 
 type AddedProduct = {
@@ -146,6 +155,15 @@ export default function CompanyCreditNotes() {
         quantity: row.quantity,
         reason: row.reason,
         status: row.status,
+        invoiceNo: row.invoiceNo || row.purchaseRef,
+        pkgsize: (row as any).pkgsize || "",
+        batchNo: (row as any).batchNo || "",
+        expiryDate: (row as any).expiryDate || "",
+        sellingPrice: row.unitPrice,
+        discountPercent: row.discountPercent,
+        discountAmount: row.discountAmount,
+        taxableAmount: row.taxableAmount,
+        taxPercent: row.taxPercent,
       };
     });
 
@@ -447,6 +465,9 @@ export default function CompanyCreditNotes() {
         product: item.productName,
         quantity: item.quantity,
         unitPrice: item.sellingPrice,
+        pkgsize: item.pkgsize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
         discountPercent: item.discount,
         discountAmount: item.discountAmount,
         taxableAmount: item.taxableAmount,
@@ -482,6 +503,15 @@ export default function CompanyCreditNotes() {
       quantity: item.quantity,
       reason: item.reason || remarks || "Product Return",
       status: "Pending",
+      invoiceNo,
+      pkgsize: item.pkgsize,
+      batchNo: item.batchNo,
+      expiryDate: item.expiryDate,
+      sellingPrice: item.sellingPrice,
+      discountPercent: item.discount,
+      discountAmount: item.discountAmount,
+      taxableAmount: item.taxableAmount,
+      taxPercent: item.taxPercent,
     }));
 
     setCreditNotes((prev) => [...companyRows, ...prev]);
@@ -694,65 +724,47 @@ export default function CompanyCreditNotes() {
             <table className="w-full min-w-[1000px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                  <th
-                    rowSpan={2}
-                    className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200"
-                  >
+                  <th rowSpan={2} className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200">
                     S.No
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[8%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap"
-                  >
+                  <th rowSpan={2} className="w-[8%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap">
                     Date
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
+                  <th rowSpan={2} className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200">
                     CN No.
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[150px] text-center font-semibold px-3 py-3 border-r border-slate-200 whitespace-nowrap"
-                  >
+                  <th rowSpan={2} className="w-[14%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap">
                     Store Name
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[11%] text-center font-semibold px-2 py-3 border-r border-slate-200 "
-                  >
+                  <th rowSpan={2} className="w-[9%] text-center font-semibold px-2 py-3 border-r border-slate-200">
                     Place
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
+                  <th rowSpan={2} className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200">
                     Without Tax
                   </th>
-                  <th
-                    colSpan={3}
-                    className="px-4 py-2 text-center font-semibold border-r border-slate-200"
-                  >
-                    Tax
+
+                  <th colSpan={2} className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    SGST
                   </th>
-                  <th
-                    rowSpan={2}
-                    className="px-4 py-3 text-center font-semibold border-r border-slate-200"
-                  >
+                  <th colSpan={2} className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    CGST
+                  </th>
+                  <th colSpan={2} className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200">
+                    IGST
+                  </th>
+
+                  <th rowSpan={2} className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200">
                     Total
                   </th>
                 </tr>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                    SGST
-                  </th>
-                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                    CGST
-                  </th>
-                  <th className="px-4 py-2 text-center font-semibold border-r border-slate-200">
-                    IGST
-                  </th>
+
+                <tr className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">%</th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">Amt</th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">%</th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">Amt</th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">%</th>
+                  <th className="px-1 py-2 text-center font-semibold border-r border-slate-200">Amt</th>
                 </tr>
               </thead>
               <tbody>
@@ -781,13 +793,30 @@ export default function CompanyCreditNotes() {
                     <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.amount)}
                     </td>
-                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
+                    <td className="px-1 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {c.sgst > 0 && c.amount > 0
+                        ? `${((c.sgst / c.amount) * 100).toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                    <td className="px-2 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.sgst)}
                     </td>
-                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
+
+                    <td className="px-1 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {c.cgst > 0 && c.amount > 0
+                        ? `${((c.cgst / c.amount) * 100).toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                    <td className="px-2 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.cgst)}
                     </td>
-                    <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
+
+                    <td className="px-1 py-3 text-center text-slate-600 border-r border-slate-100">
+                      {c.igst > 0 && c.amount > 0
+                        ? `${((c.igst / c.amount) * 100).toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                    <td className="px-2 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.igst)}
                     </td>
                     <td className="px-3 py-3 text-right font-bold text-slate-600 border-r border-slate-100">
@@ -803,23 +832,13 @@ export default function CompanyCreditNotes() {
 
       {selectedCreditNote &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
             <style>{`
               @media print {
-                @page {
-                  size: A4 landscape;
-                  margin: 6mm;
-                }
-
-                body * {
-                  visibility: hidden !important;
-                }
-
+                @page { size: A4 landscape; margin: 5mm; }
+                body * { visibility: hidden !important; }
                 .credit-note-print-area,
-                .credit-note-print-area * {
-                  visibility: visible !important;
-                }
-
+                .credit-note-print-area * { visibility: visible !important; }
                 .credit-note-print-area {
                   position: absolute !important;
                   inset: 0 !important;
@@ -831,52 +850,34 @@ export default function CompanyCreditNotes() {
                   box-shadow: none !important;
                   background: white !important;
                 }
-
-                .credit-note-scroll {
-                  overflow: visible !important;
-                  padding: 0 !important;
-                }
-
-                .credit-note-screen-only {
-                  display: none !important;
-                }
-
-                .credit-note-table {
-                  width: 100% !important;
-                  table-layout: auto !important;
-                  font-size: 8px !important;
-                }
-
+                .credit-note-screen-only { display: none !important; }
+                .credit-note-scroll { overflow: visible !important; padding: 0 !important; }
+                .credit-note-table { font-size: 7.5px !important; }
                 .credit-note-table th,
-                .credit-note-table td {
-                  padding: 2px 3px !important;
-                  line-height: 1.15 !important;
-                }
+                .credit-note-table td { padding: 3px 4px !important; }
               }
             `}</style>
 
-            <div className="credit-note-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
+            <div className="credit-note-print-area flex h-screen w-full flex-col overflow-hidden bg-white">
+              <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-5 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
                     Credit Note
                   </p>
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                  <h2 className="mt-1 text-2xl font-bold text-slate-800">
                     {selectedCreditNote.header.creditNoteNo}
                   </h2>
-                  <div className="mt-2">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                        selectedCreditNote.header.status === "Approved"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : selectedCreditNote.header.status === "Rejected"
-                            ? "bg-red-50 text-red-700"
-                            : "bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      {selectedCreditNote.header.status || "Pending"}
-                    </span>
-                  </div>
+                  <span
+                    className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
+                      selectedCreditNote.header.status === "Approved"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : selectedCreditNote.header.status === "Rejected"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {selectedCreditNote.header.status || "Pending"}
+                  </span>
                 </div>
 
                 <button
@@ -888,28 +889,27 @@ export default function CompanyCreditNotes() {
                 </button>
               </div>
 
-              <div className="credit-note-scroll min-h-0 flex-1 overflow-y-auto p-3">
-                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+              <div className="credit-note-scroll min-h-0 flex-1 overflow-y-auto p-2">
+                <div className="min-h-full overflow-hidden rounded-xl border border-slate-300 bg-white">
                   <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-3">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden">
+                    <div className="border-r border-slate-300 px-8 py-4">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
                           <img
                             src="/logo_NB.webp"
                             alt="Nature Biotic"
                             className="max-h-14 max-w-full object-contain"
                           />
                         </div>
-
-                        <div className="leading-tight">
-                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                        <div>
+                          <h3 className="text-lg font-extrabold text-slate-900">
                             NATURE BIOTIC
                           </h3>
-                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
                             4/130/A1, Velavan Nagar, Velayudhampuram,
                             Rajapalayam, Tamil Nadu - 626102
                           </p>
-                          <p className="mt-1 text-[10px] text-slate-600">
+                          <p className="text-[10px] text-slate-600">
                             GSTIN: 33AEZPV5328P1ZC
                           </p>
                           <p className="text-[10px] text-slate-600">
@@ -919,254 +919,217 @@ export default function CompanyCreditNotes() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-center p-3">
+                    <div className="flex items-center justify-center p-4">
                       <div className="text-center">
-                        <h3 className="text-2xl font-extrabold uppercase tracking-wide text-slate-900">
+                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Credit Note
                         </h3>
                         <p className="mt-1 text-[10px] text-slate-500">
-                          Product Return / Adjustment
+                          Nature Biotic to Store
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-4">
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
                     <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Issued To
+                      <p className="mb-1 font-bold uppercase text-slate-500">
+                        Billing Address
                       </p>
                       <p className="font-bold text-slate-900">
                         {selectedCreditNote.header.party}
                       </p>
-                      <p className="mt-1 text-slate-600">
+                      <p className="text-slate-600">
                         {selectedCreditNote.header.storeLocation || "-"}
+                      </p>
+                      <p className="text-slate-600">
+                        GSTIN:{" "}
+                        {stores.find(
+                          (s) => s.id === selectedCreditNote.header.storeId,
+                        )?.gst || "-"}
                       </p>
                     </div>
 
                     <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                      <p className="mb-1 font-bold uppercase text-slate-500">
                         Return Details
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selectedCreditNote.header.party}
+                      </p>
+                      <p className="text-slate-600">
+                        {selectedCreditNote.header.storeLocation || "-"}
                       </p>
                       <p className="text-slate-600">
                         Place of Return:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedCreditNote.header.placeofreturn || "-"}
-                        </span>
-                      </p>
-                      <p className="mt-1 text-slate-600">
-                        Products:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedCreditNote.rows.length}
-                        </span>
-                      </p>
-                      <p className="text-slate-600">
-                        Total Qty:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.quantity || 0),
-                            0,
-                          )}
-                        </span>
+                        {selectedCreditNote.header.placeofreturn || "-"}
                       </p>
                     </div>
 
                     <div className="p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                      <p className="mb-1 font-bold uppercase text-slate-500">
                         Credit Note Details
                       </p>
-
-                      <div className="grid grid-cols-[92px_1fr] gap-y-1">
+                      <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
                         <span className="text-slate-500">CN No</span>
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-semibold">
                           {selectedCreditNote.header.creditNoteNo}
                         </span>
-
-                        <span className="text-slate-500">Date</span>
-                        <span className="font-semibold text-slate-800">
+                        <span className="text-slate-500">CN Date</span>
+                        <span className="font-semibold">
                           {formatDate(selectedCreditNote.header.Date)}
                         </span>
-
+                        <span className="text-slate-500">Invoice No</span>
+                        <span className="font-semibold">
+                          {selectedCreditNote.header.invoiceNo || "-"}
+                        </span>
                         <span className="text-slate-500">Store Name</span>
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-semibold">
                           {selectedCreditNote.header.party}
                         </span>
-
-                        <span className="text-slate-500">Status</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedCreditNote.header.status || "Pending"}
+                        <span className="text-slate-500">Place of Supply</span>
+                        <span className="font-semibold">
+                          {selectedCreditNote.header.storeLocation || "-"}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="w-full overflow-hidden">
-                    <table className="credit-note-table w-full border-collapse text-[9px]">
+                  <div className="overflow-x-auto">
+                    <table className="credit-note-table w-full min-w-[1300px] border-collapse text-[8px]">
                       <thead>
-                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th className="w-[4%] border-r border-slate-300 px-2 py-2 text-center">
-                            S.No
-                          </th>
-                          <th className="w-[17%] border-r border-slate-300 px-2 py-2 text-left">
-                            Product
-                          </th>
-                          <th className="w-[6%] border-r border-slate-300 px-2 py-2 text-center">
-                            Qty
-                          </th>
-                          <th className="w-[18%] border-r border-slate-300 px-2 py-2 text-left">
-                            Reason
-                          </th>
-                          <th className="w-[13%] border-r border-slate-300 px-2 py-2 text-right">
-                            Without Tax
-                          </th>
-                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-right">
-                            SGST
-                          </th>
-                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-right">
-                            CGST
-                          </th>
-                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-right">
-                            IGST
-                          </th>
-                          <th className="w-[15%] px-2 py-2 text-right">
-                            Line Total
-                          </th>
+                        <tr className="border-b border-slate-300 bg-slate-50 text-slate-600">
+                          <th rowSpan={2} className="border-r border-slate-300 p-2">S.No</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-left">Product</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2">PKG Size</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2">Batch No</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2">Exp Date</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2">Qty</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-left">Reason</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-right">Unit Price</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-right">Before Discount</th>
+                          <th colSpan={2} className="border-r border-slate-300 p-1">Discount</th>
+                          <th rowSpan={2} className="border-r border-slate-300 p-2 text-right">Taxable (₹)</th>
+                          <th colSpan={2} className="border-r border-slate-300 p-1">CGST</th>
+                          <th colSpan={2} className="border-r border-slate-300 p-1">SGST</th>
+                          <th colSpan={2} className="border-r border-slate-300 p-1">IGST</th>
+                          <th rowSpan={2} className="p-2 text-right">Line Total</th>
+                        </tr>
+                        <tr className="border-b border-slate-300 bg-slate-50 text-slate-600">
+                          <th className="border-r border-slate-300 p-1">%</th>
+                          <th className="border-r border-slate-300 p-1 text-right">Amt</th>
+                          <th className="border-r border-slate-300 p-1">Rate %</th>
+                          <th className="border-r border-slate-300 p-1 text-right">Amount</th>
+                          <th className="border-r border-slate-300 p-1">Rate %</th>
+                          <th className="border-r border-slate-300 p-1 text-right">Amount</th>
+                          <th className="border-r border-slate-300 p-1">Rate %</th>
+                          <th className="border-r border-slate-300 p-1 text-right">Amount</th>
                         </tr>
                       </thead>
 
                       <tbody>
-                        {selectedCreditNote.rows.map((row, index) => (
-                          <tr
-                            key={row.id}
-                            className="border-b border-slate-200"
-                          >
-                            <td className="border-r border-slate-300 px-2 py-2 text-center">
-                              {index + 1}
-                            </td>
+                        {selectedCreditNote.rows.map((row, index) => {
+                          const qty = Number(row.quantity || 0);
+                          const price = Number(row.sellingPrice || 0);
+                          const discountAmt = Number(row.discountAmount || 0);
+                          const taxable = Number(
+                            row.taxableAmount ?? row.amount ?? 0,
+                          );
+                          const beforeDiscount =
+                            price > 0 ? price * qty : taxable + discountAmt;
+                          const discountPct = Number(row.discountPercent || 0);
+                          const taxPct = Number(row.taxPercent || 0);
 
-                            <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
-                              {row.product || "-"}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-center tabular-nums">
-                              {row.quantity ?? "-"}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-slate-600">
-                              {row.reason || "-"}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
-                              {formatCurrency(row.amount)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
-                              {formatCurrency(row.sgst)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
-                              {formatCurrency(row.cgst)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-right tabular-nums">
-                              {formatCurrency(row.igst)}
-                            </td>
-
-                            <td className="px-2 py-2 text-right font-bold tabular-nums text-slate-900">
-                              {formatCurrency(row.total)}
-                            </td>
-                          </tr>
-                        ))}
-
-                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold">
-                          <td
-                            colSpan={4}
-                            className="border-r border-slate-300 px-2 py-2 text-center"
-                          >
-                            Total
-                          </td>
-
-                          <td className="border-r border-slate-300 px-2 py-2 text-right">
-                            {formatCurrency(
-                              selectedCreditNote.rows.reduce(
-                                (sum, row) => sum + Number(row.amount || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-2 py-2 text-right">
-                            {formatCurrency(
-                              selectedCreditNote.rows.reduce(
-                                (sum, row) => sum + Number(row.sgst || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-2 py-2 text-right">
-                            {formatCurrency(
-                              selectedCreditNote.rows.reduce(
-                                (sum, row) => sum + Number(row.cgst || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-2 py-2 text-right">
-                            {formatCurrency(
-                              selectedCreditNote.rows.reduce(
-                                (sum, row) => sum + Number(row.igst || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="px-2 py-2 text-right">
-                            {formatCurrency(
-                              selectedCreditNote.rows.reduce(
-                                (sum, row) => sum + Number(row.total || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-                        </tr>
+                          return (
+                            <tr key={row.id} className="border-b border-slate-300">
+                              <td className="border-r border-slate-300 p-2 text-center">{index + 1}</td>
+                              <td className="border-r border-slate-300 p-2 font-semibold">{row.product || "-"}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{row.pkgsize || "-"}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{row.batchNo || "-"}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {row.expiryDate ? formatDate(row.expiryDate) : "-"}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">{row.quantity ?? "-"}</td>
+                              <td className="border-r border-slate-300 p-2 text-slate-600">{row.reason || "-"}</td>
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(price)}</td>
+                              <td className="border-r border-slate-300 p-2 text-right font-semibold">{formatCurrency(beforeDiscount)}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{discountPct.toFixed(2)}</td>
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(discountAmt)}</td>
+                              <td className="border-r border-slate-300 p-2 text-right font-semibold">{formatCurrency(taxable)}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{row.cgst > 0 ? (taxPct / 2).toFixed(2) : "0.00"}</td>
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(row.cgst)}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{row.sgst > 0 ? (taxPct / 2).toFixed(2) : "0.00"}</td>
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(row.sgst)}</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{row.igst > 0 ? taxPct.toFixed(2) : "0.00"}</td>
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(row.igst)}</td>
+                              <td className="p-2 text-right font-bold">{formatCurrency(row.total)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
 
-                  <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  <div className="grid min-h-[200px] grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="text-[11px] font-bold uppercase text-slate-400">
                         Notes
                       </p>
                       <p className="mt-2 text-sm text-slate-500">
-                        Credit note issued by Nature Biotic against returned or
-                        adjusted products for {selectedCreditNote.header.party}.
+                        This credit note is generated against returned goods from{" "}
+                        {selectedCreditNote.header.party}
+                        {selectedCreditNote.header.invoiceNo
+                          ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
+                          : "."}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Reason:{" "}
+                        {selectedCreditNote.rows
+                          .map((row) => row.reason)
+                          .filter(Boolean)
+                          .join(", ") || "Product Return"}
                       </p>
                     </div>
 
-                    <div className="p-4 text-sm">
+                    <div className="space-y-2 p-3 text-[11px]">
                       <SummaryRow
-                        label="Without Tax"
+                        label="Total Before Discount"
                         value={formatCurrency(
                           selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.amount || 0),
+                            (sum, row) =>
+                              sum +
+                              (Number(row.sellingPrice || 0) *
+                                Number(row.quantity || 0) ||
+                                Number(row.amount || 0) +
+                                  Number(row.discountAmount || 0)),
                             0,
                           ),
                         )}
+                        muted
                       />
-
                       <SummaryRow
-                        label="SGST"
+                        label="Discount"
                         value={formatCurrency(
                           selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.sgst || 0),
+                            (sum, row) =>
+                              sum + Number(row.discountAmount || 0),
                             0,
                           ),
                         )}
+                        muted
                       />
-
+                      <SummaryRow
+                        label="Taxable Total"
+                        value={formatCurrency(
+                          selectedCreditNote.rows.reduce(
+                            (sum, row) =>
+                              sum +
+                              Number(row.taxableAmount ?? row.amount ?? 0),
+                            0,
+                          ),
+                        )}
+                        muted
+                      />
                       <SummaryRow
                         label="CGST"
                         value={formatCurrency(
@@ -1175,8 +1138,18 @@ export default function CompanyCreditNotes() {
                             0,
                           ),
                         )}
+                        muted
                       />
-
+                      <SummaryRow
+                        label="SGST"
+                        value={formatCurrency(
+                          selectedCreditNote.rows.reduce(
+                            (sum, row) => sum + Number(row.sgst || 0),
+                            0,
+                          ),
+                        )}
+                        muted
+                      />
                       <SummaryRow
                         label="IGST"
                         value={formatCurrency(
@@ -1185,13 +1158,12 @@ export default function CompanyCreditNotes() {
                             0,
                           ),
                         )}
+                        muted
                       />
 
-                      <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-3">
-                        <span className="font-bold text-slate-900">
-                          Grand Total
-                        </span>
-                        <span className="text-lg font-extrabold text-brand-700">
+                      <div className="flex items-center justify-between border-t border-slate-300 pt-3">
+                        <span className="font-bold text-slate-900">Total</span>
+                        <span className="text-xl font-extrabold text-slate-900">
                           {formatCurrency(
                             selectedCreditNote.rows.reduce(
                               (sum, row) => sum + Number(row.total || 0),
@@ -1203,9 +1175,9 @@ export default function CompanyCreditNotes() {
                     </div>
                   </div>
 
-                  <div className="flex justify-end border-t border-slate-300 p-4">
-                    <div className="w-52 text-center">
-                      <div className="h-12 border-b border-slate-300" />
+                  <div className="flex min-h-[110px] justify-end border-t border-slate-300 px-6 py-4">
+                    <div className="mt-auto w-56 text-center">
+                      <div className="border-b border-slate-300" />
                       <p className="mt-2 text-xs font-semibold text-slate-500">
                         Authorised Signatory
                       </p>
@@ -1214,14 +1186,13 @@ export default function CompanyCreditNotes() {
                 </div>
               </div>
 
-              <div className="credit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
+              <div className="credit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
                 <Button
                   variant="secondary"
                   onClick={() => setSelectedCreditNote(null)}
                 >
                   Close
                 </Button>
-
                 <Button onClick={() => window.print()}>
                   <Icon name="print" size={18} />
                   Print Credit Note

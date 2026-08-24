@@ -26,6 +26,10 @@ const filterTabs: { key: DateFilter; label: string }[] = [
 type ExecKey = "ram" | "ajith" | "periya";
 type ExecDetailType = "sales" | "collection" | "cash" | "outstanding";
 
+type DirectDetailType = "sales" | "collection" | "outstanding";
+
+type DirectDetailSelection = DirectDetailType | null;
+
 type ExecDetailSelection = {
   execKey: ExecKey;
   type: ExecDetailType;
@@ -1275,6 +1279,8 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
+  const [directDetail, setDirectDetail] =
+    useState<DirectDetailSelection>(null);
 
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
@@ -1409,18 +1415,21 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             value={formatCurrency(directSales.sales)}
             icon="payments"
             color="brand"
+            onClick={() => setDirectDetail("sales")}
           />
           <DirectSalesCard
             label="Collection"
             value={formatCurrency(directSales.collection)}
             icon="account_balance_wallet"
             color="blue"
+            onClick={() => setDirectDetail("collection")}
           />
           <DirectSalesCard
             label="Outstanding"
             value={formatCurrency(directSales.outstanding)}
             icon="receipt_long"
             color="amber"
+            onClick={() => setDirectDetail("outstanding")}
           />
           <DirectSalesCard
             label="Farmers"
@@ -1442,6 +1451,18 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
           />
         </div>
       </div>
+
+      {directDetail &&
+        createPortal(
+          <DirectSalesDetailModal
+            type={directDetail}
+            dateFilter={dateFilter}
+            summary={directSales}
+            storeName={store.name}
+            onClose={() => setDirectDetail(null)}
+          />,
+          document.body,
+        )}
 
       {/* ROW 3 — Executive Summary */}
       <div className="mb-12">
@@ -1887,11 +1908,13 @@ function DirectSalesCard({
   value,
   icon,
   color,
+  onClick,
 }: {
   label: string;
   value: string;
   icon: string;
   color: "brand" | "blue" | "amber" | "purple";
+  onClick?: () => void;
 }) {
   const colors: Record<string, string> = {
     brand: "bg-emerald-50 text-emerald-600",
@@ -1901,7 +1924,12 @@ function DirectSalesCard({
   };
 
   return (
-    <Card className="p-4 transition-base hover:-translate-y-0.5 hover:shadow-md">
+    <Card
+      onClick={onClick}
+      className={`p-4 transition-base hover:-translate-y-0.5 hover:shadow-md ${
+        onClick ? "cursor-pointer hover:ring-1 hover:ring-brand-200" : ""
+      }`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">{label}</p>
@@ -1917,6 +1945,243 @@ function DirectSalesCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+
+function DirectSalesDetailModal({
+  type,
+  dateFilter,
+  summary,
+  storeName,
+  onClose,
+}: {
+  type: DirectDetailType;
+  dateFilter: DateFilter;
+  summary: DirectSalesSummary;
+  storeName: string;
+  onClose: () => void;
+}) {
+  const dateLabel: Record<DateFilter, string> = {
+    today: "Today",
+    weekly: "This Week",
+    monthly: "This Month",
+    quarterly: "This Quarter",
+    yearly: "This Year",
+  };
+
+  const titles: Record<DirectDetailType, string> = {
+    sales: "Direct Sales Details",
+    collection: "Direct Collection Details",
+    outstanding: "Direct Outstanding Details",
+  };
+
+  const icons: Record<DirectDetailType, string> = {
+    sales: "payments",
+    collection: "account_balance_wallet",
+    outstanding: "receipt_long",
+  };
+
+  const totalValue =
+    type === "sales"
+      ? summary.sales
+      : type === "collection"
+        ? summary.collection
+        : summary.outstanding;
+
+  const splitAmount = (total: number, ratios: number[]) => {
+    let used = 0;
+
+    return ratios.map((ratio, index) => {
+      if (index === ratios.length - 1) return Math.max(0, total - used);
+
+      const amount = Math.round(total * ratio);
+      used += amount;
+      return amount;
+    });
+  };
+
+  const farmers = ["Murugan", "Selvam", "Kannan", "Raja"];
+  const saleAmounts = splitAmount(summary.sales, [0.34, 0.28, 0.22, 0.16]);
+  const collectionAmounts = splitAmount(summary.collection, [
+    0.36, 0.27, 0.21, 0.16,
+  ]);
+  const outstandingAmounts = splitAmount(summary.outstanding, [
+    0.38, 0.27, 0.2, 0.15,
+  ]);
+
+  const displayDates =
+    dateFilter === "today"
+      ? ["24 Aug 2026", "24 Aug 2026", "24 Aug 2026", "24 Aug 2026"]
+      : ["24 Aug 2026", "22 Aug 2026", "20 Aug 2026", "18 Aug 2026"];
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+              <Icon name={icons[type]} size={20} />
+            </div>
+
+            <div>
+              <h3 className="font-bold text-slate-800">{titles[type]}</h3>
+              <p className="text-xs text-slate-500">
+                {storeName} · {dateLabel[dateFilter]}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+          >
+            <Icon name="close" size={19} />
+          </button>
+        </div>
+
+        <div className="border-b border-slate-200 bg-white px-5 py-4">
+          <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Total
+            </span>
+            <span className="text-lg font-extrabold text-slate-800">
+              {formatCurrency(totalValue)}
+            </span>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-full min-w-[760px] table-fixed text-sm">
+            <thead className="sticky top-0 z-10 bg-white">
+              {type === "sales" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-[7%] px-4 py-3 text-center">S.No</th>
+                  <th className="w-[14%] px-4 py-3 text-left">Date</th>
+                  <th className="w-[18%] px-4 py-3 text-left">Invoice No</th>
+                  <th className="w-[25%] px-4 py-3 text-left">Farmer Name</th>
+                  <th className="w-[16%] px-4 py-3 text-left">Sale Type</th>
+                  <th className="w-[20%] px-4 py-3 text-right">Amount</th>
+                </tr>
+              )}
+
+              {type === "collection" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-[7%] px-4 py-3 text-center">S.No</th>
+                  <th className="w-[14%] px-4 py-3 text-left">Date</th>
+                  <th className="w-[18%] px-4 py-3 text-left">Receipt No</th>
+                  <th className="w-[25%] px-4 py-3 text-left">Farmer Name</th>
+                  <th className="w-[16%] px-4 py-3 text-left">Method</th>
+                  <th className="w-[20%] px-4 py-3 text-right">Amount</th>
+                </tr>
+              )}
+
+              {type === "outstanding" && (
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-[7%] px-4 py-3 text-center">S.No</th>
+                  <th className="w-[14%] px-4 py-3 text-left">Date</th>
+                  <th className="w-[18%] px-4 py-3 text-left">Invoice No</th>
+                  <th className="w-[25%] px-4 py-3 text-left">Farmer Name</th>
+                  <th className="w-[16%] px-4 py-3 text-center">Ageing</th>
+                  <th className="w-[20%] px-4 py-3 text-right">Outstanding</th>
+                </tr>
+              )}
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {farmers.map((farmer, index) => {
+                if (type === "sales") {
+                  return (
+                    <tr key={`direct-sale-${index}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {displayDates[index]}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {`SAI-INV-${String(1201 + index).padStart(4, "0")}`}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{farmer}</td>
+                      <td className="px-4 py-3 text-slate-600">Direct</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {formatCurrency(saleAmounts[index])}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                if (type === "collection") {
+                  const methods = ["Cash", "UPI", "Cash", "Bank"];
+
+                  return (
+                    <tr key={`direct-collection-${index}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {displayDates[index]}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {`SAI-RCP-${String(501 + index).padStart(4, "0")}`}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{farmer}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {methods[index]}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {formatCurrency(collectionAmounts[index])}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                const ageing = ["0-30 Days", "0-30 Days", "31-60 Days", "61-90 Days"];
+
+                return (
+                  <tr key={`direct-outstanding-${index}`} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-center text-slate-500">
+                      {index + 1}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {displayDates[index]}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-700">
+                      {`SAI-INV-${String(1181 + index).padStart(4, "0")}`}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{farmer}</td>
+                    <td className="px-4 py-3 text-center text-slate-600">
+                      {ageing[index]}
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-amber-700">
+                      {formatCurrency(outstandingAmounts[index])}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
+                <td colSpan={5} className="px-4 py-3 text-right text-slate-600">
+                  Total
+                </td>
+                <td className="px-4 py-3 text-right text-slate-900">
+                  {formatCurrency(totalValue)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
