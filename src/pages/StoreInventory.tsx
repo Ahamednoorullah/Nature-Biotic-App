@@ -1,986 +1,905 @@
 import { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
-import { getProductsByStore, type Product } from "@/lib/data";
-import { Card, Badge, Button, Input, Select, Icon } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { productCategories } from "@/lib/data";
+import { Card, Button, Input, Select, Icon } from "@/components/ui";
+import { formatCurrency } from "@/lib/format";
 
-type TabKey = "overview" | "executive" | "challans" | "returns";
+type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
-type ChallanItem = {
-  productId: string;
-  productName: string;
+// type StockRow = {
+//   id: string;
+//   name: string;
+//   productType: string;
+//   packSize: string;
+//   available: number;
+//   stockValue: number;
+//   lastUpdated: string;
+// };
+type PackSizeStock = {
   packSize: string;
-  quantity: number;
-  soldQty: number;
-  returnedQty: number;
+  batchNo: string;
+  expiryDate: string;
+  lastSaleDate: string;
+  availableStock: number;
+  stockInHand: number;
+  stockValue: number;
+  unitPrice?: number;
 };
 
-type Challan = {
+type StockRow = {
   id: string;
-  dcNo: string;
-  date: string;
-  executive: string;
-  remarks?: string;
-  items: ChallanItem[];
-};
-
-type ReturnRow = {
-  id: string;
-  returnNo: string;
-  date: string;
-  dcNo: string;
-  executive: string;
+  productType: string;
   productName: string;
-  packSize: string;
-  quantity: number;
+  packSizes: PackSizeStock[];
 };
 
-type FormRow = {
-  productId: string;
-  packSize: string;
-  quantity: string;
+//
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function parseExpiryMonth(value: string) {
+  const match = value.trim().match(/^([A-Za-z]{3})\s+(\d{4})$/);
+  if (!match) return null;
+
+  const monthNames = [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+  ];
+
+  const monthIndex = monthNames.indexOf(match[1].toLowerCase());
+  if (monthIndex === -1) return null;
+
+  const year = Number(match[2]);
+  return new Date(year, monthIndex + 1, 0, 23, 59, 59);
+}
+
+function getStockWarnings(pack: PackSizeStock) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiry = parseExpiryMonth(pack.expiryDate);
+  const lastSale = new Date(`${pack.lastSaleDate}T00:00:00`);
+
+  const daysToExpiry = expiry
+    ? Math.ceil((expiry.getTime() - today.getTime()) / DAY_MS)
+    : Number.POSITIVE_INFINITY;
+
+  const daysSinceSale = Number.isNaN(lastSale.getTime())
+    ? 0
+    : Math.floor((today.getTime() - lastSale.getTime()) / DAY_MS);
+
+  const totalStock = pack.availableStock + pack.stockInHand;
+
+  return {
+    lowStock: totalStock <= 5,
+    expiringSoon: daysToExpiry >= 0 && daysToExpiry <= 92,
+    expired: daysToExpiry < 0,
+    noSale30: daysSinceSale >= 30,
+    noSale60: daysSinceSale >= 60,
+    noSale90: daysSinceSale >= 90,
+    daysSinceSale,
+  };
+}
+
+// const stockData: Record<DateFilter, StockRow[]> = {
+//   today: [
+//     {
+//       id: "p0",
+//       name: "Electra",
+//       productType: "Crop Nutrition",
+//       packSize: "500 ml",
+//       available: 125,
+//       stockValue: 56250,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p1",
+//       name: "Aalga",
+//       productType: "Bio Product",
+//       packSize: "250 ml",
+//       available: 85,
+//       stockValue: 32300,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p2",
+//       name: "Astra",
+//       productType: "Pesticide",
+//       packSize: "100 ml",
+//       available: 18,
+//       stockValue: 10080,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p3",
+//       name: "Alpha",
+//       productType: "Fertilizer",
+//       packSize: "5 Kg",
+//       available: 200,
+//       stockValue: 220000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p4",
+//       name: "Neutra",
+//       productType: "Crop Nutrition",
+//       packSize: "1 L",
+//       available: 12,
+//       stockValue: 8160,
+//       lastUpdated: "02 Aug 2026",
+//     },
+//     {
+//       id: "p5",
+//       name: "Rootra",
+//       productType: "Bio Product",
+//       packSize: "500 ml",
+//       available: 50,
+//       stockValue: 26000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p6",
+//       name: "Ultra",
+//       productType: "Fungicide",
+//       packSize: "500 g",
+//       available: 4,
+//       stockValue: 2080,
+//       lastUpdated: "01 Aug 2026",
+//     },
+//   ],
+//   weekly: [
+//     {
+//       id: "p0",
+//       name: "Electra",
+//       productType: "Crop Nutrition",
+//       packSize: "500 ml",
+//       available: 105,
+//       stockValue: 47250,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p1",
+//       name: "Aalga",
+//       productType: "Bio Product",
+//       packSize: "250 ml",
+//       available: 65,
+//       stockValue: 24700,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p2",
+//       name: "Astra",
+//       productType: "Pesticide",
+//       packSize: "100 ml",
+//       available: 24,
+//       stockValue: 13440,
+//       lastUpdated: "02 Aug 2026",
+//     },
+//     {
+//       id: "p3",
+//       name: "Alpha",
+//       productType: "Fertilizer",
+//       packSize: "5 Kg",
+//       available: 180,
+//       stockValue: 198000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p4",
+//       name: "Neutra",
+//       productType: "Crop Nutrition",
+//       packSize: "1 L",
+//       available: 18,
+//       stockValue: 12240,
+//       lastUpdated: "01 Aug 2026",
+//     },
+//     {
+//       id: "p5",
+//       name: "Rootra",
+//       productType: "Bio Product",
+//       packSize: "500 ml",
+//       available: 60,
+//       stockValue: 31200,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p6",
+//       name: "Ultra",
+//       productType: "Fungicide",
+//       packSize: "500 g",
+//       available: 8,
+//       stockValue: 4160,
+//       lastUpdated: "31 Jul 2026",
+//     },
+//   ],
+//   monthly: [
+//     {
+//       id: "p0",
+//       name: "Electra",
+//       productType: "Crop Nutrition",
+//       packSize: "500 ml",
+//       available: 120,
+//       stockValue: 54000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p1",
+//       name: "Aalga",
+//       productType: "Bio Product",
+//       packSize: "250 ml",
+//       available: 85,
+//       stockValue: 32300,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p2",
+//       name: "Astra",
+//       productType: "Pesticide",
+//       packSize: "100 ml",
+//       available: 18,
+//       stockValue: 10080,
+//       lastUpdated: "02 Aug 2026",
+//     },
+//     {
+//       id: "p3",
+//       name: "Alpha",
+//       productType: "Fertilizer",
+//       packSize: "5 Kg",
+//       available: 200,
+//       stockValue: 220000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p4",
+//       name: "Neutra",
+//       productType: "Crop Nutrition",
+//       packSize: "1 L",
+//       available: 12,
+//       stockValue: 8160,
+//       lastUpdated: "01 Aug 2026",
+//     },
+//     {
+//       id: "p5",
+//       name: "Rootra",
+//       productType: "Bio Product",
+//       packSize: "500 ml",
+//       available: 50,
+//       stockValue: 26000,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p6",
+//       name: "Ultra",
+//       productType: "Fungicide",
+//       packSize: "500 g",
+//       available: 4,
+//       stockValue: 2080,
+//       lastUpdated: "28 Jul 2026",
+//     },
+//   ],
+//   quarterly: [
+//     {
+//       id: "p0",
+//       name: "Electra",
+//       productType: "Crop Nutrition",
+//       packSize: "500 ml",
+//       available: 120,
+//       stockValue: 54000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p1",
+//       name: "Aalga",
+//       productType: "Bio Product",
+//       packSize: "250 ml",
+//       available: 85,
+//       stockValue: 32300,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p2",
+//       name: "Astra",
+//       productType: "Pesticide",
+//       packSize: "100 ml",
+//       available: 18,
+//       stockValue: 10080,
+//       lastUpdated: "02 Aug 2026",
+//     },
+//     {
+//       id: "p3",
+//       name: "Alpha",
+//       productType: "Fertilizer",
+//       packSize: "5 Kg",
+//       available: 200,
+//       stockValue: 220000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p4",
+//       name: "Neutra",
+//       productType: "Crop Nutrition",
+//       packSize: "1 L",
+//       available: 12,
+//       stockValue: 8160,
+//       lastUpdated: "01 Aug 2026",
+//     },
+//     {
+//       id: "p5",
+//       name: "Rootra",
+//       productType: "Bio Product",
+//       packSize: "500 ml",
+//       available: 50,
+//       stockValue: 26000,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p6",
+//       name: "Ultra",
+//       productType: "Fungicide",
+//       packSize: "500 g",
+//       available: 4,
+//       stockValue: 2080,
+//       lastUpdated: "20 Jul 2026",
+//     },
+//   ],
+//   yearly: [
+//     {
+//       id: "p0",
+//       name: "Electra",
+//       productType: "Crop Nutrition",
+//       packSize: "500 ml",
+//       available: 120,
+//       stockValue: 54000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p1",
+//       name: "Aalga",
+//       productType: "Bio Product",
+//       packSize: "250 ml",
+//       available: 85,
+//       stockValue: 32300,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p2",
+//       name: "Astra",
+//       productType: "Pesticide",
+//       packSize: "100 ml",
+//       available: 18,
+//       stockValue: 10080,
+//       lastUpdated: "02 Aug 2026",
+//     },
+//     {
+//       id: "p3",
+//       name: "Alpha",
+//       productType: "Fertilizer",
+//       packSize: "5 Kg",
+//       available: 200,
+//       stockValue: 220000,
+//       lastUpdated: "04 Aug 2026",
+//     },
+//     {
+//       id: "p4",
+//       name: "Neutra",
+//       productType: "Crop Nutrition",
+//       packSize: "1 L",
+//       available: 12,
+//       stockValue: 8160,
+//       lastUpdated: "01 Aug 2026",
+//     },
+//     {
+//       id: "p5",
+//       name: "Rootra",
+//       productType: "Bio Product",
+//       packSize: "500 ml",
+//       available: 50,
+//       stockValue: 26000,
+//       lastUpdated: "03 Aug 2026",
+//     },
+//     {
+//       id: "p6",
+//       name: "Ultra",
+//       productType: "Fungicide",
+//       packSize: "500 g",
+//       available: 4,
+//       stockValue: 2080,
+//       lastUpdated: "15 Jul 2026",
+//     },
+//   ],
+// };
+
+const stockData: Record<DateFilter, StockRow[]> = {
+  today: [
+    {
+      id: "p1",
+      productType: "Pesticide",
+      productName: "Electra",
+      packSizes: [
+        {
+          packSize: "100 ml",
+          batchNo: "ELE020826",
+          expiryDate: "DEC 2026",
+          lastSaleDate: "2026-08-05",
+          availableStock: 125,
+          stockInHand: 10,
+          stockValue: 60000,
+        },
+        {
+          packSize: "100 ml",
+          batchNo: "ELE030826",
+          expiryDate: "JAN 2027",
+          lastSaleDate: "2026-06-20",
+          availableStock: 145,
+          stockInHand: 15,
+          stockValue: 60000,
+        },
+        {
+          packSize: "250 ml",
+          batchNo: "ELE010826",
+          expiryDate: "Aug 2026",
+          lastSaleDate: "2026-08-02",
+          availableStock: 85,
+          stockInHand: 12,
+          stockValue: 25000,
+        },
+        {
+          packSize: "500 ml",
+          batchNo: "ELE020826",
+          expiryDate: "Jul 2028",
+          lastSaleDate: "2026-05-25",
+
+          availableStock: 50,
+          stockInHand: 5,
+          stockValue: 10000,
+        },
+        {
+          packSize: "1 L",
+          batchNo: "ELE020826",
+          expiryDate: "Jul 2028",
+          lastSaleDate: "2026-07-30",
+          availableStock: 3,
+          stockInHand: 1,
+          stockValue: 20000,
+        },
+      ],
+    },
+    {
+      id: "p2",
+      productType: "Pesticide",
+      productName: "Astra",
+      packSizes: [
+        {
+          packSize: "100 ml",
+          batchNo: "AST010826",
+          expiryDate: "Sep 2028",
+          lastSaleDate: "2026-07-25",
+
+          availableStock: 40,
+          stockInHand: 5,
+          stockValue: 18000,
+        },
+        {
+          packSize: "250 ml",
+          batchNo: "AST010826",
+          expiryDate: "Sep 2028",
+          lastSaleDate: "2026-08-03",
+          availableStock: 30,
+          stockInHand: 4,
+          stockValue: 22000,
+        },
+        {
+          packSize: "500 ml",
+          batchNo: "AST010826",
+          expiryDate: "Aug 2028",
+          lastSaleDate: "2026-06-10",
+          availableStock: 2,
+          stockInHand: 3,
+          stockValue: 26000,
+        },
+        {
+          packSize: "1 L",
+          batchNo: "AST020826",
+          expiryDate: "Aug 2028",
+          lastSaleDate: "2026-08-01",
+          availableStock: 10,
+          stockInHand: 2,
+          stockValue: 30000,
+        },
+        {
+          packSize: "1 L",
+          batchNo: "AST030826",
+          expiryDate: "DEC 2026",
+          lastSaleDate: "2026-06-28",
+          availableStock: 19,
+          stockInHand: 2,
+          stockValue: 30000,
+        },
+      ],
+    },
+  ],
+
+  weekly: [],
+  monthly: [],
+  quarterly: [],
+  yearly: [],
 };
 
-const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 
-const initialChallans: Challan[] = [
-  {
-    id: "dc1",
-    dcNo: "DC-1001",
-    date: "2026-08-14",
-    executive: "Ram Kumar",
-    remarks: "Morning field stock",
-    items: [
-      {
-        productId: "p0",
-        productName: "Electra",
-        packSize: "500 ml",
-        quantity: 20,
-        soldQty: 12,
-        returnedQty: 3,
-      },
-      {
-        productId: "p2",
-        productName: "Astra",
-        packSize: "100 ml",
-        quantity: 10,
-        soldQty: 6,
-        returnedQty: 1,
-      },
-    ],
-  },
-  {
-    id: "dc2",
-    dcNo: "DC-1002",
-    date: "2026-08-14",
-    executive: "Ajith Kumar",
-    remarks: "Field visit stock",
-    items: [
-      {
-        productId: "p0",
-        productName: "Electra",
-        packSize: "500 ml",
-        quantity: 15,
-        soldQty: 8,
-        returnedQty: 2,
-      },
-      {
-        productId: "p1",
-        productName: "Aalga",
-        packSize: "250 ml",
-        quantity: 12,
-        soldQty: 7,
-        returnedQty: 1,
-      },
-    ],
-  },
-  {
-    id: "dc3",
-    dcNo: "DC-1003",
-    date: "2026-08-13",
-    executive: "PeriyaSamy",
-    remarks: "Route stock",
-    items: [
-      {
-        productId: "p3",
-        productName: "Alpha",
-        packSize: "5 Kg",
-        quantity: 8,
-        soldQty: 3,
-        returnedQty: 2,
-      },
-    ],
-  },
-];
-
-const initialReturns: ReturnRow[] = [
-  {
-    id: "r1",
-    returnNo: "RET-201",
-    date: "2026-08-14",
-    dcNo: "DC-1001",
-    executive: "Ram Kumar",
-    productName: "Electra",
-    packSize: "500 ml",
-    quantity: 3,
-  },
-  {
-    id: "r2",
-    returnNo: "RET-202",
-    date: "2026-08-14",
-    dcNo: "DC-1002",
-    executive: "Ajith Kumar",
-    productName: "Electra",
-    packSize: "500 ml",
-    quantity: 2,
-  },
-];
 
 export default function StoreInventory({ storeId }: { storeId: string }) {
-  const products = useMemo(() => getProductsByStore(storeId), [storeId]);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
 
-  const [tab, setTab] = useState<TabKey>("overview");
-  const [challans, setChallans] = useState<Challan[]>(initialChallans);
-  const [returns] = useState<ReturnRow[]>(initialReturns);
+  // Inventory is a current stock snapshot. Keep the same data/logic that
+  // previously lived on the Store Dashboard.
+  const rows = useMemo(() => stockData.today, [storeId]);
 
-  const [showCreate, setShowCreate] = useState(false);
-  const [selectedExecutive, setSelectedExecutive] = useState<string | null>(
-    null,
-  );
-  const [selectedChallan, setSelectedChallan] = useState<Challan | null>(null);
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) => {
+        const searchText = search.trim().toLowerCase();
 
-  const [executive, setExecutive] = useState("");
-  const [challanDate, setChallanDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
-  const [formRows, setFormRows] = useState<FormRow[]>([
-    { productId: "", packSize: "", quantity: "" },
-  ]);
+        const matchesSearch =
+          row.productName.toLowerCase().includes(searchText) ||
+          row.productType.toLowerCase().includes(searchText) ||
+          row.packSizes.some((pack) =>
+            pack.packSize.toLowerCase().includes(searchText),
+          );
 
-  const lowStock = products.filter(
-    (product) => product.stock > 0 && product.stock < product.minStock,
-  );
-  const outOfStock = products.filter((product) => product.stock === 0);
-  const totalStockQty = products.reduce(
-    (sum, product) => sum + product.stock,
-    0,
+        const matchesType =
+          typeFilter === "all" || row.productType === typeFilter;
+
+        return matchesSearch && matchesType;
+      }),
+    [rows, search, typeFilter],
   );
 
-  const executiveSummary = useMemo(() => {
-    return executives.map((name) => {
-      const rows = challans.filter((challan) => challan.executive === name);
+  const totals = useMemo(
+    () =>
+      filteredRows.reduce(
+        (total, product) => {
+          product.packSizes.forEach((pack) => {
+            total.availableStock += pack.availableStock;
+            total.stockInHand += pack.stockInHand;
+            total.totalStock += pack.availableStock + pack.stockInHand;
+            total.stockValue += pack.stockValue;
+          });
 
-      const totals = rows
-        .flatMap((challan) => challan.items)
-        .reduce(
-          (sum, item) => ({
-            issued: sum.issued + item.quantity,
-            sold: sum.sold + item.soldQty,
-            returned: sum.returned + item.returnedQty,
-            hand:
-              sum.hand +
-              Math.max(0, item.quantity - item.soldQty - item.returnedQty),
-          }),
-          { issued: 0, sold: 0, returned: 0, hand: 0 },
-        );
-
-      return {
-        name,
-        challans: rows.length,
-        ...totals,
-      };
-    });
-  }, [challans]);
-
-  const executiveHandStock = executiveSummary.reduce(
-    (sum, item) => sum + item.hand,
-    0,
-  );
-
-  const selectedExecutiveRows = useMemo(() => {
-    if (!selectedExecutive) return [];
-
-    return challans
-      .filter((challan) => challan.executive === selectedExecutive)
-      .flatMap((challan) =>
-        challan.items.map((item) => ({
-          ...item,
-          dcNo: challan.dcNo,
-          date: challan.date,
-          handStock: Math.max(
-            0,
-            item.quantity - item.soldQty - item.returnedQty,
-          ),
-        })),
-      );
-  }, [challans, selectedExecutive]);
-
-  function updateRow(index: number, key: keyof FormRow, value: string) {
-    setFormRows((previous) =>
-      previous.map((row, rowIndex) =>
-        rowIndex === index ? { ...row, [key]: value } : row,
+          return total;
+        },
+        {
+          availableStock: 0,
+          stockInHand: 0,
+          totalStock: 0,
+          stockValue: 0,
+        },
       ),
-    );
-  }
-
-  function selectProduct(index: number, productId: string) {
-    const product = products.find((item) => item.id === productId);
-
-    setFormRows((previous) =>
-      previous.map((row, rowIndex) =>
-        rowIndex === index
-          ? {
-              ...row,
-              productId,
-              packSize: product?.size ?? "",
-            }
-          : row,
-      ),
-    );
-  }
-
-  function addProductRow() {
-    setFormRows((previous) => [
-      ...previous,
-      { productId: "", packSize: "", quantity: "" },
-    ]);
-  }
-
-  function removeProductRow(index: number) {
-    setFormRows((previous) =>
-      previous.filter((_, rowIndex) => rowIndex !== index),
-    );
-  }
-
-  function resetCreateForm() {
-    setExecutive("");
-    setChallanDate(new Date().toISOString().slice(0, 10));
-    setFormRows([{ productId: "", packSize: "", quantity: "" }]);
-  }
-
-  function closeCreate() {
-    setShowCreate(false);
-    resetCreateForm();
-  }
-
-  const createValid =
-    executive !== "" &&
-    challanDate !== "" &&
-    formRows.length > 0 &&
-    formRows.every((row) => row.productId !== "" && Number(row.quantity) > 0);
-
-  function createDeliveryChallan() {
-    if (!createValid) return;
-
-    const items: ChallanItem[] = formRows.map((row) => {
-      const product = products.find(
-        (item) => item.id === row.productId,
-      ) as Product;
-
-      return {
-        productId: product.id,
-        productName: product.name,
-        packSize: product.size,
-        quantity: Number(row.quantity),
-        soldQty: 0,
-        returnedQty: 0,
-      };
-    });
-
-    const nextNumber = `DC-${String(1000 + challans.length + 1)}`;
-
-    const newChallan: Challan = {
-      id: `dc-${Date.now()}`,
-      dcNo: nextNumber,
-      date: challanDate,
-      executive,
-      items,
-    };
-
-    setChallans((previous) => [newChallan, ...previous]);
-    closeCreate();
-    setTab("challans");
-  }
+    [filteredRows],
+  );
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-800">
-          Stock Management
-        </h1>
-        <p className="mt-1 text-slate-500">
-          Store stock, executive hand stock, delivery challans and returns.
-        </p>
-      </div>
-
-      <Card className="mb-6 p-2">
-        <div className="flex flex-wrap gap-2">
-          <TabButton
-            active={tab === "overview"}
-            icon="inventory_2"
-            onClick={() => setTab("overview")}
-          >
-            Stock Overview
-          </TabButton>
-
-          <TabButton
-            active={tab === "executive"}
-            icon="badge"
-            onClick={() => setTab("executive")}
-          >
-            Executive Stock
-          </TabButton>
-
-          <TabButton
-            active={tab === "challans"}
-            icon="local_shipping"
-            onClick={() => setTab("challans")}
-          >
-            Delivery Challans
-          </TabButton>
-
-          <TabButton
-            active={tab === "returns"}
-            icon="assignment_return"
-            onClick={() => setTab("returns")}
-          >
-            Stock Returns
-          </TabButton>
-        </div>
-      </Card>
-
-      {tab === "overview" && (
-        <>
-          <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <MiniStat
-              label="Total Products"
-              value={String(products.length)}
-              icon="inventory_2"
-            />
-            <MiniStat
-              label="Total Store Stock"
-              value={String(totalStockQty)}
-              icon="warehouse"
-            />
-            <MiniStat
-              label="Low Stock Products"
-              value={String(lowStock.length)}
-              icon="warning"
-            />
-            <MiniStat
-              label="Out of Stock"
-              value={String(outOfStock.length)}
-              icon="error"
-            />
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <Card className="overflow-hidden p-0">
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 className="font-bold text-slate-800">Low Stock</h2>
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    Products that currently have only a small quantity left.
-                  </p>
-                </div>
-                <Badge color="amber">{lowStock.length}</Badge>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {lowStock.length === 0 ? (
-                  <EmptyMessage text="No low stock products." />
-                ) : (
-                  lowStock.map((product) => (
-                    <StockAlertRow
-                      key={product.id}
-                      product={product}
-                      tone="amber"
-                    />
-                  ))
-                )}
-              </div>
-            </Card>
-
-            <Card className="overflow-hidden p-0">
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-                <div>
-                  <h2 className="font-bold text-slate-800">Out of Stock</h2>
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    Products with zero stock currently available in the store.
-                  </p>
-                </div>
-                <Badge color="red">{outOfStock.length}</Badge>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {outOfStock.length === 0 ? (
-                  <EmptyMessage text="No out of stock products." />
-                ) : (
-                  outOfStock.map((product) => (
-                    <StockAlertRow
-                      key={product.id}
-                      product={product}
-                      tone="red"
-                    />
-                  ))
-                )}
-              </div>
-            </Card>
-          </div>
-        </>
-      )}
-
-      {tab === "executive" && (
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="font-bold text-slate-800">Executive Hand Stock</h2>
-            <p className="mt-0.5 text-sm text-slate-500">
-              See stock issued, sold, returned and currently available with each
-              executive.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3 text-left">Executive</th>
-                  <th className="px-5 py-3 text-center">Delivery Challans</th>
-                  <th className="px-5 py-3 text-center">Issued Qty</th>
-                  <th className="px-5 py-3 text-center">Sold Qty</th>
-                  <th className="px-5 py-3 text-center">Returned Qty</th>
-                  <th className="px-5 py-3 text-center">Hand Stock</th>
-                  <th className="px-5 py-3 text-center">View</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {executiveSummary.map((row) => (
-                  <tr key={row.name} className="hover:bg-slate-50">
-                    <td className="px-5 py-4 font-semibold text-slate-800">
-                      {row.name}
-                    </td>
-                    <td className="px-5 py-4 text-center">{row.challans}</td>
-                    <td className="px-5 py-4 text-center font-semibold">
-                      {row.issued}
-                    </td>
-                    <td className="px-5 py-4 text-center font-semibold text-emerald-700">
-                      {row.sold}
-                    </td>
-                    <td className="px-5 py-4 text-center font-semibold text-blue-700">
-                      {row.returned}
-                    </td>
-                    <td className="px-5 py-4 text-center">
-                      <span className="rounded-lg bg-amber-50 px-3 py-1 font-bold text-amber-700">
-                        {row.hand}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedExecutive(row.name)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-brand-50 hover:text-brand-700"
-                      >
-                        <Icon name="visibility" size={17} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-
-              <tfoot>
-                <tr className="border-t-2 border-slate-200 bg-slate-50">
-                  <td
-                    colSpan={5}
-                    className="px-5 py-4 text-right font-bold text-slate-600"
-                  >
-                    Overall Executive Hand Stock
-                  </td>
-                  <td className="px-5 py-4 text-center text-base font-bold text-amber-700">
-                    {executiveHandStock}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {tab === "challans" && (
-        <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="font-bold text-slate-800">Delivery Challans</h2>
-              <p className="mt-0.5 text-sm text-slate-500">
-                Product stock issued from the store to field executives.
-              </p>
-            </div>
-
-            <Button onClick={() => setShowCreate(true)}>
-              <Icon name="add" size={18} />
-              Create Delivery Challan
-            </Button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3 text-left">Date</th>
-                  <th className="px-5 py-3 text-left">DC No</th>
-                  <th className="px-5 py-3 text-left">Issued To</th>
-                  <th className="px-5 py-3 text-center">Products</th>
-                  <th className="px-5 py-3 text-center">Issued Qty</th>
-                  <th className="px-5 py-3 text-center">Sold</th>
-                  <th className="px-5 py-3 text-center">Returned</th>
-                  <th className="px-5 py-3 text-center">Hand Stock</th>
-                  <th className="px-5 py-3 text-center">View</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {challans.map((challan) => {
-                  const issued = challan.items.reduce(
-                    (sum, item) => sum + item.quantity,
-                    0,
-                  );
-                  const sold = challan.items.reduce(
-                    (sum, item) => sum + item.soldQty,
-                    0,
-                  );
-                  const returned = challan.items.reduce(
-                    (sum, item) => sum + item.returnedQty,
-                    0,
-                  );
-
-                  return (
-                    <tr key={challan.id} className="hover:bg-slate-50">
-                      <td className="px-5 py-4 text-slate-600">
-                        {formatDate(challan.date)}
-                      </td>
-                      <td className="px-5 py-4 font-bold text-slate-800">
-                        {challan.dcNo}
-                      </td>
-                      <td className="px-5 py-4 font-semibold">
-                        {challan.executive}
-                      </td>
-                      <td className="px-5 py-4 text-center">
-                        {challan.items.length}
-                      </td>
-                      <td className="px-5 py-4 text-center font-semibold">
-                        {issued}
-                      </td>
-                      <td className="px-5 py-4 text-center text-emerald-700">
-                        {sold}
-                      </td>
-                      <td className="px-5 py-4 text-center text-blue-700">
-                        {returned}
-                      </td>
-                      <td className="px-5 py-4 text-center font-bold text-amber-700">
-                        {issued - sold - returned}
-                      </td>
-                      <td className="px-5 py-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedChallan(challan)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500"
-                        >
-                          <Icon name="visibility" size={17} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {tab === "returns" && (
-        <Card className="overflow-hidden p-0">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="font-bold text-slate-800">Stock Returns</h2>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Unsold stock brought back to the store by executives.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-5 py-3 text-left">Date</th>
-                  <th className="px-5 py-3 text-left">Return No</th>
-                  <th className="px-5 py-3 text-left">DC No</th>
-                  <th className="px-5 py-3 text-left">Executive</th>
-                  <th className="px-5 py-3 text-left">Product</th>
-                  <th className="px-5 py-3 text-left">Pack Size</th>
-                  <th className="px-5 py-3 text-center">Returned Qty</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {returns.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50">
-                    <td className="px-5 py-4">{formatDate(row.date)}</td>
-                    <td className="px-5 py-4 font-bold">{row.returnNo}</td>
-                    <td className="px-5 py-4">{row.dcNo}</td>
-                    <td className="px-5 py-4 font-semibold">{row.executive}</td>
-                    <td className="px-5 py-4">{row.productName}</td>
-                    <td className="px-5 py-4">{row.packSize}</td>
-                    <td className="px-5 py-4 text-center font-bold text-blue-700">
-                      {row.quantity}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {showCreate &&
-        createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[90vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <ModalHeader
-                title="Create Delivery Challan"
-                subtitle="Issue products from store stock to an executive."
-                onClose={closeCreate}
-              />
-
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Select
-                    label="Issue To / Executive"
-                    value={executive}
-                    onChange={setExecutive}
-                    placeholder="Select executive"
-                    options={executives.map((name) => ({
-                      value: name,
-                      label: name,
-                    }))}
-                    required
-                  />
-
-                  <Input
-                    label="Date"
-                    type="date"
-                    value={challanDate}
-                    onChange={setChallanDate}
-                    required
-                  />
-                </div>
-
-                <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
-                    <div>
-                      <h3 className="font-bold text-slate-800">Products</h3>
-                      <p className="text-xs text-slate-500">
-                        Select product and quantity to issue.
-                      </p>
-                    </div>
-
-                    <Button variant="secondary" onClick={addProductRow}>
-                      <Icon name="add" size={16} />
-                      Add Product
-                    </Button>
-                  </div>
-
-                  <div className="space-y-3 p-4">
-                    {formRows.map((row, index) => (
-                      <div
-                        key={index}
-                        className="grid gap-3 rounded-xl bg-slate-50 p-3 md:grid-cols-[2fr_1fr_1fr_auto]"
-                      >
-                        <Select
-                          label="Product"
-                          value={row.productId}
-                          onChange={(value) => selectProduct(index, value)}
-                          placeholder="Select product"
-                          options={products.map((product) => ({
-                            value: product.id,
-                            label: `${product.name} (Stock: ${product.stock})`,
-                          }))}
-                          required
-                        />
-
-                        <Input
-                          label="Pack Size"
-                          value={row.packSize}
-                          onChange={() => {}}
-                          placeholder="Auto"
-                        />
-
-                        <Input
-                          label="Issue Quantity"
-                          type="number"
-                          value={row.quantity}
-                          onChange={(value) =>
-                            updateRow(index, "quantity", value)
-                          }
-                          placeholder="Qty"
-                          required
-                        />
-
-                        <div className="flex items-end">
-                          <button
-                            type="button"
-                            disabled={formRows.length === 1}
-                            onClick={() => removeProductRow(index)}
-                            className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-200 text-red-500 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
-                          >
-                            <Icon name="delete" size={18} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button variant="secondary" onClick={closeCreate}>
-                  Cancel
-                </Button>
-
-                <Button onClick={createDeliveryChallan} disabled={!createValid}>
-                  <Icon name="save" size={18} />
-                  Create Challan
-                </Button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {selectedExecutive &&
-        createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4">
-            <div className="flex h-[70vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <ModalHeader
-                title={`${selectedExecutive} — Stock Details`}
-                subtitle="Product-wise delivery challan, sales, return and hand stock."
-                onClose={() => setSelectedExecutive(null)}
-              />
-
-              <div className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full min-w-[900px] text-sm">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="border-b bg-slate-50 text-xs uppercase text-slate-500">
-                      <th className="px-5 py-3 text-left">DC No</th>
-                      <th className="px-5 py-3 text-left">Date</th>
-                      <th className="px-5 py-3 text-left">Product</th>
-                      <th className="px-5 py-3 text-left">Pack Size</th>
-                      <th className="px-5 py-3 text-center">Issued</th>
-                      <th className="px-5 py-3 text-center">Sold</th>
-                      <th className="px-5 py-3 text-center">Returned</th>
-                      <th className="px-5 py-3 text-center">Hand Stock</th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-slate-100">
-                    {selectedExecutiveRows.map((row, index) => (
-                      <tr key={`${row.dcNo}-${row.productId}-${index}`}>
-                        <td className="px-5 py-4 font-bold">{row.dcNo}</td>
-                        <td className="px-5 py-4">{formatDate(row.date)}</td>
-                        <td className="px-5 py-4 font-semibold">
-                          {row.productName}
-                        </td>
-                        <td className="px-5 py-4">{row.packSize}</td>
-                        <td className="px-5 py-4 text-center">
-                          {row.quantity}
-                        </td>
-                        <td className="px-5 py-4 text-center text-emerald-700">
-                          {row.soldQty}
-                        </td>
-                        <td className="px-5 py-4 text-center text-blue-700">
-                          {row.returnedQty}
-                        </td>
-                        <td className="px-5 py-4 text-center font-bold text-amber-700">
-                          {row.handStock}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {selectedChallan &&
-        createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4">
-            <div className="w-[92vw] max-w-5xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <ModalHeader
-                title={`Delivery Challan ${selectedChallan.dcNo}`}
-                subtitle={`${selectedChallan.executive} · ${formatDate(selectedChallan.date)}`}
-                onClose={() => setSelectedChallan(null)}
-              />
-
-              <div className="overflow-x-auto p-5">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead>
-                    <tr className="border-b bg-slate-50 text-xs uppercase text-slate-500">
-                      <th className="px-4 py-3 text-left">Product</th>
-                      <th className="px-4 py-3 text-left">Pack Size</th>
-                      <th className="px-4 py-3 text-center">Issued</th>
-                      <th className="px-4 py-3 text-center">Sold</th>
-                      <th className="px-4 py-3 text-center">Returned</th>
-                      <th className="px-4 py-3 text-center">Hand Stock</th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-slate-100">
-                    {selectedChallan.items.map((item) => (
-                      <tr key={`${item.productId}-${item.packSize}`}>
-                        <td className="px-4 py-3 font-semibold">
-                          {item.productName}
-                        </td>
-                        <td className="px-4 py-3">{item.packSize}</td>
-                        <td className="px-4 py-3 text-center">
-                          {item.quantity}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {item.soldQty}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {item.returnedQty}
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold text-amber-700">
-                          {Math.max(
-                            0,
-                            item.quantity - item.soldQty - item.returnedQty,
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
-function TabButton({
-  active,
-  icon,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  icon: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-        active
-          ? "bg-brand-600 text-white shadow-sm"
-          : "text-slate-600 hover:bg-slate-100"
-      }`}
-    >
-      <Icon name={icon} size={18} />
-      {children}
-    </button>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: string;
-}) {
-  return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-slate-500">{label}</p>
-          <p className="mt-1 text-2xl font-bold text-slate-800">{value}</p>
-        </div>
-
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-          <Icon name={icon} size={19} />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function StockAlertRow({
-  product,
-  tone,
-}: {
-  product: Product;
-  tone: "amber" | "red";
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 px-5 py-4">
-      <div className="min-w-0">
-        <p className="font-semibold text-slate-800">{product.name}</p>
-        <p className="mt-0.5 text-sm text-slate-500">
-          {product.size} · {product.productCategory}
-        </p>
-      </div>
-
-      <div className="text-right">
-        <p
-          className={`text-lg font-bold ${
-            tone === "red" ? "text-red-600" : "text-amber-600"
-          }`}
-        >
-          {product.stock}
-        </p>
-        <p className="text-xs text-slate-400">Stock</p>
-      </div>
-    </div>
-  );
-}
-
-function EmptyMessage({ text }: { text: string }) {
-  return (
-    <div className="px-5 py-8 text-center text-sm text-slate-400">{text}</div>
-  );
-}
-
-function ModalHeader({
-  title,
-  subtitle,
-  onClose,
-}: {
-  title: string;
-  subtitle: string;
-  onClose: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+      {/* ROW 3 — Stock Inventory */}
       <div>
-        <h2 className="font-bold text-slate-800">{title}</h2>
-        <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>
-      </div>
+        <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-4">
+          Product Stock Statement
+        </h2>
 
-      <button
-        type="button"
-        onClick={onClose}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
-      >
-        <Icon name="close" size={19} />
-      </button>
+        {/* Controls */}
+        <Card className="p-4 mb-5">
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="flex-1 max-w-md">
+              <Input
+                value={search}
+                onChange={setSearch}
+                placeholder="Search product..."
+                icon="search"
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="w-full sm:w-52">
+                <Select
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  placeholder="All Product Types"
+                  options={productCategories.map((t) => ({
+                    value: t,
+                    label: t,
+                  }))}
+                />
+              </div>
+              <Button variant="secondary">
+                <Icon name="download" size={18} /> Export to Excel
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-red-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              warning
+            </span>
+            Low Stock
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              event_upcoming
+            </span>
+            Expiry within 3 months
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-purple-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              history
+            </span>
+            No sale 30+ days
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-orange-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              history
+            </span>
+            No sale 60+ days
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-700">
+            <span className="material-symbols-rounded" style={{ fontSize: 15 }}>
+              history
+            </span>
+            No sale 90+ days
+          </span>
+        </div>
+
+        {/* Excel-style table */}
+        <Card className="overflow-hidden p-0">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
+              <thead className="sticky top-0">
+                <tr className="bg-slate-100 text-slate-600 text-[10px] xl:text-xs uppercase tracking-wide border-b-2 border-slate-200">
+                  <th className="w-[4%] px-1 py-3 text-center font-semibold border-r border-slate-200">
+                    S.No
+                  </th>
+                  <th className="w-[9%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Product Type
+                  </th>
+                  <th className="w-[9%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Product Name
+                  </th>
+                  <th className="w-[7%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Pack Size
+                  </th>
+                  <th className="w-[9%] px-2 py-3 text-right font-semibold border-r border-slate-200">
+                    Unit Price
+                  </th>
+                  <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Batch No
+                  </th>
+                  <th className="w-[11%] px-2 py-3 text-left font-semibold border-r border-slate-200">
+                    Expiry Date
+                  </th>
+                  <th className="w-[9%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
+                    Store Stock
+                  </th>
+                  <th className="w-[8%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
+                    Hand Stock
+                  </th>
+                  <th className="w-[9%] px-1.5 py-3 text-center font-semibold leading-tight border-r border-slate-200">
+                    Total Stock
+                  </th>
+                  <th className="w-[13%] px-2 py-3 text-right font-semibold">
+                    Stock Value
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={11}
+                      className="text-center py-10 text-slate-400"
+                    >
+                      No products match your filters.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRows.flatMap((product, productIndex) =>
+                    product.packSizes.map((pack, packIndex) => {
+                      const totalStock = pack.availableStock + pack.stockInHand;
+                      const unitPrice =
+                        pack.unitPrice ??
+                        (totalStock > 0
+                          ? Math.round(pack.stockValue / totalStock)
+                          : 0);
+                      const warnings = getStockWarnings(pack);
+
+                      const rowWarningClass = warnings.expired
+                        ? "bg-red-100/80"
+                        : warnings.expiringSoon
+                          ? "bg-amber-50"
+                          : productIndex % 2 === 0
+                            ? "bg-white"
+                            : "bg-slate-50/60";
+
+                      return (
+                        <tr
+                          key={`${product.id}-${pack.packSize}-${pack.batchNo}`}
+                          className={`border-b border-slate-100 ${rowWarningClass} hover:brightness-[0.98] transition-base`}
+                        >
+                          {packIndex === 0 && (
+                            <>
+                              <td
+                                rowSpan={product.packSizes.length}
+                                className="text-center px-1.5 py-2.5 border-r border-slate-100 text-slate-400 font-medium align-middle"
+                              >
+                                {productIndex + 1}
+                              </td>
+
+                              <td
+                                rowSpan={product.packSizes.length}
+                                className="px-2 py-2.5 border-r border-slate-100 text-slate-600 align-middle break-words"
+                              >
+                                {product.productType}
+                              </td>
+
+                              <td
+                                rowSpan={product.packSizes.length}
+                                className="px-2 py-2.5 border-r border-slate-100 font-semibold text-slate-700 align-middle break-words"
+                              >
+                                {product.productName}
+                              </td>
+                            </>
+                          )}
+
+                          <td className="px-2 py-2.5 border-r border-slate-100 text-slate-600 whitespace-nowrap">
+                            {pack.packSize}
+                          </td>
+                          <td className="px-2 py-2.5 border-r border-slate-100 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
+                            {formatCurrency(unitPrice)}
+                          </td>
+                          <td
+                            className="px-2 py-2.5 border-r border-slate-100 text-slate-600 truncate"
+                            title={pack.batchNo}
+                          >
+                            {pack.batchNo}
+                          </td>
+                          <td className="px-2 py-2.5 border-r border-slate-100 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium ${
+                                warnings.expired
+                                  ? "bg-red-100 text-red-700"
+                                  : warnings.expiringSoon
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "text-slate-600"
+                              }`}
+                              title={
+                                warnings.expired
+                                  ? "Expired"
+                                  : warnings.expiringSoon
+                                    ? "Expiry within 3 months"
+                                    : undefined
+                              }
+                            >
+                              {(warnings.expired || warnings.expiringSoon) && (
+                                <span
+                                  className="material-symbols-rounded"
+                                  style={{ fontSize: 14 }}
+                                >
+                                  {warnings.expired
+                                    ? "error"
+                                    : "event_upcoming"}
+                                </span>
+                              )}
+                              {pack.expiryDate}
+                            </span>
+                          </td>
+                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-semibold text-slate-800">
+                            {pack.availableStock}
+                          </td>
+                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums text-slate-700">
+                            {pack.stockInHand}
+                          </td>
+                          <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-bold">
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              <span
+                                className={`inline-flex min-w-10 items-center justify-center gap-1 rounded-md px-2 py-1 ${
+                                  warnings.noSale90
+                                    ? "bg-rose-100 text-rose-800 ring-1 ring-rose-300"
+                                    : warnings.noSale60
+                                      ? "bg-orange-100 text-orange-800 ring-1 ring-orange-300"
+                                      : warnings.noSale30
+                                        ? "bg-purple-100 text-purple-800 ring-1 ring-purple-300"
+                                        : "text-slate-800"
+                                } ${
+                                  warnings.lowStock ? "ring-2 ring-red-400" : ""
+                                }`}
+                                title={
+                                  warnings.lowStock && warnings.noSale30
+                                    ? `Low stock. No sale for ${warnings.daysSinceSale} days`
+                                    : warnings.lowStock
+                                      ? "Low total stock warning"
+                                      : warnings.noSale30
+                                        ? `No sale for ${warnings.daysSinceSale} days`
+                                        : undefined
+                                }
+                              >
+                                {warnings.lowStock && (
+                                  <span
+                                    className="material-symbols-rounded text-red-600"
+                                    style={{ fontSize: 14 }}
+                                  >
+                                    warning
+                                  </span>
+                                )}
+                                {warnings.noSale30 && (
+                                  <span
+                                    className="material-symbols-rounded"
+                                    style={{ fontSize: 14 }}
+                                  >
+                                    history
+                                  </span>
+                                )}
+                                {totalStock}
+                              </span>
+
+                              {warnings.noSale90 ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-rose-700">
+                                  90+ Days
+                                </span>
+                              ) : warnings.noSale60 ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700">
+                                  60+ Days
+                                </span>
+                              ) : warnings.noSale30 ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-purple-700">
+                                  30+ Days
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
+                            {formatCurrency(pack.stockValue)}
+                          </td>
+                        </tr>
+                      );
+                    }),
+                  )
+                )}
+              </tbody>
+              {filteredRows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold text-slate-700 border-t-2 border-slate-200">
+                    <td
+                      colSpan={7}
+                      className="px-2 py-3 text-right border-r border-slate-200"
+                    >
+                      Total
+                    </td>
+                    <td className="px-1.5 py-3 text-center tabular-nums border-r border-slate-200">
+                      {totals.availableStock}
+                    </td>
+                    <td className="px-1.5 py-3 text-center tabular-nums border-r border-slate-200">
+                      {totals.stockInHand}
+                    </td>
+                    <td className="px-1.5 py-3 text-center tabular-nums border-r border-slate-200">
+                      {totals.totalStock}
+                    </td>
+                    <td className="px-2 py-3 text-right tabular-nums whitespace-nowrap">
+                      {formatCurrency(totals.stockValue)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
