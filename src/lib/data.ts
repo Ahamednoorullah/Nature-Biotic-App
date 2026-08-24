@@ -1323,6 +1323,12 @@ export function updateFarmer(updatedFarmer: Farmer): Farmer {
   return next;
 }
 
+export function deleteFarmer(id: string): void {
+  const rows = getStoredFarmers().filter((farmer) => farmer.id !== id);
+  saveStoredFarmers(rows);
+}
+
+
 const productNames = products.map((p) => p.name);
 
 export const farmerPurchases: FarmerPurchase[] = [];

@@ -2,16 +2,21 @@ import { ReactNode, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select, EmptyState } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { products as allProducts } from "@/lib/data"; 
 
 type ReturnItem = {
   product: string;
+  productId: string; 
   packSize: string;
   issuedQty: string;
   returnedQty: string;
   unitValue: string;
+
 };
 
 type ReturnChallan = {
+
+  productId: string;
   phone: string;
   village: string;
   farmer: ReactNode;
@@ -22,6 +27,9 @@ type ReturnChallan = {
   executive: string;
   customerName: string;
   placeOfSupply: string;
+  cgstPercent: number;   
+  sgstPercent: number;   
+  igstPercent: number
   items: ReturnItem[];
 };
 
@@ -31,6 +39,7 @@ const STORAGE_PREFIX = "nature-biotic-store-return-challans-v2";
 function emptyItems(): ReturnItem[] {
   return [
     {
+      productId: "",
       product: "",
       packSize: "",
       issuedQty: "",
@@ -64,6 +73,7 @@ export default function StoreReturnChallan({
     return [
       {
         id: "1",
+        productId: "",
         rcNo: "RC-001",
         date: "2026-08-18",
         dcNo: "DC-1001",
@@ -73,8 +83,12 @@ export default function StoreReturnChallan({
         village: "Rajapalayam",
         farmer: "Murugan",
         placeOfSupply: "Tamil Nadu",
+        cgstPercent: 0,
+        sgstPercent: 0,
+        igstPercent: 0,
         items: [
           {
+            productId: "",
             product: "Electra",
             packSize: "250 ml",
             issuedQty: "10",
@@ -87,7 +101,7 @@ export default function StoreReturnChallan({
   });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [selected, setSelected] = useState<ReturnChallan | null>(null);
+  const [selectedChallan, setSelectedChallan] = useState<ReturnChallan | null>(null);
 
   const [rcNo, setRcNo] = useState("");
   const [date, setDate] = useState("");
@@ -97,6 +111,9 @@ export default function StoreReturnChallan({
   const [village, setVillage] = useState("");
   const [phone, setPhone] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
+  const [cgstPercent, setCgstPercent] = useState(0);   // ✅ ADD
+  const [sgstPercent, setSgstPercent] = useState(0);   // ✅ ADD
+  const [igstPercent, setIgstPercent] = useState(0);   // ✅ ADD
   const [items, setItems] = useState<ReturnItem[]>(emptyItems());
 
   const canCreate =
@@ -113,24 +130,30 @@ export default function StoreReturnChallan({
     );
 
   const totals = useMemo(() => {
-    const issuedQty = items.reduce(
-      (sum, item) => sum + Number(item.issuedQty || 0),
-      0,
-    );
-    const returnedQty = items.reduce(
-      (sum, item) => sum + Number(item.returnedQty || 0),
-      0,
-    );
-    const returnValue = items.reduce(
-      (sum, item) =>
-        sum +
-        Number(item.returnedQty || 0) *
-          Number(item.unitValue || 0),
-      0,
-    );
+  const issuedQty = items.reduce((sum, item) => sum + Number(item.issuedQty || 0), 0);
+  const returnedQty = items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0);
+  const returnValue = items.reduce(
+    (sum, item) => sum + Number(item.returnedQty || 0) * Number(item.unitValue || 0),
+    0,
+  );
 
-    return { issuedQty, returnedQty, returnValue };
-  }, [items]);
+  const cgstAmount = (returnValue * cgstPercent) / 100;
+  const sgstAmount = (returnValue * sgstPercent) / 100;
+  const igstAmount = (returnValue * igstPercent) / 100;
+
+  return {
+    issuedQty,
+    returnedQty,
+    returnValue,
+    cgstAmount,
+    sgstAmount,
+    igstAmount,
+    grandTotal: returnValue + cgstAmount + sgstAmount + igstAmount,
+  };
+}, [items, cgstPercent, sgstPercent, igstPercent]);
+
+
+
 
   function updateItem(
     index: number,
@@ -145,14 +168,19 @@ export default function StoreReturnChallan({
   }
 
   function resetForm() {
-    setRcNo("");
-    setDate("");
-    setDcNo("");
-    setExecutive("");
-    setCustomerName("");
-    setPlaceOfSupply("");
-    setItems(emptyItems());
-  }
+  setRcNo("");
+  setDate("");
+  setDcNo("");
+  setExecutive("");
+  setCustomerName("");
+  setVillage("");
+  setPhone("");
+  setPlaceOfSupply("");
+  setCgstPercent(0);   // ✅ ADD
+  setSgstPercent(0);   // ✅ ADD
+  setIgstPercent(0);   // ✅ ADD
+  setItems(emptyItems());
+}
 
   function closeForm() {
     setShowAdd(false);
@@ -168,25 +196,29 @@ export default function StoreReturnChallan({
   }
 
   function createReturnChallan() {
-    if (!canCreate) return;
+  if (!canCreate) return;
 
-    const row: ReturnChallan = {
-      id: String(Date.now()),
-      rcNo: rcNo.trim(),
-      date,
-      dcNo: dcNo.trim(),
-      executive,
-      customerName: customerName.trim(),
-      village: village.trim(),
-      phone: phone.trim(),
-      placeOfSupply: placeOfSupply.trim(),
-      items,
-      farmer: undefined
-    };
+  const row: ReturnChallan = {
+    id: String(Date.now()),
+    rcNo: rcNo.trim(),
+    date,
+    dcNo: dcNo.trim(),
+    executive,
+    customerName: customerName.trim(),
+    village: village.trim(),
+    phone: phone.trim(),
+    placeOfSupply: placeOfSupply.trim(),
+    cgstPercent, // ✅ ADD
+    sgstPercent, // ✅ ADD
+    igstPercent, // ✅ ADD
+    items,
+    farmer: undefined,
+    productId: ""
+  };
 
-    persist([row, ...rows]);
-    closeForm();
-  }
+  persist([row, ...rows]);
+  closeForm();
+}
 
   return (
     <div>
@@ -337,9 +369,9 @@ export default function StoreReturnChallan({
               );
 
               // Tax values
-              const sgst = 0;
-              const cgst = 0;
-              const igst = 0;
+              const sgst = (withoutTax * (row.sgstPercent || 0)) / 100;
+              const cgst = (withoutTax * (row.cgstPercent || 0)) / 100;
+              const igst = (withoutTax * (row.igstPercent || 0)) / 100;
 
               const total =
                 withoutTax +
@@ -350,7 +382,7 @@ export default function StoreReturnChallan({
               return (
                 <tr
                   key={row.id}
-                  onClick={() => setSelected(row)}
+                  onClick={() => setSelectedChallan(row)}
                   className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
                   title="Click to view return challan"
                 >
@@ -505,10 +537,40 @@ export default function StoreReturnChallan({
                   />
 
                   <Input
+                    label="Village"
+                    value={village}
+                    onChange={setVillage}
+                    placeholder="e.g. Rajapalayam"
+                  />
+
+                  <Input
+                    label="Phone Number"
+                    type="tel"
+                    value={phone}
+                    onChange={setPhone}
+                    placeholder="e.g. 9876543210"
+                  />
+
+                  <Select
                     label="Place of Supply"
                     value={placeOfSupply}
-                    onChange={setPlaceOfSupply}
-                    placeholder="e.g. Tamil Nadu"
+                    onChange={(value) => {
+                      setPlaceOfSupply(value);
+                      if (value === "Tamil Nadu") {
+                        setCgstPercent(9);
+                        setSgstPercent(9);
+                        setIgstPercent(0);
+                      } else {
+                        setCgstPercent(0);
+                        setSgstPercent(0);
+                        setIgstPercent(18);
+                      }
+                    }}
+                    placeholder="Select Place of Supply"
+                    options={[
+                      { value: "Tamil Nadu", label: "Tamil Nadu" },
+                      { value: "Others", label: "Others" },
+                    ]}
                   />
                 </div>
 
@@ -524,6 +586,7 @@ export default function StoreReturnChallan({
                         setItems((prev) => [
                           ...prev,
                           {
+                            productId: "",
                             product: "",
                             packSize: "",
                             issuedQty: "",
@@ -583,32 +646,42 @@ export default function StoreReturnChallan({
                               </td>
 
                               <td className="px-2 py-3">
-                                <Input
-                                  value={item.product}
-                                  onChange={(value) =>
-                                    updateItem(
-                                      index,
-                                      "product",
-                                      value,
-                                    )
-                                  }
-                                  placeholder="Product"
-                                />
-                              </td>
+                            <Select
+                              value={item.productId}
+                              onChange={(value) => {
+                                const selectedProduct = allProducts.find((p) => p.id === value);
+                                updateItem(index, "productId", value);
+                                if (selectedProduct) {
+                                  updateItem(index, "product", selectedProduct.name);
+                                  updateItem(index, "packSize", selectedProduct.size || "");
+                                  updateItem(index, "unitValue", String(selectedProduct.sellingPrice || 0));
+                                }
+                              }}
+                              placeholder="Select Product"
+                              options={allProducts.map((p) => ({ value: p.id, label: `${p.name} (${p.size})` }))}
+                            />
+                          </td>
 
-                              <td className="px-2 py-3">
-                                <Input
-                                  value={item.packSize}
-                                  onChange={(value) =>
-                                    updateItem(
-                                      index,
-                                      "packSize",
-                                      value,
-                                    )
-                                  }
-                                  placeholder="250 ml"
-                                />
-                              </td>
+                          <td className="px-2 py-3">
+                            <Select
+                              value={item.packSize}
+                              onChange={(value) => updateItem(index, "packSize", value)}
+                              placeholder="Select size"
+                              options={[
+                                { value: "100ml", label: "100 ml" },
+                                { value: "250ml", label: "250 ml" },
+                                { value: "500ml", label: "500 ml" },
+                                { value: "1l", label: "1 L" },
+                                { value: "100g", label: "100 g" },
+                                { value: "250g", label: "250 g" },
+                                { value: "500g", label: "500 g" },
+                                { value: "1kg", label: "1 Kg" },
+                                { value: "5kg", label: "5 Kg" },
+                                { value: "10kg", label: "10 Kg" },
+                                { value: "25kg", label: "25 Kg" },
+                              ]}
+                            />
+                          </td>
 
                               <td className="px-2 py-3">
                                 <Input
@@ -683,32 +756,38 @@ export default function StoreReturnChallan({
                     </table>
                   </div>
 
-                  <div className="mt-4 ml-auto grid w-full max-w-lg grid-cols-3 gap-3 rounded-xl bg-slate-50 p-4">
-                    <div>
-                      <p className="text-xs text-slate-400">
-                        Issued Qty
-                      </p>
-                      <p className="mt-1 font-bold text-slate-800">
-                        {totals.issuedQty}
-                      </p>
+                  <div className="mt-4 ml-auto w-full max-w-lg rounded-xl bg-slate-50 p-4 space-y-2">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400">Issued Qty</p>
+                        <p className="mt-1 font-bold text-slate-800">{totals.issuedQty}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Returned Qty</p>
+                        <p className="mt-1 font-bold text-slate-800">{totals.returnedQty}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Without Tax</p>
+                        <p className="mt-1 font-bold text-slate-700">{formatCurrency(totals.returnValue)}</p>
+                      </div>
                     </div>
-
-                    <div>
-                      <p className="text-xs text-slate-400">
-                        Returned Qty
-                      </p>
-                      <p className="mt-1 font-bold text-slate-800">
-                        {totals.returnedQty}
-                      </p>
+                    <div className="border-t border-slate-200 pt-2 space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">SGST</span>
+                        <span className="text-slate-600">{formatCurrency(totals.sgstAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">CGST</span>
+                        <span className="text-slate-600">{formatCurrency(totals.cgstAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">IGST</span>
+                        <span className="text-slate-600">{formatCurrency(totals.igstAmount)}</span>
+                      </div>
                     </div>
-
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">
-                        Return Value
-                      </p>
-                      <p className="mt-1 font-bold text-brand-700">
-                        {formatCurrency(totals.returnValue)}
-                      </p>
+                    <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                      <span className="font-bold text-slate-800">Grand Total</span>
+                      <span className="font-bold text-brand-700">{formatCurrency(totals.grandTotal)}</span>
                     </div>
                   </div>
                 </div>
@@ -735,7 +814,7 @@ export default function StoreReturnChallan({
           document.body,
         )}
 
-      {selected &&
+      {selectedChallan &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -745,13 +824,13 @@ export default function StoreReturnChallan({
                     Return Challan
                   </p>
                   <h2 className="mt-1 text-xl font-bold text-slate-800">
-                    {selected.rcNo}
+                    {selectedChallan.rcNo}
                   </h2>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setSelected(null)}
+                  onClick={() => setSelectedChallan(null)}
                   className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
                 >
                   <Icon name="close" size={20} />
@@ -783,14 +862,14 @@ export default function StoreReturnChallan({
                         <span className="inline-block w-28 font-medium">
                           R.C No
                         </span>
-                        : {selected.rcNo}
+                        : {selectedChallan.rcNo}
                       </p>
 
                       <p className="mt-2">
                         <span className="inline-block w-28 font-medium">
                           R.C Date
                         </span>
-                        : {formatDate(selected.date)}
+                        : {formatDate(selectedChallan.date)}
                       </p>
                     </div>
 
@@ -799,14 +878,14 @@ export default function StoreReturnChallan({
                         <span className="inline-block w-32 font-medium">
                           Against D.C
                         </span>
-                        : {selected.dcNo}
+                        : {selectedChallan.dcNo}
                       </p>
 
                       <p className="mt-2">
                         <span className="inline-block w-32 font-medium">
                           Executive
                         </span>
-                        : {selected.executive}
+                        : {selectedChallan.executive}
                       </p>
                     </div>
                   </div>
@@ -816,14 +895,14 @@ export default function StoreReturnChallan({
                       <span className="inline-block w-32 font-medium">
                         Customer Name
                       </span>
-                      : {selected.customerName || "-"}
+                      : {selectedChallan.customerName || "-"}
                     </p>
 
                     <p className="mt-2">
                       <span className="inline-block w-32 font-medium">
                         Place of Supply
                       </span>
-                      : {selected.placeOfSupply || "-"}
+                      : {selectedChallan.placeOfSupply || "-"}
                     </p>
                   </div>
 
@@ -855,9 +934,9 @@ export default function StoreReturnChallan({
                     </thead>
 
                     <tbody>
-                      {selected.items.map((item, index) => (
+                      {selectedChallan.items.map((item, index) => (
                         <tr
-                          key={`${selected.id}-${index}`}
+                          key={`${selectedChallan.id}-${index}`}
                           className="border-b border-slate-200"
                         >
                           <td className="border-r border-slate-300 px-2 py-4 text-center">
@@ -896,7 +975,7 @@ export default function StoreReturnChallan({
               <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 <Button
                   variant="secondary"
-                  onClick={() => setSelected(null)}
+                  onClick={() => setSelectedChallan(null)}
                 >
                   Close
                 </Button>

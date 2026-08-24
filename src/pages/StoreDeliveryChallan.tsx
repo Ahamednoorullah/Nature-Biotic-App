@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { products as allProducts } from "@/lib/data";
 
-type Item = { product: string; packSize: string; qty: string; unitValue: string };
+type Item = { productId: string; product: string; packSize: string; qty: string; unitValue: string };
 type Challan = {
   id: string;
   dcNo: string;
@@ -13,13 +14,16 @@ type Challan = {
   address: string;
   contactNo: string;
   placeOfSupply: string;
+  cgstPercent: number;   // ✅ ADD
+  sgstPercent: number;   // ✅ ADD
+  igstPercent: number;   // ✅ ADD
   items: Item[];
 };
 
 const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 
 function emptyItems(): Item[] {
-  return [{ product: "", packSize: "", qty: "", unitValue: "" }];
+  return [{ productId: "", product: "", packSize: "", qty: "", unitValue: "" }];
 }
 
 const STORAGE_PREFIX = "nature-biotic-store-delivery-challans-v2";
@@ -60,6 +64,9 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const [contactNo, setContactNo] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [items, setItems] = useState<Item[]>(emptyItems());
+  const [cgstPercent, setCgstPercent] = useState(0);   // ✅ ADD
+  const [sgstPercent, setSgstPercent] = useState(0);   // ✅ ADD
+  const [igstPercent, setIgstPercent] = useState(0);   // ✅ ADD
 
   const canCreate =
     !!dcNo.trim() &&
@@ -75,17 +82,24 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
         Number(item.unitValue) >= 0,
     );
 
-  const totals = useMemo(
-    () => ({
-      totalQty: items.reduce((sum, item) => sum + Number(item.qty || 0), 0),
-      approxValue: items.reduce(
-        (sum, item) =>
-          sum + Number(item.qty || 0) * Number(item.unitValue || 0),
-        0,
-      ),
-    }),
-    [items],
+  const totals = useMemo(() => {
+  const approxValue = items.reduce(
+    (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+    0,
   );
+  const cgstAmount = (approxValue * cgstPercent) / 100;
+  const sgstAmount = (approxValue * sgstPercent) / 100;
+  const igstAmount = (approxValue * igstPercent) / 100;
+
+  return {
+    totalQty: items.reduce((sum, item) => sum + Number(item.qty || 0), 0),
+    approxValue,
+    cgstAmount,
+    sgstAmount,
+    igstAmount,
+    grandTotal: approxValue + cgstAmount + sgstAmount + igstAmount,
+  };
+}, [items, cgstPercent, sgstPercent, igstPercent]);
 
   function updateItem(i: number, key: keyof Item, value: string) {
     setItems((prev) =>
@@ -94,15 +108,18 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   }
 
   function resetForm() {
-    setDcNo("");
-    setExecutive("");
-    setDate("");
-    setCustomerName("");
-    setAddress("");
-    setContactNo("");
-    setPlaceOfSupply("");
-    setItems(emptyItems());
-  }
+  setDcNo("");
+  setExecutive("");
+  setDate("");
+  setCustomerName("");
+  setAddress("");
+  setContactNo("");
+  setPlaceOfSupply("");
+  setCgstPercent(0);   // ✅ ADD
+  setSgstPercent(0);   // ✅ ADD
+  setIgstPercent(0);   // ✅ ADD
+  setItems(emptyItems());
+}
 
   function closeForm() {
     setShowAdd(false);
@@ -110,27 +127,30 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   }
 
   function createChallan() {
-    if (!canCreate) return;
+  if (!canCreate) return;
 
-    const next: Challan = {
-      id: String(Date.now()),
-      dcNo: dcNo.trim(),
-      date,
-      executive,
-      customerName: customerName.trim(),
-      address: address.trim(),
-      contactNo: contactNo.trim(),
-      placeOfSupply: placeOfSupply.trim(),
-      items,
-    };
+  const next: Challan = {
+    id: String(Date.now()),
+    dcNo: dcNo.trim(),
+    date,
+    executive,
+    customerName: customerName.trim(),
+    address: address.trim(),
+    contactNo: contactNo.trim(),
+    placeOfSupply: placeOfSupply.trim(),
+    cgstPercent,
+    sgstPercent,
+    igstPercent,
+    items,
+  };
 
-    const updated = [next, ...challans];
-    setChallans(updated);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(updated));
-    } catch {}
-    closeForm();
-  }
+  const updated = [next, ...challans];
+  setChallans(updated);
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+  } catch {}
+  closeForm();
+}
 
   return (
     <div>
@@ -225,26 +245,18 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
     <tbody className="divide-y divide-slate-100">
       {challans.map((c, index) => {
-        const totalQty = c.items.reduce(
-          (s, x) => s + Number(x.qty || 0),
-          0,
-        );
-
+        const totalQty = c.items.reduce((s, x) => s + Number(x.qty || 0), 0);
         const withoutTax = c.items.reduce(
-          (s, x) =>
-            s +
-            Number(x.qty || 0) *
-              Number(x.unitValue || 0),
+          (s, x) => s + Number(x.qty || 0) * Number(x.unitValue || 0),
           0,
         );
 
-        // Tax values
-        const sgst = 0;
-        const cgst = 0;
-        const igst = 0;
+        // ✅ REPLACE hardcoded 0 with real calc:
+        const sgst = (withoutTax * (c.sgstPercent || 0)) / 100;
+        const cgst = (withoutTax * (c.cgstPercent || 0)) / 100;
+        const igst = (withoutTax * (c.igstPercent || 0)) / 100;
 
-        const totalValue =
-          withoutTax + sgst + cgst + igst;
+        const totalValue = withoutTax + sgst + cgst + igst;
 
         return (
           <tr
@@ -276,10 +288,6 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
               <p className="mt-0.5 text-xs text-slate-500">
                 {c.address || "-"}
-              </p>
-
-              <p className="mt-0.5 text-xs text-slate-400">
-                {c.contactNo || "-"}
               </p>
             </td>
 
@@ -358,11 +366,35 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                     options={executives.map((x) => ({ value: x, label: x }))}
                     required
                   />
-                  <Input label="Place of Supply" value={placeOfSupply} onChange={setPlaceOfSupply} placeholder="e.g. Tamil Nadu" required />
+
+                  <Select
+                    label="Place of Supply"
+                    value={placeOfSupply}
+                    onChange={(value) => {
+                      setPlaceOfSupply(value);
+                      if (value === "Tamil Nadu") {
+                        setCgstPercent(9);
+                        setSgstPercent(9);
+                        setIgstPercent(0);
+                      } else {
+                        setCgstPercent(0);
+                        setSgstPercent(0);
+                        setIgstPercent(18);
+                      }
+                    }}
+                    placeholder="Select Place of Supply"
+                    options={[
+                      { value: "Tamil Nadu", label: "Tamil Nadu" },
+                      { value: "Others", label: "Others" },
+                    ]}
+                    required
+                  />
+
+
                   <Input label="Customer Name" value={customerName} onChange={setCustomerName} placeholder="Customer name" required />
                   <Input label="Contact No" value={contactNo} onChange={setContactNo} placeholder="Contact number" />
                   <div className="md:col-span-2">
-                    <Input label="Address" value={address} onChange={setAddress} placeholder="Customer address" />
+                    <Input label="Village" value={address} onChange={setAddress} placeholder="e.g. Rajapalayam" />
                   </div>
                 </div>
 
@@ -376,7 +408,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                       onClick={() =>
                         setItems((p) => [
                           ...p,
-                          { product: "", packSize: "", qty: "", unitValue: "" },
+                          { productId: "", product: "", packSize: "", qty: "", unitValue: "" },  
                         ])
                       }
                     >
@@ -404,11 +436,41 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                             <tr key={i} className="border-t border-slate-100">
                               <td className="px-2 py-3 text-center">{i + 1}</td>
                               <td className="px-2 py-3">
-                                <Input value={item.product} onChange={(v) => updateItem(i, "product", v)} placeholder="Product" />
-                              </td>
-                              <td className="px-2 py-3">
-                                <Input value={item.packSize} onChange={(v) => updateItem(i, "packSize", v)} placeholder="250 ml" />
-                              </td>
+                              <Select
+                                value={item.productId}
+                                onChange={(value) => {
+                                  const selectedProduct = allProducts.find((p) => p.id === value);
+                                  updateItem(i, "productId", value);
+                                  if (selectedProduct) {
+                                    updateItem(i, "product", selectedProduct.name);
+                                    updateItem(i, "packSize", selectedProduct.size || "");
+                                    updateItem(i, "unitValue", String(selectedProduct.sellingPrice || 0));
+                                  }
+                                }}
+                                placeholder="Select Product"
+                                options={allProducts.map((p) => ({ value: p.id, label: `${p.name} (${p.size})` }))}
+                              />
+                            </td>
+                            <td className="px-2 py-3">
+                              <Select
+                                value={item.packSize}
+                                onChange={(v) => updateItem(i, "packSize", v)}
+                                placeholder="Select size"
+                                options={[
+                                  { value: "100ml", label: "100 ml" },
+                                  { value: "250ml", label: "250 ml" },
+                                  { value: "500ml", label: "500 ml" },
+                                  { value: "1l", label: "1 L" },
+                                  { value: "100g", label: "100 g" },
+                                  { value: "250g", label: "250 g" },
+                                  { value: "500g", label: "500 g" },
+                                  { value: "1kg", label: "1 Kg" },
+                                  { value: "5kg", label: "5 Kg" },
+                                  { value: "10kg", label: "10 Kg" },
+                                  { value: "25kg", label: "25 Kg" },
+    ]}
+  />
+</td>
                               <td className="px-2 py-3">
                                 <Input type="number" value={item.qty} onChange={(v) => updateItem(i, "qty", v)} placeholder="Qty" />
                               </td>
@@ -433,14 +495,30 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                     </table>
                   </div>
 
-                  <div className="mt-4 ml-auto grid w-full max-w-md grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4">
-                    <div>
-                      <p className="text-xs text-slate-400">Total Quantity</p>
-                      <p className="mt-1 font-bold text-slate-800">{totals.totalQty}</p>
+                  <div className="mt-4 ml-auto w-full max-w-md rounded-xl bg-slate-50 p-4 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Total Quantity</span>
+                      <span className="font-bold text-slate-800">{totals.totalQty}</span>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400">Approx Sale Value</p>
-                      <p className="mt-1 font-bold text-brand-700">{formatCurrency(totals.approxValue)}</p>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Without Tax</span>
+                      <span className="font-semibold text-slate-700">{formatCurrency(totals.approxValue)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs pl-3">
+                      <span className="text-slate-400">SGST</span>
+                      <span className="text-slate-600">{formatCurrency(totals.sgstAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs pl-3">
+                      <span className="text-slate-400">CGST</span>
+                      <span className="text-slate-600">{formatCurrency(totals.cgstAmount)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs pl-3">
+                      <span className="text-slate-400">IGST</span>
+                      <span className="text-slate-600">{formatCurrency(totals.igstAmount)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                      <span className="font-bold text-slate-800">Grand Total</span>
+                      <span className="font-bold text-brand-700">{formatCurrency(totals.grandTotal)}</span>
                     </div>
                   </div>
                 </div>
