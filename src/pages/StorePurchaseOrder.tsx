@@ -16,6 +16,8 @@ type AddedProduct = {
   productId?: string;
   product: string;
   hsnCode?: string;
+  batchNo: string;
+  expiryDate: string;
   unit?: string;
   packSize: string;
   quantity: number;
@@ -34,6 +36,8 @@ type PurchaseOrderRow = {
   poNo: string;
   date: string;
   totalProduct: number;
+  batchNo: string;
+  expiryDate: string;
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -48,6 +52,8 @@ const initialRows: PurchaseOrderRow[] = [
     id: "po1",
     poNo: "SAI-PO-0001",
     date: "2026-08-18",
+    batchNo: "",
+    expiryDate: "",
     totalProduct: 20,
     withoutTax: 5000,
     sgst: 20,
@@ -61,6 +67,8 @@ const initialRows: PurchaseOrderRow[] = [
     id: "po2",
     poNo: "SAI-PO-0002",
     date: "2026-08-19",
+    batchNo: "",
+    expiryDate: "",
     totalProduct: 50,
     withoutTax: 8000,
     sgst: 0,
@@ -90,6 +98,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   const [poNo, setPoNo] = useState("");
   const [product, setProduct] = useState("");
   const [packSize, setPackSize] = useState("");
+  const [batchNo, setBatchNo] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [quantity, setQuantity] = useState("");
   const [added, setAdded] = useState<AddedProduct[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderRow | null>(
@@ -274,6 +284,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
         productId: selectedProduct.id,
         product: selectedProduct.name,
         hsnCode: selectedProduct.hsnCode,
+        batchNo,
+        expiryDate,
         unit: selectedProduct.unit,
         packSize: selectedProduct.size || packSize,
         quantity: Number(quantity),
@@ -291,6 +303,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
     setProduct("");
     setPackSize("");
     setQuantity("");
+    setBatchNo("");
+    setExpiryDate("");
   }
 
   function removeProduct(id: string) {
@@ -325,6 +339,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
       total: totals.total,
       status: "Pending",
       items: added,
+      batchNo: "",
+      expiryDate: ""
     };
     setRows((prev) => [newRow, ...prev]);
     const store = stores.find((item) => item.id === storeId);
@@ -431,6 +447,20 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                         }))}
                       />
                       <Input
+                        label="Batch No"
+                        value={batchNo}
+                        onChange={setBatchNo}
+                        placeholder="e.g. BAT-001"
+                      />
+
+                      <Input
+                        label="Expiry Date"
+                        type="date"
+                        value={expiryDate}
+                        onChange={setExpiryDate}
+                      />
+
+                      <Input
                         label="Qty"
                         type="number"
                         value={quantity}
@@ -508,9 +538,13 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                             Product
                           </th>
                           <th className="w-[9%] px-2 py-3 text-center">HSN</th>
+                          <th className="w-[12%] px-2 py-3 text-left">Batch</th>
+                          <th className="w-[12%] px-2 py-3 text-center">Expiry</th>
                           <th className="w-[10%] px-3 py-3 text-left">
                             Pack Size
                           </th>
+                          <th className="w-[12%] px-2 py-3 text-left">Batch</th>
+                          <th className="w-[12%] px-2 py-3 text-center">Expiry</th>
                           <th className="w-[8%] px-2 py-3 text-center">Qty</th>
                           <th className="w-[10%] px-2 py-3 text-right">
                             Price
@@ -539,6 +573,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                             <td className="px-3 py-3 text-slate-600">
                               {item.packSize}
                             </td>
+                            <td className="px-2 py-3">{item.batchNo || "-"}</td>
+                              <td className="px-2 py-3 text-center">{item.expiryDate || "-"}</td>
                             <td className="px-2 py-3 text-center">
                               {item.quantity}
                             </td>
@@ -642,6 +678,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
               >
                 Total Product
               </th>
+              
               <th
                 rowSpan={2}
                 className="w-[11%] border-r border-slate-300 px-2 py-2 text-center"
@@ -959,21 +996,33 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                           </th>
                           <th
                             rowSpan={2}
-                            className="w-[14%] border-r border-slate-300 px-2 py-2 text-left"
+                            className="w-[12%] border-r border-slate-300 px-2 py-2 text-left"
                           >
                             Product
                           </th>
                           <th
                             rowSpan={2}
-                            className="w-[7%] border-r border-slate-300 px-2 py-2 text-center"
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
                           >
                             HSN
                           </th>
                           <th
                             rowSpan={2}
-                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-center"
+                            className="w-[6%] border-r border-slate-300 px-2 py-2 text-center"
                           >
-                            Pack Size
+                            Pkg Size
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Batch ID
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Expiry Date
                           </th>
                           <th
                             rowSpan={2}
@@ -1069,6 +1118,12 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                                 </td>
                                 <td className="border-r border-slate-300 px-2 py-2 text-center">
                                   {item.packSize}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                  {item.batchNo}
+                                </td>
+                                 <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                  {item.expiryDate}
                                 </td>
                                 <td className="border-r border-slate-300 px-2 py-2 text-center">
                                   {item.quantity}

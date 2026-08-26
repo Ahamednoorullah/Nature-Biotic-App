@@ -8,6 +8,8 @@ import {
   getProductMaster,
   type Product,
   type StoreApprovalRequest,
+  syncApprovedPurchaseOrderToSales,
+  stores,
 } from "@/lib/data";
 
 type PurchaseOrderItem = {
@@ -19,6 +21,8 @@ type PurchaseOrderItem = {
   hsnCode?: string;
   pkgsize?: string;
   packSize?: string;
+  batchNo: string;
+  expiryDate: string;
   quantity?: number;
   qty?: number;
   price?: number;
@@ -37,6 +41,8 @@ type StoredPurchaseOrder = {
   poNo: string;
   date: string;
   totalProduct?: number;
+  batchNo: string;
+  expiryDate: string;
   withoutTax?: number;
   sgst?: number;
   cgst?: number;
@@ -59,12 +65,39 @@ function readStorePurchaseOrders(storeId: string): StoredPurchaseOrder[] {
   }
 }
 
+function handleApprove(request: StoreApprovalRequest) {
+  updateStoreApprovalRequestStatus(request.id, "Approved");
+
+  if (request.type === "Purchase Order") {
+    // fetch the actual PO items from store's saved PO record
+    const poData = JSON.parse(
+      localStorage.getItem(`naturebiotic:purchase-orders:${request.storeId}`) || "[]"
+    );
+    const po = poData.find((p: any) => p.poNo === request.referenceNo);
+
+    if (po) {
+      syncApprovedPurchaseOrderToSales(
+        request.storeId,
+        request.storeName,
+        po.poNo,
+        po.date,
+        po.items,
+        stores.find((s) => s.id === request.storeId)?.location || "",
+        "Tamil Nadu", // or derive properly
+      );
+    }
+  }
+}
+
+
 export default function CompanyPurchaseOrders() {
   const [requests, setRequests] = useState<StoreApprovalRequest[]>(() =>
     getStoreApprovalRequests().filter((row) => row.type === "Purchase Order"),
   );
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [batchNo, setBatchNo] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
   const [selected, setSelected] = useState<PurchaseRequestRow | null>(null);
 
   const productMaster = useMemo<Product[]>(() => getProductMaster(), []);
@@ -351,7 +384,7 @@ export default function CompanyPurchaseOrders() {
       {selected &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[94vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex max-h-[94vh] w-[96vw] max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -461,42 +494,54 @@ export default function CompanyPurchaseOrders() {
                   </div>
 
                   {selected.order?.items?.length ? (
-                    <table className="w-full table-fixed border-collapse text-[11px]">
+                    <table className="max-w-7xl table-fixed  border-collapse text-[11px]">
                       <thead>
                         <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="w-[1.5%] border-r border-slate-300 px-2 py-2.5 text-center">
                             S.No
                           </th>
-                          <th rowSpan={2} className="w-[17%] border-r border-slate-300 px-2 py-2.5 text-left">
+                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-left">
                             Product
                           </th>
-                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-center">
                             HSN
                           </th>
-                          <th rowSpan={2} className="w-[9%] border-r border-slate-300 px-2 py-2.5 text-center">
-                            Pack Size
+                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
+                            Pkg Size
                           </th>
-                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th
+                            rowSpan={2}
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Batch ID
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[7%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Expiry Date
+                          </th>
+                          <th rowSpan={2} className="w-[4%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Qty
                           </th>
-                          <th rowSpan={2} className="w-[10%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[7%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Price
                           </th>
-                          <th rowSpan={2} className="w-[11%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[7%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Without Tax
                           </th>
 
-                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="w-[9%] border-r border-slate-300 px-1 py-2 text-center">
                             SGST
                           </th>
-                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="w-[9%] border-r border-slate-300 px-1 py-2 text-center">
                             CGST
                           </th>
-                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="w-[9%] border-r border-slate-300 px-1 py-2 text-center">
                             IGST
                           </th>
 
-                          <th rowSpan={2} className="w-[10%] px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[8%] px-2 py-2.5 text-right">
                             Total
                           </th>
                         </tr>
@@ -531,6 +576,14 @@ export default function CompanyPurchaseOrders() {
 
                             <td className="border-r border-slate-300 px-2 py-3 text-center">
                               {item.packSize || item.pkgsize || "-"}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.batchNo}
+                            </td>
+                                 
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.expiryDate}
                             </td>
 
                             <td className="border-r border-slate-300 px-2 py-3 text-right">

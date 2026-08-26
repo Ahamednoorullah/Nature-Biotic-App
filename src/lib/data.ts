@@ -1192,6 +1192,56 @@ export function saveCompanyStoreSales(rows: CompanyStoreSaleRecord[]) {
   } catch {}
 }
 
+export function syncApprovedPurchaseOrderToSales(
+  storeId: string,
+  storeName: string,
+  poNo: string,
+  poDate: string,
+  items: {
+    product: string;
+    packSize: string;
+    quantity: number;
+    price: number;
+    withoutTax: number;
+    sgst: number;
+    cgst: number;
+    igst: number;
+    total: number;
+  }[],
+  storeLocation: string,
+  placeOfSupply: string,
+) {
+  const existing = getCompanyStoreSales();
+
+  // Avoid duplicate sync if this PO was already converted
+  const alreadySynced = existing.some((row) => row.invoiceNo === poNo);
+  if (alreadySynced) return existing;
+
+  const newRows: CompanyStoreSaleRecord[] = items.map((item, i) => ({
+    id: `po-sync-${poNo}-${i}-${Date.now()}`,
+    invoiceNo: poNo,
+    date: poDate,
+    storeId,
+    storeName,
+    storeLocation,
+    placeOfSupply,
+    product: item.product,
+    packSize: item.packSize,
+    quantity: item.quantity,
+    rate: item.price,
+    withoutTax: item.withoutTax,
+    taxAmount: item.sgst + item.cgst + item.igst,
+    sgst: item.sgst,
+    cgst: item.cgst,
+    igst: item.igst,
+    total: item.total,
+  }));
+
+  const merged = [...newRows, ...existing];
+  saveCompanyStoreSales(merged);
+  return merged;
+}
+
 export function getStorePurchasesFromCompanySales(storeId: string) {
   return getCompanyStoreSales().filter((sale) => sale.storeId === storeId);
 }
@@ -1648,6 +1698,7 @@ export function getStockStatus(p: Product): StockStatus {
   if (p.stock < p.minStock) return "Low Stock";
   return "Healthy";
 }
+
 
 export const warehouseList = warehouses;
 
