@@ -6,6 +6,7 @@ import {
   getStoreApprovalRequest,
   storeApprovalRequestsUpdatedEvent,
   stores,
+  getStorePurchasesFromCompanySales,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
 
@@ -13,6 +14,9 @@ type ReturnItem = {
   id: string;
   product: string;
   packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  soldQuantity: number;
   quantity: number;
   price: number;
   reason: string;
@@ -47,41 +51,25 @@ type PurchaseReturnRow = {
   items: ReturnItem[];
 };
 
-const productMaster = [
-  {
-    value: "Electra",
-    label: "Electra",
-    price: 250,
-    tax: 12,
-    taxType: "Intrastate",
-  },
-  { value: "Aalga", label: "Aalga", price: 380, tax: 5, taxType: "Intrastate" },
-  {
-    value: "Astra",
-    label: "Astra",
-    price: 560,
-    tax: 18,
-    taxType: "Intrastate",
-  },
-  {
-    value: "Rootra",
-    label: "Rootra",
-    price: 420,
-    tax: 5,
-    taxType: "Intrastate",
-  },
-];
-
-const packSizes = [
-  { value: "100 ml", label: "100 ml" },
-  { value: "250 ml", label: "250 ml" },
-  { value: "500 ml", label: "500 ml" },
-  { value: "1 L", label: "1 L" },
-  { value: "100 g", label: "100 g" },
-  { value: "250 g", label: "250 g" },
-  { value: "500 g", label: "500 g" },
-  { value: "1 Kg", label: "1 Kg" },
-];
+type PurchaseInvoiceItem = {
+  id: string;
+  invoiceNo: string;
+  date: string;
+  product: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  quantity: number;
+  price: number;
+  discountPercent: number;
+  discountAmount: number;
+  taxableAmount: number;
+  taxPercent: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+};
 
 const reasons = [
   "Damaged Product",
@@ -116,6 +104,9 @@ const initialRows: PurchaseReturnRow[] = [
         id: "pr-1-item-1",
         product: "Electra",
         packSize: "250 ml",
+        batchNo: "BAT-001",
+        expiryDate: "2027-06-30",
+        soldQuantity: 10,
         quantity: 10,
         price: 250,
         reason: "Damaged Product",
@@ -184,25 +175,108 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
   const [product, setProduct] = useState("");
   const [packSize, setPackSize] = useState("");
   const [quantity, setQuantity] = useState("");
-  const [discountPercent, setDiscountPercent] = useState("");
   const [reason, setReason] = useState("");
   const [added, setAdded] = useState<ReturnItem[]>([]);
 
-  const selectedProduct = productMaster.find((p) => p.value === product);
+  const purchaseInvoices = useMemo<PurchaseInvoiceItem[]>(() => {
+    const sourceRows = (getStorePurchasesFromCompanySales(storeId) || []) as any[];
+
+    return sourceRows.map((row: any, index: number) => {
+      const quantity = Number(row.quantity ?? row.qty ?? 0);
+      const price = Number(
+        row.sellingPrice ??
+          row.price ??
+          (quantity
+            ? Number(row.beforeDiscount ?? row.withoutTax ?? 0) / quantity
+            : 0),
+      );
+
+      const beforeDiscount = Number(
+        row.beforeDiscount ?? price * quantity,
+      );
+
+      const discountPercent = Number(
+        row.discountPercent ?? row.discount ?? 0,
+      );
+
+      const discountAmount = Number(
+        row.discountAmount ??
+          (beforeDiscount * discountPercent) / 100,
+      );
+
+      const taxableAmount = Number(
+        row.taxableAmount ??
+          row.withoutTax ??
+          Math.max(0, beforeDiscount - discountAmount),
+      );
+
+      const taxPercent = Number(row.taxPercent ?? row.taxPercentage ?? 0);
+
+      return {
+        id: String(row.id ?? `${row.invoiceNo}-${index}`),
+        invoiceNo: String(row.invoiceNo ?? row.purchaseRef ?? ""),
+        date: String(row.date ?? ""),
+        product: String(row.productName ?? row.product ?? "-"),
+        packSize: String(
+          row.packSize ?? row.pkgsize ?? row.size ?? row.unit ?? "-",
+        ),
+        batchNo: String(
+          row.batchNo ?? row.batchId ?? row.batchID ?? "-",
+        ),
+        expiryDate: String(
+          row.expiryDate ?? row.expDate ?? row.expiry ?? "",
+        ),
+        quantity,
+        price,
+        discountPercent,
+        discountAmount,
+        taxableAmount,
+        taxPercent,
+        sgst: Number(row.sgst ?? 0),
+        cgst: Number(row.cgst ?? 0),
+        igst: Number(row.igst ?? 0),
+        total: Number(row.total ?? taxableAmount + Number(row.sgst ?? 0) + Number(row.cgst ?? 0) + Number(row.igst ?? 0)),
+      };
+    });
+  }, [storeId]);
+
+  const invoiceOptions = useMemo(() => {
+    const unique = new Map<string, PurchaseInvoiceItem>();
+
+    purchaseInvoices.forEach((item) => {
+      if (item.invoiceNo && !unique.has(item.invoiceNo)) {
+        unique.set(item.invoiceNo, item);
+      }
+    });
+
+    return Array.from(unique.values()).map((item) => ({
+      value: item.invoiceNo,
+      label: `${item.invoiceNo}${item.date ? ` - ${formatSimpleDate(item.date)}` : ""}`,
+    }));
+  }, [purchaseInvoices]);
+
+  const selectedInvoiceItems = useMemo(
+    () =>
+      purchaseRef
+        ? purchaseInvoices.filter((item) => item.invoiceNo === purchaseRef)
+        : [],
+    [purchaseInvoices, purchaseRef],
+  );
+
+  const selectedInvoiceItem = selectedInvoiceItems.find(
+    (item) => item.id === product,
+  );
+
+  const selectedProduct = selectedInvoiceItem;
   const price = selectedProduct?.price ?? 0;
 
   const computed = useMemo(() => {
     const qty = Number(quantity) || 0;
-    const beforeDiscount = qty * price;
-    const discount = Math.min(100, Math.max(0, Number(discountPercent) || 0));
-    const discountAmount = (beforeDiscount * discount) / 100;
-    const taxableAmount = Math.max(0, beforeDiscount - discountAmount);
-    const withoutTax = taxableAmount;
 
     if (!selectedProduct || qty <= 0) {
       return {
         beforeDiscount: 0,
-        discountPercent: discount,
+        discountPercent: 0,
         discountAmount: 0,
         taxableAmount: 0,
         withoutTax: 0,
@@ -213,36 +287,53 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
       };
     }
 
-    if (selectedProduct.taxType === "Intrastate") {
-      const tax = taxableAmount * (selectedProduct.tax / 100);
+    const soldQty = Math.max(1, Number(selectedProduct.quantity || 0));
+    const perUnitBeforeDiscount =
+      (selectedProduct.price * soldQty) / soldQty;
 
-      return {
-        beforeDiscount,
-        discountPercent: discount,
-        discountAmount,
-        taxableAmount,
-        withoutTax,
-        sgst: tax / 2,
-        cgst: tax / 2,
-        igst: 0,
-        total: taxableAmount + tax,
-      };
-    }
+    const beforeDiscount = perUnitBeforeDiscount * qty;
+    const discountPercent = Number(selectedProduct.discountPercent || 0);
+    const discountAmount =
+      (beforeDiscount * discountPercent) / 100;
+    const taxableAmount = Math.max(
+      0,
+      beforeDiscount - discountAmount,
+    );
+    const withoutTax = taxableAmount;
 
-    const igst = taxableAmount * (selectedProduct.tax / 100);
+    const originalTaxable = Number(selectedProduct.taxableAmount || 0);
+
+    const sgstRate =
+      selectedProduct.sgst > 0 && originalTaxable > 0
+        ? selectedProduct.sgst / originalTaxable
+        : 0;
+    const cgstRate =
+      selectedProduct.cgst > 0 && originalTaxable > 0
+        ? selectedProduct.cgst / originalTaxable
+        : 0;
+    const igstRate =
+      selectedProduct.igst > 0 && originalTaxable > 0
+        ? selectedProduct.igst / originalTaxable
+        : 0;
+
+    const sgst = taxableAmount * sgstRate;
+    const cgst = taxableAmount * cgstRate;
+    const igst = taxableAmount * igstRate;
+    const total = taxableAmount + sgst + cgst + igst;
 
     return {
       beforeDiscount,
-      discountPercent: discount,
+      discountPercent,
       discountAmount,
       taxableAmount,
       withoutTax,
-      sgst: 0,
-      cgst: 0,
+      sgst,
+      cgst,
       igst,
-      total: taxableAmount + igst,
+      total,
     };
-  }, [quantity, price, discountPercent, selectedProduct]);
+  }, [quantity, selectedProduct]);
+
 
   const totals = useMemo(
     () => ({
@@ -260,7 +351,11 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
   );
 
   const canAdd =
-    product && packSize && Number(quantity) > 0 && reason && price > 0;
+    !!selectedProduct &&
+    Number(quantity) > 0 &&
+    Number(quantity) <= Number(selectedProduct.quantity || 0) &&
+    !!reason &&
+    price > 0;
 
   const canSave =
     date && returnNo.trim() && purchaseRef.trim() && added.length > 0;
@@ -269,9 +364,12 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     if (!canAdd) return;
 
     const item: ReturnItem = {
-      id: `${Date.now()}-${product}-${packSize}`,
-      product,
-      packSize,
+      id: `${Date.now()}-${selectedProduct.id}`,
+      product: selectedProduct.product,
+      packSize: selectedProduct.packSize,
+      batchNo: selectedProduct.batchNo,
+      expiryDate: selectedProduct.expiryDate,
+      soldQuantity: selectedProduct.quantity,
       quantity: Number(quantity),
       price,
       reason,
@@ -288,9 +386,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
 
     setAdded((prev) => [...prev, item]);
     setProduct("");
-    setPackSize("");
     setQuantity("");
-    setDiscountPercent("");
     setReason("");
   }
 
@@ -303,9 +399,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     setReturnNo("");
     setPurchaseRef("");
     setProduct("");
-    setPackSize("");
     setQuantity("");
-    setDiscountPercent("");
     setReason("");
     setAdded([]);
   }
@@ -446,34 +540,68 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                     required
                   />
 
-                  <Input
+                  <Select
                     label="Purchase Invoice / Ref"
                     value={purchaseRef}
-                    onChange={setPurchaseRef}
-                    placeholder="e.g. NB-INV-2001"
-                    required
+                    onChange={(value) => {
+                      setPurchaseRef(value);
+                      setProduct("");
+                      setQuantity("");
+                      setReason("");
+                      setAdded([]);
+                    }}
+                    placeholder="Select invoice"
+                    options={invoiceOptions}
                   />
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-8">
                     <Select
                       label="Product"
                       value={product}
-                      onChange={setProduct}
-                      placeholder="Select product"
-                      options={productMaster.map((p) => ({
-                        value: p.value,
-                        label: p.label,
+                      onChange={(value) => {
+                        setProduct(value);
+                        setQuantity("");
+                        setReason("");
+                      }}
+                      placeholder={
+                        purchaseRef
+                          ? "Select invoice product"
+                          : "Select invoice first"
+                      }
+                      options={selectedInvoiceItems.map((item) => ({
+                        value: item.id,
+                        label: `${item.product} - ${item.packSize}`,
                       }))}
                     />
 
-                    <Select
+                    <Input
                       label="Pack Size"
-                      value={packSize}
-                      onChange={setPackSize}
-                      placeholder="Select size"
-                      options={packSizes}
+                      value={selectedProduct?.packSize || ""}
+                      onChange={() => {}}
+                      placeholder="Auto"
+                      readOnly
+                    />
+
+                    <Input
+                      label="Batch ID"
+                      value={selectedProduct?.batchNo || ""}
+                      onChange={() => {}}
+                      placeholder="Auto"
+                      readOnly
+                    />
+
+                    <Input
+                      label="Expiry Date"
+                      value={
+                        selectedProduct?.expiryDate
+                          ? formatSimpleDate(selectedProduct.expiryDate)
+                          : ""
+                      }
+                      onChange={() => {}}
+                      placeholder="Auto"
+                      readOnly
                     />
 
                     <Input
@@ -490,15 +618,6 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                       onChange={() => {}}
                       placeholder="Auto"
                       readOnly
-                    />
-
-                    <Input
-                      label="Discount %"
-                      type="number"
-                      value={discountPercent}
-                      onChange={setDiscountPercent}
-                      placeholder="0"
-                      // min and max not supported by Input props
                     />
 
                     <Select
@@ -522,7 +641,23 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                   </div>
 
                   {selectedProduct && (
-                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 md:grid-cols-4 xl:grid-cols-7">
+                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 md:grid-cols-4 xl:grid-cols-10">
+                      <MiniInfo
+                        label="Sold Qty"
+                        value={String(selectedProduct.quantity)}
+                      />
+                      <MiniInfo
+                        label="Batch ID"
+                        value={selectedProduct.batchNo || "-"}
+                      />
+                      <MiniInfo
+                        label="Expiry"
+                        value={
+                          selectedProduct.expiryDate
+                            ? formatSimpleDate(selectedProduct.expiryDate)
+                            : "-"
+                        }
+                      />
                       <MiniInfo
                         label="Before Discount"
                         value={formatCurrency(computed.beforeDiscount)}
@@ -565,10 +700,16 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                           <th className="w-[18%] px-3 py-3 text-left">
                             Product
                           </th>
-                          <th className="w-[11%] px-2 py-3 text-center">
+                          <th className="w-[9%] px-2 py-3 text-center">
                             Size
                           </th>
-                          <th className="w-[8%] px-2 py-3 text-center">Qty</th>
+                          <th className="w-[9%] px-2 py-3 text-center">
+                            Batch ID
+                          </th>
+                          <th className="w-[10%] px-2 py-3 text-center">
+                            Expiry
+                          </th>
+                          <th className="w-[7%] px-2 py-3 text-center">Qty</th>
                           <th className="w-[9%] px-2 py-3 text-right">Price</th>
                           <th className="w-[11%] px-2 py-3 text-right">
                             Before Discount
@@ -602,6 +743,14 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                             </td>
                             <td className="px-2 py-3 text-center">
                               {item.packSize}
+                            </td>
+                            <td className="px-2 py-3 text-center">
+                              {item.batchNo || "-"}
+                            </td>
+                            <td className="px-2 py-3 text-center">
+                              {item.expiryDate
+                                ? formatSimpleDate(item.expiryDate)
+                                : "-"}
                             </td>
                             <td className="px-2 py-3 text-center">
                               {item.quantity}
@@ -1087,13 +1236,25 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                           </th>
                           <th
                             rowSpan={2}
-                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-center"
+                            className="w-[7%] border-r border-slate-300 px-2 py-2 text-center"
                           >
                             Size
                           </th>
                           <th
                             rowSpan={2}
-                            className="w-[6%] border-r border-slate-300 px-2 py-2 text-center"
+                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Batch ID
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[9%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Expiry Date
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
                           >
                             Qty
                           </th>
@@ -1211,6 +1372,14 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                               </td>
                               <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {item.packSize}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {item.batchNo || "-"}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {item.expiryDate
+                                  ? formatSimpleDate(item.expiryDate)
+                                  : "-"}
                               </td>
                               <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {item.quantity}

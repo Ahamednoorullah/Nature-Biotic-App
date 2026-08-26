@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { products as allProducts, getStore, type Product } from "@/lib/data";
+import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
 
 type SaleType = "Direct" | "Executive";
@@ -12,6 +12,13 @@ type SaleRow = {
   invoiceNo: string;
   through: SaleType;
   partyName: string;
+  farmerId?: string;
+  farmerPhone?: string;
+  farmerVillage?: string;
+  farmerCrop?: string;
+  farmerAcre?: string;
+  placeOfSupply?: string;
+  executiveName?: string;
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -106,9 +113,66 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [invoiceNo, setInvoiceNo] = useState("");
   const [through, setThrough] = useState<SaleType>("Direct");
   const [partyName, setPartyName] = useState("");
+  const [farmerId, setFarmerId] = useState("");
+  const [farmerPhone, setFarmerPhone] = useState("");
+  const [farmerVillage, setFarmerVillage] = useState("");
+  const [farmerCrop, setFarmerCrop] = useState("");
+  const [farmerAcre, setFarmerAcre] = useState("");
+  const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
   const [executiveName, setExecutiveName] = useState("");
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
+
+  const registeredFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
+  const storePurchaseRows = useMemo(
+    () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
+    [storeId],
+  );
+
+  const storeStockVariants = useMemo(() => {
+    return storePurchaseRows
+      .map((row: any, index: number) => {
+        const master = allProducts.find(
+          (p) =>
+            p.id === row.productId ||
+            p.name.toLowerCase() === String(row.productName ?? row.product ?? "").toLowerCase(),
+        );
+        const productId = String(master?.id ?? row.productId ?? `stock-${index}`);
+        const name = String(row.productName ?? row.product ?? master?.name ?? "").trim();
+        const size = String(row.packSize ?? row.pkgsize ?? row.size ?? master?.size ?? "").trim();
+        const quantity = Number(row.quantity ?? row.qty ?? 0);
+        return {
+          key: `${productId}-${size}-${row.batchNo ?? ""}-${row.expiryDate ?? ""}-${index}`,
+          productId,
+          product: master,
+          name,
+          size,
+          batchNo: String(row.batchNo ?? ""),
+          expiryDate: String(row.expiryDate ?? ""),
+          quantity,
+          sellingPrice: Number(row.sellingPrice ?? row.rate ?? row.price ?? master?.sellingPrice ?? 0),
+          taxPercentage: Number(row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0),
+        };
+      })
+      .filter((item) => item.name && item.quantity > 0);
+  }, [storePurchaseRows]);
+
+  const storeProductChoices = useMemo(() => {
+    const seen = new Map<string, { value: string; label: string }>();
+    storeStockVariants.forEach((item) => {
+      const key = item.name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
+    });
+    return Array.from(seen.values());
+  }, [storeStockVariants]);
+
+  const selectedProductName =
+    storeStockVariants.find((item) => item.productId === entry.productId)?.name || "";
+
+  const selectedSizeVariants = useMemo(
+    () => storeStockVariants.filter((item) => item.name === selectedProductName),
+    [storeStockVariants, selectedProductName],
+  );
 
   const entryProduct = allProducts.find((p) => p.id === entry.productId);
 
@@ -129,13 +193,50 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     };
   }, [added]);
 
-  function selectProduct(productId: string) {
-    const product = allProducts.find((p) => p.id === productId);
+  function selectFarmer(id: string) {
+    setFarmerId(id);
+    const farmer = registeredFarmers.find((item) => item.id === id);
+    if (!farmer) {
+      setPartyName("");
+      setFarmerPhone("");
+      setFarmerVillage("");
+      setFarmerCrop("");
+      setFarmerAcre("");
+      return;
+    }
+
+    setPartyName(farmer.name || "");
+    setFarmerPhone(farmer.phone || "");
+    setFarmerVillage(farmer.village || "");
+    setFarmerCrop(farmer.cropType || farmer.crops?.[0]?.cropType || "");
+    const acre = Number(farmer.landSize || 0) || Number(farmer.crops?.[0]?.landSize || 0);
+    setFarmerAcre(acre > 0 ? String(acre) : "");
+    setPlaceOfSupply(
+      (farmer.state || "").toLowerCase() === "tamil nadu" ? "Tamil Nadu" : "Others",
+    );
+  }
+
+  function selectProductName(productName: string) {
+    const first = storeStockVariants.find((item) => item.name === productName);
     setEntry((prev) => ({
       ...prev,
-      productId,
-      pkgsize: product?.size || "",
-      sellingPrice: product?.sellingPrice || 0,
+      productId: first?.productId || "",
+      pkgsize: "",
+      batchNo: "",
+      expiryDate: "",
+      sellingPrice: 0,
+    }));
+  }
+
+  function selectProductSize(size: string) {
+    const variant = selectedSizeVariants.find((item) => item.size === size);
+    setEntry((prev) => ({
+      ...prev,
+      productId: variant?.productId || prev.productId,
+      pkgsize: size,
+      batchNo: variant?.batchNo || "",
+      expiryDate: variant?.expiryDate || "",
+      sellingPrice: variant?.sellingPrice || 0,
     }));
   }
 
@@ -150,12 +251,23 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       return;
     }
 
-    const product = allProducts.find((p) => p.id === entry.productId);
-    if (!product) return;
+    const selectedStock = storeStockVariants.find(
+      (item) =>
+        item.productId === entry.productId &&
+        item.size === entry.pkgsize &&
+        item.batchNo === entry.batchNo &&
+        item.expiryDate === entry.expiryDate,
+    );
+    const product = selectedStock?.product || allProducts.find((p) => p.id === entry.productId);
+    if (!selectedStock || !product) return;
+    if (entry.quantity > selectedStock.quantity) {
+      window.alert(`Only ${selectedStock.quantity} available in store stock.`);
+      return;
+    }
 
     const gross = entry.quantity * entry.sellingPrice;
     const withoutTax = Math.max(0, gross - entry.discount);
-    const taxPercent = product.taxPercentage || 0;
+    const taxPercent = selectedStock.taxPercentage || product.taxPercentage || 0;
     const taxAmount =
       Math.round(withoutTax * (taxPercent / 100) * 100) / 100;
     const rowTotal = Math.round((withoutTax + taxAmount) * 100) / 100;
@@ -191,6 +303,12 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     setInvoiceNo("");
     setThrough("Direct");
     setPartyName("");
+    setFarmerId("");
+    setFarmerPhone("");
+    setFarmerVillage("");
+    setFarmerCrop("");
+    setFarmerAcre("");
+    setPlaceOfSupply("Tamil Nadu");
     setExecutiveName("");
     setEntry(emptyEntry());
     setAdded([]);
@@ -211,6 +329,13 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       invoiceNo: invoiceNo.trim(),
       through,
       partyName: partyName.trim(),
+      farmerId,
+      farmerPhone,
+      farmerVillage,
+      farmerCrop,
+      farmerAcre,
+      placeOfSupply,
+      executiveName: through === "Executive" ? executiveName : "",
       withoutTax: totals.withoutTax,
       sgst: totals.sgst,
       cgst: totals.cgst,
@@ -232,6 +357,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
   const canCreate =
     !!invoiceNo.trim() &&
+    !!farmerId &&
     !!partyName.trim() &&
     added.length > 0 &&
     (through === "Direct" || !!executiveName.trim());
@@ -289,7 +415,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                 rowSpan={2}
                 className="w-[15%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
               >
-                Store Name
+                Farmer Name
               </th>
               <th
                 rowSpan={2}
@@ -380,83 +506,207 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
       {selectedSale &&
         createPortal(
-          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
-            <div className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <style>{`
+              @media print {
+                @page { size: A4 landscape; margin: 6mm; }
+                body * { visibility: hidden !important; }
+                .store-invoice-print,
+                .store-invoice-print * { visibility: visible !important; }
+                .store-invoice-print {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                }
+                .store-invoice-screen-only { display: none !important; }
+              }
+            `}</style>
+
+            <div className="store-invoice-print flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="store-invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">Sales Invoice</p>
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">{selectedSale.invoiceNo}</h2>
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                    Tax Invoice
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                    {selectedSale.invoiceNo}
+                  </h2>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedSale(null)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
                 >
                   <Icon name="close" size={20} />
                 </button>
               </div>
 
-              <div className="space-y-6 p-6">
-                <div className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-5 sm:flex-row">
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800">Nature Biotic</h3>
-                    <p className="mt-1 text-sm text-slate-500">Store Sales Invoice</p>
-                    {store && (
-                      <div className="mt-3 text-sm text-slate-600">
-                        <p className="font-semibold text-slate-700">{store.name}</p>
-                        <p>{store.address || store.location}</p>
-                        {store.gst && <p>GSTIN: {store.gst}</p>}
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
+                        <div className="leading-tight">
+                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                            {store?.name || "SAIRAM AGRI INPUT"}
+                          </h3>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
+                            {store?.address || store?.location || "Rajapalayam, Tamil Nadu"}
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-600">
+                            GSTIN: {store?.gst || "-"}
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Contact: {store?.phone || "-"}
+                          </p>
+                        </div>
                       </div>
-                    )}
+                    </div>
+
+                    <div className="flex items-center justify-center p-3">
+                      <div className="text-center">
+                        <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
+                          TAX INVOICE
+                        </h2>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Store to Farmer
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:text-right">
-                    <span className="text-slate-400">Invoice No</span>
-                    <span className="font-semibold text-slate-800">{selectedSale.invoiceNo}</span>
-                    <span className="text-slate-400">Date</span>
-                    <span className="font-semibold text-slate-800">{selectedSale.date}</span>
-                    <span className="text-slate-400">Sale Type</span>
-                    <span className="font-semibold text-slate-800">{selectedSale.through}</span>
-                    <span className="text-slate-400">Party Name</span>
-                    <span className="font-semibold text-slate-800">{selectedSale.partyName}</span>
-                  </div>
-                </div>
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[9px] leading-4">
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Billing Address
+                      </p>
+                      <p className="font-bold text-slate-900">{selectedSale.partyName}</p>
+                      <p className="mt-1 text-slate-600">{selectedSale.farmerVillage || "-"}</p>
+                      <p className="text-slate-600">Contact: {selectedSale.farmerPhone || "-"}</p>
+                      <p className="text-slate-600">
+                        Crop / Acre: {[selectedSale.farmerCrop, selectedSale.farmerAcre ? `${selectedSale.farmerAcre} Acre` : ""].filter(Boolean).join(" / ") || "-"}
+                      </p>
+                    </div>
 
-                <div>
-                  <h4 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-700">Product Details</h4>
-                  <div className="overflow-hidden rounded-xl border border-slate-200">
-                    <table className="w-full table-fixed text-sm">
-                      <thead className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-                        <tr>
-                          <th className="w-[5%] px-2 py-3 text-center">S.No</th>
-                          <th className="w-[18%] px-2 py-3 text-left">Product</th>
-                          <th className="w-[10%] px-2 py-3 text-center">Size</th>
-                          <th className="w-[12%] px-2 py-3 text-left">Batch</th>
-                          <th className="w-[12%] px-2 py-3 text-center">Expiry</th>
-                          <th className="w-[8%] px-2 py-3 text-right">Qty</th>
-                          <th className="w-[11%] px-2 py-3 text-right">Price</th>
-                          <th className="w-[10%] px-2 py-3 text-right">Discount</th>
-                          <th className="w-[14%] px-2 py-3 text-right">Total</th>
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Delivery Address
+                      </p>
+                      <p className="font-bold text-slate-900">{selectedSale.partyName}</p>
+                      <p className="mt-1 text-slate-600">{selectedSale.farmerVillage || "-"}</p>
+                      <p className="mt-1 text-slate-600">
+                        Place of Supply: {selectedSale.placeOfSupply || "Tamil Nadu"}
+                      </p>
+                    </div>
+
+                    <div className="p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Invoice Details
+                      </p>
+                      <div className="grid grid-cols-[92px_1fr] gap-y-1">
+                        <span className="text-slate-500">Invoice No</span>
+                        <span className="font-semibold text-slate-800">{selectedSale.invoiceNo}</span>
+                        <span className="text-slate-500">Invoice Date</span>
+                        <span className="font-semibold text-slate-800">{selectedSale.date}</span>
+                        <span className="text-slate-500">Through</span>
+                        <span className="font-semibold text-slate-800">{selectedSale.through}</span>
+                        {selectedSale.through === "Executive" && (
+                          <>
+                            <span className="text-slate-500">Executive</span>
+                            <span className="font-semibold text-slate-800">
+                              {selectedSale.executiveName || "-"}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full overflow-x-auto">
+                    <table className="w-full border-collapse text-[8.5px] xl:text-[9px]">
+                      <thead>
+                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">S.No</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Product</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">HSN Code</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">PKG Size</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Batch No</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Exp Date</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Qty</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Unit Price</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Before Discount</th>
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Discount</th>
+                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Taxable (₹)</th>
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">CGST</th>
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">SGST (₹)</th>
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">IGST (₹)</th>
+                          <th rowSpan={2} className="px-1 py-1.5 text-center">Line Total</th>
+                        </tr>
+                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amt</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Rate %</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amount</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Rate %</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amount</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Rate %</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amount</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedSale.products.length > 0 ? (
-                          selectedSale.products.map((item, index) => (
-                            <tr key={item.key} className="border-t border-slate-100">
-                              <td className="px-2 py-3 text-center">{index + 1}</td>
-                              <td className="px-2 py-3 font-semibold text-slate-800">{item.product?.name || "Product"}</td>
-                              <td className="px-2 py-3 text-center">{item.packSize || item.pkgsize}</td>
-                              <td className="px-2 py-3">{item.batchNo || "-"}</td>
-                              <td className="px-2 py-3 text-center">{item.expiryDate || "-"}</td>
-                              <td className="px-2 py-3 text-right">{item.quantity}</td>
-                              <td className="px-2 py-3 text-right">{formatCurrency(item.sellingPrice)}</td>
-                              <td className="px-2 py-3 text-right">{formatCurrency(item.discount)}</td>
-                              <td className="px-2 py-3 text-right font-bold">{formatCurrency(item.rowTotal)}</td>
-                            </tr>
-                          ))
+                          selectedSale.products.map((item, index) => {
+                            const beforeDiscount = Number(item.quantity || 0) * Number(item.sellingPrice || 0);
+                            const discountAmount = Number(item.discount || 0);
+                            const discountPercent = beforeDiscount > 0 ? (discountAmount / beforeDiscount) * 100 : 0;
+                            const isTamilNadu = (selectedSale.placeOfSupply || "Tamil Nadu") === "Tamil Nadu";
+                            const cgstRate = isTamilNadu ? Number(item.taxPercent || 0) / 2 : 0;
+                            const sgstRate = isTamilNadu ? Number(item.taxPercent || 0) / 2 : 0;
+                            const igstRate = !isTamilNadu ? Number(item.taxPercent || 0) : 0;
+                            const cgstAmt = isTamilNadu ? Number(item.taxAmount || 0) / 2 : 0;
+                            const sgstAmt = isTamilNadu ? Number(item.taxAmount || 0) / 2 : 0;
+                            const igstAmt = !isTamilNadu ? Number(item.taxAmount || 0) : 0;
+
+                            return (
+                              <tr key={item.key} className="border-b border-slate-300">
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{index + 1}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 font-semibold">{item.product?.name || "Product"}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.hsn || "-"}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.pkgsize || item.packSize || "-"}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.batchNo || "-"}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.expiryDate || "-"}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.quantity}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(item.sellingPrice)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">{formatCurrency(beforeDiscount)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{discountPercent.toFixed(2)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(discountAmount)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">{formatCurrency(item.withoutTax)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{cgstRate.toFixed(2)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(cgstAmt)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{sgstRate.toFixed(2)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(sgstAmt)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{igstRate.toFixed(2)}</td>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(igstAmt)}</td>
+                                <td className="px-1 py-1.5 text-right font-bold">{formatCurrency(item.rowTotal)}</td>
+                              </tr>
+                            );
+                          })
                         ) : (
                           <tr>
-                            <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
+                            <td colSpan={19} className="px-4 py-8 text-center text-slate-400">
                               Product-level details are not available for this old sample invoice.
                             </td>
                           </tr>
@@ -464,22 +714,67 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       </tbody>
                     </table>
                   </div>
-                </div>
 
-                <div className="ml-auto w-full max-w-md rounded-xl bg-slate-50 p-5">
-                  <SummaryRow label="Without Tax" value={formatCurrency(selectedSale.withoutTax)} />
-                  <div className="mt-2"><SummaryRow label="SGST" value={formatCurrency(selectedSale.sgst)} /></div>
-                  <div className="mt-2"><SummaryRow label="CGST" value={formatCurrency(selectedSale.cgst)} /></div>
-                  <div className="mt-2"><SummaryRow label="IGST" value={formatCurrency(selectedSale.igst)} /></div>
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4">
-                    <span className="font-bold text-slate-800">Grand Total</span>
-                    <span className="text-xl font-bold text-brand-700">{formatCurrency(selectedSale.amount)}</span>
+                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Notes</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        This tax invoice is generated for goods supplied by {store?.name || "the store"} to the registered farmer shown above.
+                      </p>
+                    </div>
+
+                    <div className="p-3 text-[10px]">
+                      {(() => {
+                        const beforeDiscount = selectedSale.products.reduce(
+                          (sum, item) => sum + Number(item.quantity || 0) * Number(item.sellingPrice || 0), 0
+                        );
+                        const discount = selectedSale.products.reduce(
+                          (sum, item) => sum + Number(item.discount || 0), 0
+                        );
+                        const exactTotal = Number(selectedSale.amount || 0);
+                        const roundedTotal = Math.round(exactTotal);
+                        const roundOff = roundedTotal - exactTotal;
+
+                        return (
+                          <div className="space-y-1.5">
+                            <SummaryRow label="Total Before Discount" value={formatCurrency(beforeDiscount)} />
+                            <SummaryRow label="Discount" value={formatCurrency(discount)} />
+                            <SummaryRow label="Taxable Total" value={formatCurrency(selectedSale.withoutTax)} />
+                            <SummaryRow label="CGST" value={formatCurrency(selectedSale.cgst)} />
+                            <SummaryRow label="SGST" value={formatCurrency(selectedSale.sgst)} />
+                            <SummaryRow label="IGST" value={formatCurrency(selectedSale.igst)} />
+                            <SummaryRow label="Round Off" value={formatCurrency(roundOff)} />
+                            <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
+                              <span className="font-bold text-slate-900">Total</span>
+                              <span className="text-base font-extrabold text-slate-900">
+                                {formatCurrency(roundedTotal)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end border-t border-slate-300 p-5">
+                    <div className="w-56 text-center">
+                      <div className="h-12 border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button variant="secondary" onClick={() => setSelectedSale(null)}>Close</Button>
+              <div className="store-invoice-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
+                <Button variant="secondary" onClick={() => setSelectedSale(null)}>
+                  Close
+                </Button>
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print Invoice
+                </Button>
               </div>
             </div>
           </div>,
@@ -541,13 +836,23 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       ]}
                     />
 
-                    <Input
-                      label="Party Name"
-                      value={partyName}
-                      onChange={setPartyName}
-                      placeholder="Enter farmer / party name"
+                    <Select
+                      label="Farmer Name"
+                      value={farmerId}
+                      onChange={selectFarmer}
+                      placeholder="Select registered farmer"
+                      options={registeredFarmers.map((farmer) => ({
+                        value: farmer.id,
+                        label: `${farmer.name} - ${farmer.phone}`,
+                      }))}
                       required
                     />
+
+                    <Input label="Mobile Number" value={farmerPhone} onChange={() => {}} readOnly />
+                    <Input label="Village" value={farmerVillage} onChange={() => {}} readOnly />
+                    <Input label="Crop" value={farmerCrop} onChange={() => {}} readOnly />
+                    <Input label="Acre" value={farmerAcre} onChange={() => {}} readOnly />
+                    <Input label="Place of Supply" value={placeOfSupply} onChange={() => {}} readOnly />
 
                     {through === "Executive" && (
                       <Select
@@ -575,51 +880,41 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-8">
                       <Select
                         label="Select Product"
-                        value={entry.productId}
-                        onChange={selectProduct}
-                        placeholder="Choose product"
-                        options={allProducts.map((p) => ({
-                          value: p.id,
-                          label: `${p.name} (${p.size})`,
-                        }))}
+                        value={selectedProductName}
+                        onChange={selectProductName}
+                        placeholder="Choose store product"
+                        options={storeProductChoices}
                       />
 
                       <Select
                         label="PKG Size"
                         value={entry.pkgsize}
-                        onChange={(v) =>
-                          setEntry((prev) => ({ ...prev, pkgsize: v }))
-                        }
-                        placeholder="Select size"
-                        options={[
-                          { value: "100ml", label: "100 ml" },
-                          { value: "250ml", label: "250 ml" },
-                          { value: "500ml", label: "500 ml" },
-                          { value: "1l", label: "1 L" },
-                          { value: "100g", label: "100 g" },
-                          { value: "250g", label: "250 g" },
-                          { value: "500g", label: "500 g" },
-                          { value: "1kg", label: "1 Kg" },
-                          { value: "5kg", label: "5 Kg" },
-                        ]}
+                        onChange={selectProductSize}
+                        placeholder={selectedProductName ? "Select available size" : "Select product first"}
+                        options={Array.from(
+                          new Map(
+                            selectedSizeVariants.map((item) => [
+                              item.size,
+                              { value: item.size, label: item.size },
+                            ]),
+                          ).values(),
+                        )}
                       />
 
                       <Input
                         label="Batch No"
                         value={entry.batchNo}
-                        onChange={(v) =>
-                          setEntry((prev) => ({ ...prev, batchNo: v }))
-                        }
-                        placeholder="e.g. BAT-001"
+                        onChange={() => {}}
+                        placeholder="Auto from stock"
+                        readOnly
                       />
 
                       <Input
                         label="Expiry Date"
                         type="date"
                         value={entry.expiryDate}
-                        onChange={(v) =>
-                          setEntry((prev) => ({ ...prev, expiryDate: v }))
-                        }
+                        onChange={() => {}}
+                        readOnly
                       />
 
                       <Input

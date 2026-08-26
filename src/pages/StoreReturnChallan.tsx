@@ -6,8 +6,10 @@ import { products as allProducts } from "@/lib/data";
 
 type ReturnItem = {
   product: string;
-  productId: string; 
+  productId: string;
   packSize: string;
+  batchNo: string;
+  expiryDate: string;
   issuedQty: string;
   returnedQty: string;
   unitValue: string;
@@ -42,6 +44,8 @@ function emptyItems(): ReturnItem[] {
       productId: "",
       product: "",
       packSize: "",
+      batchNo: "",
+      expiryDate: "",
       issuedQty: "",
       returnedQty: "",
       unitValue: "",
@@ -91,6 +95,8 @@ export default function StoreReturnChallan({
             productId: "",
             product: "Electra",
             packSize: "250 ml",
+            batchNo: "ELE010826",
+            expiryDate: "2027-08-31",
             issuedQty: "10",
             returnedQty: "3",
             unitValue: "250",
@@ -125,6 +131,8 @@ export default function StoreReturnChallan({
       (item) =>
         item.product.trim() &&
         item.packSize.trim() &&
+        item.batchNo.trim() &&
+        item.expiryDate &&
         Number(item.returnedQty) > 0 &&
         Number(item.unitValue) >= 0,
     );
@@ -589,6 +597,8 @@ export default function StoreReturnChallan({
                             productId: "",
                             product: "",
                             packSize: "",
+                            batchNo: "",
+                            expiryDate: "",
                             issuedQty: "",
                             returnedQty: "",
                             unitValue: "",
@@ -608,13 +618,19 @@ export default function StoreReturnChallan({
                           <th className="w-[6%] px-2 py-3 text-center">
                             S.No
                           </th>
-                          <th className="w-[26%] px-2 py-3 text-left">
+                          <th className="w-[18%] px-2 py-3 text-left">
                             Product Name
                           </th>
-                          <th className="w-[12%] px-2 py-3 text-center">
+                          <th className="w-[9%] px-2 py-3 text-center">
                             Pkg Size
                           </th>
-                          <th className="w-[12%] px-2 py-3 text-center">
+                          <th className="w-[11%] px-2 py-3 text-center">
+                            Batch ID
+                          </th>
+                          <th className="w-[11%] px-2 py-3 text-center">
+                            Expiry Date
+                          </th>
+                          <th className="w-[10%] px-2 py-3 text-center">
                             Issued Qty
                           </th>
                           <th className="w-[13%] px-2 py-3 text-center">
@@ -652,9 +668,35 @@ export default function StoreReturnChallan({
                                 const selectedProduct = allProducts.find((p) => p.id === value);
                                 updateItem(index, "productId", value);
                                 if (selectedProduct) {
+                                  const source = selectedProduct as any;
+
                                   updateItem(index, "product", selectedProduct.name);
                                   updateItem(index, "packSize", selectedProduct.size || "");
-                                  updateItem(index, "unitValue", String(selectedProduct.sellingPrice || 0));
+                                  updateItem(
+                                    index,
+                                    "batchNo",
+                                    String(
+                                      source.batchNo ??
+                                        source.batchId ??
+                                        source.batchID ??
+                                        "",
+                                    ),
+                                  );
+                                  updateItem(
+                                    index,
+                                    "expiryDate",
+                                    String(
+                                      source.expiryDate ??
+                                        source.expDate ??
+                                        source.expiry ??
+                                        "",
+                                    ),
+                                  );
+                                  updateItem(
+                                    index,
+                                    "unitValue",
+                                    String(selectedProduct.sellingPrice || 0),
+                                  );
                                 }
                               }}
                               placeholder="Select Product"
@@ -680,6 +722,25 @@ export default function StoreReturnChallan({
                                 { value: "10kg", label: "10 Kg" },
                                 { value: "25kg", label: "25 Kg" },
                               ]}
+                            />
+                          </td>
+                          <td className="px-2 py-3">
+                            <Input
+                              value={item.batchNo}
+                              onChange={(value) =>
+                                updateItem(index, "batchNo", value)
+                              }
+                              placeholder="Batch ID"
+                            />
+                          </td>
+
+                          <td className="px-2 py-3">
+                            <Input
+                              type="date"
+                              value={item.expiryDate}
+                              onChange={(value) =>
+                                updateItem(index, "expiryDate", value)
+                              }
                             />
                           </td>
 
@@ -816,14 +877,53 @@ export default function StoreReturnChallan({
 
       {selectedChallan &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 6mm;
+                }
+
+                body * {
+                  visibility: hidden !important;
+                }
+
+                .return-challan-print-area,
+                .return-challan-print-area * {
+                  visibility: visible !important;
+                }
+
+                .return-challan-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                }
+
+                .return-challan-screen-only {
+                  display: none !important;
+                }
+
+                .return-challan-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                }
+              }
+            `}</style>
+
+            <div className="return-challan-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="return-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-700">
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
                     Return Challan
                   </p>
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                  <h2 className="mt-1 text-2xl font-bold text-slate-800">
                     {selectedChallan.rcNo}
                   </h2>
                 </div>
@@ -831,148 +931,278 @@ export default function StoreReturnChallan({
                 <button
                   type="button"
                   onClick={() => setSelectedChallan(null)}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 >
                   <Icon name="close" size={20} />
                 </button>
               </div>
 
-              <div className="overflow-y-auto p-6">
-                <div className="rounded-xl border border-slate-300">
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-sm font-bold text-slate-900">
-                        SAIRAM AGRI INPUTS
-                      </p>
-                      <p className="text-xs text-slate-600">
-                        Rajapalayam, Tamil Nadu
-                      </p>
+              <div className="return-challan-scroll min-h-0 flex-1 overflow-y-auto p-3">
+                <div className="min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 px-6 py-3">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
+
+                        <div>
+                          <h3 className="text-lg font-extrabold tracking-wide text-slate-900">
+                            SAIRAM AGRI INPUTS
+                          </h3>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
+                            Rajapalayam, Tamil Nadu
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Nature Biotic Store
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-center p-4">
-                      <h3 className="text-2xl font-bold text-slate-900">
-                        Return Challan
-                      </h3>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-3 text-sm">
-                      <p>
-                        <span className="inline-block w-28 font-medium">
-                          R.C No
-                        </span>
-                        : {selectedChallan.rcNo}
-                      </p>
-
-                      <p className="mt-2">
-                        <span className="inline-block w-28 font-medium">
-                          R.C Date
-                        </span>
-                        : {formatDate(selectedChallan.date)}
-                      </p>
-                    </div>
-
-                    <div className="p-3 text-sm">
-                      <p>
-                        <span className="inline-block w-32 font-medium">
-                          Against D.C
-                        </span>
-                        : {selectedChallan.dcNo}
-                      </p>
-
-                      <p className="mt-2">
-                        <span className="inline-block w-32 font-medium">
-                          Executive
-                        </span>
-                        : {selectedChallan.executive}
-                      </p>
+                    <div className="flex items-center justify-center px-4 py-3">
+                      <div className="text-center">
+                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
+                          Return Challan
+                        </h3>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Executive Unsold Stock Return
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="border-b border-slate-300 p-3 text-sm">
-                    <p>
-                      <span className="inline-block w-32 font-medium">
-                        Customer Name
-                      </span>
-                      : {selectedChallan.customerName || "-"}
-                    </p>
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Farmer Details
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selectedChallan.customerName || "-"}
+                      </p>
+                      <p className="text-slate-600">
+                        {selectedChallan.village || "-"}
+                      </p>
+                      <p className="text-slate-600">
+                        Contact: {selectedChallan.phone || "-"}
+                      </p>
+                    </div>
 
-                    <p className="mt-2">
-                      <span className="inline-block w-32 font-medium">
-                        Place of Supply
-                      </span>
-                      : {selectedChallan.placeOfSupply || "-"}
-                    </p>
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Return Details
+                      </p>
+                      <p className="text-slate-600">
+                        Against D.C:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedChallan.dcNo}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Executive:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedChallan.executive}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Place of Supply:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedChallan.placeOfSupply || "-"}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Challan Details
+                      </p>
+                      <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
+                        <span className="text-slate-500">R.C No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedChallan.rcNo}
+                        </span>
+
+                        <span className="text-slate-500">R.C Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selectedChallan.date)}
+                        </span>
+
+                        <span className="text-slate-500">Against D.C</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedChallan.dcNo}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <table className="w-full table-fixed text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-300">
-                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-center">
-                          S.No
-                        </th>
-                        <th className="w-[28%] border-r border-slate-300 px-2 py-3 text-left">
-                          Product Name
-                        </th>
-                        <th className="w-[12%] border-r border-slate-300 px-2 py-3 text-center">
-                          Pkg Size
-                        </th>
-                        <th className="w-[13%] border-r border-slate-300 px-2 py-3 text-center">
-                          Issued Qty
-                        </th>
-                        <th className="w-[13%] border-r border-slate-300 px-2 py-3 text-center">
-                          Returned Qty
-                        </th>
-                        <th className="w-[13%] border-r border-slate-300 px-2 py-3 text-right">
-                          Unit Value
-                        </th>
-                        <th className="w-[14%] px-2 py-3 text-right">
-                          Return Value
-                        </th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {selectedChallan.items.map((item, index) => (
-                        <tr
-                          key={`${selectedChallan.id}-${index}`}
-                          className="border-b border-slate-200"
-                        >
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">
-                            {index + 1}
-                          </td>
-                          <td className="border-r border-slate-300 px-2 py-4 font-medium">
-                            {item.product}
-                          </td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">
-                            {item.packSize}
-                          </td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">
-                            {item.issuedQty || "-"}
-                          </td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-center font-bold">
-                            {item.returnedQty}
-                          </td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-right">
-                            {formatCurrency(
-                              Number(item.unitValue || 0),
-                            )}
-                          </td>
-                          <td className="px-2 py-4 text-right font-bold">
-                            {formatCurrency(
-                              Number(item.returnedQty || 0) *
-                                Number(item.unitValue || 0),
-                            )}
-                          </td>
+                  <div className="w-full overflow-hidden">
+                    <table className="w-full table-fixed border-collapse text-[9px]">
+                      <thead>
+                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                          <th className="w-[5%] border-r border-slate-300 px-2 py-2 text-center">
+                            S.No
+                          </th>
+                          <th className="w-[16%] border-r border-slate-300 px-2 py-2 text-left">
+                            Product
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-center">
+                            Pkg Size
+                          </th>
+                          <th className="w-[11%] border-r border-slate-300 px-2 py-2 text-center">
+                            Batch ID
+                          </th>
+                          <th className="w-[11%] border-r border-slate-300 px-2 py-2 text-center">
+                            Expiry Date
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-center">
+                            Issued Qty
+                          </th>
+                          <th className="w-[10%] border-r border-slate-300 px-2 py-2 text-center">
+                            Returned Qty
+                          </th>
+                          <th className="w-[11%] border-r border-slate-300 px-2 py-2 text-right">
+                            Unit Value
+                          </th>
+                          <th className="w-[14%] px-2 py-2 text-right">
+                            Return Value
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+
+                      <tbody>
+                        {selectedChallan.items.map((item, index) => (
+                          <tr
+                            key={`${selectedChallan.id}-${index}`}
+                            className="border-b border-slate-300"
+                          >
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {index + 1}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
+                              {item.product}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.packSize}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.batchNo || "-"}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.expiryDate
+                                ? formatDate(item.expiryDate)
+                                : "-"}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.issuedQty || "-"}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center font-bold">
+                              {item.returnedQty}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-right">
+                              {formatCurrency(Number(item.unitValue || 0))}
+                            </td>
+                            <td className="px-2 py-2 text-right font-bold text-slate-800">
+                              {formatCurrency(
+                                Number(item.returnedQty || 0) *
+                                  Number(item.unitValue || 0),
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {(() => {
+                    const withoutTax = selectedChallan.items.reduce(
+                      (sum, item) =>
+                        sum +
+                        Number(item.returnedQty || 0) *
+                          Number(item.unitValue || 0),
+                      0,
+                    );
+                    const sgst =
+                      (withoutTax *
+                        Number(selectedChallan.sgstPercent || 0)) /
+                      100;
+                    const cgst =
+                      (withoutTax *
+                        Number(selectedChallan.cgstPercent || 0)) /
+                      100;
+                    const igst =
+                      (withoutTax *
+                        Number(selectedChallan.igstPercent || 0)) /
+                      100;
+                    const grandTotal = withoutTax + sgst + cgst + igst;
+
+                    return (
+                      <div className="grid min-h-[150px] grid-cols-[1fr_320px] border-t border-slate-300">
+                        <div className="border-r border-slate-300 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            Notes
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Unsold products returned by{" "}
+                            {selectedChallan.executive} against delivery challan{" "}
+                            {selectedChallan.dcNo}.
+                          </p>
+                        </div>
+
+                        <div className="p-4 text-sm">
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">Without Tax</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(withoutTax)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">SGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(sgst)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">CGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(cgst)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">IGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(igst)}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
+                            <span className="font-bold text-slate-800">
+                              Grand Total
+                            </span>
+                            <span className="text-lg font-bold text-slate-900">
+                              {formatCurrency(grandTotal)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
+                    <div className="mt-auto w-56 text-center">
+                      <div className="border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <div className="return-challan-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 <Button
                   variant="secondary"
                   onClick={() => setSelectedChallan(null)}
@@ -989,6 +1219,8 @@ export default function StoreReturnChallan({
           </div>,
           document.body,
         )}
+
+
     </div>
   );
 }

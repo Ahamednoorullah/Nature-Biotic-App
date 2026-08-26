@@ -509,18 +509,6 @@ export default function CompanyPurchaseOrders() {
                           <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
                             Pkg Size
                           </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
-                          >
-                            Batch ID
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[7%] border-r border-slate-300 px-2 py-2 text-center"
-                          >
-                            Expiry Date
-                          </th>
                           <th rowSpan={2} className="w-[4%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Qty
                           </th>

@@ -14,6 +14,8 @@ type DebitNote = {
   vendor: string;
   purchaseRef: string;
   product: string;
+  batchNo: string;
+  expiryDate: string;
   quantity: number;
   reason: string;
   placeOfReturn: string;
@@ -79,6 +81,16 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
         vendor: "Nature Biotic",
         purchaseRef: source.purchaseRef ?? source.creditNoteNo,
         product: source.product ?? "-",
+        batchNo:
+          source.batchNo ??
+          source.batchId ??
+          source.batchID ??
+          "-",
+        expiryDate:
+          source.expiryDate ??
+          source.expDate ??
+          source.expiry ??
+          "",
         quantity: Number(source.quantity ?? 0),
         reason: source.reason ?? "Product Return",
         placeOfReturn:
@@ -886,7 +898,19 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           </th>
                           <th
                             rowSpan={2}
-                            className="w-[6%] border-r border-slate-300 px-2 py-2 text-center"
+                            className="w-[7%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Batch ID
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            Expiry Date
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
                           >
                             Qty
                           </th>
@@ -1001,6 +1025,14 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                               </td>
                               <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
                                 {item.product}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center text-slate-600">
+                                {item.batchNo || "-"}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center text-slate-600">
+                                {item.expiryDate
+                                  ? formatDate(item.expiryDate)
+                                  : "-"}
                               </td>
                               <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {item.quantity}

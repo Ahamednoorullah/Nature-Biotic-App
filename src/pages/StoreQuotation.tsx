@@ -2,26 +2,36 @@ import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { createPortal } from "react-dom"; 
-import { products as allProducts } from "@/lib/data";
+import { products as allProducts, getFarmersByStore, getStorePurchasesFromCompanySales } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { Phone } from "lucide-react";
 
 
 type ProductRow = {
   id: string;
   product: string;
+  productName: string;
   pkgsize: string;
   qty: string;
   rate: string;
+  taxPercent: number;
+  sgstPercent: number;
+  cgstPercent: number;
+  igstPercent: number;
 };
 
 type Row = {
   id: string;
   date: string;
   quotationNo: string;
+  farmerId: string;
   farmer: string;
   phone: string;
   village: string;
+  crop: string;
+  acre: string;
+  placeOfSupply: string;
+  remarks: string;
+  products: ProductRow[];
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -31,14 +41,123 @@ type Row = {
 };
 
 export default function StoreQuotation({ storeId }: { storeId: string }) {
+  const registeredFarmers = useMemo(
+    () => getFarmersByStore(storeId),
+    [storeId],
+  );
+
+  const storePurchaseRows = useMemo(
+    () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
+    [storeId],
+  );
+
+  const stockProducts = useMemo(() => {
+    const unique = new Map<
+      string,
+      {
+        key: string;
+        productId: string;
+        name: string;
+        size: string;
+        sellingPrice: number;
+        taxPercentage: number;
+        availableQty: number;
+      }
+    >();
+
+    storePurchaseRows.forEach((row: any, index: number) => {
+      const name = String(
+        row.productName ??
+          row.product ??
+          allProducts.find((product) => product.id === row.productId)?.name ??
+          "",
+      ).trim();
+
+      if (!name) return;
+
+      const master = allProducts.find(
+        (product) =>
+          product.id === row.productId ||
+          product.name.toLowerCase() === name.toLowerCase(),
+      );
+
+      const size = String(
+        row.packSize ??
+          row.pkgsize ??
+          row.size ??
+          master?.size ??
+          "",
+      ).trim();
+
+      const qty = Number(row.quantity ?? row.qty ?? 0);
+      if (qty <= 0) return;
+
+      const sellingPrice = Number(
+        row.sellingPrice ??
+          row.price ??
+          master?.sellingPrice ??
+          0,
+      );
+
+      const taxPercentage = Number(
+        row.taxPercent ??
+          row.taxPercentage ??
+          master?.taxPercentage ??
+          0,
+      );
+
+      const key = `${master?.id ?? row.productId ?? name}-${size || "default"}`;
+
+      const existing = unique.get(key);
+
+      if (existing) {
+        existing.availableQty += qty;
+      } else {
+        unique.set(key, {
+          key,
+          productId: String(master?.id ?? row.productId ?? `purchase-${index}`),
+          name,
+          size,
+          sellingPrice,
+          taxPercentage,
+          availableQty: qty,
+        });
+      }
+    });
+
+    return Array.from(unique.values());
+  }, [storePurchaseRows]);
+
+  const storeProducts = stockProducts;
+
+  const [selectedQuotation, setSelectedQuotation] = useState<Row | null>(null);
   const [rows, setRows] = useState<Row[]>([
     {
       id: "1",
       date: "17/08/2026",
       quotationNo: "QT-1001",
+      farmerId: "",
       farmer: "Murugan",
       phone: "9876543210",
       village: "Rajapalayam",
+      crop: "Cotton",
+      acre: "4.5",
+      placeOfSupply: "Tamil Nadu",
+      remarks: "",
+      products: [
+        {
+          id: "qt-1001-p1",
+          product: "p0",
+          productName: "Electra",
+          pkgsize: "250 ml",
+          qty: "10",
+          rate: "820",
+          taxPercent: 0,
+          sgstPercent: 0,
+          cgstPercent: 0,
+          igstPercent: 0,
+        },
+      ],
       withoutTax: 8200,
       sgst: 0,
       cgst: 0,
@@ -50,9 +169,28 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       id: "2",
       date: "16/08/2026",
       quotationNo: "QT-1000",
+      farmerId: "",
       farmer: "Selvam",
       phone: "9876543211",
       village: "Seithur",
+      crop: "",
+      acre: "",
+      placeOfSupply: "Tamil Nadu",
+      remarks: "",
+      products: [
+        {
+          id: "qt-1000-p1",
+          product: "p1",
+          productName: "Astra",
+          pkgsize: "500 ml",
+          qty: "10",
+          rate: "560",
+          taxPercent: 0,
+          sgstPercent: 0,
+          cgstPercent: 0,
+          igstPercent: 0,
+        },
+      ],
       withoutTax: 5600,
       sgst: 0,
       cgst: 0,
@@ -65,6 +203,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const [show, setShow] = useState(false);
 
   // Farmer details
+  const [farmerId, setFarmerId] = useState("");
   const [farmer, setFarmer] = useState("");
   const [phone, setMobile] = useState("");
   const [village, setVillage] = useState("");
@@ -72,52 +211,205 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [acre, setAcre] = useState("");
 
-  // Products
-  const [products, setProducts] = useState<ProductRow[]>([
-    {
-      id: String(Date.now()),
-      product: "",
-      pkgsize: "",
-      qty: "1",
-      rate: "",
-    },
-  ]);
+  // Products added to quotation
+  const [products, setProducts] = useState<ProductRow[]>([]);
+
+  const emptyDraftProduct = (): ProductRow => ({
+    id: String(Date.now()),
+    product: "",
+    productName: "",
+    pkgsize: "",
+    qty: "1",
+    rate: "",
+    taxPercent: 0,
+    sgstPercent: 0,
+    cgstPercent: 0,
+    igstPercent: 0,
+  });
+
+  const [draftProduct, setDraftProduct] = useState<ProductRow>(
+    emptyDraftProduct(),
+  );
+
+  const productNameOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(storeProducts.map((item) => item.name)),
+    );
+
+    return names.map((name) => ({
+      value: name,
+      label: name,
+    }));
+  }, [storeProducts]);
+
+  const sizeOptions = useMemo(() => {
+    if (!draftProduct.product) return [];
+
+    return storeProducts
+      .filter((item) => item.name === draftProduct.product)
+      .map((item) => ({
+        value: item.size,
+        label: item.size,
+      }));
+  }, [storeProducts, draftProduct.product]);
+
+  const selectedStockVariant = useMemo(
+    () =>
+      storeProducts.find(
+        (item) =>
+          item.name === draftProduct.product &&
+          item.size === draftProduct.pkgsize,
+      ),
+    [storeProducts, draftProduct.product, draftProduct.pkgsize],
+  );
 
   // Remarks
   const [remarks, setRemarks] = useState("");
 
   // Tax
-  const [cgst, setCgst] = useState("0");
-  const [sgst, setSgst] = useState("0");
-  const [igst, setIgst] = useState("0");
 
   const subtotal = useMemo(() => {
     return products.reduce((total, item) => {
       const qty = Number(item.qty) || 0;
       const rate = Number(item.rate) || 0;
-
       return total + qty * rate;
     }, 0);
   }, [products]);
 
-  const cgstAmount = useMemo(() => {
-    return (subtotal * (Number(cgst) || 0)) / 100;
-  }, [subtotal, cgst]);
+  const taxTotals = useMemo(() => {
+    return products.reduce(
+      (total, item) => {
+        const base =
+          (Number(item.qty) || 0) * (Number(item.rate) || 0);
 
-  const sgstAmount = useMemo(() => {
-    return (subtotal * (Number(sgst) || 0)) / 100;
-  }, [subtotal, sgst]);
+        total.sgst +=
+          (base * Number(item.sgstPercent || 0)) / 100;
+        total.cgst +=
+          (base * Number(item.cgstPercent || 0)) / 100;
+        total.igst +=
+          (base * Number(item.igstPercent || 0)) / 100;
 
-  const igstAmount = useMemo(() => {
-    return (subtotal * (Number(igst) || 0)) / 100;
-  }, [subtotal, igst]);
+        return total;
+      },
+      { sgst: 0, cgst: 0, igst: 0 },
+    );
+  }, [products]);
 
-  const grandTotal = useMemo(() => {
-    return subtotal + cgstAmount + sgstAmount + igstAmount;
-  }, [subtotal, cgstAmount, sgstAmount, igstAmount]);
+  const sgstAmount = taxTotals.sgst;
+  const cgstAmount = taxTotals.cgst;
+  const igstAmount = taxTotals.igst;
+
+  const grandTotal = useMemo(
+    () => subtotal + sgstAmount + cgstAmount + igstAmount,
+    [subtotal, sgstAmount, cgstAmount, igstAmount],
+  );
+
+  const quotationTaxRates = useMemo(() => {
+    const activeItems = products.filter(
+      (item) =>
+        item.product &&
+        Number(item.qty) > 0 &&
+        Number(item.rate) > 0,
+    );
+
+    const getCommon = (
+      field: "sgstPercent" | "cgstPercent" | "igstPercent",
+    ) => {
+      const values = Array.from(
+        new Set(activeItems.map((item) => Number(item[field] || 0))),
+      );
+
+      return values.length === 1 ? values[0] : null;
+    };
+
+    return {
+      sgst: getCommon("sgstPercent"),
+      cgst: getCommon("cgstPercent"),
+      igst: getCommon("igstPercent"),
+    };
+  }, [products]);
+
+  function applyFarmerDetails(id: string) {
+    setFarmerId(id);
+
+    const selectedFarmer = registeredFarmers.find(
+      (item) => item.id === id,
+    );
+
+    if (!selectedFarmer) {
+      setFarmer("");
+      setMobile("");
+      setVillage("");
+      setCrop("");
+      setAcre("");
+      return;
+    }
+
+    setFarmer(selectedFarmer.name || "");
+    setMobile(selectedFarmer.phone || "");
+    setVillage(selectedFarmer.village || "");
+
+    const farmerCrop =
+      selectedFarmer.cropType ||
+      selectedFarmer.crops?.[0]?.cropType ||
+      "";
+    setCrop(farmerCrop);
+
+    const landSize =
+      Number(selectedFarmer.landSize || 0) ||
+      Number(selectedFarmer.crops?.[0]?.landSize || 0);
+    setAcre(landSize > 0 ? String(landSize) : "");
+
+    const supply =
+      (selectedFarmer.state || "").toLowerCase() === "tamil nadu"
+        ? "Tamil Nadu"
+        : "Others";
+
+    setPlaceOfSupply(supply);
+    applyTaxForSupply(supply);
+  }
+
+  function getTaxSplit(supply: string, taxPercent: number) {
+    if (!supply || taxPercent <= 0) {
+      return {
+        sgstPercent: 0,
+        cgstPercent: 0,
+        igstPercent: 0,
+      };
+    }
+
+    if (supply === "Tamil Nadu") {
+      return {
+        sgstPercent: taxPercent / 2,
+        cgstPercent: taxPercent / 2,
+        igstPercent: 0,
+      };
+    }
+
+    return {
+      sgstPercent: 0,
+      cgstPercent: 0,
+      igstPercent: taxPercent,
+    };
+  }
+
+  function applyTaxForSupply(supply: string) {
+    setProducts((current) =>
+      current.map((item) => {
+        const split = getTaxSplit(
+          supply,
+          Number(item.taxPercent || 0),
+        );
+
+        return {
+          ...item,
+          ...split,
+        };
+      }),
+    );
 
 
-  
+  }
 
   function openQuotation() {
     setShow(true);
@@ -128,29 +420,55 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   }
 
   function addProduct() {
-    setProducts((prev) => [
-      ...prev,
-      {
-        id: String(Date.now()),
-        product: "",
-        pkgsize: "",
-        qty: "1",
-        rate: "",
-      },
-    ]);
+    if (!draftProduct.product) {
+      alert("Please select a product.");
+      return;
+    }
+
+    if (!draftProduct.pkgsize) {
+      alert("Please select a package size.");
+      return;
+    }
+
+    if (!selectedStockVariant) {
+      alert("Selected product size is not available in store stock.");
+      return;
+    }
+
+    const qty = Number(draftProduct.qty || 0);
+    if (qty <= 0) {
+      alert("Please enter a valid quantity.");
+      return;
+    }
+
+    const split = getTaxSplit(
+      placeOfSupply,
+      Number(selectedStockVariant.taxPercentage || 0),
+    );
+
+    const nextItem: ProductRow = {
+      id: `${Date.now()}-${selectedStockVariant.key}`,
+      product: selectedStockVariant.name,
+      productName: selectedStockVariant.name,
+      pkgsize: selectedStockVariant.size,
+      qty: String(qty),
+      rate: String(selectedStockVariant.sellingPrice || 0),
+      taxPercent: Number(selectedStockVariant.taxPercentage || 0),
+      ...split,
+    };
+
+    setProducts((prev) => [...prev, nextItem]);
+    setDraftProduct(emptyDraftProduct());
   }
 
   function removeProduct(id: string) {
-    setProducts((prev) => {
-      if (prev.length === 1) return prev;
-      return prev.filter((item) => item.id !== id);
-    });
+    setProducts((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function updateProduct(
+  function updateAddedProduct(
     id: string,
-    field: keyof ProductRow,
-    value: string
+    field: "qty",
+    value: string,
   ) {
     setProducts((prev) =>
       prev.map((item) =>
@@ -159,32 +477,22 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               ...item,
               [field]: value,
             }
-          : item
-      )
+          : item,
+      ),
     );
   }
 
   function resetForm() {
+    setFarmerId("");
     setFarmer("");
     setMobile("");
     setVillage("");
     setCrop("");
     setRemarks("");
-    setCgst("0");
-    setSgst("0");
-    setIgst("0");
     setPlaceOfSupply("");
     setAcre("");
-
-    setProducts([
-      {
-        id: String(Date.now()),
-        product: "",
-        pkgsize: "",
-        qty: "1",
-        rate: "",
-      },
-    ]);
+    setProducts([]);
+    setDraftProduct(emptyDraftProduct());
   }
 
     const canSave =
@@ -221,9 +529,15 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       id: String(Date.now()),
       date: new Date().toISOString().split("T")[0],
       quotationNo: `QT-${1001 + rows.length}`,
+      farmerId,
       farmer,
       phone,
       village,
+      crop,
+      acre,
+      placeOfSupply,
+      remarks,
+      products: products.map((item) => ({ ...item })),
       withoutTax: subtotal,
       sgst: sgstAmount,
       cgst: cgstAmount,
@@ -262,82 +576,45 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       <Card className="overflow-hidden p-0">
         <table className="w-full table-fixed border-collapse text-sm">
           <thead>
-            {/* First Heading Row */}
             <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-
-              {/* S.NO */}
-              <th
-                rowSpan={2}
-                className="w-[5%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
+              <th rowSpan={2} className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 S.No
               </th>
-
-              {/* DATE */}
-              <th
-                rowSpan={2}
-                className="w-[9%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
+              <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 Date
               </th>
-
-              {/* QUOTATION NO */}
-              <th
-                rowSpan={2}
-                className="w-[11%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
+              <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 Quotation No
               </th>
-
-              {/* FARMER DETAILS */}
-              <th
-                rowSpan={2}
-                className="w-[18%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
+              <th rowSpan={2} className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 Farmer Details
               </th>
-
-              {/* WITHOUT TAX */}
-              <th
-                rowSpan={2}
-                className="w-[11%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
+              <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
                 Without Tax
               </th>
 
-              {/* TAX */}
-              <th
-                colSpan={3}
-                className="w-[21%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
-                Tax
-              </th>
-
-              {/* TOTAL */}
-              <th
-                rowSpan={2}
-                className="w-[13%] px-2 py-2 text-center font-semibold"
-              >
-                Total
-              </th>
-
-            </tr>
-
-            {/* Second Heading Row — Tax */}
-            <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-
-              <th className="w-[7%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
+              <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
                 SGST
               </th>
-
-              <th className="w-[7%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
+              <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
                 CGST
               </th>
-
-              <th className="w-[7%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
+              <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
                 IGST
               </th>
 
+              <th rowSpan={2} className="w-[11%] px-2 py-2 text-right font-semibold">
+                Total
+              </th>
+            </tr>
+
+            <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+              <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
+              <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
+              <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
+              <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
+              <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
+              <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
             </tr>
           </thead>
 
@@ -345,7 +622,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             {rows.map((r, index) => (
               <tr
                 key={r.id}
-                className="border-b border-slate-100 transition hover:bg-slate-50"
+                onClick={() => setSelectedQuotation(r)}
+                className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                title="Click to view quotation"
               >
 
                 {/* S.NO */}
@@ -383,18 +662,63 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   {formatCurrency(r.withoutTax)}
                 </td>
 
-                {/* SGST */}
-                <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                  {(() => {
+                    const values = Array.from(
+                      new Set(
+                        (r.products || [])
+                          .filter((item) => Number(item.sgstPercent || 0) > 0)
+                          .map((item) => Number(item.sgstPercent || 0)),
+                      ),
+                    );
+                    return values.length === 0
+                      ? "0.00"
+                      : values.length === 1
+                        ? values[0].toFixed(2)
+                        : "Mix";
+                  })()}
+                </td>
+                <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
                   {formatCurrency(r.sgst)}
                 </td>
 
-                {/* CGST */}
-                <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                  {(() => {
+                    const values = Array.from(
+                      new Set(
+                        (r.products || [])
+                          .filter((item) => Number(item.cgstPercent || 0) > 0)
+                          .map((item) => Number(item.cgstPercent || 0)),
+                      ),
+                    );
+                    return values.length === 0
+                      ? "0.00"
+                      : values.length === 1
+                        ? values[0].toFixed(2)
+                        : "Mix";
+                  })()}
+                </td>
+                <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
                   {formatCurrency(r.cgst)}
                 </td>
 
-                {/* IGST */}
-                <td className="border-r border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                  {(() => {
+                    const values = Array.from(
+                      new Set(
+                        (r.products || [])
+                          .filter((item) => Number(item.igstPercent || 0) > 0)
+                          .map((item) => Number(item.igstPercent || 0)),
+                      ),
+                    );
+                    return values.length === 0
+                      ? "0.00"
+                      : values.length === 1
+                        ? values[0].toFixed(2)
+                        : "Mix";
+                  })()}
+                </td>
+                <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
                   {formatCurrency(r.igst)}
                 </td>
 
@@ -451,23 +775,30 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <div className="grid gap-4 md:grid-cols-3">
                   {/* ROW 1 */}
 
-                  <Input
-                    label="Farmer Name"
-                    value={farmer}
-                    onChange={setFarmer}
+                  <Select
+                    label="Farmer"
+                    value={farmerId}
+                    onChange={applyFarmerDetails}
+                    placeholder="Select registered farmer"
+                    options={registeredFarmers.map((item) => ({
+                      value: item.id,
+                      label: `${item.name} - ${item.phone}`,
+                    }))}
                   />
 
                   <Input
                     label="Mobile Number"
                     type="tel"
                     value={phone}
-                    onChange={setMobile}
+                    onChange={() => {}}
+                    readOnly
                   />
 
                   <Input
                     label="Village"
                     value={village}
-                    onChange={setVillage}
+                    onChange={() => {}}
+                    readOnly
                   />
 
                   {/* ROW 2 */}
@@ -475,7 +806,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <Input
                     label="Crop"
                     value={crop}
-                    onChange={setCrop}
+                    onChange={() => {}}
+                    readOnly
                   />
 
                   <Select
@@ -483,16 +815,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     value={placeOfSupply}
                     onChange={(value) => {
                       setPlaceOfSupply(value);
-
-                      if (value === "Tamil Nadu") {
-                        setCgst("9");
-                        setSgst("9");
-                        setIgst("0");
-                      } else {
-                        setCgst("0");
-                        setSgst("0");
-                        setIgst("18");
-                      }
+                      applyTaxForSupply(value);
                     }}
                     placeholder="Select Place of Supply"
                     options={[
@@ -511,7 +834,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     label="Acre"
                     type="number"
                     value={acre}
-                    onChange={setAcre}
+                    onChange={() => {}}
+                    readOnly
                   />
                 </div>
 
@@ -519,177 +843,233 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
                 {/* PRODUCTS */}
                 <div>
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
-                        Products
-                      </h3>
+                  <div className="mb-3">
+                    <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                      Add Product
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Select products available in this store stock
+                    </p>
+                  </div>
 
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        Add products for this quotation
-                      </p>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(220px,1.4fr)_180px_100px_140px_100px_150px] md:items-end">
+                      <Select
+                        label="Product"
+                        value={draftProduct.product}
+                        onChange={(value) => {
+                          setDraftProduct((current) => ({
+                            ...current,
+                            product: value,
+                            productName: value,
+                            pkgsize: "",
+                            rate: "",
+                            taxPercent: 0,
+                            sgstPercent: 0,
+                            cgstPercent: 0,
+                            igstPercent: 0,
+                          }));
+                        }}
+                        placeholder={
+                          productNameOptions.length
+                            ? "Select product"
+                            : "No stock products"
+                        }
+                        options={productNameOptions}
+                      />
+
+                      <Select
+                        label="PKG Size"
+                        value={draftProduct.pkgsize}
+                        onChange={(value) => {
+                          const variant = storeProducts.find(
+                            (item) =>
+                              item.name === draftProduct.product &&
+                              item.size === value,
+                          );
+
+                          if (!variant) {
+                            setDraftProduct((current) => ({
+                              ...current,
+                              pkgsize: value,
+                            }));
+                            return;
+                          }
+
+                          const split = getTaxSplit(
+                            placeOfSupply,
+                            Number(variant.taxPercentage || 0),
+                          );
+
+                          setDraftProduct((current) => ({
+                            ...current,
+                            pkgsize: variant.size,
+                            rate: String(variant.sellingPrice || 0),
+                            taxPercent: Number(
+                              variant.taxPercentage || 0,
+                            ),
+                            ...split,
+                          }));
+                        }}
+                        placeholder={
+                          draftProduct.product
+                            ? "Select size"
+                            : "Select product first"
+                        }
+                        options={sizeOptions}
+                      />
+
+                      <Input
+                        label="Qty"
+                        type="number"
+                        value={draftProduct.qty}
+                        onChange={(value) =>
+                          setDraftProduct((current) => ({
+                            ...current,
+                            qty: value,
+                          }))
+                        }
+                      />
+
+                      <Input
+                        label="Price"
+                        value={draftProduct.rate}
+                        onChange={() => {}}
+                        placeholder="Auto"
+                        readOnly
+                      />
+
+                      <Input
+                        label="GST %"
+                        value={
+                          draftProduct.taxPercent
+                            ? draftProduct.taxPercent.toFixed(2)
+                            : "0.00"
+                        }
+                        onChange={() => {}}
+                        readOnly
+                      />
+
+                      <Button onClick={addProduct} className="h-10">
+                        <Icon name="add" size={17} />
+                        Add Product
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                          Added Products
+                        </h3>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {products.length} item(s) added
+                        </p>
+                      </div>
                     </div>
 
-                    <Button onClick={addProduct}>
-                      <Icon name="add" size={16} />
-                      Add Product
-                    </Button>
-                  </div>
+                    <div className="overflow-hidden rounded-xl border border-slate-200">
+                      <table className="w-full table-fixed border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                            <th className="w-[5%] px-2 py-3 text-center">S.No</th>
+                            <th className="w-[20%] px-3 py-3 text-left">Product</th>
+                            <th className="w-[11%] px-2 py-3 text-center">PKG Size</th>
+                            <th className="w-[9%] px-2 py-3 text-center">Qty</th>
+                            <th className="w-[12%] px-2 py-3 text-right">Price</th>
+                            <th className="w-[9%] px-2 py-3 text-center">GST %</th>
+                            <th className="w-[12%] px-2 py-3 text-right">Without Tax</th>
+                            <th className="w-[12%] px-2 py-3 text-right">Tax</th>
+                            <th className="w-[12%] px-2 py-3 text-right">Total</th>
+                            <th className="w-[5%] px-2 py-3 text-center"></th>
+                          </tr>
+                        </thead>
 
-                  <div className="overflow-hidden rounded-xl border border-slate-200">
-                    {/* PRODUCT HEADER */}
-                    <div className="grid gap-3 px-4 py-3 grid-cols-[minmax(180px,1fr)_200px_120px_140px_130px_50px] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500 md:grid">
-                    <div>Product</div>
-                    <div>PKG Size</div>
-                    <div>Qty</div>
-                    <div>Price</div>
-                    <div className="text-right">Total Amount</div>
-                    <div></div>
-                  </div>
-
-                    {/* PRODUCT ROWS */}
-                    <div className="divide-y divide-slate-200">
-                      {products.map((item, index) => {
-                        const amount =
-                          (Number(item.qty) || 0) *
-                          (Number(item.rate) || 0);
-
-                        return (
-                          <div
-                            key={item.id}
-                            className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(180px,1fr)_200px_120px_140px_130px_50px] md:items-center">
-                          
-                            {/* PRODUCT */}
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
-                                Product
-                              </label>
-
-                              <Select
-                                value={item.product}
-                                onChange={(value) => {
-                                const selectedProduct = allProducts.find(
-                                  (p) => p.id === value
-                                );
-
-                                updateProduct(item.id, "product", value);
-
-                                if (selectedProduct) {
-                                  updateProduct(
-                                    item.id,
-                                    "pkgsize",
-                                    selectedProduct.size || ""
-                                  );
-
-                                  updateProduct(
-                                    item.id,
-                                    "rate",
-                                    String(selectedProduct.sellingPrice || 0)
-                                  );
-                                }
-                              }}
-                                placeholder="Select Product"
-                                options={allProducts.map((p) => ({
-                                  value: p.id,
-                                  label: `${p.name} (${p.size})`,
-                                }))}
-                              />
-                            </div>
-
-                          {/* PKG SIZE */}
-                          <div>
-                            <label className="mb-2 block text-xs font-semibold text-slate-500 md:hidden">
-                              PKG Size
-                            </label>
-
-                            <Select
-                              value={item.pkgsize}
-                              onChange={(value) =>
-                                updateProduct(item.id, "pkgsize", value)
-                              }
-                              placeholder="Select size"
-                              options={[
-                                { value: "100ml", label: "100 ml" },
-                                { value: "250ml", label: "250 ml" },
-                                { value: "500ml", label: "500 ml" },
-                                { value: "1l", label: "1 L" },
-                                { value: "100g", label: "100 g" },
-                                { value: "250g", label: "250 g" },
-                                { value: "500g", label: "500 g" },
-                                { value: "1kg", label: "1 Kg" },
-                                { value: "5kg", label: "5 Kg" },
-                                { value: "10kg", label: "10 Kg" },
-                                { value: "25kg", label: "25 Kg" },
-                              ]}
-                            />
-                          </div>
-
-                            {/* QTY */}
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
-                                Qty
-                              </label>
-
-                              <Input
-                                type="number"
-                                value={item.qty}
-                                onChange={(value) =>
-                                  updateProduct(
-                                    item.id,
-                                    "qty",
-                                    value
-                                  )
-                                }
-                              />
-                            </div>
-
-                            {/* RATE */}
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
-                                Rate
-                              </label>
-
-                              <Input
-                                type="number"
-                                value={item.rate}
-                                onChange={(value) =>
-                                  updateProduct(
-                                    item.id,
-                                    "rate",
-                                    value
-                                  )
-                                }
-                              />
-                            </div>
-
-                            {/* AMOUNT */}
-                            <div>
-                              <label className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
-                                Amount
-                              </label>
-
-                              <div className="flex h-10 items-center justify-end rounded-lg bg-slate-50 px-3 font-bold text-slate-800">
-                                {formatCurrency(amount)}
-                              </div>
-                            </div>
-
-                            {/* DELETE */}
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeProduct(item.id)
-                                }
-                                disabled={products.length === 1}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
-                                title="Remove product"
+                        <tbody>
+                          {products.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={10}
+                                className="px-4 py-10 text-center text-sm text-slate-400"
                               >
-                                ×
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                                No products added yet.
+                              </td>
+                            </tr>
+                          ) : (
+                            products.map((item, index) => {
+                              const withoutTax =
+                                Number(item.qty || 0) *
+                                Number(item.rate || 0);
+                              const tax =
+                                (withoutTax *
+                                  Number(item.taxPercent || 0)) /
+                                100;
+                              const total = withoutTax + tax;
+
+                              return (
+                                <tr
+                                  key={item.id}
+                                  className="border-t border-slate-100"
+                                >
+                                  <td className="px-2 py-3 text-center">
+                                    {index + 1}
+                                  </td>
+                                  <td className="px-3 py-3 font-semibold text-slate-800">
+                                    {item.productName}
+                                  </td>
+                                  <td className="px-2 py-3 text-center text-slate-600">
+                                    {item.pkgsize}
+                                  </td>
+                                  <td className="px-2 py-3">
+                                    <Input
+                                      type="number"
+                                      value={item.qty}
+                                      onChange={(value) =>
+                                        updateAddedProduct(
+                                          item.id,
+                                          "qty",
+                                          value,
+                                        )
+                                      }
+                                    />
+                                  </td>
+                                  <td className="px-2 py-3 text-right">
+                                    {formatCurrency(
+                                      Number(item.rate || 0),
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-3 text-center">
+                                    {Number(
+                                      item.taxPercent || 0,
+                                    ).toFixed(2)}
+                                  </td>
+                                  <td className="px-2 py-3 text-right">
+                                    {formatCurrency(withoutTax)}
+                                  </td>
+                                  <td className="px-2 py-3 text-right">
+                                    {formatCurrency(tax)}
+                                  </td>
+                                  <td className="px-2 py-3 text-right font-bold text-slate-800">
+                                    {formatCurrency(total)}
+                                  </td>
+                                  <td className="px-2 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        removeProduct(item.id)
+                                      }
+                                      className="text-red-400 hover:text-red-600"
+                                    >
+                                      <Icon name="delete" size={17} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
@@ -817,6 +1197,393 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         </div>,
         document.body
       )}
+
+      {selectedQuotation &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 6mm;
+                }
+
+                body * {
+                  visibility: hidden !important;
+                }
+
+                .quotation-print-area,
+                .quotation-print-area * {
+                  visibility: visible !important;
+                }
+
+                .quotation-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                }
+
+                .quotation-screen-only {
+                  display: none !important;
+                }
+
+                .quotation-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                }
+              }
+            `}</style>
+
+            <div className="quotation-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="quotation-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                    Quotation
+                  </p>
+                  <h2 className="mt-1 text-2xl font-bold text-slate-800">
+                    {selectedQuotation.quotationNo}
+                  </h2>
+                  <span className="mt-2 inline-block rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                    {selectedQuotation.status}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedQuotation(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+              <div className="quotation-scroll min-h-0 flex-1 overflow-y-auto p-3">
+                <div className="min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 px-6 py-3">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
+
+                        <div>
+                          <h3 className="text-lg font-extrabold tracking-wide text-slate-900">
+                            SAIRAM AGRI INPUTS
+                          </h3>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
+                            Rajapalayam, Tamil Nadu
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Nature Biotic Store
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center px-4 py-3">
+                      <div className="text-center">
+                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
+                          Quotation
+                        </h3>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Farmer Product Quotation
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Farmer Details
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selectedQuotation.farmer}
+                      </p>
+                      <p className="text-slate-600">
+                        {selectedQuotation.village || "-"}
+                      </p>
+                      <p className="text-slate-600">
+                        Contact: {selectedQuotation.phone || "-"}
+                      </p>
+                    </div>
+
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Farm Details
+                      </p>
+                      <p className="text-slate-600">
+                        Crop:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedQuotation.crop || "-"}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Acre:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedQuotation.acre || "-"}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Place of Supply:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selectedQuotation.placeOfSupply || "-"}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Quotation Details
+                      </p>
+                      <div className="grid grid-cols-[110px_1fr] gap-y-0.5">
+                        <span className="text-slate-500">Quotation No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedQuotation.quotationNo}
+                        </span>
+
+                        <span className="text-slate-500">Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selectedQuotation.date)}
+                        </span>
+
+                        <span className="text-slate-500">Status</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedQuotation.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full overflow-hidden">
+                    <table className="w-full table-fixed border-collapse text-[10px]">
+                      <thead>
+                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                          <th rowSpan={2} className="w-[4%] border-r border-slate-300 px-2 py-2 text-center">
+                            S.No
+                          </th>
+                          <th rowSpan={2} className="w-[18%] border-r border-slate-300 px-2 py-2 text-left">
+                            Product
+                          </th>
+                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2 text-center">
+                            Pkg Size
+                          </th>
+                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2 text-center">
+                            Qty
+                          </th>
+                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2 text-right">
+                            Rate
+                          </th>
+                          <th rowSpan={2} className="w-[10%] border-r border-slate-300 px-2 py-2 text-right">
+                            Without Tax
+                          </th>
+
+                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center">
+                            SGST
+                          </th>
+                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center">
+                            CGST
+                          </th>
+                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center">
+                            IGST
+                          </th>
+
+                          <th rowSpan={2} className="w-[11%] px-2 py-2 text-right">
+                            Line Total
+                          </th>
+                        </tr>
+
+                        <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {(selectedQuotation.products || []).map(
+                          (item, index) => {
+                            const withoutTax =
+                              Number(item.qty || 0) *
+                              Number(item.rate || 0);
+
+                            const sgstAmount =
+                              (withoutTax *
+                                Number(item.sgstPercent || 0)) /
+                              100;
+                            const cgstAmount =
+                              (withoutTax *
+                                Number(item.cgstPercent || 0)) /
+                              100;
+                            const igstAmount =
+                              (withoutTax *
+                                Number(item.igstPercent || 0)) /
+                              100;
+
+                            const lineTotal =
+                              withoutTax +
+                              sgstAmount +
+                              cgstAmount +
+                              igstAmount;
+
+                            return (
+                              <tr
+                                key={item.id}
+                                className="border-b border-slate-300"
+                              >
+                                <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                  {index + 1}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
+                                  {item.productName || "-"}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                  {item.pkgsize}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-center font-semibold">
+                                  {item.qty}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                  {formatCurrency(Number(item.rate || 0))}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                  {formatCurrency(withoutTax)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                  {Number(item.sgstPercent || 0).toFixed(2)}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                  {formatCurrency(sgstAmount)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                  {Number(item.cgstPercent || 0).toFixed(2)}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                  {formatCurrency(cgstAmount)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                  {Number(item.igstPercent || 0).toFixed(2)}
+                                </td>
+                                <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                  {formatCurrency(igstAmount)}
+                                </td>
+
+                                <td className="px-2 py-2 text-right font-bold text-slate-800">
+                                  {formatCurrency(lineTotal)}
+                                </td>
+                              </tr>
+                            );
+                          },
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="grid min-h-[160px] grid-cols-[1fr_330px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Remarks
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {selectedQuotation.remarks || "-"}
+                      </p>
+                    </div>
+
+                    <div className="p-4 text-sm">
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-500">Without Tax</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.withoutTax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-500">
+                          SGST
+                          {quotationTaxRates.sgst !== null
+                            ? ` (${quotationTaxRates.sgst.toFixed(2)}%)`
+                            : ""}
+                        </span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.sgst)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-500">
+                          CGST
+                          {quotationTaxRates.cgst !== null
+                            ? ` (${quotationTaxRates.cgst.toFixed(2)}%)`
+                            : ""}
+                        </span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.cgst)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-500">
+                          IGST
+                          {quotationTaxRates.igst !== null
+                            ? ` (${quotationTaxRates.igst.toFixed(2)}%)`
+                            : ""}
+                        </span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.igst)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
+                        <span className="font-bold text-slate-800">
+                          Grand Total
+                        </span>
+                        <span className="text-lg font-bold text-slate-900">
+                          {formatCurrency(selectedQuotation.amount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
+                    <div className="mt-auto w-56 text-center">
+                      <div className="border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="quotation-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedQuotation(null)}
+                >
+                  Close
+                </Button>
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print Quotation
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

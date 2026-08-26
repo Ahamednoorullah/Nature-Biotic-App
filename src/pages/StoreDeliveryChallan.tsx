@@ -4,7 +4,15 @@ import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { products as allProducts } from "@/lib/data";
 
-type Item = { productId: string; product: string; packSize: string; qty: string; unitValue: string };
+type Item = {
+  productId: string;
+  product: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  qty: string;
+  unitValue: string;
+};
 type Challan = {
   id: string;
   dcNo: string;
@@ -23,7 +31,17 @@ type Challan = {
 const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 
 function emptyItems(): Item[] {
-  return [{ productId: "", product: "", packSize: "", qty: "", unitValue: "" }];
+  return [
+    {
+      productId: "",
+      product: "",
+      packSize: "",
+      batchNo: "",
+      expiryDate: "",
+      qty: "",
+      unitValue: "",
+    },
+  ];
 }
 
 const STORAGE_PREFIX = "nature-biotic-store-delivery-challans-v2";
@@ -48,7 +66,15 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
         contactNo: "9876543210",
         placeOfSupply: "Tamil Nadu",
         items: [
-          { product: "Electra", packSize: "250 ml", qty: "10", unitValue: "250" },
+          {
+            productId: "electra",
+            product: "Electra",
+            packSize: "250 ml",
+            batchNo: "ELE010826",
+            expiryDate: "2027-08-31",
+            qty: "10",
+            unitValue: "250",
+          },
         ],
       },
     ];
@@ -78,6 +104,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       (item) =>
         item.product &&
         item.packSize &&
+        item.batchNo.trim() &&
+        item.expiryDate &&
         Number(item.qty) > 0 &&
         Number(item.unitValue) >= 0,
     );
@@ -408,7 +436,15 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                       onClick={() =>
                         setItems((p) => [
                           ...p,
-                          { productId: "", product: "", packSize: "", qty: "", unitValue: "" },  
+                          {
+                            productId: "",
+                            product: "",
+                            packSize: "",
+                            batchNo: "",
+                            expiryDate: "",
+                            qty: "",
+                            unitValue: "",
+                          },  
                         ])
                       }
                     >
@@ -421,11 +457,13 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                       <thead>
                         <tr className="bg-slate-100 text-xs uppercase text-slate-500">
                           <th className="w-[6%] px-2 py-3 text-center">S.No</th>
-                          <th className="w-[30%] px-2 py-3 text-left">Product Name</th>
-                          <th className="w-[13%] px-2 py-3 text-center">Pkg Size</th>
-                          <th className="w-[13%] px-2 py-3 text-center">Quantity</th>
-                          <th className="w-[15%] px-2 py-3 text-right">Unit Value</th>
-                          <th className="w-[18%] px-2 py-3 text-right">Approx Sale Value</th>
+                          <th className="w-[20%] px-2 py-3 text-left">Product Name</th>
+                          <th className="w-[10%] px-2 py-3 text-center">Pkg Size</th>
+                          <th className="w-[12%] px-2 py-3 text-center">Batch ID</th>
+                          <th className="w-[12%] px-2 py-3 text-center">Expiry Date</th>
+                          <th className="w-[9%] px-2 py-3 text-center">Quantity</th>
+                          <th className="w-[12%] px-2 py-3 text-right">Unit Value</th>
+                          <th className="w-[14%] px-2 py-3 text-right">Approx Sale Value</th>
                           <th className="w-[5%] px-2 py-3"></th>
                         </tr>
                       </thead>
@@ -442,9 +480,35 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                                   const selectedProduct = allProducts.find((p) => p.id === value);
                                   updateItem(i, "productId", value);
                                   if (selectedProduct) {
+                                    const source = selectedProduct as any;
+
                                     updateItem(i, "product", selectedProduct.name);
                                     updateItem(i, "packSize", selectedProduct.size || "");
-                                    updateItem(i, "unitValue", String(selectedProduct.sellingPrice || 0));
+                                    updateItem(
+                                      i,
+                                      "batchNo",
+                                      String(
+                                        source.batchNo ??
+                                          source.batchId ??
+                                          source.batchID ??
+                                          "",
+                                      ),
+                                    );
+                                    updateItem(
+                                      i,
+                                      "expiryDate",
+                                      String(
+                                        source.expiryDate ??
+                                          source.expDate ??
+                                          source.expiry ??
+                                          "",
+                                      ),
+                                    );
+                                    updateItem(
+                                      i,
+                                      "unitValue",
+                                      String(selectedProduct.sellingPrice || 0),
+                                    );
                                   }
                                 }}
                                 placeholder="Select Product"
@@ -471,6 +535,20 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     ]}
   />
 </td>
+                              <td className="px-2 py-3">
+                                <Input
+                                  value={item.batchNo}
+                                  onChange={(v) => updateItem(i, "batchNo", v)}
+                                  placeholder="Batch ID"
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <Input
+                                  type="date"
+                                  value={item.expiryDate}
+                                  onChange={(v) => updateItem(i, "expiryDate", v)}
+                                />
+                              </td>
                               <td className="px-2 py-3">
                                 <Input type="number" value={item.qty} onChange={(v) => updateItem(i, "qty", v)} placeholder="Qty" />
                               </td>
@@ -541,82 +619,330 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
       {selected &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[95vw] max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 6mm;
+                }
+
+                body * {
+                  visibility: hidden !important;
+                }
+
+                .delivery-challan-print-area,
+                .delivery-challan-print-area * {
+                  visibility: visible !important;
+                }
+
+                .delivery-challan-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: white !important;
+                }
+
+                .delivery-challan-screen-only {
+                  display: none !important;
+                }
+
+                .delivery-challan-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                }
+              }
+            `}</style>
+
+            <div className="delivery-challan-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="delivery-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-brand-700">Delivery Challan</p>
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">{selected.dcNo}</h2>
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                    Delivery Challan
+                  </p>
+                  <h2 className="mt-1 text-2xl font-bold text-slate-800">
+                    {selected.dcNo}
+                  </h2>
                 </div>
-                <button type="button" onClick={() => setSelected(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
+
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                >
                   <Icon name="close" size={20} />
                 </button>
               </div>
 
-              <div className="overflow-y-auto p-6">
-                <div className="rounded-xl border border-slate-300">
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-sm font-bold text-slate-900">SAIRAM AGRI INPUTS</p>
-                      <p className="text-xs text-slate-600">Rajapalayam, Tamil Nadu</p>
+              <div className="delivery-challan-scroll min-h-0 flex-1 overflow-y-auto p-3">
+                <div className="min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 px-6 py-3">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
+
+                        <div>
+                          <h3 className="text-lg font-extrabold tracking-wide text-slate-900">
+                            SAIRAM AGRI INPUTS
+                          </h3>
+                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
+                            Rajapalayam, Tamil Nadu
+                          </p>
+                          <p className="text-[10px] text-slate-600">
+                            Nature Biotic Store
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-center p-4">
-                      <h3 className="text-2xl font-bold text-slate-900">Delivery Challan</h3>
+
+                    <div className="flex items-center justify-center px-4 py-3">
+                      <div className="text-center">
+                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
+                          Delivery Challan
+                        </h3>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Store Stock Issue to Executive
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-3 text-sm">
-                      <p><span className="inline-block w-28 font-medium">D.C No</span>: {selected.dcNo}</p>
-                      <p className="mt-2"><span className="inline-block w-28 font-medium">D.C Date</span>: {formatDate(selected.date)}</p>
+                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Farmer Details
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selected.customerName}
+                      </p>
+                      <p className="text-slate-600">
+                        {selected.address || "-"}
+                      </p>
+                      <p className="text-slate-600">
+                        Contact: {selected.contactNo || "-"}
+                      </p>
                     </div>
-                    <div className="p-3 text-sm">
-                      <p><span className="inline-block w-32 font-medium">Place of Supply</span>: {selected.placeOfSupply}</p>
-                      <p className="mt-2"><span className="inline-block w-32 font-medium">Executive</span>: {selected.executive}</p>
+
+                    <div className="border-r border-slate-300 px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Dispatch Details
+                      </p>
+                      <p className="text-slate-600">
+                        Executive:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selected.executive}
+                        </span>
+                      </p>
+                      <p className="text-slate-600">
+                        Place of Supply:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {selected.placeOfSupply}
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="px-3 py-2.5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Challan Details
+                      </p>
+                      <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
+                        <span className="text-slate-500">D.C No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selected.dcNo}
+                        </span>
+
+                        <span className="text-slate-500">D.C Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selected.date)}
+                        </span>
+
+                        <span className="text-slate-500">Executive</span>
+                        <span className="font-semibold text-slate-800">
+                          {selected.executive}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="border-b border-slate-300 p-3 text-sm">
-                    <p><span className="inline-block w-32 font-medium">Customer Name</span>: {selected.customerName}</p>
-                    <p className="mt-2"><span className="inline-block w-32 font-medium">Address</span>: {selected.address || "-"}</p>
-                    <p className="mt-2"><span className="inline-block w-32 font-medium">Contact No</span>: {selected.contactNo || "-"}</p>
-                  </div>
-
-                  <table className="w-full table-fixed text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-300">
-                        <th className="w-[7%] border-r border-slate-300 px-2 py-3 text-center">S.No</th>
-                        <th className="w-[32%] border-r border-slate-300 px-2 py-3 text-left">Product Name</th>
-                        <th className="w-[13%] border-r border-slate-300 px-2 py-3 text-center">Pkg Size</th>
-                        <th className="w-[14%] border-r border-slate-300 px-2 py-3 text-center">Quantity in No's</th>
-                        <th className="w-[14%] border-r border-slate-300 px-2 py-3 text-right">Unit Value</th>
-                        <th className="w-[20%] px-2 py-3 text-right">Approx Sale Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selected.items.map((item, index) => (
-                        <tr key={index} className="border-b border-slate-200">
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">{index + 1}</td>
-                          <td className="border-r border-slate-300 px-2 py-4 font-medium">{item.product}</td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">{item.packSize}</td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-center">{item.qty}</td>
-                          <td className="border-r border-slate-300 px-2 py-4 text-right">{formatCurrency(Number(item.unitValue || 0))}</td>
-                          <td className="px-2 py-4 text-right font-bold">{formatCurrency(Number(item.qty || 0) * Number(item.unitValue || 0))}</td>
+                  <div className="w-full overflow-hidden">
+                    <table className="w-full table-fixed border-collapse text-[9px]">
+                      <thead>
+                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                          <th className="w-[5%] border-r border-slate-300 px-2 py-2 text-center">
+                            S.No
+                          </th>
+                          <th className="w-[18%] border-r border-slate-300 px-2 py-2 text-left">
+                            Product
+                          </th>
+                          <th className="w-[9%] border-r border-slate-300 px-2 py-2 text-center">
+                            Pkg Size
+                          </th>
+                          <th className="w-[12%] border-r border-slate-300 px-2 py-2 text-center">
+                            Batch ID
+                          </th>
+                          <th className="w-[12%] border-r border-slate-300 px-2 py-2 text-center">
+                            Expiry Date
+                          </th>
+                          <th className="w-[8%] border-r border-slate-300 px-2 py-2 text-center">
+                            Qty
+                          </th>
+                          <th className="w-[12%] border-r border-slate-300 px-2 py-2 text-right">
+                            Unit Value
+                          </th>
+                          <th className="w-[16%] px-2 py-2 text-right">
+                            Approx Sale Value
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+
+                      <tbody>
+                        {selected.items.map((item, index) => (
+                          <tr
+                            key={`${item.productId}-${index}`}
+                            className="border-b border-slate-300"
+                          >
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {index + 1}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
+                              {item.product}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.packSize}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.batchNo || "-"}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center">
+                              {item.expiryDate
+                                ? formatDate(item.expiryDate)
+                                : "-"}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-center font-semibold">
+                              {item.qty}
+                            </td>
+                            <td className="border-r border-slate-300 px-2 py-2 text-right">
+                              {formatCurrency(Number(item.unitValue || 0))}
+                            </td>
+                            <td className="px-2 py-2 text-right font-bold text-slate-800">
+                              {formatCurrency(
+                                Number(item.qty || 0) *
+                                  Number(item.unitValue || 0),
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {(() => {
+                    const withoutTax = selected.items.reduce(
+                      (sum, item) =>
+                        sum +
+                        Number(item.qty || 0) *
+                          Number(item.unitValue || 0),
+                      0,
+                    );
+                    const sgst =
+                      (withoutTax * Number(selected.sgstPercent || 0)) / 100;
+                    const cgst =
+                      (withoutTax * Number(selected.cgstPercent || 0)) / 100;
+                    const igst =
+                      (withoutTax * Number(selected.igstPercent || 0)) / 100;
+                    const grandTotal = withoutTax + sgst + cgst + igst;
+
+                    return (
+                      <div className="grid min-h-[150px] grid-cols-[1fr_320px] border-t border-slate-300">
+                        <div className="border-r border-slate-300 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            Notes
+                          </p>
+                          <p className="mt-2 text-sm text-slate-500">
+                            Products issued from store stock to{" "}
+                            {selected.executive} for field delivery.
+                          </p>
+                        </div>
+
+                        <div className="p-4 text-sm">
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">Without Tax</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(withoutTax)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">SGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(sgst)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">CGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(cgst)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-500">IGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(igst)}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
+                            <span className="font-bold text-slate-800">
+                              Grand Total
+                            </span>
+                            <span className="text-lg font-bold text-slate-900">
+                              {formatCurrency(grandTotal)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
+                    <div className="mt-auto w-56 text-center">
+                      <div className="border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>
-                <Button onClick={() => window.print()}><Icon name="print" size={18} /> Print Challan</Button>
+              <div className="delivery-challan-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelected(null)}
+                >
+                  Close
+                </Button>
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print Challan
+                </Button>
               </div>
             </div>
           </div>,
           document.body,
         )}
+
+
     </div>
   );
 }
