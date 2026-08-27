@@ -9,16 +9,51 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import {
-  stores,
-  getStore,
-  addCompanyCreditNoteSyncRecords,
-  getCompanyCreditNoteSyncRecords,
-  type CompanyCreditNoteSyncRecord,
-  getCompanyStoreSales,
-  type CompanyStoreSaleRecord,
-} from "@/lib/data";
+import { stores, getStore, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
+
+type StoreSaleType = "Direct" | "Executive";
+
+type StoredSaleProduct = {
+  key: string;
+  productId: string;
+  product?: Product;
+  pkgsize?: string;
+  packSize?: string;
+  batchNo: string;
+  expiryDate: string;
+  hsn?: string;
+  taxPercent: number;
+  quantity: number;
+  sellingPrice: number;
+  discount: number;
+  withoutTax: number;
+  taxAmount: number;
+  rowTotal: number;
+};
+
+type StoredSaleInvoice = {
+  id: string;
+  date: string;
+  invoiceNo: string;
+  through: StoreSaleType;
+  partyName: string;
+  farmerId?: string;
+  farmerPhone?: string;
+  farmerVillage?: string;
+  farmerCrop?: string;
+  farmerAcre?: string;
+  placeOfSupply?: string;
+  executiveName?: string;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  amount: number;
+  products: StoredSaleProduct[];
+};
+
+const STORE_SALES_INVOICE_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
 type CreditNoteStatus = "Approved" | "Pending" | "Rejected";
 
@@ -48,6 +83,12 @@ type CreditNote = {
   discountAmount?: number;
   taxableAmount?: number;
   taxPercent?: number;
+  farmerPhone?: string;
+  farmerVillage?: string;
+  farmerCrop?: string;
+  farmerAcre?: string;
+  through?: StoreSaleType;
+  executiveName?: string;
 };
 
 type AddedProduct = {
@@ -132,7 +173,11 @@ function CreditInfo({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId: string }) {
+export default function StoreCreditNotes({
+  storeId: currentStoreId,
+}: {
+  storeId: string;
+}) {
   const storageKey = `nature-biotic-store-credit-notes-v3:${currentStoreId}`;
 
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
@@ -162,11 +207,25 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
   const [invoiceNo, setInvoiceNo] = useState("");
   const currentStore = getStore(currentStoreId);
 
-  const [companySales] = useState<CompanyStoreSaleRecord[]>(() =>
-    getCompanyStoreSales().filter((row) => row.storeId === currentStoreId),
-  );
+  const storeSalesInvoices = useMemo<StoredSaleInvoice[]>(() => {
+    try {
+      const raw = localStorage.getItem(
+        `${STORE_SALES_INVOICE_STORAGE_KEY}:${currentStoreId}`,
+      );
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }, [currentStoreId, showCreate]);
   const [storeId, setStoreId] = useState(currentStoreId);
   const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
+  const [farmerName, setFarmerName] = useState("");
+  const [farmerPhone, setFarmerPhone] = useState("");
+  const [farmerVillage, setFarmerVillage] = useState("");
+  const [farmerCrop, setFarmerCrop] = useState("");
+  const [farmerAcre, setFarmerAcre] = useState("");
+  const [through, setThrough] = useState<StoreSaleType>("Direct");
+  const [executiveName, setExecutiveName] = useState("");
   const [remarks, setRemarks] = useState("");
   const [entry, setEntry] = useState({
     productId: "",
@@ -180,21 +239,22 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
   });
   const [added, setAdded] = useState<AddedProduct[]>([]);
 
-  const selectedStore = currentStore || stores.find((s) => s.id === currentStoreId);
-  const invoiceOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return companySales.filter((row) => {
-      if (row.storeId !== currentStoreId) return false;
-      if (seen.has(row.invoiceNo)) return false;
-      seen.add(row.invoiceNo);
-      return true;
-    });
-  }, [companySales, currentStoreId]);
-
-  const selectedInvoiceRows = useMemo(
-    () => companySales.filter((row) => row.invoiceNo === invoiceNo),
-    [companySales, invoiceNo],
+  const selectedStore = currentStore;
+  const invoiceOptions = useMemo(
+    () =>
+      storeSalesInvoices.map((invoice) => ({
+        value: invoice.invoiceNo,
+        label: `${invoice.invoiceNo} — ${invoice.partyName}`,
+      })),
+    [storeSalesInvoices],
   );
+
+  const selectedInvoice = useMemo(
+    () => storeSalesInvoices.find((invoice) => invoice.invoiceNo === invoiceNo),
+    [storeSalesInvoices, invoiceNo],
+  );
+
+  const selectedInvoiceRows = selectedInvoice?.products || [];
 
   const entryProduct = selectedInvoiceRows.find(
     (_, index) => String(index) === entry.productId,
@@ -246,23 +306,15 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
     const saleRow = selectedInvoiceRows[Number(productId)];
     const gross = sellingPrice * quantity;
     const discountAmt = (gross * discount) / 100;
-    const taxableAmount = gross - discountAmt;
-    const taxPercent = Number(
-      (saleRow as any)?.taxPercent ??
-        (saleRow?.withoutTax > 0
-          ? (saleRow.taxAmount / saleRow.withoutTax) * 100
-          : 0),
-    );
+    const taxableAmount = Math.max(0, gross - discountAmt);
 
-    const sgstAmt = isTamilNaduSupply()
-      ? (taxableAmount * (taxPercent / 2)) / 100
-      : 0;
-    const cgstAmt = isTamilNaduSupply()
-      ? (taxableAmount * (taxPercent / 2)) / 100
-      : 0;
-    const igstAmt = !isTamilNaduSupply()
-      ? (taxableAmount * taxPercent) / 100
-      : 0;
+    const taxPercent = Number(saleRow?.taxPercent || 0);
+    const intrastate =
+      (selectedInvoice?.placeOfSupply || "Tamil Nadu") === "Tamil Nadu";
+
+    const sgstAmt = intrastate ? (taxableAmount * (taxPercent / 2)) / 100 : 0;
+    const cgstAmt = intrastate ? (taxableAmount * (taxPercent / 2)) / 100 : 0;
+    const igstAmt = !intrastate ? (taxableAmount * taxPercent) / 100 : 0;
 
     return {
       taxableAmount,
@@ -276,39 +328,53 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
   function selectProduct(productId: string) {
     const saleRow = selectedInvoiceRows[Number(productId)];
     if (!saleRow) return;
-    const gross = saleRow.quantity * saleRow.rate;
-    const discountPercent = Number(
-      (saleRow as any).discountPercent ??
-        (gross > 0
-          ? (Number((saleRow as any).discount || 0) / gross) * 100
-          : 0),
-    );
+
+    const gross =
+      Number(saleRow.quantity || 0) * Number(saleRow.sellingPrice || 0);
+
+    const discountPercent =
+      gross > 0 ? (Number(saleRow.discount || 0) / gross) * 100 : 0;
+
     setEntry((p) => ({
       ...p,
       productId,
-      pkgsize: (saleRow as any).pkgsize || saleRow.packSize || "",
-      batchNo: (saleRow as any).batchNo || "",
-      expiryDate: (saleRow as any).expiryDate || "",
+      pkgsize:
+        saleRow.pkgsize || saleRow.packSize || saleRow.product?.size || "",
+      batchNo: saleRow.batchNo || "",
+      expiryDate: saleRow.expiryDate || "",
       quantity: 1,
-      sellingPrice: saleRow.rate,
+      sellingPrice: Number(saleRow.sellingPrice || 0),
       discount: discountPercent,
     }));
   }
 
   function addProduct() {
     if (!canAdd) return;
+
     const saleRow = selectedInvoiceRows[Number(entry.productId)];
     if (!saleRow) return;
-    const alreadyReturned = getCompanyCreditNoteSyncRecords()
+
+    const alreadyReturned = creditNotes
       .filter(
-        (r: any) =>
-          r.invoiceNo === invoiceNo &&
-          r.product === saleRow.product &&
-          r.status !== "Rejected",
+        (note) =>
+          note.invoiceNo === invoiceNo &&
+          note.product === (saleRow.product?.name || "") &&
+          note.batchNo === saleRow.batchNo &&
+          note.status !== "Rejected",
       )
-      .reduce((sum, r) => sum + Number(r.quantity || 0), 0);
-    const remainingQty = Math.max(0, saleRow.quantity - alreadyReturned);
-    if (entry.quantity > remainingQty) return;
+      .reduce((sum, note) => sum + Number(note.quantity || 0), 0);
+
+    const remainingQty = Math.max(
+      0,
+      Number(saleRow.quantity || 0) - alreadyReturned,
+    );
+
+    if (entry.quantity > remainingQty) {
+      window.alert(
+        `Only ${remainingQty} quantity can be returned from this invoice line.`,
+      );
+      return;
+    }
 
     const computed = computeLine(
       entry.productId,
@@ -318,23 +384,21 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
     );
 
     const newItem: AddedProduct = {
-      key: `${entry.productId}-${entry.batchNo}-${String(globalThis.Date.now())}-${Math.random().toString(36).slice(2, 6)}`,
+      key: `${entry.productId}-${entry.batchNo}-${String(
+        globalThis.Date.now(),
+      )}-${Math.random().toString(36).slice(2, 6)}`,
       productId: entry.productId,
-      productName: saleRow.product,
-      pkgsize: entry.pkgsize,
-      batchNo: entry.batchNo,
-      expiryDate: entry.expiryDate,
+      productName: saleRow.product?.name || "Product",
+      pkgsize:
+        saleRow.pkgsize || saleRow.packSize || saleRow.product?.size || "",
+      batchNo: saleRow.batchNo || "",
+      expiryDate: saleRow.expiryDate || "",
       quantity: entry.quantity,
       sellingPrice: entry.sellingPrice,
       discount: entry.discount,
       reason: entry.reason,
-      soldQuantity: saleRow.quantity,
-      taxPercent: Number(
-        (saleRow as any).taxPercent ??
-          (saleRow.withoutTax > 0
-            ? (saleRow.taxAmount / saleRow.withoutTax) * 100
-            : 0),
-      ),
+      soldQuantity: Number(saleRow.quantity || 0),
+      taxPercent: Number(saleRow.taxPercent || 0),
       discountAmount:
         (entry.sellingPrice * entry.quantity * entry.discount) / 100,
       ...computed,
@@ -342,7 +406,6 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
 
     setAdded((prev) => [...prev, newItem]);
 
-    // reset entry row for the next product
     setEntry({
       productId: "",
       pkgsize: "",
@@ -395,6 +458,13 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
     setInvoiceNo("");
     setStoreId(currentStoreId);
     setPlaceOfSupply("Tamil Nadu");
+    setFarmerName("");
+    setFarmerPhone("");
+    setFarmerVillage("");
+    setFarmerCrop("");
+    setFarmerAcre("");
+    setThrough("Direct");
+    setExecutiveName("");
     setRemarks("");
     setEntry({
       productId: "",
@@ -425,22 +495,26 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
   }
 
   function handleCreate() {
-    if (!canCreate || !selectedStore) return;
+    if (!canCreate || !selectedStore || !selectedInvoice || !farmerName) {
+      return;
+    }
 
     const createdAt = new globalThis.Date().getTime();
 
     const storeRows: CreditNote[] = added.map((item, index) => ({
       id: `${creditNoteNo}-${item.key}-${createdAt}-${index}`,
       creditNoteNo,
-      party: selectedInvoiceRows[0]?.storeName || "Farmer",
+      party: farmerName,
       Date: returnDate,
       amount: item.taxableAmount,
       sgst: item.sgst,
       cgst: item.cgst,
       igst: item.igst,
       total: item.total,
-      storeLocation: selectedStore.location,
-      placeofreturn: selectedStore.location?.split(",")[0] || "",
+      storeLocation:
+        selectedInvoice.placeOfSupply || selectedStore.location || "",
+      placeofreturn:
+        farmerVillage || selectedStore.location?.split(",")[0] || "",
       storeId: selectedStore.id,
       product: item.productName,
       quantity: item.quantity,
@@ -455,6 +529,12 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
       discountAmount: item.discountAmount,
       taxableAmount: item.taxableAmount,
       taxPercent: item.taxPercent,
+      farmerPhone,
+      farmerVillage,
+      farmerCrop,
+      farmerAcre,
+      through,
+      executiveName: through === "Executive" ? executiveName : "",
     }));
 
     const next = [...storeRows, ...creditNotes];
@@ -684,7 +764,7 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                     rowSpan={2}
                     className="w-[14%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap"
                   >
-                    Store Name
+                    Farmer Name
                   </th>
                   <th
                     rowSpan={2}
@@ -883,7 +963,7 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                         </div>
                         <div>
                           <h3 className="text-lg font-extrabold text-slate-900">
-                            {selectedStore?.name || "STORE"}
+                            {currentStore?.name || "STORE"}
                           </h3>
                           <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
                             4/130/A1, Velavan Nagar, Velayudhampuram,
@@ -938,11 +1018,13 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                         {selectedCreditNote.header.party}
                       </p>
                       <p className="text-slate-600">
-                        {selectedCreditNote.header.storeLocation || "-"}
+                        Address:{" "}
+                        {selectedCreditNote.header.farmerVillage ||
+                          selectedCreditNote.header.placeofreturn ||
+                          "-"}
                       </p>
                       <p className="text-slate-600">
-                        Place of Return:{" "}
-                        {selectedCreditNote.header.placeofreturn || "-"}
+                        Mobile: {selectedCreditNote.header.farmerPhone || "-"}
                       </p>
                     </div>
 
@@ -963,13 +1045,14 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                         <span className="font-semibold">
                           {selectedCreditNote.header.invoiceNo || "-"}
                         </span>
-                        <span className="text-slate-500">Farmer Name</span>
+                        <span className="text-slate-500">Through</span>
                         <span className="font-semibold">
-                          {selectedCreditNote.header.party}
+                          {selectedCreditNote.header.through || "Direct"}
                         </span>
-                        <span className="text-slate-500">Place of Supply</span>
+                        <span className="text-slate-500">POS</span>
                         <span className="font-semibold">
-                          {selectedCreditNote.header.storeLocation || "-"}
+                          {selectedCreditNote.header.storeLocation ||
+                            "Tamil Nadu"}
                         </span>
                       </div>
                     </div>
@@ -1364,8 +1447,7 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                       onChange={(value) => {
                         setInvoiceNo(value);
                         setAdded([]);
-                        setEntry((p) => ({
-                          ...p,
+                        setEntry({
                           productId: "",
                           pkgsize: "",
                           batchNo: "",
@@ -1373,60 +1455,103 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                           quantity: 0,
                           sellingPrice: 0,
                           discount: 0,
-                        }));
-                        const invoice = companySales.find(
-                          (row) => row.invoiceNo === value,
+                          reason: "",
+                        });
+
+                        const invoice = storeSalesInvoices.find(
+                          (item) => item.invoiceNo === value,
                         );
-                        if (invoice) {
-                          setStoreId(invoice.storeId);
-                          setPlaceOfSupply(
-                            invoice.placeOfSupply ||
-                              (invoice.storeLocation
-                                ?.toLowerCase()
-                                .includes("kerala")
-                                ? "Others"
-                                : "Tamil Nadu"),
-                          );
+
+                        if (!invoice) {
+                          setFarmerName("");
+                          setFarmerPhone("");
+                          setFarmerVillage("");
+                          setFarmerCrop("");
+                          setFarmerAcre("");
+                          setPlaceOfSupply("Tamil Nadu");
+                          setThrough("Direct");
+                          setExecutiveName("");
+                          return;
                         }
+
+                        setFarmerName(invoice.partyName || "");
+                        setFarmerPhone(invoice.farmerPhone || "");
+                        setFarmerVillage(invoice.farmerVillage || "");
+                        setFarmerCrop(invoice.farmerCrop || "");
+                        setFarmerAcre(invoice.farmerAcre || "");
+                        setPlaceOfSupply(invoice.placeOfSupply || "Tamil Nadu");
+                        setThrough(invoice.through || "Direct");
+                        setExecutiveName(
+                          invoice.through === "Executive"
+                            ? invoice.executiveName || ""
+                            : "",
+                        );
                       }}
                       placeholder="Select original sales invoice"
-                      options={invoiceOptions.map((row) => ({
-                        value: row.invoiceNo,
-                        label: `${row.invoiceNo} — ${row.storeName}`,
-                      }))}
+                      options={invoiceOptions}
                       required
                     />
 
                     <Input
-                      label="Store"
-                      value={selectedStore?.name || ""}
+                      label="Farmer Name"
+                      value={farmerName}
                       onChange={() => {}}
-                      readOnly
                       placeholder="Auto-filled from invoice"
-                    />
-
-                    <Select
-                      label="Place of Return"
-                      value={placeOfSupply}
-                      onChange={setPlaceOfSupply}
-                      options={[
-                        { value: "Tamil Nadu", label: "Tamil Nadu" },
-                        { value: "Others", label: "Others" },
-                      ]}
-                    />
-
-                    <Input
-                      label="Store Address"
-                      value={selectedStore?.address || ""}
-                      onChange={() => {}}
-                      placeholder="Auto-filled from store"
                       readOnly
                     />
+
                     <Input
-                      label="GST Number"
-                      value={selectedStore?.gst || ""}
+                      label="Mobile Number"
+                      value={farmerPhone}
                       onChange={() => {}}
-                      placeholder="Auto-filled from store"
+                      placeholder="Auto-filled from invoice"
+                      readOnly
+                    />
+
+                    <Input
+                      label="Village"
+                      value={farmerVillage}
+                      onChange={() => {}}
+                      placeholder="Auto-filled from invoice"
+                      readOnly
+                    />
+
+                    <Input
+                      label="Crop"
+                      value={farmerCrop}
+                      onChange={() => {}}
+                      placeholder="Auto-filled from invoice"
+                      readOnly
+                    />
+
+                    <Input
+                      label="Acre"
+                      value={farmerAcre}
+                      onChange={() => {}}
+                      placeholder="Auto-filled from invoice"
+                      readOnly
+                    />
+
+                    <Input
+                      label="Through"
+                      value={through}
+                      onChange={() => {}}
+                      readOnly
+                    />
+
+                    {through === "Executive" && (
+                      <Input
+                        label="Executive"
+                        value={executiveName}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    )}
+
+                    <Input
+                      label="Place of Supply"
+                      value={placeOfSupply}
+                      onChange={() => {}}
                       readOnly
                     />
 
@@ -1456,7 +1581,12 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                         placeholder="Select"
                         options={selectedInvoiceRows.map((row, index) => ({
                           value: String(index),
-                          label: `${row.product} — ${(row as any).pkgsize || row.packSize}`,
+                          label: `${row.product?.name || "Product"} — ${
+                            row.pkgsize ||
+                            row.packSize ||
+                            row.product?.size ||
+                            ""
+                          }`,
                         }))}
                       />
 
@@ -1544,7 +1674,7 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                       <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-4 border-t border-slate-200">
                         <DetailField
                           label="Product"
-                          value={entryProduct.product}
+                          value={entryProduct.product?.name || "Product"}
                         />
                         <DetailField
                           label="Pack Size"
@@ -1564,7 +1694,7 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                         />
                         <DetailField
                           label="Unit Price"
-                          value={formatCurrency(entryProduct.rate)}
+                          value={formatCurrency(entryProduct.sellingPrice)}
                         />
                         <DetailField
                           label="Discount %"
@@ -1576,7 +1706,7 @@ export default function StoreCreditNotes({ storeId: currentStoreId }: { storeId:
                         />
                         <DetailField
                           label="Invoice Total"
-                          value={formatCurrency(entryProduct.total)}
+                          value={formatCurrency(entryProduct.rowTotal)}
                         />
                       </div>
                     )}

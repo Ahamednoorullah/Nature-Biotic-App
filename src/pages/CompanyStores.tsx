@@ -9,6 +9,12 @@ export default function CompanyStores() {
   const [stores, setStores] = useState<Store[]>(initialStores);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
+  const [editingStore, setEditingStore] = useState<Store | null>(null);
+  const [deleteStore, setDeleteStore] = useState<Store | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", code: "", owner: "", phone: "", address: "",
+    city: "", district: "", state: "", gst: "", openedDate: "",
+  });
   const [form, setForm] = useState({
     name: "",
     code: "",
@@ -65,6 +71,56 @@ export default function CompanyStores() {
     });
     setShowAdd(false);
   }
+
+  function openEdit(store: Store) {
+    const location = (store.location || "").split(",").map((v) => v.trim());
+    setEditForm({
+      name: store.name || "",
+      code: store.code || "",
+      owner: store.owner || "",
+      phone: store.phone || "",
+      address: store.address || "",
+      city: location[0] || "",
+      district: location[1] || "",
+      state: location.slice(2).join(", ") || "",
+      gst: store.gst || "",
+      openedDate: store.openedDate || "",
+    });
+    setEditingStore(store);
+    setSelectedStore(null);
+  }
+
+  function updateEdit(key: keyof typeof editForm, value: string) {
+    setEditForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleUpdateStore() {
+    if (!editingStore || !editForm.name.trim() || !editForm.phone.trim()) return;
+    const updated: Store = {
+      ...editingStore,
+      name: editForm.name.trim(),
+      code: editForm.code.trim() || editForm.name.slice(0, 3).toUpperCase(),
+      owner: editForm.owner.trim(),
+      manager: editForm.owner.trim(),
+      phone: editForm.phone.trim(),
+      address: editForm.address.trim(),
+      location: [editForm.city, editForm.district, editForm.state]
+        .map((v) => v.trim()).filter(Boolean).join(", "),
+      gst: editForm.gst.trim(),
+      openedDate: editForm.openedDate,
+    };
+    setStores((prev) => prev.map((s) => s.id === editingStore.id ? updated : s));
+    setEditingStore(null);
+  }
+
+  function handleDeleteStore() {
+    if (!deleteStore) return;
+    setStores((prev) => prev.filter((s) => s.id !== deleteStore.id));
+    if (selectedStore?.id === deleteStore.id) setSelectedStore(null);
+    setDeleteStore(null);
+  }
+
+  const isEditValid = editForm.name.trim() && editForm.phone.trim();
 
   const isValid = form.name && form.phone;
 
@@ -264,6 +320,23 @@ export default function CompanyStores() {
 
           <Button
             variant="secondary"
+            onClick={() => setDeleteStore(selectedStore)}
+            className="text-red-600 hover:bg-red-50"
+          >
+            <Icon name="delete" size={18} />
+            Delete
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => openEdit(selectedStore)}
+          >
+            <Icon name="edit" size={18} />
+            Edit
+          </Button>
+
+          <Button
+            variant="secondary"
             onClick={() => setSelectedStore(null)}
           >
             Close
@@ -286,6 +359,73 @@ export default function CompanyStores() {
     </div>,
     document.body
   )}
+
+      {editingStore &&
+        createPortal(
+          <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[88vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Edit Store</h2>
+                  <p className="mt-0.5 text-sm text-slate-500">Update store information.</p>
+                </div>
+                <button type="button" onClick={() => setEditingStore(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700">
+                  <Icon name="close" size={19} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  <Input label="Store Name" value={editForm.name} onChange={(v) => updateEdit("name", v)} icon="storefront" required />
+                  <Input label="Store Code / Initial" value={editForm.code} onChange={(v) => updateEdit("code", v)} />
+                  <Input label="Owner Name" value={editForm.owner} onChange={(v) => updateEdit("owner", v)} icon="person" />
+                  <Input label="Mobile Number" value={editForm.phone} onChange={(v) => updateEdit("phone", v)} icon="call" required />
+                  <Input label="GST Number" value={editForm.gst} onChange={(v) => updateEdit("gst", v)} icon="receipt_long" />
+                  <Input label="Opening Date" type="date" value={editForm.openedDate} onChange={(v) => updateEdit("openedDate", v)} />
+                  <Input label="City" value={editForm.city} onChange={(v) => updateEdit("city", v)} />
+                  <Input label="District" value={editForm.district} onChange={(v) => updateEdit("district", v)} />
+                  <Input label="State" value={editForm.state} onChange={(v) => updateEdit("state", v)} />
+                  <div className="md:col-span-2 xl:col-span-3">
+                    <Input label="Address" value={editForm.address} onChange={(v) => updateEdit("address", v)} icon="location_on" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={() => setEditingStore(null)}>Cancel</Button>
+                <Button onClick={handleUpdateStore} disabled={!isEditValid}>
+                  <Icon name="save" size={18} /> Update Store
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {deleteStore &&
+        createPortal(
+          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+            <div className="w-[94vw] max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="p-6">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <Icon name="delete" size={24} />
+                </div>
+                <h2 className="text-lg font-bold text-slate-800">Delete Store?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Are you sure you want to delete <span className="font-semibold text-slate-700">{deleteStore.name}</span>?
+                </p>
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={() => setDeleteStore(null)}>Cancel</Button>
+                <Button onClick={handleDeleteStore} className="bg-red-600 hover:bg-red-700">
+                  <Icon name="delete" size={18} /> Delete Store
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {showAdd &&
         createPortal(

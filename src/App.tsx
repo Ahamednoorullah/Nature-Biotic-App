@@ -40,6 +40,7 @@ import StorePurchaseReturn from "@/pages/StorePurchaseReturn";
 import StorePurchaseOrder from "@/pages/StorePurchaseOrder";
 import StoreSalesReturn from "@/pages/StoreSalesReturn";
 import StoreCreditNotes from "@/pages/StoreCreditNotes";
+import StoreAttendance from "@/pages/StoreAttendance";
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -112,11 +113,7 @@ function AppContent() {
       {route.page === "receipt" && <StoreReceipt storeId={route.storeId} />}
       {route.page === "refund" && <StoreRefund storeId={route.storeId} />}
       {route.page === "attendance" && (
-        <StorePlaceholder
-          title="Attendance"
-          description="Staff attendance for this store."
-          icon="badge"
-        />
+        <StoreAttendance storeId={route.storeId} />
       )}
       {route.page === "reports" && <StoreReports storeId={route.storeId} />}
       {route.page === "add-product" && (

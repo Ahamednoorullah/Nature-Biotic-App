@@ -67,6 +67,30 @@ type EntryForm = {
 
 const taxTypes: TaxType[] = ["Tamilnadu (SGST + CGST)", "Others (IGST)"];
 
+const PAYMENT_BANK = {
+  accountName: "SAIRAM AGRI INPUTS",
+  accountNo: "50200106535019",
+  ifsc: "HDFC0000775",
+  bankName: "HDFC Bank",
+  branch: "Rajapalayam",
+  upiId: "sujiyaso22-1@okhdfcbank",
+};
+
+function buildPaymentQrUrl(amount: number, invoiceNo: string) {
+  const payableAmount = Math.max(0, Math.round(amount));
+  const upiPayload =
+    `upi://pay?pa=${encodeURIComponent(PAYMENT_BANK.upiId)}` +
+    `&pn=${encodeURIComponent(PAYMENT_BANK.accountName)}` +
+    `&am=${payableAmount.toFixed(2)}` +
+    `&cu=INR` +
+    `&tn=${encodeURIComponent(`Invoice ${invoiceNo}`)}`;
+
+  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data=${encodeURIComponent(
+    upiPayload,
+  )}`;
+}
+
+
 function computeAdded(
   r: Omit<AddedRow, "key" | "discountAmount" | "taxAmount" | "rowTotal">,
 ): AddedRow {
@@ -290,6 +314,51 @@ export default function CompanySales() {
       return matchesSearch && matchesStore && isWithinDateFilter(s.date);
     });
   }, [sales, search, storeFilter, dateFilter, customFrom, customTo]);
+
+
+  const invoiceSummaryRows = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        header: SaleRow;
+        rows: SaleRow[];
+        withoutTax: number;
+        sgst: number;
+        cgst: number;
+        igst: number;
+        taxAmount: number;
+        total: number;
+      }
+    >();
+
+    filtered.forEach((row) => {
+      const key = `${row.invoiceNo}__${row.storeId}__${row.date}`;
+      const existing = grouped.get(key);
+
+      if (existing) {
+        existing.rows.push(row);
+        existing.withoutTax += Number(row.withoutTax || 0);
+        existing.sgst += Number(row.sgst || 0);
+        existing.cgst += Number(row.cgst || 0);
+        existing.igst += Number(row.igst || 0);
+        existing.taxAmount += Number(row.taxAmount || 0);
+        existing.total += Number(row.total || 0);
+      } else {
+        grouped.set(key, {
+          header: row,
+          rows: [row],
+          withoutTax: Number(row.withoutTax || 0),
+          sgst: Number(row.sgst || 0),
+          cgst: Number(row.cgst || 0),
+          igst: Number(row.igst || 0),
+          taxAmount: Number(row.taxAmount || 0),
+          total: Number(row.total || 0),
+        });
+      }
+    });
+
+    return Array.from(grouped.values());
+  }, [filtered]);
 
   const totals = useMemo(() => {
     const subtotal = added.reduce((s, r) => s + r.quantity * r.sellingPrice, 0);
@@ -747,7 +816,7 @@ export default function CompanySales() {
         </div>
       </Card>
 
-      {filtered.length === 0 ? (
+      {invoiceSummaryRows.length === 0 ? (
         <Card className="p-0">
           <EmptyState
             icon="point_of_sale"
@@ -850,65 +919,81 @@ export default function CompanySales() {
               </thead>
 
               <tbody>
-                {filtered.map((s, i) => (
-                  <tr
-                    key={s.id}
-                    onClick={() => openInvoice(s)}
-                    title="Click to view invoice"
-                    className={`cursor-pointer border-b border-slate-100 ${
-                      i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
-                    } hover:bg-brand-50/40 transition-base`}
-                  >
-                    <td className="px-1.5 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
-                      {i + 1}
-                    </td>
+                {invoiceSummaryRows.map((invoice, i) => {
+                  const s = invoice.header;
+                  const totalTaxRate =
+                    invoice.withoutTax > 0
+                      ? (invoice.taxAmount / invoice.withoutTax) * 100
+                      : 0;
 
-                    <td className="px-1.5 py-3 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">
-                      {formatDate(s.date)}
-                    </td>
+                  const sgstRate =
+                    invoice.sgst > 0 ? totalTaxRate / 2 : 0;
+                  const cgstRate =
+                    invoice.cgst > 0 ? totalTaxRate / 2 : 0;
+                  const igstRate =
+                    invoice.igst > 0 ? totalTaxRate : 0;
 
-                    <td className="px-1.5 py-3 text-center font-semibold text-slate-800 border-r border-slate-100 truncate">
-                      {s.invoiceNo}
-                    </td>
+                  return (
+                    <tr
+                      key={`${s.invoiceNo}-${s.storeId}-${s.date}`}
+                      onClick={() =>
+                        setSelectedInvoice({
+                          header: s,
+                          rows: invoice.rows,
+                        })
+                      }
+                      title="Click to view invoice"
+                      className={`cursor-pointer border-b border-slate-100 ${
+                        i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                      } hover:bg-brand-50/40 transition-base`}
+                    >
+                      <td className="px-1.5 py-3 text-center font-semibold text-slate-600 border-r border-slate-100">
+                        {i + 1}
+                      </td>
 
-                    <td className="px-1.5 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
-                      {s.storeName}
-                    </td>
+                      <td className="px-1.5 py-3 text-center text-slate-500 border-r border-slate-100 whitespace-nowrap">
+                        {formatDate(s.date)}
+                      </td>
 
-                    <td className="px-1.5 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
-                      {formatCurrency(s.withoutTax)}
-                    </td>
+                      <td className="px-1.5 py-3 text-center font-semibold text-slate-800 border-r border-slate-100 truncate">
+                        {s.invoiceNo}
+                      </td>
 
-                    <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
-                      {s.sgst > 0
-                        ? `${((s.taxAmount / Math.max(s.withoutTax, 1)) * 50).toFixed(2)}%`
-                        : "0.00%"}
-                    </td>
-                    <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-                      {formatCurrency(s.sgst)}
-                    </td>
-                    <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
-                      {s.cgst > 0
-                        ? `${((s.taxAmount / Math.max(s.withoutTax, 1)) * 50).toFixed(2)}%`
-                        : "0.00%"}
-                    </td>
-                    <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-                      {formatCurrency(s.cgst)}
-                    </td>
-                    <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
-                      {s.igst > 0
-                        ? `${((s.taxAmount / Math.max(s.withoutTax, 1)) * 100).toFixed(2)}%`
-                        : "0.00%"}
-                    </td>
-                    <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
-                      {formatCurrency(s.igst)}
-                    </td>
+                      <td className="px-1.5 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
+                        {s.storeName}
+                      </td>
 
-                    <td className="px-1.5 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">
-                      {formatCurrency(s.total)}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-1.5 py-3 text-right tabular-nums font-semibold text-slate-700 border-r border-slate-100">
+                        {formatCurrency(invoice.withoutTax)}
+                      </td>
+
+                      <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                        {sgstRate.toFixed(2)}%
+                      </td>
+                      <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                        {formatCurrency(invoice.sgst)}
+                      </td>
+
+                      <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                        {cgstRate.toFixed(2)}%
+                      </td>
+                      <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                        {formatCurrency(invoice.cgst)}
+                      </td>
+
+                      <td className="px-1 py-3 text-center tabular-nums text-slate-600 border-r border-slate-100">
+                        {igstRate.toFixed(2)}%
+                      </td>
+                      <td className="px-1 py-3 text-right tabular-nums text-slate-600 border-r border-slate-100">
+                        {formatCurrency(invoice.igst)}
+                      </td>
+
+                      <td className="px-1.5 py-3 text-right tabular-nums font-bold text-slate-800 border-r border-slate-100">
+                        {formatCurrency(invoice.total)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1480,6 +1565,83 @@ export default function CompanySales() {
                         This invoice is generated for goods supplied by Nature
                         Biotic to the registered store shown above.
                       </p>
+
+                      {(() => {
+                        const exactTotal = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.total || 0),
+                          0,
+                        );
+                        const payableTotal = Math.round(exactTotal);
+
+                        return (
+                          <div className="mt-4 border-t border-slate-200 pt-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                              Payment Details
+                            </p>
+
+                            <div className="mt-3 grid grid-cols-[1fr_210px] gap-5">
+                              <div className="text-[11px] leading-5 text-slate-600">
+                                <div className="grid grid-cols-[105px_1fr] gap-x-2 gap-y-1">
+                                  <span className="text-slate-500">Account Name</span>
+                                  <span className="font-bold text-slate-800">
+                                    {PAYMENT_BANK.accountName}
+                                  </span>
+
+                                  <span className="text-slate-500">Account No</span>
+                                  <span className="font-semibold text-slate-800">
+                                    {PAYMENT_BANK.accountNo}
+                                  </span>
+
+                                  <span className="text-slate-500">IFSC Code</span>
+                                  <span className="font-semibold text-slate-800">
+                                    {PAYMENT_BANK.ifsc}
+                                  </span>
+
+                                  <span className="text-slate-500">Bank Name</span>
+                                  <span className="font-semibold text-slate-800">
+                                    {PAYMENT_BANK.bankName}
+                                  </span>
+
+                                  <span className="text-slate-500">Branch</span>
+                                  <span className="font-semibold text-slate-800">
+                                    {PAYMENT_BANK.branch}
+                                  </span>
+
+                                  <span className="text-slate-500">UPI ID</span>
+                                  <span className="font-semibold text-slate-800">
+                                    {PAYMENT_BANK.upiId}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <div className="rounded-lg border border-slate-300 bg-white p-2">
+                                  <img
+                                    src={buildPaymentQrUrl(
+                                      payableTotal,
+                                      selectedInvoice.header.invoiceNo,
+                                    )}
+                                    alt={`UPI QR for ${formatCurrency(payableTotal)}`}
+                                    className="h-[105px] w-[105px] object-contain"
+                                  />
+                                </div>
+
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                    Scan QR to Pay
+                                  </p>
+                                  <p className="mt-1 text-sm font-extrabold text-slate-900">
+                                    {formatCurrency(payableTotal)}
+                                  </p>
+                                  <p className="mt-1 text-[9px] leading-4 text-slate-500">
+                                    Amount is automatically set to this invoice total.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="p-3 text-[10px]">
@@ -1530,32 +1692,26 @@ export default function CompanySales() {
                               label="Total Before Discount"
                               value={formatCurrency(totalBeforeDiscount)}
                             />
-
                             <SummaryRow
                               label="Discount"
                               value={formatCurrency(discount)}
                             />
-
                             <SummaryRow
                               label="Taxable Total"
                               value={formatCurrency(taxableTotal)}
                             />
-
                             <SummaryRow
                               label="CGST"
                               value={formatCurrency(cgst)}
                             />
-
                             <SummaryRow
                               label="SGST"
                               value={formatCurrency(sgst)}
                             />
-
                             <SummaryRow
                               label="IGST"
                               value={formatCurrency(igst)}
                             />
-
                             <SummaryRow
                               label="Round Off"
                               value={formatCurrency(roundOff)}

@@ -7,10 +7,33 @@ import {
   Select,
   EmptyState,
   Icon,
-  Modal,
 } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { getFarmersByStore } from "@/lib/data";
+import { getFarmersByStore, getStore } from "@/lib/data";
+
+
+type StoredSaleInvoice = {
+  id: string;
+  date: string;
+  invoiceNo: string;
+  through: "Direct" | "Executive";
+  partyName: string;
+  farmerId?: string;
+  farmerPhone?: string;
+  farmerVillage?: string;
+  farmerCrop?: string;
+  farmerAcre?: string;
+  placeOfSupply?: string;
+  executiveName?: string;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  amount: number;
+};
+
+const STORE_SALES_INVOICE_STORAGE_KEY =
+  "nature-biotic-store-sales-invoices-v2";
 
 type RefundRow = {
   id: string;
@@ -21,10 +44,14 @@ type RefundRow = {
   phone: string;
   village: string;
   referenceNo: string;
+  invoiceAmount: number;
   reason: string;
   paymentMethod: string;
   amount: number;
   remarks: string;
+  through?: "Direct" | "Executive";
+  executiveName?: string;
+  placeOfSupply?: string;
 };
 
 const methods = ["Cash", "UPI", "Bank Transfer", "Cheque"];
@@ -50,70 +77,70 @@ function loadRows(storageKey: string): RefundRow[] {
 
 export default function StoreRefund({ storeId }: { storeId: string }) {
   const farmers = getFarmersByStore(storeId);
+  const currentStore = getStore(storeId);
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
 
+  // Declare these before memo hooks that depend on them.
+  const [showCreate, setShowCreate] = useState(false);
+  const [referenceNo, setReferenceNo] = useState("");
+
+  const saleInvoices = useMemo<StoredSaleInvoice[]>(() => {
+    try {
+      const raw = localStorage.getItem(
+        `${STORE_SALES_INVOICE_STORAGE_KEY}:${storeId}`,
+      );
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }, [storeId, showCreate]);
+
+  const invoiceOptions = useMemo(
+    () =>
+      saleInvoices.map((invoice) => ({
+        value: invoice.invoiceNo,
+        label: `${invoice.invoiceNo} - ${invoice.partyName}`,
+      })),
+    [saleInvoices],
+  );
+
+  const selectedInvoice = useMemo(
+    () =>
+      saleInvoices.find(
+        (invoice) => invoice.invoiceNo === referenceNo,
+      ),
+    [saleInvoices, referenceNo],
+  );
+
   const [rows, setRows] = useState<RefundRow[]>(() => {
-    const saved = loadRows(storageKey);
-
-    if (saved.length > 0) return saved;
-
-    return [
-      {
-        id: "refund-1",
-        date: "2026-08-16",
-        refundNo: "REF-101",
-        farmerId: farmers[0]?.id || "",
-        farmerName: farmers[0]?.name || "Selvam",
-        phone: farmers[0]?.phone || "",
-        village: farmers[0]?.village || "",
-        referenceNo: "INV-D-1198",
-        reason: "Product Return",
-        paymentMethod: "Cash",
-        amount: 800,
-        remarks: "",
-      },
-      {
-        id: "refund-2",
-        date: "2026-08-15",
-        refundNo: "REF-100",
-        farmerId: farmers[1]?.id || "",
-        farmerName: farmers[1]?.name || "Kannan",
-        phone: farmers[1]?.phone || "",
-        village: farmers[1]?.village || "",
-        referenceNo: "INV-RK-1038",
-        reason: "Billing Correction",
-        paymentMethod: "UPI",
-        amount: 500,
-        remarks: "",
-      },
-    ];
+    return loadRows(storageKey);
   });
 
   const [search, setSearch] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
   const [selectedRefund, setSelectedRefund] = useState<RefundRow | null>(null);
 
   const [date, setDate] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [refundNo, setRefundNo] = useState("");
-  const [farmerId, setFarmerId] = useState("");
-  const [referenceNo, setReferenceNo] = useState("");
   const [reason, setReason] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
+  const [invoiceAmount, setInvoiceAmount] = useState(0);
   const [amount, setAmount] = useState(0);
   const [remarks, setRemarks] = useState("");
 
-  const selectedFarmer = farmers.find((farmer) => farmer.id === farmerId);
+  const selectedFarmer = farmers.find(
+    (farmer) => farmer.id === selectedInvoice?.farmerId,
+  );
 
   const canCreate =
-    date &&
-    refundNo.trim() &&
-    farmerId &&
-    referenceNo.trim() &&
-    reason &&
-    paymentMethod &&
-    amount > 0;
+    !!date &&
+    !!refundNo.trim() &&
+    !!selectedInvoice &&
+    !!reason &&
+    !!paymentMethod &&
+    amount > 0 &&
+    amount <= invoiceAmount;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -132,8 +159,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   function resetForm() {
     setDate(new Date().toISOString().split("T")[0]);
     setRefundNo("");
-    setFarmerId("");
     setReferenceNo("");
+    setInvoiceAmount(0);
     setReason("");
     setPaymentMethod("");
     setAmount(0);
@@ -154,22 +181,36 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   }
 
   function createRefund() {
-    if (!canCreate || !selectedFarmer) return;
+    if (!canCreate || !selectedInvoice) return;
 
     const row: RefundRow = {
-  id: `refund-${Date.now()}`,
-  date,
-  refundNo: refundNo.trim(),
-  farmerId: selectedFarmer.id,
-  farmerName: selectedFarmer.name,
-  phone: selectedFarmer.phone || "",
-  village: selectedFarmer.village || "",
-  referenceNo: referenceNo.trim(),
-  reason,
-  paymentMethod,
-  amount,
-  remarks,
-};
+      id: `refund-${Date.now()}`,
+      date,
+      refundNo: refundNo.trim(),
+      farmerId: selectedInvoice.farmerId || "",
+      farmerName: selectedInvoice.partyName || "Farmer",
+      phone:
+        selectedInvoice.farmerPhone ||
+        selectedFarmer?.phone ||
+        "",
+      village:
+        selectedInvoice.farmerVillage ||
+        selectedFarmer?.village ||
+        "",
+      referenceNo: selectedInvoice.invoiceNo,
+      invoiceAmount: Number(selectedInvoice.amount || 0),
+      reason,
+      paymentMethod,
+      amount,
+      remarks,
+      through: selectedInvoice.through,
+      executiveName:
+        selectedInvoice.through === "Executive"
+          ? selectedInvoice.executiveName || ""
+          : "",
+      placeOfSupply:
+        selectedInvoice.placeOfSupply || "Tamil Nadu",
+    };
 
     saveRows([row, ...rows]);
     closeForm();
@@ -230,7 +271,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   Farmer Details
                 </th>
                 <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
-                  Reference / Invoice
+                  Invoice No
                 </th>
                 <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
                   Reason
@@ -306,7 +347,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     Create Refund
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Create a refund against an invoice or farmer transaction.
+                    Select a completed sales invoice, then refund the required amount to the farmer.
                   </p>
                 </div>
 
@@ -338,23 +379,64 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   />
 
                   <Select
-                    label="Farmer"
-                    value={farmerId}
-                    onChange={setFarmerId}
-                    placeholder="Select farmer"
-                    options={farmers.map((farmer) => ({
-                      value: farmer.id,
-                      label: farmer.name,
-                    }))}
+                    label="Invoice Number"
+                    value={referenceNo}
+                    onChange={(value) => {
+                      setReferenceNo(value);
+
+                      const invoice = saleInvoices.find(
+                        (item) => item.invoiceNo === value,
+                      );
+
+                      setInvoiceAmount(
+                        invoice ? Number(invoice.amount || 0) : 0,
+                      );
+                      setAmount(0);
+                    }}
+                    placeholder="Select sales invoice"
+                    options={invoiceOptions}
                     required
                   />
 
                   <Input
-                    label="Reference / Invoice No"
-                    value={referenceNo}
-                    onChange={setReferenceNo}
-                    placeholder="e.g. INV-D-1201"
-                    required
+                    label="Farmer Name"
+                    value={selectedInvoice?.partyName || ""}
+                    onChange={() => {}}
+                    placeholder="Auto-filled from invoice"
+                    readOnly
+                  />
+
+                  <Input
+                    label="Mobile Number"
+                    value={
+                      selectedInvoice?.farmerPhone ||
+                      selectedFarmer?.phone ||
+                      ""
+                    }
+                    onChange={() => {}}
+                    placeholder="Auto-filled from invoice"
+                    readOnly
+                  />
+
+                  <Input
+                    label="Village"
+                    value={
+                      selectedInvoice?.farmerVillage ||
+                      selectedFarmer?.village ||
+                      ""
+                    }
+                    onChange={() => {}}
+                    placeholder="Auto-filled from invoice"
+                    readOnly
+                  />
+
+                  <Input
+                    label="Invoice Amount"
+                    type="number"
+                    value={String(invoiceAmount)}
+                    onChange={() => {}}
+                    placeholder="Auto-filled from invoice"
+                    readOnly
                   />
 
                   <Select
@@ -385,9 +467,23 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     label="Refund Amount"
                     type="number"
                     value={String(amount)}
-                    onChange={(value) => setAmount(Number(value) || 0)}
+                    onChange={(value) => {
+                      const next = Number(value) || 0;
+                      setAmount(
+                        Math.min(next, invoiceAmount || next),
+                      );
+                    }}
                     placeholder="Enter refund amount"
                     required
+                  />
+
+                  <Input
+                    label="Balance Value"
+                    value={formatCurrency(
+                      Math.max(invoiceAmount - amount, 0),
+                    )}
+                    onChange={() => {}}
+                    readOnly
                   />
 
                   <div className="md:col-span-2">
@@ -419,90 +515,270 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
           document.body,
         )}
 
-      <Modal
-        open={!!selectedRefund}
-        onClose={() => setSelectedRefund(null)}
-        title="Refund Details"
-        size="lg"
-        footer={
-          <Button
-            variant="secondary"
-            onClick={() => setSelectedRefund(null)}
-          >
-            Close
-          </Button>
-        }
-      >
-        {selectedRefund && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Detail
-                label="Date"
-                value={formatDate(selectedRefund.date)}
-              />
-              <Detail
-                label="Refund No"
-                value={selectedRefund.refundNo}
-              />
-              <Detail
-                label="Farmer"
-                value={selectedRefund.farmerName}
-              />
-              <Detail
-                label="Reference / Invoice"
-                value={selectedRefund.referenceNo}
-              />
-              <Detail
-                label="Reason"
-                value={selectedRefund.reason}
-              />
-              <Detail
-                label="Payment Method"
-                value={selectedRefund.paymentMethod}
-              />
-              <Detail
-                label="Amount"
-                value={formatCurrency(selectedRefund.amount)}
-                highlight
-              />
-            </div>
+      {selectedRefund &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <style>{`
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 8mm;
+                }
 
-            {selectedRefund.remarks && (
-              <div className="rounded-xl bg-slate-50 p-4">
-                <p className="mb-1 text-xs font-medium text-slate-500">
-                  Remarks
-                </p>
-                <p className="text-sm font-semibold text-slate-700">
-                  {selectedRefund.remarks}
-                </p>
+                body * {
+                  visibility: hidden !important;
+                }
+
+                .refund-print-area,
+                .refund-print-area * {
+                  visibility: visible !important;
+                }
+
+                .refund-print-area {
+                  position: absolute !important;
+                  inset: 0 !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: #fff !important;
+                }
+
+                .refund-screen-only {
+                  display: none !important;
+                }
+
+                .refund-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                }
+              }
+            `}</style>
+
+            <div className="refund-print-area flex max-h-[94vh] w-[94vw] max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="refund-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                    Refund
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                    {selectedRefund.refundNo}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedRefund(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                >
+                  <Icon name="close" size={20} />
+                </button>
               </div>
-            )}
-          </div>
-        )}
-      </Modal>
-    </div>
-  );
-}
 
-function Detail({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-3.5">
-      <p className="mb-1 text-xs font-medium text-slate-500">{label}</p>
-      <p
-        className={`text-sm font-bold ${
-          highlight ? "text-brand-700" : "text-slate-800"
-        }`}
-      >
-        {value}
-      </p>
+              <div className="refund-scroll min-h-0 flex-1 overflow-y-auto p-4">
+                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                          <img
+                            src="/logo_NB.webp"
+                            alt="Nature Biotic"
+                            className="max-h-14 max-w-full object-contain"
+                          />
+                        </div>
+
+                        <div>
+                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                            {currentStore?.name || "SAIRAM AGRI INPUT"}
+                          </h3>
+                          <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                            {currentStore?.address ||
+                              currentStore?.location ||
+                              "Rajapalayam, Tamil Nadu"}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            GSTIN: {currentStore?.gst || "-"}
+                          </p>
+                          <p className="text-[11px] text-slate-600">
+                            Cell: {currentStore?.phone || "-"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center p-4">
+                      <h3 className="text-2xl font-bold uppercase text-slate-900">
+                        Refund Receipt
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 border-b border-slate-300 text-sm">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Refund To
+                      </p>
+
+                      <p className="mt-2 font-bold text-slate-900">
+                        {selectedRefund.farmerName}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        {selectedRefund.village || "-"}
+                      </p>
+                      <p className="mt-1 text-slate-500">
+                        Mobile: {selectedRefund.phone || "-"}
+                      </p>
+                    </div>
+
+                    <div className="p-4">
+                      <div className="grid grid-cols-[120px_1fr] gap-y-2">
+                        <span className="text-slate-500">Refund No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedRefund.refundNo}
+                        </span>
+
+                        <span className="text-slate-500">Refund Date</span>
+                        <span className="font-semibold text-slate-800">
+                          {formatDate(selectedRefund.date)}
+                        </span>
+
+                        <span className="text-slate-500">Invoice No</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedRefund.referenceNo}
+                        </span>
+
+                        <span className="text-slate-500">Payment Method</span>
+                        <span className="font-semibold text-slate-800">
+                          {selectedRefund.paymentMethod}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 border-b border-slate-300 bg-slate-50">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Invoice Amount
+                      </p>
+                      <p className="mt-1 text-lg font-bold text-slate-800">
+                        {formatCurrency(selectedRefund.invoiceAmount || 0)}
+                      </p>
+                    </div>
+
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Refund Amount
+                      </p>
+                      <p className="mt-1 text-lg font-bold text-brand-700">
+                        {formatCurrency(selectedRefund.amount)}
+                      </p>
+                    </div>
+
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Balance Value
+                      </p>
+                      <p className="mt-1 text-lg font-bold text-slate-800">
+                        {formatCurrency(
+                          Math.max(
+                            (selectedRefund.invoiceAmount || 0) -
+                              selectedRefund.amount,
+                            0,
+                          ),
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                        Reason
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-800">
+                        {selectedRefund.reason}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-[1fr_280px]">
+                    <div className="border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Remarks
+                      </p>
+                      <p className="mt-2 text-sm text-slate-600">
+                        {selectedRefund.remarks ||
+                          `Refund issued against invoice ${selectedRefund.referenceNo}.`}
+                      </p>
+                    </div>
+
+                    <div className="p-4 text-sm">
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-slate-500">
+                          Invoice Amount
+                        </span>
+                        <span className="font-semibold">
+                          {formatCurrency(
+                            selectedRefund.invoiceAmount || 0,
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between py-1.5">
+                        <span className="text-slate-500">
+                          Refunded
+                        </span>
+                        <span className="font-semibold text-brand-700">
+                          {formatCurrency(selectedRefund.amount)}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex justify-between border-t border-slate-300 pt-2">
+                        <span className="font-bold text-slate-900">
+                          Balance Value
+                        </span>
+                        <span className="font-bold text-slate-900">
+                          {formatCurrency(
+                            Math.max(
+                              (selectedRefund.invoiceAmount || 0) -
+                                selectedRefund.amount,
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end border-t border-slate-300 p-4">
+                    <div className="w-52 text-center">
+                      <div className="h-12 border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="refund-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedRefund(null)}
+                >
+                  Close
+                </Button>
+                <Button onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
+                  Print Refund
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
     </div>
   );
 }
