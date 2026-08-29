@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Card, Button, Icon, EmptyState } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { payments as allPayments, type Payment } from '@/lib/purchaseData';
+import { createPortal } from 'react-dom';
 
 const vendors = ['Nature Biotic', 'Green Agro Suppliers', 'Sri Lakshmi Traders'];
 const methods = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
@@ -130,30 +131,46 @@ export default function StorePayments({ storeId: _storeId }: { storeId: string }
         </Card>
       )}
 
-      {viewing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in" onClick={() => setViewing(null)} />
-          <div className="relative bg-white rounded-2xl shadow-elevated w-full max-w-lg animate-scale-in max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <div><h3 className="text-lg font-bold text-slate-800">Payment Details</h3><p className="text-sm text-slate-500 mt-0.5">{viewing.paymentNo}</p></div>
-              <button onClick={() => setViewing(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-base"><Icon name="close" size={22} /></button>
-            </div>
-            <div className="px-6 py-5 grid grid-cols-2 gap-4">
-              <Detail label="Payment No" value={viewing.paymentNo} />
-              <Detail label="Date" value={formatDate(viewing.date)} />
-              <Detail label="Vendor" value={viewing.vendor} />
-              <Detail label="Invoice Ref" value={viewing.invoiceRef} />
-              <Detail label="Payment Method" value={viewing.method} />
-              <Detail label="Amount" value={formatCurrency(viewing.amount)} />
-              <Detail label="Balance" value={formatCurrency(viewing.balance)} />
-              <Detail label="Status" value={viewing.status} />
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 flex justify-end">
-              <Button variant="secondary" onClick={() => setViewing(null)}>Close</Button>
-            </div>
+      {viewing &&
+  createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Payment Details</h2>
+            <p className="mt-1 text-sm text-slate-500">{viewing.paymentNo}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewing(null)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+          >
+            <Icon name="close" size={20} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          <div className="grid grid-cols-2 gap-4">
+            <Detail label="Payment No" value={viewing.paymentNo} />
+            <Detail label="Date" value={formatDate(viewing.date)} />
+            <Detail label="Vendor" value={viewing.vendor} />
+            <Detail label="Invoice Ref" value={viewing.invoiceRef} />
+            <Detail label="Payment Method" value={viewing.method} />
+            <Detail label="Amount" value={formatCurrency(viewing.amount)} />
+            <Detail label="Balance" value={formatCurrency(viewing.balance)} />
+            <Detail label="Status" value={viewing.status} />
           </div>
         </div>
-      )}
+
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <Button variant="secondary" onClick={() => setViewing(null)}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )}
     </div>
   );
 }
@@ -166,3 +183,5 @@ function Detail({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+

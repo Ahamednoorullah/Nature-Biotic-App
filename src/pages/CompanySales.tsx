@@ -1190,10 +1190,6 @@ export default function CompanySales() {
                             selectedInvoice.header.storeLocation ||
                             "-"}
                         </p>
-                        <p className="mt-1 text-slate-600">
-                          Place of Supply:{" "}
-                          {selectedInvoice.header.placeOfSupply || "-"}
-                        </p>
                       </div>
 
                       <div className="p-3">
@@ -1217,12 +1213,12 @@ export default function CompanySales() {
                             {selectedStore?.code || "-"}
                           </span>
 
-                          {/* <span className="text-slate-500">
+                           <span className="text-slate-500">
                             Place of Supply
                           </span>
                           <span className="font-semibold text-slate-800">
                             {selectedInvoice.header.placeOfSupply || "-"}
-                          </span> */}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1581,35 +1577,40 @@ export default function CompanySales() {
 
                             <div className="mt-3 grid grid-cols-[1fr_210px] gap-5">
                               <div className="text-[11px] leading-5 text-slate-600">
-                                <div className="grid grid-cols-[105px_1fr] gap-x-2 gap-y-1">
-                                  <span className="text-slate-500">Account Name</span>
-                                  <span className="font-bold text-slate-800">
-                                    {PAYMENT_BANK.accountName}
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Account Name : </span>
+                                    <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
                                   </span>
+                                  <span className="text-slate-300">|</span>
 
-                                  <span className="text-slate-500">Account No</span>
-                                  <span className="font-semibold text-slate-800">
-                                    {PAYMENT_BANK.accountNo}
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Account No : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
                                   </span>
+                                  <span className="text-slate-300">|</span>
 
-                                  <span className="text-slate-500">IFSC Code</span>
-                                  <span className="font-semibold text-slate-800">
-                                    {PAYMENT_BANK.ifsc}
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">IFSC Code : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
                                   </span>
+                                  <span className="text-slate-300">|</span>
 
-                                  <span className="text-slate-500">Bank Name</span>
-                                  <span className="font-semibold text-slate-800">
-                                    {PAYMENT_BANK.bankName}
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Bank Name : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
                                   </span>
+                                  <span className="text-slate-300">|</span>
 
-                                  <span className="text-slate-500">Branch</span>
-                                  <span className="font-semibold text-slate-800">
-                                    {PAYMENT_BANK.branch}
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Branch : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
                                   </span>
+                                  <span className="text-slate-300">|</span>
 
-                                  <span className="text-slate-500">UPI ID</span>
-                                  <span className="font-semibold text-slate-800">
-                                    {PAYMENT_BANK.upiId}
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">UPI ID : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
                                   </span>
                                 </div>
                               </div>
@@ -1688,7 +1689,7 @@ export default function CompanySales() {
 
                         return (
                           <div className="space-y-1.5">
-                            <SummaryRow
+                            {/*<SummaryRow
                               label="Total Before Discount"
                               value={formatCurrency(totalBeforeDiscount)}
                             />
@@ -1712,6 +1713,7 @@ export default function CompanySales() {
                               label="IGST"
                               value={formatCurrency(igst)}
                             />
+                            */}
                             <SummaryRow
                               label="Round Off"
                               value={formatCurrency(roundOff)}

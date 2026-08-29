@@ -906,7 +906,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                   rowSpan={2}
                   className="w-[11%] border-r border-slate-200 px-2 py-3 text-center"
                 >
-                  Return No
+                  PR Number
                 </th>
                 <th
                   rowSpan={2}

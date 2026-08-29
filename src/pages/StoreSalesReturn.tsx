@@ -448,7 +448,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                 Date
               </th>
               <th rowSpan={2} className="w-[11%] border-r border-slate-200 px-2 py-3 text-center">
-                Return No
+                SR Number
               </th>
               <th rowSpan={2} className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
                 Invoice No
@@ -560,13 +560,13 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
                     <Input label="Return Date" type="date" value={date} onChange={setDate} required />
                     <Input label="Return No" value={returnNo} onChange={setReturnNo} placeholder="e.g. SR-0002" required />
-                    <Select
+                    {/*<Select
                       label="Invoice No"
                       value={invoiceNo}
                       onChange={selectInvoice}
                       placeholder="Select original invoice"
                       options={invoiceOptions}
-                    />
+                    />*/}
                     <Input label="Farmer Name" value={partyName} onChange={() => {}} readOnly />
                     <Input label="Mobile Number" value={farmerPhone} onChange={() => {}} readOnly />
                     <Input label="Village" value={farmerVillage} onChange={() => {}} readOnly />
@@ -952,12 +952,12 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
                     <div className="p-3 text-[10px]">
                       <div className="space-y-1.5">
-                        <Summary label="Total Before Discount" value={selectedReturn.beforeDiscount || selectedReturn.items.reduce((sum, item) => sum + (item.beforeDiscount || 0), 0)} />
+                        {/*<Summary label="Total Before Discount" value={selectedReturn.beforeDiscount || selectedReturn.items.reduce((sum, item) => sum + (item.beforeDiscount || 0), 0)} />
                         <Summary label="Discount" value={selectedReturn.discountAmount || selectedReturn.items.reduce((sum, item) => sum + (item.discountAmount || 0), 0)} />
                         <Summary label="Taxable Total" value={selectedReturn.withoutTax} />
                         <Summary label="CGST" value={selectedReturn.cgst} />
                         <Summary label="SGST" value={selectedReturn.sgst} />
-                        <Summary label="IGST" value={selectedReturn.igst} />
+                        <Summary label="IGST" value={selectedReturn.igst} /> */}
                         <div className="mt-2 border-t border-slate-300 pt-2">
                           <Summary label="Total" value={selectedReturn.total} bold />
                         </div>

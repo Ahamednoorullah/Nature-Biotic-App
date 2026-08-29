@@ -737,12 +737,12 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
                         return (
                           <div className="space-y-1.5">
-                            <SummaryRow label="Total Before Discount" value={formatCurrency(beforeDiscount)} />
+                            {/* <SummaryRow label="Total Before Discount" value={formatCurrency(beforeDiscount)} />
                             <SummaryRow label="Discount" value={formatCurrency(discount)} />
                             <SummaryRow label="Taxable Total" value={formatCurrency(selectedSale.withoutTax)} />
                             <SummaryRow label="CGST" value={formatCurrency(selectedSale.cgst)} />
                             <SummaryRow label="SGST" value={formatCurrency(selectedSale.sgst)} />
-                            <SummaryRow label="IGST" value={formatCurrency(selectedSale.igst)} />
+                            <SummaryRow label="IGST" value={formatCurrency(selectedSale.igst)} /> */}
                             <SummaryRow label="Round Off" value={formatCurrency(roundOff)} />
                             <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
                               <span className="font-bold text-slate-900">Total</span>

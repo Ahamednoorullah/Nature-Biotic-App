@@ -1420,7 +1420,7 @@ export default function CompanyCreditNotes() {
                       required
                     />
 
-                    <Select
+                    {/* <Select
                       label="Invoice No"
                       value={invoiceNo}
                       onChange={(value) => {
@@ -1457,7 +1457,7 @@ export default function CompanyCreditNotes() {
                         label: `${row.invoiceNo} — ${row.storeName}`,
                       }))}
                       required
-                    />
+                    /> */}
 
                     <Input
                       label="Store"

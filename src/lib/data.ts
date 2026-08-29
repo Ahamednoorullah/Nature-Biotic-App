@@ -1277,6 +1277,8 @@ function normalizeFarmer(farmer: Farmer): Farmer {
   );
   const firstCrop = crops[0];
 
+  
+
   return {
     ...farmer,
     landmark: farmer.landmark || farmer.taluk || "",
