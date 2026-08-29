@@ -165,7 +165,7 @@ export default function CompanyProducts() {
 
   if (selected) {
     return (
-      <ProductDetail product={selected.product} variants={selected.variants} onBack={() => setSelected(null)} />
+      <ProductDetail product={selected.product} onBack={() => setSelected(null)} />
     );
   }
 

@@ -18,6 +18,19 @@ export default function StoreStaff({ storeId }: { storeId: string }) {
       id: `st${Date.now()}`, storeId, name: form.name, role: form.role, phone: form.phone,
       email: `${form.name.toLowerCase().replace(/\s/g, '.')}@naturebiotic.in`,
       status: form.status as Staff['status'], joinedDate: new Date().toISOString().split('T')[0],
+      alternativePhone: '',
+      dob: '',
+      age: 0,
+      bloodGroup: '',
+      address: '',
+      proofIdName: '',
+      profileImageName: '',
+      designation: '',
+      level: 2,
+      targetSales: 0,
+      targetFarmers: 0,
+      targetFarms: 0,
+      targetVisits: 0
     };
     setStaff([s, ...staff]);
     setShowAdd(false);

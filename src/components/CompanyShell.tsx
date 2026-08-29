@@ -2,6 +2,8 @@ import { useState, type ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNav, type CompanyPage } from "@/context/NavContext";
 import { Icon, Logo } from "@/components/ui";
+const [mobileOpen, setMobileOpen] = useState(false);
+const [profileOpen, setProfileOpen] = useState(false);
 
 const navItems: { key: CompanyPage; label: string; icon: string }[] = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -90,22 +92,105 @@ export default function CompanyShell({
                 />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-white" />
               </button>
+              <div className="relative">
+  <button
+    onClick={() => setProfileOpen((v) => !v)}
+    className="flex items-center gap-2.5 pl-2 sm:pl-3 sm:pr-1 py-1 rounded-xl hover:bg-slate-100 transition-base"
+  >
+    <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+      {(user?.name ?? "U").charAt(0)}
+    </div>
+    <div className="hidden sm:block text-left">
+      <p className="text-sm font-semibold text-slate-700 leading-tight">
+        Administrator
+      </p>
+    </div>
+    <Icon
+      name="expand_more"
+      size={18}
+      className={`text-slate-400 hidden sm:block transition-transform ${
+        profileOpen ? "rotate-180" : ""
+      }`}
+    />
+  </button>
 
-              <button className="flex items-center gap-2.5 pl-2 sm:pl-3 sm:pr-1 py-1 rounded-xl hover:bg-slate-100 transition-base">
-                <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
-                  {(user?.name ?? "U").charAt(0)}
-                </div>
-                <div className="hidden sm:block text-left">
-                  <p className="text-sm font-semibold text-slate-700 leading-tight">
-                    Administrator
-                  </p>
-                </div>
-                <Icon
-                  name="expand_more"
-                  size={18}
-                  className="text-slate-400 hidden sm:block"
-                />
-              </button>
+  {profileOpen && (
+    <>
+      {/* backdrop to close on outside click */}
+      <div
+        className="fixed inset-0 z-40"
+        onClick={() => setProfileOpen(false)}
+      />
+
+      <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+        {/* Profile summary */}
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-100">
+          <div className="w-11 h-11 rounded-full bg-brand-600 flex items-center justify-center text-white font-bold shrink-0">
+            {(user?.name ?? "U").charAt(0)}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-800 truncate">
+              Administrator
+            </p>
+            <p className="text-xs text-slate-500 truncate">
+              {user?.email ?? "admin@naturebiotic.com"}
+            </p>
+          </div>
+        </div>
+
+        {/* Menu items */}
+        <div className="py-2">
+          <button
+            onClick={() => {
+              setProfileOpen(false);
+              // TODO: navigate to profile page
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <Icon name="person" size={20} />
+            My Profile
+          </button>
+
+          <button
+            onClick={() => {
+              setProfileOpen(false);
+              // TODO: navigate to settings page
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <Icon name="settings" size={20} />
+            Settings
+          </button>
+
+          <button
+            onClick={() => {
+              setProfileOpen(false);
+              // TODO: open change password modal
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <Icon name="key" size={20} />
+            Change Password
+          </button>
+        </div>
+
+        {/* Logout */}
+        <div className="border-t border-slate-100 py-2">
+          <button
+            onClick={() => {
+              setProfileOpen(false);
+              signOut();
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+          >
+            <Icon name="logout" size={20} />
+            Sign Out
+          </button>
+        </div>
+      </div>
+    </>
+  )}
+</div>
             </div>
           </div>
         </header>
