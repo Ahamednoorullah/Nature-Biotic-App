@@ -640,7 +640,7 @@ export default function CompanyPurchaseOrders() {
                     </div>
 
                     <div className="p-4 text-sm">
-                      <SummaryLine
+                      {/* <SummaryLine
                         label="Without Tax"
                         value={formatCurrency(selected.order?.withoutTax ?? 0)}
                       />
@@ -655,6 +655,18 @@ export default function CompanyPurchaseOrders() {
                       <SummaryLine
                         label="IGST"
                         value={formatCurrency(selected.order?.igst ?? 0)}
+                      /> */}
+
+                      <SummaryLine
+                        label="Round Off"
+                        value={formatCurrency(
+                          (selected.order?.total ?? selected.amount ?? 0) -
+                            ((selected.order?.withoutTax ?? 0) +
+                              (selected.order?.sgst ?? 0) +
+                              (selected.order?.cgst ?? 0) +
+                              (selected.order?.igst ?? 0))
+                        )}
+                        muted
                       />
 
                       <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-3">
@@ -697,11 +709,11 @@ export default function CompanyPurchaseOrders() {
   );
 }
 
-function SummaryLine({ label, value }: { label: string; value: string }) {
+function SummaryLine({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="flex items-center justify-between py-1.5">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-semibold text-slate-800">{value}</span>
+      <span className={muted ? "text-slate-400" : "text-slate-500"}>{label}</span>
+      <span className={muted ? "font-semibold text-slate-600" : "font-semibold text-slate-800"}>{value}</span>
     </div>
   );
 }

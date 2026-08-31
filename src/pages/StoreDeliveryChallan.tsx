@@ -532,9 +532,9 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                                   { value: "5kg", label: "5 Kg" },
                                   { value: "10kg", label: "10 Kg" },
                                   { value: "25kg", label: "25 Kg" },
-    ]}
-  />
-</td>
+                                  ]}
+                                />
+                              </td>
                               <td className="px-2 py-3">
                                 <Input
                                   value={item.batchNo}
@@ -876,7 +876,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                         </div>
 
                         <div className="p-4 text-sm">
-                          <div className="flex justify-between py-1">
+                          {/* <div className="flex justify-between py-1">
                             <span className="text-slate-500">Without Tax</span>
                             <span className="font-semibold text-slate-700">
                               {formatCurrency(withoutTax)}
@@ -899,7 +899,15 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                             <span className="font-semibold text-slate-700">
                               {formatCurrency(igst)}
                             </span>
-                          </div>
+                          </div> */}
+
+
+                          <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
+                            Round Off
+                          <span className="text-lg font-bold text-slate-900">
+                            {formatCurrency(Math.round(grandTotal) - grandTotal)}
+                          </span>
+                        </div>
 
                           <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
                             <span className="font-bold text-slate-800">

@@ -8,6 +8,9 @@ import {
 } from "@/lib/data";
 
 type DebitNote = {
+  total: number;
+  amount: number;
+  sellingPrice: number;
   id: string;
   debitNoteNo: string;
   date: string;
@@ -75,6 +78,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       const withoutTax = taxableAmount;
 
       return {
+        total,
+        amount: taxableAmount,
+        sellingPrice: unitPrice,
         id: source.id,
         debitNoteNo: source.creditNoteNo,
         date: source.returnDate,
@@ -1108,6 +1114,135 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           );
                         })}
                       </tbody>
+                      {/* ---- Bottom totals row ---- */}
+                      <tfoot>
+      {(() => {
+        const rows = selectedItems;
+
+        const totalQty = rows.reduce(
+          (s, r) => s + Number(r.quantity || 0),
+          0
+        );
+
+        const totalBeforeDiscount = rows.reduce((s, r) => {
+          const qty = Number(r.quantity || 0);
+          const price = Number(r.sellingPrice || 0);
+          const discountAmt = Number(r.discountAmount || 0);
+          const taxable = Number(
+            r.taxableAmount ?? r.amount ?? 0
+          );
+
+          const beforeDiscount =
+            price > 0 ? price * qty : taxable + discountAmt;
+
+          return s + beforeDiscount;
+        }, 0);
+
+        const totalDiscountAmt = rows.reduce(
+          (s, r) => s + Number(r.discountAmount || 0),
+          0
+        );
+
+        const totalTaxable = rows.reduce(
+          (s, r) =>
+            s + Number(r.taxableAmount ?? r.amount ?? 0),
+          0
+        );
+
+        const totalSgst = rows.reduce(
+          (s, r) => s + Number(r.sgst || 0),
+          0
+        );
+
+        const totalCgst = rows.reduce(
+          (s, r) => s + Number(r.cgst || 0),
+          0
+        );
+
+        const totalIgst = rows.reduce(
+          (s, r) => s + Number(r.igst || 0),
+          0
+        );
+
+        const totalLine = rows.reduce(
+          (s, r) => s + Number(r.returnAmount || 0),
+          0
+        );
+
+        return (
+          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+            {/* S.No */}
+            <td className="border-r border-slate-300 p-2 text-center">
+              Total
+            </td>
+
+            {/* Product */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* Batch */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* Expiry */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* Qty */}
+            <td className="border-r border-slate-300 p-2 text-center">
+              {totalQty}
+            </td>
+
+            {/* Unit Price */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* Before Discount */}
+            <td className="border-r border-slate-300 p-2 text-right">
+              {formatCurrency(totalBeforeDiscount)}
+            </td>
+
+            {/* Discount % */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* Discount Amount */}
+            <td className="border-r border-slate-300 p-2 text-right">
+              {formatCurrency(totalDiscountAmt)}
+            </td>
+
+            {/* Taxable */}
+            <td className="border-r border-slate-300 p-2 text-right">
+              {formatCurrency(totalTaxable)}
+            </td>
+
+            {/* SGST % */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* SGST Amount */}
+            <td className="border-r border-slate-300 p-2 text-right">
+              {formatCurrency(totalSgst)}
+            </td>
+
+            {/* CGST % */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* CGST Amount */}
+            <td className="border-r border-slate-300 p-2 text-right">
+              {formatCurrency(totalCgst)}
+            </td>
+
+            {/* IGST % */}
+            <td className="border-r border-slate-300 p-2" />
+
+            {/* IGST Amount */}
+            <td className="border-r border-slate-300 p-2 text-right">
+              {formatCurrency(totalIgst)}
+            </td>
+
+            {/* Line Total */}
+            <td className="p-2 text-right">
+              {formatCurrency(totalLine)}
+            </td>
+          </tr>
+        );
+      })()}
+    </tfoot>
                     </table>
                   </div>
 
@@ -1123,7 +1258,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                     </div>
 
                     <div className="p-4 text-sm">
-                      <TotalRow
+                      {/* <TotalRow
                         label="Total Before Discount"
                         value={formatCurrency(selectedSummary.beforeDiscount)}
                       />
@@ -1146,7 +1281,19 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                       <TotalRow
                         label="IGST"
                         value={formatCurrency(selectedSummary.igst)}
+                      /> */}
+
+                      <TotalRow
+                        label="Round Off"
+                        value={formatCurrency(
+                        (selectedSummary.total ?? 0) -
+                        ((selectedSummary.withoutTax ?? 0) +
+                        (selectedSummary.sgst ?? 0) +
+                        (selectedSummary.cgst ?? 0) +
+                        (selectedSummary.igst ?? 0))
+                      )}
                       />
+
                       <div className="mt-3 border-t border-slate-300 pt-3">
                         <TotalRow
                           label="Grand Total"

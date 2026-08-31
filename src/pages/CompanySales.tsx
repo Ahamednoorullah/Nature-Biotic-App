@@ -554,14 +554,20 @@ export default function CompanySales() {
         taxPercent: r.taxPercent,
         quantity: r.quantity,
         rate: r.sellingPrice,
+        unitPrice: r.sellingPrice,
+        beforeDiscount: r.quantity * r.sellingPrice,
+        price: r.sellingPrice,
         discount: r.discountAmount,
         discountPercent: r.discountPercent,
+        discountAmount: r.discountAmount,
         withoutTax,
+        taxableAmount: withoutTax,
         taxAmount,
         sgst,
         cgst,
         igst,
         total: Math.round((withoutTax + taxAmount) * 100) / 100,
+        returnAmount: 0,
       };
     });
   }

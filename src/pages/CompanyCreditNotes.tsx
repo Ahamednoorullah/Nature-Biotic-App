@@ -256,6 +256,8 @@ export default function CompanyCreditNotes() {
     );
   }, [added]);
 
+  const roundOff = Math.round(totals.grandTotal) - totals.grandTotal;
+
   function isTamilNaduSupply() {
     return placeOfSupply === "Tamil Nadu";
   }
@@ -1240,6 +1242,48 @@ export default function CompanyCreditNotes() {
                           );
                         })}
                       </tbody>
+                      {/* ---- Bottom totals row ---- */}
+                      <tfoot>
+                        {(() => {
+                          const rows = selectedCreditNote?.rows ?? [];
+                          const totalQty = rows.reduce(
+                            (s, r) => s + Number(r.quantity || 0), 0,
+                          );
+                          const totalBeforeDiscount = rows.reduce((s, r) => {
+                            const qty = Number(r.quantity || 0);
+                            const price = Number(r.sellingPrice || 0);
+                            const discountAmt = Number(r.discountAmount || 0);
+                            const taxable = Number(r.taxableAmount ?? r.amount ?? 0);
+                            const beforeDiscount = price > 0 ? price * qty : taxable + discountAmt;
+                            return s + beforeDiscount;
+                          }, 0);
+                          const totalDiscountAmt = rows.reduce((s, r) => s + Number(r.discountAmount || 0), 0);
+                          const totalTaxable = rows.reduce((s, r) => s + Number(r.taxableAmount ?? r.amount ?? 0), 0);
+                          const totalCgst = rows.reduce((s, r) => s + Number(r.cgst || 0), 0);
+                          const totalSgst = rows.reduce((s, r) => s + Number(r.sgst || 0), 0);
+                          const totalIgst = rows.reduce((s, r) => s + Number(r.igst || 0), 0);
+                          const totalLine = rows.reduce((s, r) => s + Number(r.total || 0), 0);
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td colSpan={5} className="border-r border-slate-300 p-2 text-center">Total</td>
+                              <td className="border-r border-slate-300 p-2 text-center">{totalQty}</td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalBeforeDiscount)}</td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalDiscountAmt)}</td>
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalTaxable)}</td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalCgst)}</td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalSgst)}</td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalIgst)}</td>
+                              <td className="p-2 text-right">{formatCurrency(totalLine)}</td>
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
                     </table>
                   </div>
 
@@ -1265,7 +1309,7 @@ export default function CompanyCreditNotes() {
                     </div>
 
                     <div className="space-y-2 p-3 text-[11px]">
-                      <SummaryRow
+                      {/* <SummaryRow
                         label="Total Before Discount"
                         value={formatCurrency(
                           selectedCreditNote.rows.reduce(
@@ -1330,6 +1374,11 @@ export default function CompanyCreditNotes() {
                             0,
                           ),
                         )}
+                        muted
+                      /> */}
+                      <SummaryRow
+                        label="Round Off"
+                        value={formatCurrency(roundOff)}
                         muted
                       />
 
@@ -1769,6 +1818,7 @@ export default function CompanyCreditNotes() {
                             </tr>
                           ))}
                         </tbody>
+
                       </table>
                     </div>
                   )}
@@ -1803,6 +1853,8 @@ export default function CompanyCreditNotes() {
                         value={formatCurrency(totals.igst)}
                         muted
                       />
+
+
                       <div className="border-t border-slate-200 pt-2">
                         <SummaryRow
                           label="Grand Total"

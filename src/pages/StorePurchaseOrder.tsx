@@ -10,8 +10,13 @@ import {
   type Product,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
+import { formatCurrency } from "@/lib/format";
 
 type AddedProduct = {
+  amount: any;
+  taxableAmount: any;
+  discountAmount: number;
+  sellingPrice: number;
   id: string;
   productId?: string;
   product: string;
@@ -278,6 +283,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
         packSize: selectedProduct.size || packSize,
         quantity: Number(quantity),
         price: selectedProduct.sellingPrice,
+        sellingPrice: selectedProduct.sellingPrice,
         taxPercent: selectedProduct.taxPercentage,
         taxType: isTamilNaduStore ? "Intrastate" : "Interstate",
         withoutTax: computed.withoutTax,
@@ -285,6 +291,9 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
         cgst: computed.cgst,
         igst: computed.igst,
         total: computed.total,
+        amount: computed.total,
+        taxableAmount: computed.withoutTax,
+        discountAmount: 0,
       },
     ]);
 
@@ -1119,6 +1128,59 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                           </tr>
                         )}
                       </tbody>
+                       <tfoot>
+                        {(() => {
+                          const rows = selectedOrder?.items ?? [];
+                          const totalQty = rows.reduce(
+                            (s, r) => s + Number(r.quantity || 0), 0,
+                          );
+                          const totalWithoutTax = rows.reduce(
+                            (s, r) => s + Number(r.withoutTax || 0), 0,
+                          );
+                          const totalSgst = rows.reduce(
+                            (s, r) => s + Number(r.sgst || 0), 0,
+                          );
+                          const totalCgst = rows.reduce(
+                            (s, r) => s + Number(r.cgst || 0), 0,
+                          );
+                          const totalIgst = rows.reduce(
+                            (s, r) => s + Number(r.igst || 0), 0,
+                          );
+                          const totalLine = rows.reduce(
+                            (s, r) => s + Number(r.total || 0), 0,
+                          );
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td colSpan={4} className="border-r border-slate-300 p-2 text-center">
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {totalQty}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalWithoutTax)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalSgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalCgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalIgst)}
+                              </td>
+                              <td className="p-2 text-right">
+                                {formatCurrency(totalLine)}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
                     </table>
                   </div>
 
@@ -1134,7 +1196,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                     </div>
 
                     <div className="p-4 text-sm">
-                      <Summary
+                      {/* <Summary
                         label="Without Tax"
                         value={formatMoney(selectedOrder.withoutTax)}
                       />
@@ -1149,6 +1211,12 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                       <Summary
                         label="IGST"
                         value={formatMoney(selectedOrder.igst)}
+                      /> */}
+
+                       <Summary
+                        label="Round Off"
+                        value={formatCurrency(selectedOrder.total - (selectedOrder.withoutTax + selectedOrder.sgst + selectedOrder.cgst + selectedOrder.igst))}
+                        muted
                       />
 
                       <div className="mt-3 border-t border-slate-300 pt-3">
@@ -1217,17 +1285,23 @@ function Summary({
   label,
   value,
   bold = false,
+  muted = false,
 }: {
   label: string;
   value: string;
   bold?: boolean;
+  muted?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-1">
       <span className="text-slate-500">{label}</span>
       <span
         className={
-          bold ? "font-bold text-slate-800" : "font-semibold text-slate-700"
+          bold
+            ? "font-bold text-slate-800"
+            : muted
+              ? "font-semibold text-slate-400"
+              : "font-semibold text-slate-700"
         }
       >
         {value}

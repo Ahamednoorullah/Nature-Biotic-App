@@ -1184,7 +1184,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                         {selectedReturn.supplier}
                       </p>
                       <p className="text-slate-600">
-                        Rajapalayam, Tamil Nadu - 626102
+                        Rajapalayam, Tamil Nadu - 626108
                       </p>
                       <p className="text-slate-600">GSTIN: 33AEZPV5328P1ZC</p>
                     </div>
@@ -1452,6 +1452,93 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                           );
                         })}
                       </tbody>
+                      {/* ---- Bottom totals row ---- */}
+                      <tfoot>
+                        {(() => {
+                          const items = selectedReturn.items;
+                          const totalQty = items.reduce(
+                            (s, r) => s + Number(r.quantity || 0), 0,
+                          );
+                          const totalBeforeDiscount = items.reduce(
+                            (s, r) =>
+                              s +
+                              Number(
+                                r.beforeDiscount ??
+                                  Number(r.price || 0) * Number(r.quantity || 0),
+                              ),
+                            0,
+                          );
+                          const totalDiscountAmt = items.reduce(
+                            (s, r) =>
+                              s +
+                              Number(
+                                r.discountAmount ??
+                                  (Number(
+                                    r.beforeDiscount ??
+                                      Number(r.price || 0) * Number(r.quantity || 0),
+                                  ) *
+                                    Number(r.discountPercent ?? 0)) /
+                                    100,
+                              ),
+                            0,
+                          );
+                          const totalTaxable = items.reduce(
+                            (s, r) =>
+                              s + Number(r.taxableAmount ?? r.withoutTax ?? 0),
+                            0,
+                          );
+                          const totalSgst = items.reduce(
+                            (s, r) => s + Number(r.sgst || 0), 0,
+                          );
+                          const totalCgst = items.reduce(
+                            (s, r) => s + Number(r.cgst || 0), 0,
+                          );
+                          const totalIgst = items.reduce(
+                            (s, r) => s + Number(r.igst || 0), 0,
+                          );
+                          const totalLine = items.reduce(
+                            (s, r) => s + Number(r.total || 0), 0,
+                          );
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td colSpan={5} className="border-r border-slate-300 p-2 text-center">
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {totalQty}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalBeforeDiscount)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalDiscountAmt)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalTaxable)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalSgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalCgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalIgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalLine)}
+                              </td>
+                              <td className="p-2" />
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
                     </table>
                   </div>
 
@@ -1470,7 +1557,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                     </div>
 
                     <div className="p-4 text-sm">
-                      <TotalRow
+                      {/* <TotalRow
                         label="Total Before Discount"
                         value={formatCurrency(
                           Number(
@@ -1532,6 +1619,17 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                       <TotalRow
                         label="IGST"
                         value={formatCurrency(selectedReturn.igst)}
+                      /> */}
+
+                      <TotalRow
+                        label="Round Off"
+                        value={formatCurrency(
+                        (selectedReturn.total ?? selectedReturn.total ?? 0) -
+                        ((selectedReturn.withoutTax ?? 0) +
+                        (selectedReturn.sgst ?? 0) +
+                        (selectedReturn.cgst ?? 0) +
+                        (selectedReturn.igst ?? 0))
+                      )}
                       />
 
                       <div className="mt-3 border-t border-slate-300 pt-3">

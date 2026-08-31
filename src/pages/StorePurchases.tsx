@@ -854,6 +854,90 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                         );
                       })}
                     </tbody>
+                    {/* ---- Bottom totals row ---- */}
+                      {/* ---- Bottom totals row ---- */}
+                      <tfoot>
+                        {(() => {
+                          const items = selectedItems;
+
+                          const totalQty = items.reduce(
+                            (s, r: any) => s + Number(r.quantity || 0), 0,
+                          );
+
+                          let totalBeforeDiscount = 0;
+                          let totalDiscountAmt = 0;
+                          let totalTaxable = 0;
+                          let totalSgst = 0;
+                          let totalCgst = 0;
+                          let totalIgst = 0;
+                          let totalLine = 0;
+
+                          items.forEach((r: any) => {
+                            const unitPrice = Number(
+                              r.sellingPrice ??
+                                r.price ??
+                                (r.quantity
+                                  ? Number(r.beforeDiscount ?? r.withoutTax ?? 0) / Number(r.quantity)
+                                  : 0),
+                            );
+                            const beforeDiscount = Number(
+                              r.beforeDiscount ?? unitPrice * Number(r.quantity || 0),
+                            );
+                            const discountPercent = Number(r.discountPercent ?? r.discount ?? 0);
+                            const discountAmount = Number(
+                              r.discountAmount ?? (beforeDiscount * discountPercent) / 100,
+                            );
+                            const taxableAmount = Number(
+                              r.taxableAmount ?? r.withoutTax ?? beforeDiscount - discountAmount,
+                            );
+
+                            totalBeforeDiscount += beforeDiscount;
+                            totalDiscountAmt += discountAmount;
+                            totalTaxable += taxableAmount;
+                            totalSgst += Number(r.sgst || 0);
+                            totalCgst += Number(r.cgst || 0);
+                            totalIgst += Number(r.igst || 0);
+                            totalLine += Number(r.total || 0);
+                          });
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td colSpan={5} className="border-r border-slate-300 p-2 text-center">
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {totalQty}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalBeforeDiscount)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalDiscountAmt)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalTaxable)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalSgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalCgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalIgst)}
+                              </td>
+                              <td className="p-2 text-right">
+                                {formatCurrency(totalLine)}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
                   </table>
                 </div>
 
@@ -869,7 +953,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                   </div>
 
                   <div className="p-4 text-sm">
-                    <InvoiceTotal
+                    {/* <InvoiceTotal
                       label="Total Before Discount"
                       value={formatCurrency(
                         selectedInvoice.beforeDiscount || 0,
@@ -896,6 +980,11 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                     <InvoiceTotal
                       label="IGST"
                       value={formatCurrency(selectedInvoice.igst)}
+                    /> */}
+
+                    <InvoiceTotal
+                      label="Round Off"
+                      value={formatCurrency(selectedInvoice.total - (selectedInvoice.withoutTax + selectedInvoice.sgst + selectedInvoice.cgst + selectedInvoice.igst))}
                     />
 
                     <div className="mt-3 border-t border-slate-300 pt-3">

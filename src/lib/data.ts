@@ -1151,6 +1151,13 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
 ];
 
 export type CompanyStoreSaleRecord = {
+  returnAmount: number;
+  unitPrice: number;
+  beforeDiscount: number;
+  price: number;
+  discountAmount: number;
+  discountPercent: number;
+  taxableAmount: number;
   id: string;
   invoiceNo: string;
   date: string;
