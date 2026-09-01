@@ -370,7 +370,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
 
       {showCreate &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+          <div className="po-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
@@ -715,7 +715,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
               <tr
                 key={row.id}
                 onClick={() => setSelectedOrder(row)}
-                className="cursor-pointer border-b border-slate-200 transition hover:bg-brand-50/50"
+                className="cursor-pointer transition hover:bg-brand-50/50"
               >
                 <td className="border-r border-slate-200 px-2 py-3 text-center">
                   {index + 1}
@@ -784,6 +784,14 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                   margin: 6mm;
                 }
 
+                html, body {
+                  width: 297mm;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #fff !important;
+                  overflow: visible !important;
+                }
+
                 body * {
                   visibility: hidden !important;
                 }
@@ -793,9 +801,18 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                   visibility: visible !important;
                 }
 
+                .po-modal-backdrop {
+                  position: static !important;
+                  display: block !important;
+                  background: none !important;
+                  padding: 0 !important;
+                  backdrop-filter: none !important;
+                  height: auto !important;
+                  width: 100% !important;
+                }
+
                 .store-po-print-area {
-                  position: absolute !important;
-                  inset: 0 !important;
+                  position: static !important;
                   width: 100% !important;
                   max-width: none !important;
                   max-height: none !important;
@@ -803,6 +820,11 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                   border-radius: 0 !important;
                   box-shadow: none !important;
                   background: white !important;
+                  margin: 0 !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  min-height: 198mm !important;
+                  page-break-inside: avoid !important;
                 }
 
                 .store-po-screen-only {
@@ -812,6 +834,17 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                 .store-po-scroll {
                   overflow: visible !important;
                   padding: 0 !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  flex: 1 !important;
+                }
+
+                .store-po-scroll > div {
+                  display: flex !important;
+                  flex-direction: column !important;
+                  flex: 1 !important;
+                  overflow: visible !important;
+                  page-break-inside: avoid !important;
                 }
 
                 .store-po-table {
@@ -822,6 +855,11 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                 .store-po-table th,
                 .store-po-table td {
                   padding: 3px 4px !important;
+                }
+
+                .po-print-footer-block {
+                  margin-top: auto !important;
+                  break-inside: avoid !important;
                 }
               }
             `}</style>
@@ -1229,7 +1267,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                     </div>
                   </div>
 
-                  <div className="flex min-h-[100px] justify-end border-t border-slate-300 px-6 py-4">
+                  <div className="po-print-footer-block flex min-h-[100px] justify-end border-t border-slate-300 px-6 py-4">
                     <div className="mt-auto w-56 text-center">
                       <div className="border-b border-slate-300" />
                       <p className="mt-2 text-xs font-semibold text-slate-500">

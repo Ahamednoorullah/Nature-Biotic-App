@@ -491,7 +491,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               <tr
                 key={row.id}
                 onClick={() => setSelectedReturn(row)}
-                className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                className="cursor-pointer transition hover:bg-brand-50/40"
                 title="Click to view sales return details"
               >
                 <td className="border-r border-slate-100 px-2 py-3 text-center">{index + 1}</td>

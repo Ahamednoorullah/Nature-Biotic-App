@@ -1173,7 +1173,7 @@ export default function CompanyCreditNotes() {
                           return (
                             <tr
                               key={row.id}
-                              className="border-b border-slate-300"
+                              
                             >
                               <td className="border-r border-slate-300 p-2 text-center">
                                 {index + 1}

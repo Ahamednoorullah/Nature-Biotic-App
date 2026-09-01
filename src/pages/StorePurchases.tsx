@@ -471,12 +471,20 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
 
       {selectedInvoice &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
+          <div className="purchase-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
           <style>{`
             @media print {
               @page {
                 size: A4 landscape;
                 margin: 6mm;
+              }
+
+              html, body {
+                width: 297mm;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+                overflow: visible !important;
               }
 
               body * {
@@ -488,16 +496,31 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                 visibility: visible !important;
               }
 
-              .store-purchase-print-area {
-                position: absolute !important;
-                inset: 0 !important;
+              .purchase-modal-backdrop {
+                position: static !important;
+                display: block !important;
+                background: none !important;
+                padding: 0 !important;
+                backdrop-filter: none !important;
+                height: auto !important;
                 width: 100% !important;
+              }
+
+              .store-purchase-print-area {
+                position: static !important;
+                width: 100% !important;
+                height: auto !important;
                 max-width: none !important;
                 max-height: none !important;
                 overflow: visible !important;
                 border-radius: 0 !important;
                 box-shadow: none !important;
                 background: white !important;
+                margin: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                min-height: 198mm !important;
+                page-break-inside: avoid !important;
               }
 
               .store-purchase-screen-only {
@@ -507,6 +530,23 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
               .store-purchase-scroll {
                 overflow: visible !important;
                 padding: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                flex: 1 !important;
+              }
+
+              .store-purchase-scroll > div {
+                display: flex !important;
+                flex-direction: column !important;
+                flex: 1 !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                page-break-inside: avoid !important;
+              }
+
+              .purchase-print-footer-block {
+                margin-top: auto !important;
+                break-inside: avoid !important;
               }
             }
           `}</style>
@@ -577,9 +617,9 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                       <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                         Purchase Invoice
                       </h3>
-                      <p className="mt-1 text-[10px] text-slate-500">
+                      {/* <p className="mt-1 text-[10px] text-slate-500">
                         Nature Biotic to Store
-                      </p>
+                      </p> */}
                     </div>
                   </div>
                 </div>
@@ -788,7 +828,6 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                         return (
                           <tr
                             key={item.id ?? `${item.invoiceNo}-${index}`}
-                            className="border-b border-slate-300"
                           >
                             <td className="border-r border-slate-300 px-2 py-2 text-center">
                               {index + 1}
@@ -997,7 +1036,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                   </div>
                 </div>
 
-                <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
+                <div className="purchase-print-footer-block flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
                   <div className="mt-auto w-56 text-center">
                     <div className="border-b border-slate-300" />
                     <p className="mt-2 text-xs font-semibold text-slate-500">

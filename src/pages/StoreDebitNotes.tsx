@@ -1024,7 +1024,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           return (
                             <tr
                               key={item.id}
-                              className="border-b border-slate-300"
+                              
                             >
                               <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {index + 1}

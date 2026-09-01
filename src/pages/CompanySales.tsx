@@ -128,6 +128,49 @@ function emptyEntry(): EntryForm {
   };
 }
 
+function InvoiceInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 break-words font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] text-slate-400 font-medium">{label}</p>
+      <p className="text-xs font-semibold text-slate-700 truncate">{value}</p>
+    </div>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  muted = false,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={muted ? "text-slate-400 text-xs" : "text-slate-500"}>
+        {label}
+      </span>
+      <span
+        className={`tabular-nums ${muted ? "text-slate-500 text-xs" : "font-semibold text-slate-700"}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function CompanySales() {
   const [sales, setSales] = useState<SaleRow[]>(() => getCompanyStoreSales());
   const [search, setSearch] = useState("");
@@ -1008,82 +1051,107 @@ export default function CompanySales() {
 
       {selectedInvoice &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+          <div className="invoice-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
-              @media print {
-                @page {
-                  size: A4 landscape;
-                  margin: 6mm;
-                }
+  @media print {
+    @page {
+      size: A4 landscape;
+      margin: 6mm;
+    }
 
-                html,
-                body {
-                  width: 297mm;
-                  min-height: 210mm;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  background: #fff !important;
-                  overflow: visible !important;
-                }
+    html, body {
+      width: 297mm;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+      overflow: visible !important;
+    }
 
-                body * {
-                  visibility: hidden !important;
-                }
+    * {
+      box-sizing: border-box !important;
+    }
 
-                .invoice-print-area,
-                .invoice-print-area * {
-                  visibility: visible !important;
-                }
+    body > *:not(.invoice-modal-backdrop) {
+    display: none !important;
+    }
 
-                .invoice-print-area {
-                  position: absolute !important;
-                  inset: 0 !important;
-                  width: 100% !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  overflow: visible !important;
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  background: #fff !important;
-                }
+    .invoice-print-area,
+    .invoice-print-area * {
+      visibility: visible !important;
+    }
 
-                .invoice-print-scroll {
-                  overflow: visible !important;
-                  padding: 0 !important;
-                }
+    .invoice-modal-backdrop {
+      position: static !important;
+      display: block !important;
+      background: none !important;
+      padding: 0 !important;
+      backdrop-filter: none !important;
+      height: auto !important;
+      width: 100% !important;
+    }
 
-                .invoice-print-table {
-                  width: 100% !important;
-                  table-layout: auto !important;
-                  font-size: 8px !important;
-                }
+    .invoice-print-area {
+      position: static !important;
+      width: 100% !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      background: #fff !important;
+      margin: 0 !important;
+      display: block !important;
+    }
 
-                .invoice-print-table th,
-                .invoice-print-table td {
-                  padding: 2px 3px !important;
-                  line-height: 1.15 !important;
-                }
+    .invoice-print-scroll {
+      overflow: visible !important;
+      padding: 0 !important;
+      display: block !important;
+      height: auto !important;
+    }
 
-                .invoice-print-table th:not(:nth-child(2)),
-                .invoice-print-table td:not(:nth-child(2)) {
-                  white-space: nowrap !important;
-                }
+    .invoice-print-scroll > div {
+      display: block !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
 
-                .invoice-print-table th:nth-child(2),
-                .invoice-print-table td:nth-child(2) {
-                  white-space: normal !important;
-                  word-break: break-word !important;
-                }
+    .invoice-print-table {
+      width: 100% !important;
+      table-layout: auto !important;
+      font-size: 8px !important;
+    }
 
-                .invoice-print-header {
-                  break-inside: avoid !important;
-                }
+    .invoice-print-table th,
+    .invoice-print-table td {
+      padding: 2px 3px !important;
+      line-height: 1.15 !important;
+    }
 
-                .invoice-screen-only {
-                  display: none !important;
-                }
-              }
-            `}</style>
+    .invoice-print-table th:not(:nth-child(2)),
+    .invoice-print-table td:not(:nth-child(2)) {
+      white-space: nowrap !important;
+    }
+
+    .invoice-print-table th:nth-child(2),
+    .invoice-print-table td:nth-child(2) {
+      white-space: normal !important;
+      word-break: break-word !important;
+    }
+
+    .invoice-print-header {
+      break-inside: avoid !important;
+    }
+
+    .invoice-print-footer-block {
+      break-inside: avoid !important;
+    }
+
+    .invoice-screen-only {
+      display: none !important;
+    }
+  }
+`}</style>
             <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>
@@ -1154,11 +1222,11 @@ export default function CompanySales() {
                       <div className="flex items-center justify-center p-3">
                         <div className="text-center">
                           <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
-                            Invoice
+                            Tax Invoice
                           </h2>
-                          <p className="mt-1 text-[10px] text-slate-500">
+                          {/*<p className="mt-1 text-[10px] text-slate-500">
                             Nature Biotic to Store
-                          </p>
+                          </p> */}
                         </div>
                       </div>
                     </div>
@@ -1392,8 +1460,7 @@ export default function CompanySales() {
                           return (
                             <tr
                               key={row.id}
-                              className="border-b border-slate-300"
-                            >
+                              >
                               <td className="border-r border-slate-300 px-1 py-1.5 text-center">
                                 {index + 1}
                               </td>
@@ -1474,6 +1541,33 @@ export default function CompanySales() {
                             </tr>
                           );
                         })}
+
+                        {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                        {(() => {
+                        const MIN_ROWS = 10;
+                        const fillerCount = Math.max(0, MIN_ROWS - selectedInvoice.rows.length);
+                        const columnCount = 19;
+
+                        return Array.from({ length: fillerCount }).map((_, i) => (
+                          <tr key={`filler-${i}`}>
+                            {Array.from({ length: columnCount }).map((_, colIdx) => (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1.5 ${
+                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
+                                }`}
+                              >
+                                &nbsp;
+                              </td>
+                            ))}
+                          </tr>
+                        ));
+                      })()}
+
+                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                          {/* ... existing Total row, unchanged */}
+                        </tr>
+
 
                         <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
                           <td
@@ -1559,196 +1653,162 @@ export default function CompanySales() {
                   </div>
 
                   <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                        Notes
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        This invoice is generated for goods supplied by Nature
-                        Biotic to the registered store shown above.
-                      </p>
+                  <div className="border-r border-slate-300 p-3" />
 
-                      {(() => {
-                        const exactTotal = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.total || 0),
-                          0,
-                        );
-                        const payableTotal = Math.round(exactTotal);
+                  <div className="p-3 text-[10px]">
+                    {(() => {
+                      const totalBeforeDiscount = selectedInvoice.rows.reduce(
+                        (sum, row) =>
+                          sum + Number(row.quantity || 0) * Number(row.rate || 0),
+                        0,
+                      );
 
-                        return (
-                          <div className="mt-4 border-t border-slate-200 pt-3">
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                              Payment Details
-                            </p>
+                      const discount = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.discount || 0),
+                        0,
+                      );
 
-                            <div className="mt-3 grid grid-cols-[1fr_210px] gap-5">
-                              <div className="text-[11px] leading-5 text-slate-600">
-                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Account Name : </span>
-                                    <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
+                      const taxableTotal = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.withoutTax || 0),
+                        0,
+                      );
 
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Account No : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
+                      const cgst = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.cgst || 0),
+                        0,
+                      );
 
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">IFSC Code : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
+                      const sgst = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.sgst || 0),
+                        0,
+                      );
 
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Bank Name : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
+                      const igst = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.igst || 0),
+                        0,
+                      );
 
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Branch : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
+                      const exactTotal = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.total || 0),
+                        0,
+                      );
 
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">UPI ID : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
-                                  </span>
-                                </div>
+                      const roundedTotal = Math.round(exactTotal);
+                      const roundOff = roundedTotal - exactTotal;
+
+                      return (
+                        <div className="space-y-1.5">
+                          <SummaryRow label="Round Off" value={formatCurrency(roundOff)} />
+
+                          <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
+                            <span className="font-bold text-slate-900">Total</span>
+                            <span className="text-base font-extrabold text-slate-900">
+                              {formatCurrency(roundedTotal)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="invoice-print-footer-block flex items-end justify-between gap-7 border-t border-slate-300 p-5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Notes
+                    </p>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                      This invoice is generated for goods supplied by Nature Biotic to the
+                      registered store shown above.
+                    </p>
+
+                    {(() => {
+                  const exactTotal = selectedInvoice.rows.reduce(
+                    (sum, row) => sum + Number(row.total || 0),
+                    0,
+                  );
+                  const payableTotal = Math.round(exactTotal);
+
+                  return (
+                    <div className="mt-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
+
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+                            <div className="text-[8.5px] leading-4 text-slate-600">
+                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-500">Account Name : </span>
+                                  <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
+                                </span>
+                                <span className="text-slate-300">|</span>
+
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-500">Account No : </span>
+                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
+                                </span>
+                                <span className="text-slate-300">|</span>
+
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-500">IFSC Code : </span>
+                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
+                                </span>
+                                <span className="text-slate-300">|</span>
+
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-500">Bank Name : </span>
+                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
+                                </span>
+                                <span className="text-slate-300">|</span>
+
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-500">Branch : </span>
+                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
+                                </span>
+                                <span className="text-slate-300">|</span>
+
+                                <span className="whitespace-nowrap">
+                                  <span className="text-slate-500">UPI ID : </span>
+                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="rounded-lg border border-slate-300 bg-white p-1.5">
+                                <img
+                                  src={buildPaymentQrUrl(
+                                    payableTotal,
+                                    selectedInvoice.header.invoiceNo,
+                                  )}
+                                  alt={`UPI QR for ${formatCurrency(payableTotal)}`}
+                                  className="h-[70px] w-[70px] object-contain"
+                                />
                               </div>
 
-                              <div className="flex items-center gap-3">
-                                <div className="rounded-lg border border-slate-300 bg-white p-2">
-                                  <img
-                                    src={buildPaymentQrUrl(
-                                      payableTotal,
-                                      selectedInvoice.header.invoiceNo,
-                                    )}
-                                    alt={`UPI QR for ${formatCurrency(payableTotal)}`}
-                                    className="h-[105px] w-[105px] object-contain"
-                                  />
-                                </div>
-
-                                <div className="min-w-0">
-                                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                                    Scan QR to Pay
-                                  </p>
-                                  <p className="mt-1 text-sm font-extrabold text-slate-900">
-                                    {formatCurrency(payableTotal)}
-                                  </p>
-                                  <p className="mt-1 text-[9px] leading-4 text-slate-500">
-                                    Amount is automatically set to this invoice total.
-                                  </p>
-                                </div>
+                              <div className="min-w-0">
+                                <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
+                                  Scan QR to Pay
+                                </p>
+                                <p className="mt-0.5 text-xs font-extrabold text-slate-900">
+                                  {formatCurrency(payableTotal)}
+                                </p>
                               </div>
                             </div>
                           </div>
-                        );
-                      })()}
-                    </div>
-
-                    <div className="p-3 text-[10px]">
-                      {(() => {
-                        const totalBeforeDiscount = selectedInvoice.rows.reduce(
-                          (sum, row) =>
-                            sum +
-                            Number(row.quantity || 0) * Number(row.rate || 0),
-                          0,
-                        );
-
-                        const discount = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.discount || 0),
-                          0,
-                        );
-
-                        const taxableTotal = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.withoutTax || 0),
-                          0,
-                        );
-
-                        const cgst = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.cgst || 0),
-                          0,
-                        );
-
-                        const sgst = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.sgst || 0),
-                          0,
-                        );
-
-                        const igst = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.igst || 0),
-                          0,
-                        );
-
-                        const exactTotal = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.total || 0),
-                          0,
-                        );
-
-                        const roundedTotal = Math.round(exactTotal);
-                        const roundOff = roundedTotal - exactTotal;
-
-                        return (
-                          <div className="space-y-1.5">
-                            {/*<SummaryRow
-                              label="Total Before Discount"
-                              value={formatCurrency(totalBeforeDiscount)}
-                            />
-                            <SummaryRow
-                              label="Discount"
-                              value={formatCurrency(discount)}
-                            />
-                            <SummaryRow
-                              label="Taxable Total"
-                              value={formatCurrency(taxableTotal)}
-                            />
-                            <SummaryRow
-                              label="CGST"
-                              value={formatCurrency(cgst)}
-                            />
-                            <SummaryRow
-                              label="SGST"
-                              value={formatCurrency(sgst)}
-                            />
-                            <SummaryRow
-                              label="IGST"
-                              value={formatCurrency(igst)}
-                            />
-                            */}
-                            <SummaryRow
-                              label="Round Off"
-                              value={formatCurrency(roundOff)}
-                            />
-
-                            <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
-                              <span className="font-bold text-slate-900">
-                                Total
-                              </span>
-                              <span className="text-base font-extrabold text-slate-900">
-                                {formatCurrency(roundedTotal)}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
-                  <div className="flex justify-end border-t border-slate-300 p-5">
-                    <div className="w-56 text-center">
-                      <div className="h-12 border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
-                    </div>
+                  <div className="w-56 shrink-0 text-center">
+                    <div className="h-12 border-b border-slate-300" />
+                    <p className="mt-2 text-xs font-semibold text-slate-500">
+                      Authorised Signatory
+                    </p>
                   </div>
                 </div>
               </div>
+            </div>
 
               <div className="invoice-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
                 <Button variant="secondary" onClick={closeInvoiceView}>
@@ -2259,49 +2319,6 @@ export default function CompanySales() {
           </div>,
           document.body,
         )}
-    </div>
-  );
-}
-
-function InvoiceInfo({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-        {label}
-      </p>
-      <p className="mt-1 break-words font-bold text-slate-800">{value}</p>
-    </div>
-  );
-}
-
-function DetailField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[11px] text-slate-400 font-medium">{label}</p>
-      <p className="text-xs font-semibold text-slate-700 truncate">{value}</p>
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  muted = false,
-}: {
-  label: string;
-  value: string;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className={muted ? "text-slate-400 text-xs" : "text-slate-500"}>
-        {label}
-      </span>
-      <span
-        className={`tabular-nums ${muted ? "text-slate-500 text-xs" : "font-semibold text-slate-700"}`}
-      >
-        {value}
-      </span>
     </div>
   );
 }

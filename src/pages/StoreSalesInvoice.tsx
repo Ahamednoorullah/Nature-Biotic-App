@@ -1056,7 +1056,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                           {added.map((r, i) => (
                             <tr
                               key={r.key}
-                              className="border-b border-slate-100"
+                              
                             >
                               <td className="px-2 py-3 text-center">
                                 {i + 1}
