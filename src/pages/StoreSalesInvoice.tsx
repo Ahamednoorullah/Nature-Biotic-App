@@ -38,6 +38,9 @@ type EntryForm = {
 };
 
 type AddedRow = {
+  igst: number;
+  cgst: number;
+  sgst: number;
   key: string;
   productId: string;
   product?: Product;
@@ -288,6 +291,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       withoutTax,
       taxAmount,
       rowTotal,
+      igst: 0,
+      cgst: 0,
+      sgst: 0
     };
 
     setAdded((prev) => [...prev, row]);
@@ -581,9 +587,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
                           TAX INVOICE
                         </h2>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Store to Farmer
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -712,6 +718,141 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                           </tr>
                         )}
                       </tbody>
+                      <tfoot>
+                        {(() => {
+                          const products = selectedSale.products || [];
+
+                          const totalQty = products.reduce(
+                            (sum, item) => sum + Number(item.quantity || 0),
+                            0
+                          );
+
+                          const totalBeforeDiscount = products.reduce(
+                            (sum, item) =>
+                              sum +
+                              Number(item.quantity || 0) * Number(item.sellingPrice || 0),
+                            0
+                          );
+
+                          const totalDiscount = products.reduce(
+                            (sum, item) => sum + Number(item.discount || 0),
+                            0
+                          );
+
+                          const totalTaxable = products.reduce(
+                            (sum, item) => sum + Number(item.withoutTax || 0),
+                            0
+                          );
+
+                          const isTamilNadu =
+                            (selectedSale.placeOfSupply || "Tamil Nadu") === "Tamil Nadu";
+
+                          const totalCGST = isTamilNadu
+                            ? products.reduce(
+                                (sum, item) => sum + Number(item.taxAmount || 0) / 2,
+                                0
+                              )
+                            : 0;
+
+                          const totalSGST = isTamilNadu
+                            ? products.reduce(
+                                (sum, item) => sum + Number(item.taxAmount || 0) / 2,
+                                0
+                              )
+                            : 0;
+
+                          const totalIGST = !isTamilNadu
+                            ? products.reduce(
+                                (sum, item) => sum + Number(item.taxAmount || 0),
+                                0
+                              )
+                            : 0;
+
+                          const totalLine = products.reduce(
+                            (sum, item) => sum + Number(item.rowTotal || 0),
+                            0
+                          );
+
+                          return (
+                          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+
+                            {/* S.No + Product + HSN + PKG + Batch + Exp Date */}
+                            <td
+                              colSpan={6}
+                              className="border-r border-slate-300 px-1 py-2 text-center"
+                            >
+                              TOTAL
+                            </td>
+
+                            {/* Qty */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-center">
+                              {totalQty}
+                            </td>
+
+                            {/* Unit Price */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              -
+                            </td>
+
+                            {/* Before Discount */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              {formatCurrency(totalBeforeDiscount)}
+                            </td>
+
+                            {/* Discount % */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              -
+                            </td>
+
+                            {/* Discount Amount */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              {formatCurrency(totalDiscount)}
+                            </td>
+
+                            {/* Taxable */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              {formatCurrency(totalTaxable)}
+                            </td>
+
+                            {/* CGST Rate */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              -
+                            </td>
+
+                            {/* CGST Amount */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              {formatCurrency(totalCGST)}
+                            </td>
+
+                            {/* SGST Rate */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              -
+                            </td>
+
+                            {/* SGST Amount */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              {formatCurrency(totalSGST)}
+                            </td>
+
+                            {/* IGST Rate */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              -
+                            </td>
+
+                            {/* IGST Amount */}
+                            <td className="border-r border-slate-300 px-1 py-2 text-right">
+                              {formatCurrency(totalIGST)}
+                            </td>
+
+                            {/* Line Total */}
+                            <td className="px-1 py-2 text-right font-extrabold">
+                              {formatCurrency(totalLine)}
+                            </td>
+
+                          </tr>
+                        );
+                        })()}
+                      </tfoot>
                     </table>
                   </div>
 
@@ -1098,6 +1239,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                             </tr>
                           ))}
                         </tbody>
+
+                        
+
                       </table>
                     </div>
                   )}

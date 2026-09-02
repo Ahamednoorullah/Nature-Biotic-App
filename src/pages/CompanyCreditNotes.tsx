@@ -876,33 +876,57 @@ export default function CompanyCreditNotes() {
 
       {selectedCreditNote &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
-            <style>{`
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+             <style>{`
               @media print {
                 @page { size: A4 landscape; margin: 5mm; }
-                body * { visibility: hidden !important; }
-                .credit-note-print-area,
-                .credit-note-print-area * { visibility: visible !important; }
+
+                /* Hide the entire app (removes it from layout completely) */
+                #root {
+                  display: none !important;
+                }
+
+                html, body {
+                  height: auto !important;
+                  overflow: visible !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+
                 .credit-note-print-area {
-                  position: absolute !important;
-                  inset: 0 !important;
+                  display: block !important;
+                  position: static !important;
                   width: 100% !important;
                   max-width: none !important;
                   max-height: none !important;
+                  height: auto !important;
                   overflow: visible !important;
                   border-radius: 0 !important;
                   box-shadow: none !important;
                   background: white !important;
                 }
+
                 .credit-note-screen-only { display: none !important; }
-                .credit-note-scroll { overflow: visible !important; padding: 0 !important; }
+                .credit-note-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                  max-height: none !important;
+                  height: auto !important;
+                }
                 .credit-note-table { font-size: 7.5px !important; }
                 .credit-note-table th,
                 .credit-note-table td { padding: 3px 4px !important; }
+
+                .credit-note-table,
+                .credit-note-table tr,
+                .credit-note-table thead,
+                .credit-note-table tfoot {
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
               }
             `}</style>
-
-            <div className="credit-note-print-area flex h-screen w-full flex-col overflow-hidden bg-white">
+            <div className="credit-note-print-area flex max-h-[92vh] w-[96vw] max-w-[1650px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-5 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -968,9 +992,9 @@ export default function CompanyCreditNotes() {
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Credit Note
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Nature Biotic to Store
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -1428,7 +1452,7 @@ export default function CompanyCreditNotes() {
       {showCreate &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-5xlflex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               {/* Header (fixed, does not scroll) */}
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>

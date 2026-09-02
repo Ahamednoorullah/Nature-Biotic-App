@@ -845,88 +845,42 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                         ))}
                       </tbody>
                       {/* ---- Bottom totals row ---- */}
-                      {/* <tfoot>
+                      <tfoot>
                         {(() => {
                           const items = selected.items;
 
                           const totalQty = items.reduce(
-                            (s, r: any) => s + Number(r.quantity || 0), 0,
+                            (sum, item) => sum + Number(item.qty || 0),
+                            0,
                           );
 
-                          let totalBeforeDiscount = 0;
-                          let totalDiscountAmt = 0;
-                          let totalTaxable = 0;
-                          let totalSgst = 0;
-                          let totalCgst = 0;
-                          let totalIgst = 0;
-                          let totalLine = 0;
-
-                          items.forEach((r: any) => {
-                            const unitPrice = Number(
-                              r.sellingPrice ??
-                                r.price ??
-                                (r.quantity
-                                  ? Number(r.beforeDiscount ?? r.withoutTax ?? 0) / Number(r.quantity)
-                                  : 0),
-                            );
-                            const beforeDiscount = Number(
-                              r.beforeDiscount ?? unitPrice * Number(r.quantity || 0),
-                            );
-                            const discountPercent = Number(r.discountPercent ?? r.discount ?? 0);
-                            const discountAmount = Number(
-                              r.discountAmount ?? (beforeDiscount * discountPercent) / 100,
-                            );
-                            const taxableAmount = Number(
-                              r.taxableAmount ?? r.withoutTax ?? beforeDiscount - discountAmount,
-                            );
-
-                            totalBeforeDiscount += beforeDiscount;
-                            totalDiscountAmt += discountAmount;
-                            totalTaxable += taxableAmount;
-                            totalSgst += Number(r.sgst || 0);
-                            totalCgst += Number(r.cgst || 0);
-                            totalIgst += Number(r.igst || 0);
-                            totalLine += Number(r.total || 0);
-                          });
+                          const totalValue = items.reduce(
+                            (sum, item) =>
+                              sum +
+                              Number(item.qty || 0) *
+                                Number(item.unitValue || 0),
+                            0,
+                          );
 
                           return (
                             <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                              <td colSpan={5} className="border-r border-slate-300 p-2 text-center">
+                              <td
+                                colSpan={5}
+                                className="border-r border-slate-300 px-2 py-2 text-center"
+                              >
                                 Total
                               </td>
-                              <td className="border-r border-slate-300 p-2 text-center">
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {totalQty}
                               </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalBeforeDiscount)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalDiscountAmt)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalTaxable)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalSgst)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalCgst)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalIgst)}
-                              </td>
-                              <td className="p-2 text-right">
-                                {formatCurrency(totalLine)}
+                              <td className="border-r border-slate-300 px-2 py-2" />
+                              <td className="px-2 py-2 text-right">
+                                {formatCurrency(totalValue)}
                               </td>
                             </tr>
                           );
                         })()}
-                      </tfoot> */}
+                      </tfoot>
                     </table>
                   </div>
 

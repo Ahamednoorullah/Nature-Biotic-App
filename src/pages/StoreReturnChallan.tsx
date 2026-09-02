@@ -969,9 +969,9 @@ export default function StoreReturnChallan({
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Return Challan
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Executive Unsold Stock Return
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -1114,6 +1114,47 @@ export default function StoreReturnChallan({
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot>
+                        {(() => {
+                          const items = selectedChallan.items;
+                          const totalIssuedQty = items.reduce(
+                            (sum, item) => sum + Number(item.issuedQty || 0),
+                            0,
+                          );
+                          const totalReturnedQty = items.reduce(
+                            (sum, item) => sum + Number(item.returnedQty || 0),
+                            0,
+                          );
+                          const totalReturnValue = items.reduce(
+                            (sum, item) =>
+                              sum +
+                              Number(item.returnedQty || 0) *
+                                Number(item.unitValue || 0),
+                            0,
+                          );
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td
+                                colSpan={5}
+                                className="border-r border-slate-300 px-2 py-2 text-center"
+                              >
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {totalIssuedQty}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {totalReturnedQty}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2" />
+                              <td className="px-2 py-2 text-right">
+                                {formatCurrency(totalReturnValue)}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
                     </table>
                   </div>
 

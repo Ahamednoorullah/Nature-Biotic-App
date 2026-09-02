@@ -728,7 +728,10 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
             <style>{`
               @media print {
                 @page { size: A4 landscape; margin: 6mm; }
-                body * { visibility: hidden !important; }
+                /* Hide the entire app (removes it from layout completely) */
+                #root {
+                  display: none !important;
+                }
                 .debit-note-print-area,
                 .debit-note-print-area * { visibility: visible !important; }
                 .debit-note-print-area {

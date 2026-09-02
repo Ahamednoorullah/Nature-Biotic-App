@@ -1242,6 +1242,13 @@ export function syncApprovedPurchaseOrderToSales(
     cgst: item.cgst,
     igst: item.igst,
     total: item.total,
+    returnAmount: 0,
+    unitPrice: item.price,
+    beforeDiscount: item.withoutTax,
+    price: item.total,
+    discountAmount: 0,
+    discountPercent: 0,
+    taxableAmount: item.withoutTax,
   }));
 
   const merged = [...newRows, ...existing];

@@ -929,9 +929,9 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Purchase Order
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Store to Nature Biotic
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>

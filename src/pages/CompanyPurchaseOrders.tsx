@@ -191,6 +191,36 @@ export default function CompanyPurchaseOrders() {
 
   return (
     <div>
+      <style>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 8mm;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .po-print-area, .po-print-area * {
+            visibility: visible;
+          }
+          .po-print-area {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+          }
+          .po-print-area table {
+            font-size: 10px !important;
+          }
+          .po-print-hide {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
@@ -381,11 +411,11 @@ export default function CompanyPurchaseOrders() {
         </Card>
       )}
 
-      {selected &&
+            {selected &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[94vh] w-[96vw] max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+            <div className="flex max-h-[94vh] w-[96vw] max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl po-print-area">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 po-print-hide">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
                     Purchase Order
@@ -503,33 +533,39 @@ export default function CompanyPurchaseOrders() {
                           <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-left">
                             Product
                           </th>
-                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
                             HSN
                           </th>
                           <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
                             Pkg Size
                           </th>
-                          <th rowSpan={2} className="w-[4%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
+                            Batch No
+                          </th>
+                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-center">
+                            Expiry Date
+                          </th>
+                          <th rowSpan={2} className="w-[3.5%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Qty
                           </th>
-                          <th rowSpan={2} className="w-[7%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Price
                           </th>
                           <th rowSpan={2} className="w-[7%] border-r border-slate-300 px-2 py-2.5 text-right">
                             Without Tax
                           </th>
 
-                          <th colSpan={2} className="w-[9%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="w-[7%] border-r border-slate-300 px-1 py-2 text-center">
                             SGST
                           </th>
-                          <th colSpan={2} className="w-[9%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="w-[7%] border-r border-slate-300 px-1 py-2 text-center">
                             CGST
                           </th>
-                          <th colSpan={2} className="w-[9%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="w-[7%] border-r border-slate-300 px-1 py-2 text-center">
                             IGST
                           </th>
 
-                          <th rowSpan={2} className="w-[8%] px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="w-[7%] px-2 py-2.5 text-right">
                             Total
                           </th>
                         </tr>
@@ -621,6 +657,62 @@ export default function CompanyPurchaseOrders() {
                           </tr>
                         ))}
                       </tbody>
+
+                    <tfoot>
+                        {(() => {
+                          const rows = selected?.order?.items ?? [];
+                          const totalQty = rows.reduce(
+                            (s, r) => s + Number(r.quantity || 0), 0,
+                          );
+                          const totalWithoutTax = rows.reduce(
+                            (s, r) => s + Number(r.withoutTax || 0), 0,
+                          );
+                          const totalSgst = rows.reduce(
+                            (s, r) => s + Number(r.sgst || 0), 0,
+                          );
+                          const totalCgst = rows.reduce(
+                            (s, r) => s + Number(r.cgst || 0), 0,
+                          );
+                          const totalIgst = rows.reduce(
+                            (s, r) => s + Number(r.igst || 0), 0,
+                          );
+                          const totalLine = rows.reduce(
+                            (s, r) => s + Number(r.total || 0), 0,
+                          );
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td colSpan={6} className="border-r border-slate-300 p-2 text-center">
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {totalQty}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalWithoutTax)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalSgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalCgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalIgst)}
+                              </td>
+                              <td className="p-2 text-right">
+                                {formatCurrency(totalLine)}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
+
+                      
                     </table>
                   ) : (
                     <div className="p-8 text-center text-sm text-slate-400">
@@ -684,7 +776,7 @@ export default function CompanyPurchaseOrders() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 po-print-hide">
                 <Button variant="secondary" onClick={() => setSelected(null)}>
                   Close
                 </Button>

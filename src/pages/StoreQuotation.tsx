@@ -1295,9 +1295,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Quotation
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Farmer Product Quotation
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -1492,6 +1492,83 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                           },
                         )}
                       </tbody>
+                      <tfoot>
+                        {(() => {
+                          const items = selectedQuotation.products || [];
+
+                          const totalQty = items.reduce(
+                            (sum, item) => sum + Number(item.qty || 0),
+                            0,
+                          );
+
+                          const totalWithoutTax = items.reduce(
+                            (sum, item) =>
+                              sum +
+                              Number(item.qty || 0) * Number(item.rate || 0),
+                            0,
+                          );
+
+                          const totalSgst = items.reduce((sum, item) => {
+                            const wt =
+                              Number(item.qty || 0) * Number(item.rate || 0);
+                            return (
+                              sum + (wt * Number(item.sgstPercent || 0)) / 100
+                            );
+                          }, 0);
+
+                          const totalCgst = items.reduce((sum, item) => {
+                            const wt =
+                              Number(item.qty || 0) * Number(item.rate || 0);
+                            return (
+                              sum + (wt * Number(item.cgstPercent || 0)) / 100
+                            );
+                          }, 0);
+
+                          const totalIgst = items.reduce((sum, item) => {
+                            const wt =
+                              Number(item.qty || 0) * Number(item.rate || 0);
+                            return (
+                              sum + (wt * Number(item.igstPercent || 0)) / 100
+                            );
+                          }, 0);
+
+                          const totalLine =
+                            totalWithoutTax + totalSgst + totalCgst + totalIgst;
+
+                          return (
+                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                              <td
+                                colSpan={3}
+                                className="border-r border-slate-300 px-2 py-2 text-center"
+                              >
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {totalQty}
+                              </td>
+                              <td className="border-r border-slate-300 px-2 py-2" />
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {formatCurrency(totalWithoutTax)}
+                              </td>
+                              <td className="border-r border-slate-300 px-1 py-2" />
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {formatCurrency(totalSgst)}
+                              </td>
+                              <td className="border-r border-slate-300 px-1 py-2" />
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {formatCurrency(totalCgst)}
+                              </td>
+                              <td className="border-r border-slate-300 px-1 py-2" />
+                              <td className="border-r border-slate-300 px-2 py-2 text-right">
+                                {formatCurrency(totalIgst)}
+                              </td>
+                              <td className="px-2 py-2 text-right">
+                                {formatCurrency(totalLine)}
+                              </td>
+                            </tr>
+                          );
+                        })()}
+                      </tfoot>
                     </table>
                   </div>
 

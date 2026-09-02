@@ -487,9 +487,10 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                 overflow: visible !important;
               }
 
-              body * {
-                visibility: hidden !important;
-              }
+              /* Hide the entire app (removes it from layout completely) */
+                #root {
+                  display: none !important;
+                }
 
               .store-purchase-print-area,
               .store-purchase-print-area * {

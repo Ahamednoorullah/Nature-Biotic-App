@@ -402,8 +402,9 @@ export default function CompanyReceipts() {
                   margin: 8mm;
                 }
 
-                body * {
-                  visibility: hidden !important;
+                /* Hide the entire app (removes it from layout completely) */
+                #root {
+                  display: none !important;
                 }
 
                 .receipt-print-area,
