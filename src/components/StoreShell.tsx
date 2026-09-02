@@ -106,6 +106,12 @@ export default function StoreShell({
   const { goStorePage, backToCompany } = useNav();
   const store = getStore(storeId);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isStoreUser = user?.role === "store_admin";
+  const roleLabel =
+    user?.roleLabel ||
+    (user?.role === "store_admin"
+      ? "Store Administrator"
+      : "Company Administrator");
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
@@ -115,6 +121,7 @@ export default function StoreShell({
           active={active}
           onNavigate={goStorePage}
           onBack={() => backToCompany()}
+          showBack={!isStoreUser}
           onSignOut={signOut}
         />
       </aside>
@@ -134,6 +141,7 @@ export default function StoreShell({
                 setMobileOpen(false);
               }}
               onBack={() => backToCompany()}
+              showBack={!isStoreUser}
               onSignOut={signOut}
               onClose={() => setMobileOpen(false)}
             />
@@ -161,17 +169,22 @@ export default function StoreShell({
             </div>
 
             <div className="flex items-center gap-2 text-sm min-w-0">
-              <button
-                onClick={() => backToCompany()}
-                className="text-slate-400 hover:text-slate-600 font-medium transition-base hidden sm:block"
-              >
-                Store
-              </button>
-              <Icon
-                name="chevron_right"
-                size={18}
-                className="text-slate-300 hidden sm:block"
-              />
+              {!isStoreUser && (
+                <>
+                  <button
+                    onClick={() => backToCompany()}
+                    className="text-slate-400 hover:text-slate-600 font-medium transition-base hidden sm:block"
+                  >
+                    Store
+                  </button>
+                  <Icon
+                    name="chevron_right"
+                    size={18}
+                    className="text-slate-300 hidden sm:block"
+                  />
+                </>
+              )}
+
               <span className="font-semibold text-slate-700 truncate">
                 {store?.name ?? "Store"}, {store?.location?.split(",")[0] ?? ""}
               </span>
@@ -194,9 +207,7 @@ export default function StoreShell({
                   <p className="text-sm font-semibold text-slate-700 leading-tight">
                     {user?.name ?? "User"}
                   </p>
-                  <p className="text-xs text-slate-400">
-                    {user?.role ?? "Administrator"}
-                  </p>
+                  <p className="text-xs text-slate-400">{roleLabel}</p>
                 </div>
                 <Icon
                   name="expand_more"
@@ -223,6 +234,7 @@ function SidebarContent({
   active,
   onNavigate,
   onBack,
+  showBack,
   onSignOut,
   onClose,
 }: {
@@ -230,6 +242,7 @@ function SidebarContent({
   active: StorePage;
   onNavigate: (p: StorePage) => void;
   onBack: () => void;
+  showBack: boolean;
   onSignOut: () => void;
   onClose?: () => void;
 }) {
@@ -263,13 +276,15 @@ function SidebarContent({
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <button
-          onClick={onBack}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-base mb-2"
-        >
-          <Icon name="arrow_back" size={20} />
-          Back to Stores
-        </button>
+        {showBack && (
+          <button
+            onClick={onBack}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-base mb-2"
+          >
+            <Icon name="arrow_back" size={20} />
+            Back to Stores
+          </button>
+        )}
 
         {navItems.map((item) => {
           if (item.type === "link") {

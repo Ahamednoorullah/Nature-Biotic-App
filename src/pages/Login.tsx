@@ -9,11 +9,19 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    await signIn(email, password);
+    setError("");
+
+    const result = await signIn(email, password);
+
+    if (result.error) {
+      setError(result.error);
+    }
+
     setLoading(false);
   };
 
@@ -112,7 +120,9 @@ export default function Login() {
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
                     className="absolute inset-y-0 right-0 flex w-14 items-center justify-center text-slate-400 transition hover:text-brand-600"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
                   >
                     <span
                       className="material-symbols-rounded"
@@ -146,6 +156,12 @@ export default function Login() {
                 </button>
               </div>
 
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
+                  {error}
+                </div>
+              )}
+
               {/* Sign in */}
               <button
                 type="submit"
@@ -172,6 +188,17 @@ export default function Login() {
               <div className="h-px flex-1 bg-slate-200" />
               <span className="text-sm font-medium text-slate-400">or</span>
               <div className="h-px flex-1 bg-slate-200" />
+            </div>
+
+            <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+              <p>
+                <span className="font-semibold text-slate-700">Admin:</span>{" "}
+                admin@naturebiotic.com / demo1234
+              </p>
+              <p>
+                <span className="font-semibold text-slate-700">Store:</span>{" "}
+                sairam@naturebiotic.com / store1234
+              </p>
             </div>
 
             <p className="text-center text-sm text-slate-500 sm:text-base">

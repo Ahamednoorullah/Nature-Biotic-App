@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { NavProvider, useNav } from "@/context/NavContext";
 import { Spinner } from "@/components/ui";
@@ -44,7 +45,23 @@ import StoreAttendance from "@/pages/StoreAttendance";
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const { route } = useNav();
+  const { route, goStore } = useNav();
+
+  const isStoreUser = user?.role === "store_admin";
+  const ownStoreId = user?.storeId;
+
+  useEffect(() => {
+    if (!user || user.role !== "store_admin" || !user.storeId) {
+      return;
+    }
+
+    const isOwnStoreRoute =
+      route.view === "store" && route.storeId === user.storeId;
+
+    if (!isOwnStoreRoute) {
+      goStore(user.storeId, "dashboard");
+    }
+  }, [user, route, goStore]);
 
   if (loading) {
     return (
@@ -56,8 +73,34 @@ function AppContent() {
 
   if (!user) return <Login />;
 
+  // Store users must never see company pages or another store.
+  if (isStoreUser) {
+    if (!ownStoreId) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="rounded-2xl border border-red-100 bg-white p-6 text-center shadow-sm">
+            <h2 className="font-bold text-slate-800">
+              Store access is not configured
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Contact the company administrator to assign a store.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (route.view !== "store" || route.storeId !== ownStoreId) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <Spinner className="text-4xl text-brand-600" />
+        </div>
+      );
+    }
+  }
+
   // Company-level views
-  if (route.view === "company") {
+  if (route.view === "company" && user.role === "company_admin") {
     return (
       <CompanyShell active={route.page}>
         {route.page === "dashboard" && <CompanyDashboard />}
@@ -70,6 +113,16 @@ function AppContent() {
         {route.page === "receipts" && <CompanyReceipts />}
         {route.page === "reports" && <CompanyReports />}
       </CompanyShell>
+    );
+  }
+
+  // From this point onward TypeScript must know this is a store route.
+  // Company routes were already handled above.
+  if (route.view !== "store") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Spinner className="text-4xl text-brand-600" />
+      </div>
     );
   }
 

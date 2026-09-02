@@ -39,7 +39,7 @@ export type StorePage =
   | "stock-adjustment"
   | "low-stock";
 
-type Route =
+export type Route =
   | { view: "company"; page: CompanyPage }
   | {
       view: "store";
