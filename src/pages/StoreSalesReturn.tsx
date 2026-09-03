@@ -454,9 +454,9 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               <th rowSpan={2} className="w-[11%] border-r border-slate-200 px-2 py-3 text-center">
                 SR Number
               </th>
-              <th rowSpan={2} className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
+              {/* <th rowSpan={2} className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
                 Invoice No
-              </th>
+              </th> */}
               <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-3 text-center">
                 Through
               </th>
@@ -501,7 +501,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                 <td className="border-r border-slate-100 px-2 py-3 text-center">{index + 1}</td>
                 <td className="border-r border-slate-100 px-2 py-3 text-center">{dateDisplay(row.date)}</td>
                 <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold">{row.returnNo}</td>
-                <td className="border-r border-slate-100 px-2 py-3 text-center">{row.invoiceNo}</td>
+                {/*<td className="border-r border-slate-100 px-2 py-3 text-center">{row.invoiceNo}</td> */}
                 <td className="border-r border-slate-100 px-2 py-3 text-center">
                   <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
                     row.through === "Direct"

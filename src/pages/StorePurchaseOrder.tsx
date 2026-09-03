@@ -350,6 +350,12 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
     setShowCreate(false);
   }
 
+
+
+  function formatMoney(total: number) {
+    return formatCurrency(total);
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -1166,6 +1172,29 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                           </tr>
                         )}
                       </tbody>
+
+                      {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                        {(() => {
+                        const MIN_ROWS = 10;
+                        const fillerCount = Math.max(0, MIN_ROWS - selectedOrder.items.length);
+                        const columnCount = 14;
+
+                        return Array.from({ length: fillerCount }).map((_, i) => (
+                          <tr key={`filler-${i}`}>
+                            {Array.from({ length: columnCount }).map((_, colIdx) => (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1.5 ${
+                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
+                                }`}
+                              >
+                                &nbsp;
+                              </td>
+                            ))}
+                          </tr>
+                        ));
+                      })()}
+
                        <tfoot>
                         {(() => {
                           const rows = selectedOrder?.items ?? [];
@@ -1222,42 +1251,42 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                     </table>
                   </div>
 
-                  <div className="grid min-h-[180px] grid-cols-[1fr_320px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Notes
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Purchase order raised by{" "}
-                        {currentStore?.name || "this store"} to Nature Biotic.
-                      </p>
+                  {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
+                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-2.5 flex items-center">
+                      {(() => {
+                        const grandTotal = (selectedOrder?.items ?? []).reduce(
+                          (sum, row) => sum + Number(row.total || 0),
+                          0,
+                        );
+
+                        const roundedTotal = Math.round(grandTotal);
+
+                        return (
+                          <p className="text-[10px] font-semibold text-slate-700">
+                            Amount in Words :{" "}
+                            <span className="font-bold text-slate-900">
+                              {numberToWords(roundedTotal)}
+                            </span>
+                          </p>
+                        );
+                      })()}
                     </div>
 
-                    <div className="p-4 text-sm">
-                      {/* <Summary
-                        label="Without Tax"
-                        value={formatMoney(selectedOrder.withoutTax)}
-                      />
+                    <div className="space-y-1 p-2.5 text-[11px]">
                       <Summary
-                        label="SGST"
-                        value={formatMoney(selectedOrder.sgst)}
-                      />
-                      <Summary
-                        label="CGST"
-                        value={formatMoney(selectedOrder.cgst)}
-                      />
-                      <Summary
-                        label="IGST"
-                        value={formatMoney(selectedOrder.igst)}
-                      /> */}
-
-                       <Summary
                         label="Round Off"
-                        value={formatCurrency(selectedOrder.total - (selectedOrder.withoutTax + selectedOrder.sgst + selectedOrder.cgst + selectedOrder.igst))}
+                        value={formatCurrency(
+                          selectedOrder.total -
+                            (selectedOrder.withoutTax +
+                              selectedOrder.sgst +
+                              selectedOrder.cgst +
+                              selectedOrder.igst),
+                        )}
                         muted
                       />
 
-                      <div className="mt-3 border-t border-slate-300 pt-3">
+                      <div className="border-t border-slate-300 pt-1.5">
                         <Summary
                           label="Grand Total"
                           value={formatMoney(selectedOrder.total)}
@@ -1267,16 +1296,29 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                     </div>
                   </div>
 
-                  <div className="po-print-footer-block flex min-h-[100px] justify-end border-t border-slate-300 px-6 py-4">
-                    <div className="mt-auto w-56 text-center">
-                      <div className="border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
+                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
                       </p>
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Purchase order raised by{" "}
+                        {currentStore?.name || "this store"} to Nature Biotic.
+                      </p>
+                    </div>
+
+                    <div className="flex items-end justify-center p-3">
+                      <div className="w-full text-center">
+                        <div className="border-b border-slate-300" />
+                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+                </div>
 
               <div className="store-po-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
                 <Button
@@ -1317,6 +1359,84 @@ function MiniInfo({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-semibold text-slate-700">{value}</p>
     </div>
   );
+}
+
+  function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
 }
 
 function Summary({

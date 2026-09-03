@@ -537,6 +537,84 @@ export default function CompanyCreditNotes() {
       <p className="text-xs font-semibold text-slate-700">{value}</p>
     </div>
   );
+  
+  function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
+}
 
   const SummaryRow = ({ label, value, muted }: any) => (
     <div className="flex items-center justify-between">
@@ -1266,6 +1344,29 @@ export default function CompanyCreditNotes() {
                           );
                         })}
                       </tbody>
+
+                      {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                        {(() => {
+                        const MIN_ROWS = 10;
+                        const fillerCount = Math.max(0, MIN_ROWS - selectedCreditNote?.rows.length);
+                        const columnCount = 18;
+
+                        return Array.from({ length: fillerCount }).map((_, i) => (
+                          <tr key={`filler-${i}`}>
+                            {Array.from({ length: columnCount }).map((_, colIdx) => (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1.5 ${
+                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
+                                }`}
+                              >
+                                &nbsp;
+                              </td>
+                            ))}
+                          </tr>
+                        ));
+                      })()}
+
                       {/* ---- Bottom totals row ---- */}
                       <tfoot>
                         {(() => {
@@ -1311,104 +1412,32 @@ export default function CompanyCreditNotes() {
                     </table>
                   </div>
 
-                  <div className="grid min-h-[200px] grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="text-[11px] font-bold uppercase text-slate-400">
-                        Notes
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        This credit note is generated against returned goods
-                        from {selectedCreditNote.header.party}
-                        {selectedCreditNote.header.invoiceNo
-                          ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
-                          : "."}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-500">
-                        Reason:{" "}
-                        {selectedCreditNote.rows
-                          .map((row) => row.reason)
-                          .filter(Boolean)
-                          .join(", ") || "Product Return"}
+                  {/* ROW 1: Amount in Words (left) + Round Off / Total (right) */}
+                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-3 flex items-center">
+                      <p className="text-[12px] font-semibold text-slate-700">
+                        Amount in Words:{" "}
+                        <span className="font-bold text-slate-900">
+                          {numberToWords(
+                            selectedCreditNote.rows.reduce(
+                              (sum, row) => sum + Number(row.total || 0),
+                              0,
+                            ),
+                          )}
+                        </span>
                       </p>
                     </div>
 
-                    <div className="space-y-2 p-3 text-[11px]">
-                      {/* <SummaryRow
-                        label="Total Before Discount"
-                        value={formatCurrency(
-                          selectedCreditNote.rows.reduce(
-                            (sum, row) =>
-                              sum +
-                              (Number(row.sellingPrice || 0) *
-                                Number(row.quantity || 0) ||
-                                Number(row.amount || 0) +
-                                  Number(row.discountAmount || 0)),
-                            0,
-                          ),
-                        )}
-                        muted
-                      />
-                      <SummaryRow
-                        label="Discount"
-                        value={formatCurrency(
-                          selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.discountAmount || 0),
-                            0,
-                          ),
-                        )}
-                        muted
-                      />
-                      <SummaryRow
-                        label="Taxable Total"
-                        value={formatCurrency(
-                          selectedCreditNote.rows.reduce(
-                            (sum, row) =>
-                              sum +
-                              Number(row.taxableAmount ?? row.amount ?? 0),
-                            0,
-                          ),
-                        )}
-                        muted
-                      />
-                      <SummaryRow
-                        label="CGST"
-                        value={formatCurrency(
-                          selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.cgst || 0),
-                            0,
-                          ),
-                        )}
-                        muted
-                      />
-                      <SummaryRow
-                        label="SGST"
-                        value={formatCurrency(
-                          selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.sgst || 0),
-                            0,
-                          ),
-                        )}
-                        muted
-                      />
-                      <SummaryRow
-                        label="IGST"
-                        value={formatCurrency(
-                          selectedCreditNote.rows.reduce(
-                            (sum, row) => sum + Number(row.igst || 0),
-                            0,
-                          ),
-                        )}
-                        muted
-                      /> */}
+                    <div className="space-y-1.5 p-3 text-[11px]">
                       <SummaryRow
                         label="Round Off"
                         value={formatCurrency(roundOff)}
                         muted
                       />
 
-                      <div className="flex items-center justify-between border-t border-slate-300 pt-3">
-                        <span className="font-bold text-slate-900">Total</span>
-                        <span className="text-xl font-extrabold text-slate-900">
+                      <div className="flex items-center justify-between border-t border-slate-300 pt-2">
+                        <span className="text-sm font-bold text-slate-900">Total</span>
+                        <span className="text-base font-extrabold text-slate-900">
                           {formatCurrency(
                             selectedCreditNote.rows.reduce(
                               (sum, row) => sum + Number(row.total || 0),
@@ -1420,12 +1449,35 @@ export default function CompanyCreditNotes() {
                     </div>
                   </div>
 
-                  <div className="flex min-h-[110px] justify-end border-t border-slate-300 px-6 py-4">
-                    <div className="mt-auto w-56 text-center">
-                      <div className="border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
+                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                   <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-3">
+                      <p className="text-[11px] font-bold uppercase text-slate-400">
+                        Notes
                       </p>
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        This credit note is generated against returned goods
+                        from {selectedCreditNote.header.party}
+                        {selectedCreditNote.header.invoiceNo
+                          ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
+                          : "."}
+                      </p>
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Reason:{" "}
+                        {selectedCreditNote.rows
+                          .map((row) => row.reason)
+                          .filter(Boolean)
+                          .join(", ") || "Product Return"}
+                      </p>
+                    </div>
+
+                    <div className="flex items-end justify-center p-3">
+                      <div className="w-full text-center">
+                        <div className="border-b border-slate-300" />
+                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1452,7 +1504,7 @@ export default function CompanyCreditNotes() {
       {showCreate &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-5xlflex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               {/* Header (fixed, does not scroll) */}
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>

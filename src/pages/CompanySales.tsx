@@ -148,6 +148,84 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
+}
+
 function SummaryRow({
   label,
   value,
@@ -1653,9 +1731,29 @@ export default function CompanySales() {
                   </div>
 
                   <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                  <div className="border-r border-slate-300 p-3" />
+                    <div className="border-r border-slate-300 p-3">
+                      {(() => {
+                        const grandTotal = selectedInvoice.rows.reduce(
+                          (sum, row) => sum + Number(row.total || 0),
+                          0,
+                        );
 
-                  <div className="p-3 text-[10px]">
+                        const roundedTotal = Math.round(grandTotal);
+
+                        return (
+                          <div className="flex h-full items-center">
+                            <p className="text-[12px] font-semibold text-slate-700">
+                              Amount in Words :{" "}
+                              <span className="font-bold text-slate-900">
+                                {numberToWords(roundedTotal)}
+                              </span>
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="p-3 text-[10px]">
                     {(() => {
                       const totalBeforeDiscount = selectedInvoice.rows.reduce(
                         (sum, row) =>
@@ -1730,7 +1828,7 @@ export default function CompanySales() {
                   const payableTotal = Math.round(exactTotal);
 
                   return (
-                    <div className="mt-3">
+                    <div className="mt-1.5">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
 
                           <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">

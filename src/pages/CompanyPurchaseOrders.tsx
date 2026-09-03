@@ -185,6 +185,84 @@ export default function CompanyPurchaseOrders() {
     }
   }
 
+  function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
+}
+
   const pendingCount = requests.filter(
     (row) => row.status === "Pending",
   ).length;
@@ -405,6 +483,7 @@ export default function CompanyPurchaseOrders() {
                     )}
                   </td>
                 </tr>
+
               ))}
             </tbody>
           </table>
@@ -524,48 +603,65 @@ export default function CompanyPurchaseOrders() {
                   </div>
 
                   {selected.order?.items?.length ? (
-                    <table className="max-w-7xl table-fixed  border-collapse text-[11px]">
+                    <table className="w-full max-w-7xl table-fixed border-collapse text-[11px]">
+                      <colgroup>
+                        <col className="w-[4%]" />   {/* S.No */}
+                        <col className="w-[24%]" />  {/* Product */}
+                        <col className="w-[6%]" />   {/* HSN */}
+                        <col className="w-[6%]" />   {/* Pkg Size */}
+                        <col className="w-[4%]" />   {/* Qty */}
+                        <col className="w-[7%]" />   {/* Price */}
+                        <col className="w-[8%]" />   {/* Without Tax */}
+                        <col className="w-[4%]" />   {/* SGST % */}
+                        <col className="w-[7%]" />   {/* SGST Amt */}
+                        <col className="w-[4%]" />   {/* CGST % */}
+                        <col className="w-[7%]" />   {/* CGST Amt */}
+                        <col className="w-[4%]" />   {/* IGST % */}
+                        <col className="w-[7%]" />   {/* IGST Amt */}
+                        <col className="w-[8%]" />   {/* Total */}
+                      </colgroup>
                       <thead>
                         <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th rowSpan={2} className="w-[1.5%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-center">
                             S.No
                           </th>
-                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2.5 text-left">
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-left">
                             Product
                           </th>
-                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-center">
                             HSN
                           </th>
-                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-center">
                             Pkg Size
                           </th>
-                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2.5 text-center">
-                            Batch No
-                          </th>
-                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-center">
-                            Expiry Date
-                          </th>
-                          <th rowSpan={2} className="w-[3.5%] border-r border-slate-300 px-2 py-2.5 text-right">
+
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-right">
                             Qty
                           </th>
-                          <th rowSpan={2} className="w-[6%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-right">
                             Price
                           </th>
-                          <th rowSpan={2} className="w-[7%] border-r border-slate-300 px-2 py-2.5 text-right">
+                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-right">
                             Without Tax
                           </th>
 
-                          <th colSpan={2} className="w-[7%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-2 text-center">
                             SGST
                           </th>
-                          <th colSpan={2} className="w-[7%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-2 text-center">
                             CGST
                           </th>
-                          <th colSpan={2} className="w-[7%] border-r border-slate-300 px-1 py-2 text-center">
+                          <th colSpan={2} className="border-r border-slate-300 px-1 py-2 text-center">
                             IGST
                           </th>
 
-                          <th rowSpan={2} className="w-[7%] px-2 py-2.5 text-right">
+                          {/* FIX: was colSpan={2} — Total has no % / Amt sub-columns,
+                              so it must be a single rowSpan cell like the other totals.
+                              The old colSpan={2} added a 15th phantom column that the
+                              <colgroup> (14 cols) couldn't account for — that phantom
+                              column was the source of the extra blank space on the right
+                              and the misalignment in tbody/filler/tfoot rows. */}
+                          <th rowSpan={2} className="px-2 py-2.5 text-right">
                             Total
                           </th>
                         </tr>
@@ -600,14 +696,6 @@ export default function CompanyPurchaseOrders() {
 
                             <td className="border-r border-slate-300 px-2 py-3 text-center">
                               {item.packSize || item.pkgsize || "-"}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-2 text-center">
-                              {item.batchNo}
-                            </td>
-                                 
-                            <td className="border-r border-slate-300 px-2 py-2 text-center">
-                              {item.expiryDate}
                             </td>
 
                             <td className="border-r border-slate-300 px-2 py-3 text-right">
@@ -658,120 +746,140 @@ export default function CompanyPurchaseOrders() {
                         ))}
                       </tbody>
 
+                      {(() => {
+                        const MIN_ROWS = 6;
+                        const fillerCount = Math.max(0, MIN_ROWS - selected.order.items.length);
+                        const columnCount = 14;
+                        return Array.from({ length: fillerCount }).map((_, i) => (
+                          <tr key={`filler-${i}`}>
+                            {Array.from({ length: columnCount }).map((_, colIdx) => (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1 h-6 ${
+                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
+                                }`}
+                              >
+                                &nbsp;
+                              </td>
+                            ))}
+                          </tr>
+                        ));
+                      })()}
+
                     <tfoot>
-                        {(() => {
-                          const rows = selected?.order?.items ?? [];
-                          const totalQty = rows.reduce(
-                            (s, r) => s + Number(r.quantity || 0), 0,
-                          );
-                          const totalWithoutTax = rows.reduce(
-                            (s, r) => s + Number(r.withoutTax || 0), 0,
-                          );
-                          const totalSgst = rows.reduce(
-                            (s, r) => s + Number(r.sgst || 0), 0,
-                          );
-                          const totalCgst = rows.reduce(
-                            (s, r) => s + Number(r.cgst || 0), 0,
-                          );
-                          const totalIgst = rows.reduce(
-                            (s, r) => s + Number(r.igst || 0), 0,
-                          );
-                          const totalLine = rows.reduce(
-                            (s, r) => s + Number(r.total || 0), 0,
-                          );
+                    {(() => {
+                      const rows = selected?.order?.items ?? [];
+                      const totalQty = rows.reduce((s, r) => s + Number(r.quantity || 0), 0);
+                      const totalWithoutTax = rows.reduce((s, r) => s + Number(r.withoutTax || 0), 0);
+                      const totalSgst = rows.reduce((s, r) => s + Number(r.sgst || 0), 0);
+                      const totalCgst = rows.reduce((s, r) => s + Number(r.cgst || 0), 0);
+                      const totalIgst = rows.reduce((s, r) => s + Number(r.igst || 0), 0);
+                      const totalLine = rows.reduce((s, r) => s + Number(r.total || 0), 0);
 
-                          return (
-                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                              <td colSpan={6} className="border-r border-slate-300 p-2 text-center">
-                                Total
-                              </td>
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {totalQty}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalWithoutTax)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalSgst)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalCgst)}
-                              </td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">
-                                {formatCurrency(totalIgst)}
-                              </td>
-                              <td className="p-2 text-right">
-                                {formatCurrency(totalLine)}
-                              </td>
-                            </tr>
-                          );
-                        })()}
-                      </tfoot>
+                      return (
+                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                          {/* cols 1-4: S.No, Product, HSN, Pkg Size */}
+                          <td colSpan={4} className="border-r border-slate-300 p-2 text-center">
+                            Total
+                          </td>
 
-                      
+                          {/* col 5: Qty */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {totalQty}
+                          </td>
+
+                          {/* col 6: Price - blank */}
+                          <td className="border-r border-slate-300 p-2" />
+
+                          {/* col 7: Without Tax */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalWithoutTax)}
+                          </td>
+
+                          {/* col 8: SGST % - blank */}
+                          <td className="border-r border-slate-300 p-2" />
+                          {/* col 9: SGST Amt */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalSgst)}
+                          </td>
+
+                          {/* col 10: CGST % - blank */}
+                          <td className="border-r border-slate-300 p-2" />
+                          {/* col 11: CGST Amt */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalCgst)}
+                          </td>
+
+                          {/* col 12: IGST % - blank */}
+                          <td className="border-r border-slate-300 p-2" />
+                          {/* col 13: IGST Amt */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalIgst)}
+                          </td>
+
+                          {/* col 14: Total */}
+                          <td className="p-2 text-right">
+                            {formatCurrency(totalLine)}
+                          </td>
+                        </tr>
+                      );
+                    })()}
+                  </tfoot>
                     </table>
                   ) : (
+
                     <div className="p-8 text-center text-sm text-slate-400">
                       Product-level details are not available for this order.
                     </div>
                   )}
 
                   <div className="grid grid-cols-[1fr_330px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Notes
+                  <div className="border-r border-slate-300 p-2.5">
+                      <p className="text-[12px] font-semibold text-slate-700">
+                        Amount in Words :{" "}
+                          <span className="font-bold text-slate-900">
+                            {numberToWords(
+                              selected.order?.total ?? selected.amount ?? 0,
+                              )}
+                          </span>
                       </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Purchase order raised by {selected.storeName} for Nature
-                        Biotic approval.
-                      </p>
-                    </div>
+                  </div>
 
-                    <div className="p-4 text-sm">
-                      {/* <SummaryLine
-                        label="Without Tax"
-                        value={formatCurrency(selected.order?.withoutTax ?? 0)}
-                      />
-                      <SummaryLine
-                        label="SGST"
-                        value={formatCurrency(selected.order?.sgst ?? 0)}
-                      />
-                      <SummaryLine
-                        label="CGST"
-                        value={formatCurrency(selected.order?.cgst ?? 0)}
-                      />
-                      <SummaryLine
-                        label="IGST"
-                        value={formatCurrency(selected.order?.igst ?? 0)}
-                      /> */}
+                  <div className="space-y-1 p-2.5 text-[11px]">
+                    <SummaryLine
+                      label="Round Off"
+                      value={formatCurrency(
+                        (selected.order?.total ?? selected.amount ?? 0) -
+                          ((selected.order?.withoutTax ?? 0) +
+                            (selected.order?.sgst ?? 0) +
+                            (selected.order?.cgst ?? 0) +
+                            (selected.order?.igst ?? 0))
+                      )}
+                      muted
+                    />
 
-                      <SummaryLine
-                        label="Round Off"
-                        value={formatCurrency(
-                          (selected.order?.total ?? selected.amount ?? 0) -
-                            ((selected.order?.withoutTax ?? 0) +
-                              (selected.order?.sgst ?? 0) +
-                              (selected.order?.cgst ?? 0) +
-                              (selected.order?.igst ?? 0))
+                    <div className="flex items-center justify-between border-t border-slate-300 pt-1.5">
+                      <span className="text-xs font-bold text-slate-900">
+                        Grand Total
+                      </span>
+                      <span className="text-sm font-extrabold text-brand-700">
+                        {formatCurrency(
+                          selected.order?.total ?? selected.amount,
                         )}
-                        muted
-                      />
-
-                      <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-3">
-                        <span className="font-bold text-slate-900">
-                          Grand Total
-                        </span>
-                        <span className="text-lg font-extrabold text-brand-700">
-                          {formatCurrency(
-                            selected.order?.total ?? selected.amount,
-                          )}
-                        </span>
-                      </div>
+                      </span>
                     </div>
+                  </div>
+                </div>
+
+                  {/* NEW: separate Notes row below, full width, left-aligned */}
+                  <div className="border-t border-slate-300 p-4">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                      Notes
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Purchase order raised by {selected.storeName} for Nature
+                      Biotic approval.
+                    </p>
                   </div>
                 </div>
               </div>
