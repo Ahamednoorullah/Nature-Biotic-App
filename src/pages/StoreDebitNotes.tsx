@@ -333,6 +333,84 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     );
   }
 
+    function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
+}
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -1117,205 +1195,244 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           );
                         })}
                       </tbody>
+
+                      {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                        {(() => {
+                        const MIN_ROWS = 10;
+                        const fillerCount = Math.max(0, MIN_ROWS - selectedItems.length);
+                        const columnCount = 18;
+
+                        return Array.from({ length: fillerCount }).map((_, i) => (
+                          <tr key={`filler-${i}`}>
+                            {Array.from({ length: columnCount }).map((_, colIdx) => (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1.5 ${
+                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
+                                }`}
+                              >
+                                &nbsp;
+                              </td>
+                            ))}
+                          </tr>
+                        ));
+                      })()}
+
+
                       {/* ---- Bottom totals row ---- */}
                       <tfoot>
-      {(() => {
-        const rows = selectedItems;
+                      {(() => {
+                        const rows = selectedItems;
 
-        const totalQty = rows.reduce(
-          (s, r) => s + Number(r.quantity || 0),
-          0
-        );
+                        const totalQty = rows.reduce(
+                          (s, r) => s + Number(r.quantity || 0),
+                          0
+                        );
 
-        const totalBeforeDiscount = rows.reduce((s, r) => {
-          const qty = Number(r.quantity || 0);
-          const price = Number(r.sellingPrice || 0);
-          const discountAmt = Number(r.discountAmount || 0);
-          const taxable = Number(
-            r.taxableAmount ?? r.amount ?? 0
-          );
+                        const totalBeforeDiscount = rows.reduce((s, r) => {
+                          const qty = Number(r.quantity || 0);
+                          const price = Number(r.sellingPrice || 0);
+                          const discountAmt = Number(r.discountAmount || 0);
+                          const taxable = Number(
+                            r.taxableAmount ?? r.amount ?? 0
+                          );
 
-          const beforeDiscount =
-            price > 0 ? price * qty : taxable + discountAmt;
+                          const beforeDiscount =
+                            price > 0 ? price * qty : taxable + discountAmt;
 
-          return s + beforeDiscount;
-        }, 0);
+                          return s + beforeDiscount;
+                        }, 0);
 
-        const totalDiscountAmt = rows.reduce(
-          (s, r) => s + Number(r.discountAmount || 0),
-          0
-        );
+                        const totalDiscountAmt = rows.reduce(
+                          (s, r) => s + Number(r.discountAmount || 0),
+                          0
+                        );
 
-        const totalTaxable = rows.reduce(
-          (s, r) =>
-            s + Number(r.taxableAmount ?? r.amount ?? 0),
-          0
-        );
+                        const totalTaxable = rows.reduce(
+                          (s, r) =>
+                            s + Number(r.taxableAmount ?? r.amount ?? 0),
+                          0
+                        );
 
-        const totalSgst = rows.reduce(
-          (s, r) => s + Number(r.sgst || 0),
-          0
-        );
+                        const totalSgst = rows.reduce(
+                          (s, r) => s + Number(r.sgst || 0),
+                          0
+                        );
 
-        const totalCgst = rows.reduce(
-          (s, r) => s + Number(r.cgst || 0),
-          0
-        );
+                        const totalCgst = rows.reduce(
+                          (s, r) => s + Number(r.cgst || 0),
+                          0
+                        );
 
-        const totalIgst = rows.reduce(
-          (s, r) => s + Number(r.igst || 0),
-          0
-        );
+                        const totalIgst = rows.reduce(
+                          (s, r) => s + Number(r.igst || 0),
+                          0
+                        );
 
-        const totalLine = rows.reduce(
-          (s, r) => s + Number(r.returnAmount || 0),
-          0
-        );
+                        const totalLine = rows.reduce(
+                          (s, r) => s + Number(r.returnAmount || 0),
+                          0
+                        );
 
-        return (
-          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-            {/* S.No */}
-            <td className="border-r border-slate-300 p-2 text-center">
-              Total
-            </td>
+                        return (
+                          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                            {/* S.No */}
+                            <td className="border-r border-slate-300 p-2 text-center">
+                              Total
+                            </td>
 
-            {/* Product */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* Product */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* Batch */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* Batch */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* Expiry */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* Expiry */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* Qty */}
-            <td className="border-r border-slate-300 p-2 text-center">
-              {totalQty}
-            </td>
+                            {/* Qty */}
+                            <td className="border-r border-slate-300 p-2 text-center">
+                              {totalQty}
+                            </td>
 
-            {/* Unit Price */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* Unit Price */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* Before Discount */}
-            <td className="border-r border-slate-300 p-2 text-right">
-              {formatCurrency(totalBeforeDiscount)}
-            </td>
+                            {/* Before Discount */}
+                            <td className="border-r border-slate-300 p-2 text-right">
+                              {formatCurrency(totalBeforeDiscount)}
+                            </td>
 
-            {/* Discount % */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* Discount % */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* Discount Amount */}
-            <td className="border-r border-slate-300 p-2 text-right">
-              {formatCurrency(totalDiscountAmt)}
-            </td>
+                            {/* Discount Amount */}
+                            <td className="border-r border-slate-300 p-2 text-right">
+                              {formatCurrency(totalDiscountAmt)}
+                            </td>
 
-            {/* Taxable */}
-            <td className="border-r border-slate-300 p-2 text-right">
-              {formatCurrency(totalTaxable)}
-            </td>
+                            {/* Taxable */}
+                            <td className="border-r border-slate-300 p-2 text-right">
+                              {formatCurrency(totalTaxable)}
+                            </td>
 
-            {/* SGST % */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* SGST % */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* SGST Amount */}
-            <td className="border-r border-slate-300 p-2 text-right">
-              {formatCurrency(totalSgst)}
-            </td>
+                            {/* SGST Amount */}
+                            <td className="border-r border-slate-300 p-2 text-right">
+                              {formatCurrency(totalSgst)}
+                            </td>
 
-            {/* CGST % */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* CGST % */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* CGST Amount */}
-            <td className="border-r border-slate-300 p-2 text-right">
-              {formatCurrency(totalCgst)}
-            </td>
+                            {/* CGST Amount */}
+                            <td className="border-r border-slate-300 p-2 text-right">
+                              {formatCurrency(totalCgst)}
+                            </td>
 
-            {/* IGST % */}
-            <td className="border-r border-slate-300 p-2" />
+                            {/* IGST % */}
+                            <td className="border-r border-slate-300 p-2" />
 
-            {/* IGST Amount */}
-            <td className="border-r border-slate-300 p-2 text-right">
-              {formatCurrency(totalIgst)}
-            </td>
+                            {/* IGST Amount */}
+                            <td className="border-r border-slate-300 p-2 text-right">
+                              {formatCurrency(totalIgst)}
+                            </td>
 
-            {/* Line Total */}
-            <td className="p-2 text-right">
-              {formatCurrency(totalLine)}
-            </td>
-          </tr>
-        );
-      })()}
-    </tfoot>
+                            {/* Line Total */}
+                            <td className="p-2 text-right">
+                              {formatCurrency(totalLine)}
+                            </td>
+                          </tr>
+                        );
+                      })()}
+                    </tfoot>
                     </table>
                   </div>
 
-                  <div className="grid min-h-[140px] grid-cols-[1fr_320px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
+                  {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
+                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 p-2.5 flex items-center">
+                      {(() => {
+                        const grandTotal = selectedItems.reduce(
+                          (sum, row) => sum + Number(row.total || 0),
+                          0,
+                        );
+
+                        const roundedTotal = Math.round(grandTotal);
+
+                        return (
+                          <p className="text-[10px] font-semibold text-slate-700">
+                            Amount in Words :{" "}
+                            <span className="font-bold text-slate-900">
+                              {numberToWords(roundedTotal)}
+                            </span>
+                          </p>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="space-y-1 p-2.5 text-[11px]">
+                      <Summary
+                        label="Round Off"
+                        value={formatCurrency(
+                          selectedItems.reduce(
+                            (sum, row) => sum + Number(row.total || 0),
+                            0,
+                          ) -
+                            selectedItems.reduce(
+                              (sum, row) =>
+                                sum +
+                                Number(row.withoutTax || 0) +
+                                Number(row.sgst || 0) +
+                                Number(row.cgst || 0) +
+                                Number(row.igst || 0),
+                              0,
+                            ),
+                        )}
+                        muted
+                      />
+
+                      <div className="border-t border-slate-300 pt-1.5">
+                      <Summary
+                        label="Grand Total"
+                        value={formatCurrency(
+                          selectedItems.reduce(
+                            (sum, row) => sum + Number(row.total || 0),
+                            0,
+                          ),
+                        )}
+                        bold
+                      />
+                    </div>
+                    </div>
+                  </div>
+
+                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
                         Notes
                       </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Debit note generated against products returned to Nature
-                        Biotic.
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Purchase order raised by{" "}
+                        {storeId || "this store"} to Nature Biotic.
                       </p>
                     </div>
 
-                    <div className="p-4 text-sm">
-                      {/* <TotalRow
-                        label="Total Before Discount"
-                        value={formatCurrency(selectedSummary.beforeDiscount)}
-                      />
-                      <TotalRow
-                        label="Discount"
-                        value={formatCurrency(selectedSummary.discountAmount)}
-                      />
-                      <TotalRow
-                        label="Taxable Total"
-                        value={formatCurrency(selectedSummary.taxableAmount)}
-                      />
-                      <TotalRow
-                        label="SGST"
-                        value={formatCurrency(selectedSummary.sgst)}
-                      />
-                      <TotalRow
-                        label="CGST"
-                        value={formatCurrency(selectedSummary.cgst)}
-                      />
-                      <TotalRow
-                        label="IGST"
-                        value={formatCurrency(selectedSummary.igst)}
-                      /> */}
-
-                      <TotalRow
-                        label="Round Off"
-                        value={formatCurrency(
-                        (selectedSummary.total ?? 0) -
-                        ((selectedSummary.withoutTax ?? 0) +
-                        (selectedSummary.sgst ?? 0) +
-                        (selectedSummary.cgst ?? 0) +
-                        (selectedSummary.igst ?? 0))
-                      )}
-                      />
-
-                      <div className="mt-3 border-t border-slate-300 pt-3">
-                        <TotalRow
-                          label="Grand Total"
-                          value={formatCurrency(selectedSummary.total)}
-                          bold
-                        />
+                    <div className="flex items-end justify-center p-3">
+                      <div className="w-full text-center">
+                        <div className="border-b border-slate-300" />
+                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
                       </div>
                     </div>
                   </div>
+                </div>                  
 
-                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
-                    <div className="mt-auto w-56 text-center">
-                      <div className="border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
-                    </div>
-                  </div>
-                </div>
+
               </div>
 
               <div className="debit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
@@ -1358,6 +1475,45 @@ function Detail({ label, value }: { label: string; value: string }) {
         {label}
       </p>
       <p className="mt-1 truncate font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function Summary({
+  label,
+  value,
+  bold = false,
+  muted = false,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span
+        className={
+          bold
+            ? "font-bold text-slate-800"
+            : muted
+              ? "text-slate-500"
+              : "text-slate-700"
+        }
+      >
+        {label}
+      </span>
+      <span
+        className={
+          bold
+            ? "font-bold text-slate-900"
+            : muted
+              ? "text-slate-500"
+              : "font-semibold text-slate-700"
+        }
+      >
+        {value}
+      </span>
     </div>
   );
 }

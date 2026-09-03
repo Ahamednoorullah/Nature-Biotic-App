@@ -1809,7 +1809,8 @@ export default function CompanySales() {
                     })()}
                   </div>
                 </div>
-
+                
+                {/* Row 1 amount in words, round off */}
                 <div className="invoice-print-footer-block flex items-end justify-between gap-7 border-t border-slate-300 p-5">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">

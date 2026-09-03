@@ -20,6 +20,7 @@ type ProductRow = {
 };
 
 type Row = {
+  roundOff: number;
   id: string;
   date: string;
   quotationNo: string;
@@ -162,6 +163,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       sgst: 0,
       cgst: 0,
       igst: 0,
+      roundOff: 0,
       amount: 8200,
       status: "Open",
     },
@@ -195,6 +197,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       sgst: 0,
       cgst: 0,
       igst: 0,
+      roundOff: 0,
       amount: 5600,
       status: "Converted",
     },
@@ -542,6 +545,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       sgst: sgstAmount,
       cgst: cgstAmount,
       igst: igstAmount,
+      roundOff: Math.round(grandTotal) - grandTotal,
       amount: grandTotal,
       status: "Open",
     };
@@ -551,6 +555,84 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     resetForm();
     setShow(false);
   }
+
+function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
+}
 
   return (
     <div>
@@ -1442,7 +1524,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                             return (
                               <tr
                                 key={item.id}
-                                className="border-b border-slate-300"
+                                className="border-slate-300"
                               >
                                 <td className="border-r border-slate-300 px-2 py-2 text-center">
                                   {index + 1}
@@ -1492,6 +1574,29 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                           },
                         )}
                       </tbody>
+
+                      {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                        {(() => {
+                        const MIN_ROWS = 10;
+                        const fillerCount = Math.max(0, MIN_ROWS - selectedQuotation.products.length);
+                        const columnCount = 13;
+
+                        return Array.from({ length: fillerCount }).map((_, i) => (
+                          <tr key={`filler-${i}`}>
+                            {Array.from({ length: columnCount }).map((_, colIdx) => (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1.5 ${
+                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
+                                }`}
+                              >
+                                &nbsp;
+                              </td>
+                            ))}
+                          </tr>
+                        ));
+                      })()}
+
                       <tfoot>
                         {(() => {
                           const items = selectedQuotation.products || [];
@@ -1572,78 +1677,89 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     </table>
                   </div>
 
-                  <div className="grid min-h-[160px] grid-cols-[1fr_330px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Remarks
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500">
-                        {selectedQuotation.remarks || "-"}
-                      </p>
-                    </div>
+                  {/* ROW 1: Amount in Words (left, bottom-aligned) + breakdown/Round Off/Grand Total (right) */}
+                      <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
+                        <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
+                          <p className="text-[10px] font-semibold text-slate-700">
+                            Amount in Words :{" "}
+                            <span className="font-bold text-slate-900">
+                              {numberToWords(selectedQuotation.amount)}
+                            </span>
+                          </p>
+                        </div>
 
-                    <div className="p-4 text-sm">
-                      <div className="flex justify-between py-1">
-                        <span className="text-slate-500">Without Tax</span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.withoutTax)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-slate-500">
-                          SGST
-                          {quotationTaxRates.sgst !== null
-                            ? ` (${quotationTaxRates.sgst.toFixed(2)}%)`
-                            : ""}
-                        </span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.sgst)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-slate-500">
-                          CGST
-                          {quotationTaxRates.cgst !== null
-                            ? ` (${quotationTaxRates.cgst.toFixed(2)}%)`
-                            : ""}
-                        </span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.cgst)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-slate-500">
-                          IGST
-                          {quotationTaxRates.igst !== null
-                            ? ` (${quotationTaxRates.igst.toFixed(2)}%)`
-                            : ""}
-                        </span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.igst)}
-                        </span>
+                        <div className="space-y-1 p-2.5 text-[11px]">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">Without Tax</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(selectedQuotation.withoutTax)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">SGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(selectedQuotation.sgst)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">CGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(selectedQuotation.cgst)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500">IGST</span>
+                            <span className="font-semibold text-slate-700">
+                              {formatCurrency(selectedQuotation.igst)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
+                            <span className="text-slate-500">Round Off</span>
+                            <span className="font-semibold text-slate-500">
+                              {formatCurrency(selectedQuotation.roundOff)}
+                            </span>
+                          </div>
+
+                          <div className="border-t border-slate-300 pt-1.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-bold text-slate-800">Grand Total</span>
+                              <span className="text-lg font-bold text-slate-900">
+                                {formatCurrency(selectedQuotation.amount)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
-                        <span className="font-bold text-slate-800">
-                          Grand Total
-                        </span>
-                        <span className="text-lg font-bold text-slate-900">
-                          {formatCurrency(selectedQuotation.amount)}
-                        </span>
+                                            {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                      <div className="grid min-h-[110px] grid-cols-[1fr_320px] border-t border-slate-300">
+                        <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            Notes
+                          </p>
+
+                          <p className="mt-1.5 text-xs text-slate-500">
+                            Products issued from store stock for{" "}
+                            {selectedQuotation.farmer || "field delivery"}.
+                          </p>
+                        </div>
+
+                        <div className="flex items-end justify-center p-3">
+                          <div className="w-full text-center">
+                            <div className="border-b border-slate-300" />
+
+                            <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                              Authorised Signatory
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
-                    <div className="mt-auto w-56 text-center">
-                      <div className="border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
               <div className="quotation-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 <Button

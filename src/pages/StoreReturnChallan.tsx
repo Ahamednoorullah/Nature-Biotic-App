@@ -228,6 +228,83 @@ export default function StoreReturnChallan({
   closeForm();
 }
 
+  function numberToWords(num: number): string {
+  const ones = [
+    "",
+    "One",
+    "Two",
+    "Three",
+    "Four",
+    "Five",
+    "Six",
+    "Seven",
+    "Eight",
+    "Nine",
+    "Ten",
+    "Eleven",
+    "Twelve",
+    "Thirteen",
+    "Fourteen",
+    "Fifteen",
+    "Sixteen",
+    "Seventeen",
+    "Eighteen",
+    "Nineteen",
+  ];
+
+  const tens = [
+    "",
+    "",
+    "Twenty",
+    "Thirty",
+    "Forty",
+    "Fifty",
+    "Sixty",
+    "Seventy",
+    "Eighty",
+    "Ninety",
+  ];
+
+  function convert(n: number): string {
+    if (n < 20) return ones[n];
+    if (n < 100) {
+      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+    }
+    if (n < 1000) {
+      return (
+        ones[Math.floor(n / 100)] +
+        " Hundred" +
+        (n % 100 ? " " + convert(n % 100) : "")
+      );
+    }
+    if (n < 100000) {
+      return (
+        convert(Math.floor(n / 1000)) +
+        " Thousand" +
+        (n % 1000 ? " " + convert(n % 1000) : "")
+      );
+    }
+    if (n < 10000000) {
+      return (
+        convert(Math.floor(n / 100000)) +
+        " Lakh" +
+        (n % 100000 ? " " + convert(n % 100000) : "")
+      );
+    }
+
+    return (
+      convert(Math.floor(n / 10000000)) +
+      " Crore" +
+      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    );
+  }
+
+  const rounded = Math.round(Number(num) || 0);
+
+  if (rounded === 0) return "Zero Rupees Only";
+
+  return `${convert(rounded)} Rupees Only`;
+}
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -1077,7 +1154,7 @@ export default function StoreReturnChallan({
                         {selectedChallan.items.map((item, index) => (
                           <tr
                             key={`${selectedChallan.id}-${index}`}
-                            className="border-b border-slate-300"
+                            className="border-slate-300"
                           >
                             <td className="border-r border-slate-300 px-2 py-2 text-center">
                               {index + 1}
@@ -1113,7 +1190,35 @@ export default function StoreReturnChallan({
                             </td>
                           </tr>
                         ))}
+                        
+                        {/* Filler rows extend the column borders to the minimum table height. */}
+                        {(() => {
+                          const MIN_ROWS = 10;
+                          const fillerCount = Math.max(
+                            0,
+                            MIN_ROWS - selectedChallan.items.length,
+                          );
+                          const columnCount = 9;
+
+                          return Array.from({ length: fillerCount }).map((_, i) => (
+                            <tr key={`filler-${i}`}>
+                              {Array.from({ length: columnCount }).map((_, colIdx) => (
+                                <td
+                                  key={colIdx}
+                                  className={`px-1 py-1.5 ${
+                                    colIdx < columnCount - 1
+                                      ? "border-r border-slate-300"
+                                      : ""
+                                  }`}
+                                >
+                                  &nbsp;
+                                </td>
+                              ))}
+                            </tr>
+                          ));
+                        })()}
                       </tbody>
+
                       <tfoot>
                         {(() => {
                           const items = selectedChallan.items;
@@ -1159,87 +1264,102 @@ export default function StoreReturnChallan({
                   </div>
 
                   {(() => {
-                    const withoutTax = selectedChallan.items.reduce(
-                      (sum, item) =>
-                        sum +
-                        Number(item.returnedQty || 0) *
-                          Number(item.unitValue || 0),
-                      0,
-                    );
-                    const sgst =
-                      (withoutTax *
-                        Number(selectedChallan.sgstPercent || 0)) /
-                      100;
-                    const cgst =
-                      (withoutTax *
-                        Number(selectedChallan.cgstPercent || 0)) /
-                      100;
-                    const igst =
-                      (withoutTax *
-                        Number(selectedChallan.igstPercent || 0)) /
-                      100;
-                    const grandTotal = withoutTax + sgst + cgst + igst;
+                  const withoutTax = selectedChallan.items.reduce(
+                    (sum: number, item: ReturnItem) =>
+                      sum + Number(item.returnedQty || 0) * Number(item.unitValue || 0),
+                    0,
+                  );
+                  const sgst = (withoutTax * Number(selectedChallan.sgstPercent || 0)) / 100;
+                  const cgst = (withoutTax * Number(selectedChallan.cgstPercent || 0)) / 100;
+                  const igst = (withoutTax * Number(selectedChallan.igstPercent || 0)) / 100;
+                  const grandTotal = withoutTax + sgst + cgst + igst;
+                  const roundedTotal = Math.round(grandTotal);
+                  const roundOff = roundedTotal - grandTotal;
 
-                    return (
-                      <div className="grid min-h-[150px] grid-cols-[1fr_320px] border-t border-slate-300">
-                        <div className="border-r border-slate-300 p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                            Notes
-                          </p>
-                          <p className="mt-2 text-sm text-slate-500">
-                            Unsold products returned by{" "}
-                            {selectedChallan.executive} against delivery challan{" "}
-                            {selectedChallan.dcNo}.
+                  return (
+                    <>
+                      {/* ROW 1: Amount in Words (left, bottom-aligned) + breakdown/Round Off/Grand Total (right) */}
+                      <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
+                        <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
+                          <p className="text-[10px] font-semibold text-slate-700">
+                            Amount in Words :{" "}
+                            <span className="font-bold text-slate-900">
+                              {numberToWords(roundedTotal)}
+                            </span>
                           </p>
                         </div>
 
-                        <div className="p-4 text-sm">
-                          <div className="flex justify-between py-1">
+                        <div className="space-y-1 p-2.5 text-[11px]">
+                          <div className="flex items-center justify-between gap-3">
                             <span className="text-slate-500">Without Tax</span>
                             <span className="font-semibold text-slate-700">
                               {formatCurrency(withoutTax)}
                             </span>
                           </div>
-                          <div className="flex justify-between py-1">
+
+                          <div className="flex items-center justify-between gap-3">
                             <span className="text-slate-500">SGST</span>
                             <span className="font-semibold text-slate-700">
                               {formatCurrency(sgst)}
                             </span>
                           </div>
-                          <div className="flex justify-between py-1">
+
+                          <div className="flex items-center justify-between gap-3">
                             <span className="text-slate-500">CGST</span>
                             <span className="font-semibold text-slate-700">
                               {formatCurrency(cgst)}
                             </span>
                           </div>
-                          <div className="flex justify-between py-1">
+
+                          <div className="flex items-center justify-between gap-3">
                             <span className="text-slate-500">IGST</span>
                             <span className="font-semibold text-slate-700">
                               {formatCurrency(igst)}
                             </span>
                           </div>
 
-                          <div className="mt-3 flex justify-between border-t border-slate-300 pt-3">
-                            <span className="font-bold text-slate-800">
-                              Grand Total
+                          <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
+                            <span className="text-slate-500">Round Off</span>
+                            <span className="font-semibold text-slate-500">
+                              {formatCurrency(roundOff)}
                             </span>
-                            <span className="text-lg font-bold text-slate-900">
-                              {formatCurrency(grandTotal)}
-                            </span>
+                          </div>
+
+                          <div className="border-t border-slate-300 pt-1.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-bold text-slate-800">Grand Total</span>
+                              <span className="text-lg font-bold text-slate-900">
+                                {formatCurrency(roundedTotal)}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    );
-                  })()}
 
-                  <div className="flex min-h-[80px] justify-end border-t border-slate-300 px-6 py-3">
-                    <div className="mt-auto w-56 text-center">
-                      <div className="border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
-                    </div>
-                  </div>
+                      {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                      <div className="grid min-h-[110px] grid-cols-[1fr_320px] border-t border-slate-300">
+                        <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            Notes
+                          </p>
+                          <p className="mt-1.5 text-xs text-slate-500">
+                            Products issued from store stock to {selectedChallan.executive} for
+                            field delivery.
+                          </p>
+                        </div>
+
+                        <div className="flex items-end justify-center p-3">
+                          <div className="w-full text-center">
+                            <div className="border-b border-slate-300" />
+                            <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                              Authorised Signatory
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
                 </div>
               </div>
 
