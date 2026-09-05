@@ -920,7 +920,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <ExecutiveTargetBadge
                       icon="payments"
-                      label="Sales Target"
+                      label="Sales & Collection Target"
                       value={formatCurrency(target.sales)}
                       color="brand"
                     />

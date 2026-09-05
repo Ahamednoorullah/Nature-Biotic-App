@@ -260,6 +260,7 @@ export default function CompanySales() {
   const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<{
+    invoiceNo: string;
     header: SaleRow;
     rows: SaleRow[];
   } | null>(null);
@@ -631,6 +632,7 @@ export default function CompanySales() {
     );
 
     setSelectedInvoice({
+      invoiceNo: row.invoiceNo,
       header: row,
       rows: invoiceRows.length > 0 ? invoiceRows : [row],
     });
@@ -700,6 +702,7 @@ export default function CompanySales() {
     if (!previewRows?.length) return;
 
     setSelectedInvoice({
+      invoiceNo: previewRows[0].invoiceNo,
       header: previewRows[0],
       rows: previewRows,
     });
@@ -1065,6 +1068,7 @@ export default function CompanySales() {
                       key={`${s.invoiceNo}-${s.storeId}-${s.date}`}
                       onClick={() =>
                         setSelectedInvoice({
+                          invoiceNo: s.invoiceNo,
                           header: s,
                           rows: invoice.rows,
                         })
@@ -1810,9 +1814,9 @@ export default function CompanySales() {
                   </div>
                 </div>
                 
-                {/* Row 1 amount in words, round off */}
-                <div className="invoice-print-footer-block flex items-end justify-between gap-7 border-t border-slate-300 p-5">
-                  <div className="min-w-0 flex-1">
+                {/* Row 2: Notes (left) + Authorised Signatory (right) */}
+                <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
+                  <div className="border-r border-slate-300 min-w-0 p-2">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Notes
                     </p>
@@ -1822,15 +1826,15 @@ export default function CompanySales() {
                     </p>
 
                     {(() => {
-                  const exactTotal = selectedInvoice.rows.reduce(
-                    (sum, row) => sum + Number(row.total || 0),
-                    0,
-                  );
-                  const payableTotal = Math.round(exactTotal);
+                      const exactTotal = selectedInvoice.rows.reduce(
+                        (sum, row) => sum + Number(row.total || 0),
+                        0,
+                      );
+                      const payableTotal = Math.round(exactTotal);
 
-                  return (
-                    <div className="mt-1.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
+                      return (
+                        <div className="mt-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
 
                           <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
                             <div className="text-[8.5px] leading-4 text-slate-600">
@@ -1877,7 +1881,7 @@ export default function CompanySales() {
                                 <img
                                   src={buildPaymentQrUrl(
                                     payableTotal,
-                                    selectedInvoice.header.invoiceNo,
+                                    selectedInvoice.invoiceNo,
                                   )}
                                   alt={`UPI QR for ${formatCurrency(payableTotal)}`}
                                   className="h-[70px] w-[70px] object-contain"
@@ -1899,7 +1903,7 @@ export default function CompanySales() {
                     })()}
                   </div>
 
-                  <div className="w-56 shrink-0 text-center">
+                  <div className="p-2 text-center flex flex-col justify-end">
                     <div className="h-12 border-b border-slate-300" />
                     <p className="mt-2 text-xs font-semibold text-slate-500">
                       Authorised Signatory

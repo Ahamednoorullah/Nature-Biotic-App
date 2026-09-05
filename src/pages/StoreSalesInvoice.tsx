@@ -60,6 +60,26 @@ type AddedRow = {
 
 const STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
+const PAYMENT_BANK = {
+  accountName: "Nature Biotic",
+  accountNo: "-",
+  ifsc: "-",
+  bankName: "-",
+  branch: "-",
+  upiId: "naturebiotic@upi",
+} as const;
+
+function buildPaymentQrUrl(payableTotal: number, invoiceNo: string): string {
+  const paymentUrl = new URL("upi://pay");
+  paymentUrl.searchParams.set("pa", PAYMENT_BANK.upiId);
+  paymentUrl.searchParams.set("pn", PAYMENT_BANK.accountName);
+  paymentUrl.searchParams.set("am", payableTotal.toFixed(2));
+  paymentUrl.searchParams.set("cu", "INR");
+  paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
+
+  return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
+}
+
 const initialRows: SaleRow[] = [
   {
     id: "store-sale-1",
@@ -880,7 +900,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     </table>
                   </div>
 
-{/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
+                  {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
                   <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
                     <div className="border-r border-slate-300 p-2.5 flex items-center">
                       {(() => {
@@ -949,25 +969,102 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     </div>
                   </div>
 
-                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  {/* Row 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="border-r border-slate-300 min-w-0 p-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         Notes
                       </p>
-                      <p className="mt-1.5 text-xs text-slate-500">
-                        Purchase order raised by{" "}
-                        {storeId || "this store"} to Nature Biotic.
+                      <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                        This invoice is generated for goods supplied by Nature Biotic to the
+                        registered store shown above.
                       </p>
+
+                      {(() => {
+                        const exactTotal = selectedSale.products.length
+                          ? selectedSale.products.reduce(
+                              (sum, row) => sum + Number(row.rowTotal || 0),
+                              0,
+                            )
+                          : Number(selectedSale.amount || 0);
+                        const payableTotal = Math.round(exactTotal);
+
+                        return (
+                          <div className="mt-1.5">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
+
+                            <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+                              <div className="text-[8.5px] leading-4 text-slate-600">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Account Name : </span>
+                                    <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Account No : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">IFSC Code : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Bank Name : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Branch : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">UPI ID : </span>
+                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <div className="rounded-lg border border-slate-300 bg-white p-1.5">
+                                  <img
+                                    src={buildPaymentQrUrl(
+                                      payableTotal,
+                                      selectedSale.invoiceNo,
+                                    )}
+                                    alt={`UPI QR for ${formatCurrency(payableTotal)}`}
+                                    className="h-[70px] w-[70px] object-contain"
+                                  />
+                                </div>
+
+                                <div className="min-w-0">
+                                  <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
+                                    Scan QR to Pay
+                                  </p>
+                                  <p className="mt-0.5 text-xs font-extrabold text-slate-900">
+                                    {formatCurrency(payableTotal)}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    <div className="flex items-end justify-center p-3">
-                      <div className="w-full text-center">
-                        <div className="border-b border-slate-300" />
-                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
-                          Authorised Signatory
-                        </p>
-                      </div>
+                    <div className="p-2 text-center flex flex-col justify-end">
+                      <div className="h-12 border-b border-slate-300" />
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Authorised Signatory
+                      </p>
                     </div>
                   </div>
                 </div>

@@ -737,7 +737,7 @@ function numberToWords(num: number): string {
               }
             `}</style>
 
-            <div className="delivery-challan-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="delivery-challan-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="delivery-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -789,9 +789,9 @@ function numberToWords(num: number): string {
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Delivery Challan
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Store Stock Issue to Executive
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>

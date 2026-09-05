@@ -231,6 +231,7 @@ export type CompanyCreditNoteSyncRecord = {
   purchaseRef: string;
   invoiceNo?: string;
   product: string;
+  packSize?: string;
   quantity: number;
   unitPrice?: number;
   discountPercent?: number;
@@ -282,11 +283,12 @@ export function addCompanyCreditNoteSyncRecords(
 ) {
   const existing = getCompanyCreditNoteSyncRecords();
 
-  // Prevent duplicate rows when the same note is saved again.
-  const existingIds = new Set(existing.map((row) => row.id));
+  // Replace existing rows when the same ID is saved again.
+  const incomingIds = new Set(rows.map((row) => row.id));
+
   const merged = [
-    ...rows.filter((row) => !existingIds.has(row.id)),
-    ...existing,
+    ...existing.filter((row) => !incomingIds.has(row.id)),
+    ...rows,
   ];
 
   saveCompanyCreditNoteSyncRecords(merged);

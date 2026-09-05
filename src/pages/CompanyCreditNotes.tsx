@@ -156,7 +156,10 @@ export default function CompanyCreditNotes() {
         reason: row.reason,
         status: row.status,
         invoiceNo: row.invoiceNo || row.purchaseRef,
-        pkgsize: (row as any).pkgsize || "",
+        pkgsize:
+        (row as any).pkgsize ||
+        (row as any).packSize ||
+        "",
         batchNo: (row as any).batchNo || "",
         expiryDate: (row as any).expiryDate || "",
         sellingPrice: row.unitPrice,
@@ -465,6 +468,7 @@ export default function CompanyCreditNotes() {
         purchaseRef: invoiceNo,
         invoiceNo,
         product: item.productName,
+        packSize: item.pkgsize,
         quantity: item.quantity,
         unitPrice: item.sellingPrice,
         pkgsize: item.pkgsize,
@@ -1004,7 +1008,7 @@ export default function CompanyCreditNotes() {
                 }
               }
             `}</style>
-            <div className="credit-note-print-area flex max-h-[92vh] w-[96vw] max-w-[1650px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-5 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -1391,21 +1395,21 @@ export default function CompanyCreditNotes() {
 
                           return (
                             <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                              <td colSpan={5} className="border-r border-slate-300 p-2 text-center">Total</td>
-                              <td className="border-r border-slate-300 p-2 text-center">{totalQty}</td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalBeforeDiscount)}</td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalDiscountAmt)}</td>
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalTaxable)}</td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalCgst)}</td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalSgst)}</td>
-                              <td className="border-r border-slate-300 p-2" />
-                              <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalIgst)}</td>
-                              <td className="p-2 text-right">{formatCurrency(totalLine)}</td>
-                            </tr>
+                            <td colSpan={5} className="border-r border-slate-300 p-2 text-center">Total</td>
+                            <td className="border-r border-slate-300 p-2 text-center">{totalQty}</td>
+                            <td className="border-r border-slate-300 p-2" />
+                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalBeforeDiscount)}</td>
+                            <td className="border-r border-slate-300 p-2" />
+                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalDiscountAmt)}</td>
+                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalTaxable)}</td>
+                            <td className="border-r border-slate-300 p-2" />
+                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalSgst)}</td>
+                            <td className="border-r border-slate-300 p-2" />
+                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalCgst)}</td>
+                            <td className="border-r border-slate-300 p-2" />
+                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalIgst)}</td>
+                            <td className="p-2 text-right">{formatCurrency(totalLine)}</td>
+                          </tr>
                           );
                         })()}
                       </tfoot>
@@ -1545,7 +1549,7 @@ export default function CompanyCreditNotes() {
                       required
                     />
 
-                    {/* <Select
+                    <Select
                       label="Invoice No"
                       value={invoiceNo}
                       onChange={(value) => {
@@ -1582,7 +1586,7 @@ export default function CompanyCreditNotes() {
                         label: `${row.invoiceNo} — ${row.storeName}`,
                       }))}
                       required
-                    /> */}
+                    />
 
                     <Input
                       label="Store"

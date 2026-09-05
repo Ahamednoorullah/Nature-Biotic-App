@@ -501,6 +501,10 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     closeForm();
   }
 
+  function numberToWords(roundedTotal: any): import("react").ReactNode {
+    throw new Error("Function not implemented.");
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -642,13 +646,13 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-4">
                     <Input label="Return Date" type="date" value={date} onChange={setDate} required />
                     <Input label="Return No" value={returnNo} onChange={setReturnNo} placeholder="e.g. SR-0002" required />
-                    {/*<Select
+                    <Select
                       label="Invoice No"
                       value={invoiceNo}
                       onChange={selectInvoice}
                       placeholder="Select original invoice"
                       options={invoiceOptions}
-                    />*/}
+                    />
                     <Input label="Farmer Name" value={partyName} onChange={() => {}} readOnly />
                     <Input label="Mobile Number" value={farmerPhone} onChange={() => {}} readOnly />
                     <Input label="Village" value={farmerVillage} onChange={() => {}} readOnly />
@@ -834,7 +838,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="sales-return-print flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="sales-return-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="sales-return-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -890,9 +894,9 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                         <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
                           SALES RETURN
                         </h2>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Against Tax Invoice {selectedReturn.invoiceNo}
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -937,10 +941,10 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                       <div className="grid grid-cols-[92px_1fr] gap-y-1">
                         <span className="text-slate-500">Return No</span>
                         <span className="font-semibold text-slate-800">{selectedReturn.returnNo}</span>
-                        <span className="text-slate-500">Return Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">{dateDisplay(selectedReturn.date)}</span>
-                        <span className="text-slate-500">Invoice No</span>
-                        <span className="font-semibold text-slate-800">{selectedReturn.invoiceNo}</span>
+                        {/* <span className="text-slate-500">Invoice No</span>
+                        <span className="font-semibold text-slate-800">{selectedReturn.invoiceNo}</span> */}
                       </div>
                     </div>
                   </div>
@@ -994,7 +998,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                               : 0;
 
                           return (
-                            <tr key={item.key} className="border-b border-slate-300">
+                            <tr key={item.key} className="border-slate-300">
                               <td className="border-r border-slate-300 px-1 py-1.5 text-center">{index + 1}</td>
                               <td className="border-r border-slate-300 px-1 py-1.5 font-semibold">{item.product?.name || "-"}</td>
                               <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.product?.hsnCode || "-"}</td>
@@ -1013,7 +1017,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                               <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(item.sgst)}</td>
                               <td className="border-r border-slate-300 px-1 py-1.5 text-right">{igstRate.toFixed(2)}</td>
                               <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(item.igst)}</td>
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-left">{item.reason}</td>
+                              <td className="border-r border-slate-300 px-1 py-1.5 text-right">{item.reason}</td>
                               <td className="px-1 py-1.5 text-right font-bold">{formatCurrency(item.total)}</td>
                             </tr>
                           );
@@ -1024,7 +1028,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                         {(() => {
                         const MIN_ROWS = 10;
                         const fillerCount = Math.max(0, MIN_ROWS - selectedReturn.items.length);
-                        const columnCount = 18;
+                        const columnCount = 20;
 
                         return Array.from({ length: fillerCount }).map((_, i) => (
                           <tr key={`filler-${i}`}>
@@ -1168,6 +1172,11 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                                 {formatCurrency(totalIGST)}
                               </td>
 
+                              {/* Reason */}
+                              <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                -
+                              </td>
+
                               {/* Line Total */}
                               <td className="px-1 py-2 text-right font-extrabold">
                                 {formatCurrency(totalLine)}
@@ -1180,40 +1189,130 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                     </table>
                   </div>
 
+                {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
                   <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    <div className="border-r border-slate-300 p-2.5 flex items-center">
+                      {(() => {
+                        const grandTotal = selectedReturn.items.length
+                          ? selectedReturn.items.reduce(
+                              (sum, row) => sum + Number(row.rowTotal || 0),
+                              0,
+                            )
+                          : Number(selectedReturn.total || 0);
+                        const roundedTotal = Math.round(grandTotal);
+
+                        function numberToWords(roundedTotal: number): import("react").ReactNode {
+                          const ones = [
+                            "zero", "one", "two", "three", "four", "five",
+                            "six", "seven", "eight", "nine", "ten", "eleven",
+                            "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+                            "seventeen", "eighteen", "nineteen",
+                          ];
+                          const tens = [
+                            "", "", "twenty", "thirty", "forty", "fifty",
+                            "sixty", "seventy", "eighty", "ninety",
+                          ];
+
+                          const convert = (value: number): string => {
+                            if (value < 20) return ones[value];
+                            if (value < 100) {
+                              return `${tens[Math.floor(value / 10)]}${value % 10 ? `-${ones[value % 10]}` : ""}`;
+                            }
+                            if (value < 1000) {
+                              return `${ones[Math.floor(value / 100)]} hundred${value % 100 ? ` ${convert(value % 100)}` : ""}`;
+                            }
+                            if (value < 1000000) {
+                              return `${convert(Math.floor(value / 1000))} thousand${value % 1000 ? ` ${convert(value % 1000)}` : ""}`;
+                            }
+                            if (value < 1000000000) {
+                              return `${convert(Math.floor(value / 1000000))} million${value % 1000000 ? ` ${convert(value % 1000000)}` : ""}`;
+                            }
+                            return `${convert(Math.floor(value / 1000000000))} billion${value % 1000000000 ? ` ${convert(value % 1000000000)}` : ""}`;
+                          };
+
+                          if (roundedTotal < 0) return `minus ${convert(Math.abs(roundedTotal))}`;
+                          return convert(roundedTotal);
+                        }
+
+                        return (
+                          <p className="text-[10px] font-semibold text-slate-700">
+                            Amount in Words :{" "}
+                            <span className="font-bold text-slate-900">
+                              {numberToWords(roundedTotal)}
+                            </span>
+                          </p>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="space-y-1 p-2.5 text-[11px]">
+                      <Summary
+                        label="Round Off"
+                        value={(() => {
+                          const total = selectedReturn.items.length
+                            ? selectedReturn.items.reduce(
+                                (sum, row) => sum + Number(row.rowTotal || 0),
+                                0,
+                              )
+                            : Number(selectedReturn.total || 0);
+                          const taxableTotal = selectedReturn.items.length
+                            ? selectedReturn.items.reduce(
+                                (sum, row) =>
+                                  sum +
+                                  Number(row.withoutTax || 0) +
+                                  Number(row.sgst || 0) +
+                                  Number(row.cgst || 0) +
+                                  Number(row.igst || 0),
+                                0,
+                              )
+                            : Number(selectedReturn.withoutTax || 0) +
+                              Number(selectedReturn.sgst || 0) +
+                              Number(selectedReturn.cgst || 0) +
+                              Number(selectedReturn.igst || 0);
+                          return total - taxableTotal;
+                        })()}
+                        muted
+                      />
+
+                      <div className="border-t border-slate-300 pt-1.5">
+                      <Summary
+                        label="Grand Total"
+                        value={
+                          selectedReturn.items.length
+                            ? selectedReturn.items.reduce(
+                                (sum, row) => sum + Number(row.rowTotal || 0),
+                                0,
+                              )
+                            : Number(selectedReturn.total || 0)
+                        }
+                        bold
+                      />
+                    </div>
+                    </div>
+                  </div>
+
+                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
                         Notes
                       </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Sales return created against original tax invoice {selectedReturn.invoiceNo}. Original invoice price, discount and tax rates are retained for the returned quantity.
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Purchase order raised by{" "}
+                        {storeId || "this store"} to Nature Biotic.
                       </p>
                     </div>
 
-                    <div className="p-3 text-[10px]">
-                      <div className="space-y-1.5">
-                        {/*<Summary label="Total Before Discount" value={selectedReturn.beforeDiscount || selectedReturn.items.reduce((sum, item) => sum + (item.beforeDiscount || 0), 0)} />
-                        <Summary label="Discount" value={selectedReturn.discountAmount || selectedReturn.items.reduce((sum, item) => sum + (item.discountAmount || 0), 0)} />
-                        <Summary label="Taxable Total" value={selectedReturn.withoutTax} />
-                        <Summary label="CGST" value={selectedReturn.cgst} />
-                        <Summary label="SGST" value={selectedReturn.sgst} />
-                        <Summary label="IGST" value={selectedReturn.igst} /> */}
-                        <div className="mt-2 border-t border-slate-300 pt-2">
-                          <Summary label="Total" value={selectedReturn.total} bold />
-                        </div>
+                    <div className="flex items-end justify-center p-3">
+                      <div className="w-full text-center">
+                        <div className="border-b border-slate-300" />
+                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
                       </div>
                     </div>
                   </div>
-
-                  <div className="flex justify-end border-t border-slate-300 p-5">
-                    <div className="w-56 text-center">
-                      <div className="h-12 border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                </div>                 
               </div>
 
               <div className="sales-return-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
@@ -1256,15 +1355,25 @@ function Summary({
   label,
   value,
   bold = false,
+  muted = false,
 }: {
   label: string;
   value: number;
   bold?: boolean;
+  muted?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-1">
-      <span className="text-slate-500">{label}</span>
-      <span className={bold ? "font-bold text-slate-800" : "font-semibold text-slate-700"}>
+      <span className={muted ? "text-slate-400" : "text-slate-500"}>{label}</span>
+      <span
+        className={
+          muted
+            ? "font-semibold text-slate-400"
+            : bold
+              ? "font-bold text-slate-800"
+              : "font-semibold text-slate-700"
+        }
+      >
         {formatCurrency(value)}
       </span>
     </div>

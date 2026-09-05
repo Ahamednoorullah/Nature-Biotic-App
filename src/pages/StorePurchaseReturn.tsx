@@ -986,12 +986,12 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                 >
                   PR Number
                 </th>
-                <th
+                {/* <th
                   rowSpan={2}
                   className="w-[12%] border-r border-slate-200 px-2 py-3 text-center"
                 >
                   Purchase Ref
-                </th>
+                </th> */}
                 <th
                   rowSpan={2}
                   className="w-[11%] border-r border-slate-200 px-2 py-3 text-center"
@@ -1061,9 +1061,9 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                   <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold">
                     {row.returnNo}
                   </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                  {/* <td className="border-r border-slate-100 px-2 py-3 text-center">
                     {row.purchaseRef}
-                  </td>
+                  </td> */}
                   <td className="border-r border-slate-100 px-2 py-3 text-center">
                     {row.supplier}
                   </td>
@@ -1158,7 +1158,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="purchase-return-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="purchase-return-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="purchase-return-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -1224,9 +1224,9 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Purchase Return
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Store to Nature Biotic
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -1278,15 +1278,15 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                           {selectedReturn.returnNo}
                         </span>
 
-                        <span className="text-slate-500">Return Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
                           {formatSimpleDate(selectedReturn.date)}
                         </span>
 
-                        <span className="text-slate-500">Purchase Ref</span>
+                        {/* <span className="text-slate-500">Purchase Ref</span>
                         <span className="font-semibold text-slate-800">
                           {selectedReturn.purchaseRef}
-                        </span>
+                        </span> */}
 
                         <span className="text-slate-500">Status</span>
                         <span className="font-semibold text-slate-800">
@@ -1440,7 +1440,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                           return (
                             <tr
                               key={item.id}
-                              className="border-b border-slate-300"
+                              className="border-slate-300"
                             >
                               <td className="border-r border-slate-300 px-2 py-2 text-center">
                                 {index + 1}
@@ -1535,7 +1535,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                         {(() => {
                         const MIN_ROWS = 10;
                         const fillerCount = Math.max(0, MIN_ROWS - selectedReturn.items.length);
-                        const columnCount = 18;
+                        const columnCount = 19;
 
                         return Array.from({ length: fillerCount }).map((_, i) => (
                           <tr key={`filler-${i}`}>

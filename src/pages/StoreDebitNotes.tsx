@@ -8,6 +8,10 @@ import {
 } from "@/lib/data";
 
 type DebitNote = {
+  unit: any;
+  size: any;
+  pkgsize: any;
+  packSize: any;
   total: number;
   amount: number;
   sellingPrice: number;
@@ -78,6 +82,29 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       const withoutTax = taxableAmount;
 
       return {
+        unit: source.unit ?? "",
+        size: source.size ?? "",
+        pkgsize:
+        source.pkgsize ??
+        source.pkgSize ??
+        source.pkg_size ??
+        source.packageSize ??
+        source.package_size ??
+        source.packSize ??
+        source.packsize ??
+        source.size ??
+        "",
+
+      packSize:
+        source.packSize ??
+        source.packsize ??
+        source.pkgSize ??
+        source.pkgsize ??
+        source.pkg_size ??
+        source.packageSize ??
+        source.package_size ??
+        source.size ??
+        "",
         total,
         amount: taxableAmount,
         sellingPrice: unitPrice,
@@ -828,7 +855,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="debit-note-print-area flex h-[96vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+             <div className="debit-note-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="debit-note-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -892,9 +919,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
                           Debit Note
                         </h3>
-                        <p className="mt-1 text-[10px] text-slate-500">
+                        {/* <p className="mt-1 text-[10px] text-slate-500">
                           Store Purchase Return
-                        </p>
+                        </p> */}
                       </div>
                     </div>
                   </div>
@@ -916,12 +943,12 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                       <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                         Return Details
                       </p>
-                      <p className="text-slate-600">
+                      {/* <p className="text-slate-600">
                         Purchase Ref:{" "}
                         <span className="font-semibold text-slate-800">
                           {selectedSummary.purchaseRef}
                         </span>
-                      </p>
+                      </p> */}
                       <p className="text-slate-600">
                         Place of Return:{" "}
                         <span className="font-semibold text-slate-800">
@@ -949,15 +976,15 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           {selectedSummary.debitNoteNo}
                         </span>
 
-                        <span className="text-slate-500">Return Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
                           {formatDate(selectedSummary.date)}
                         </span>
 
-                        <span className="text-slate-500">Purchase Ref</span>
+                        {/* <span className="text-slate-500">Purchase Ref</span>
                         <span className="font-semibold text-slate-800">
                           {selectedSummary.purchaseRef}
-                        </span>
+                        </span> */}
 
                         <span className="text-slate-500">Status</span>
                         <span className="font-semibold text-slate-800">
@@ -982,6 +1009,12 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                             className="w-[15%] border-r border-slate-300 px-2 py-2 text-left"
                           >
                             Product
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="w-[7%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
+                            PKG Size
                           </th>
                           <th
                             rowSpan={2}
@@ -1088,7 +1121,10 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                       </thead>
 
                       <tbody>
+
+                        
                         {selectedItems.map((item, index) => {
+
                           const sgstRate =
                             item.sgst > 0 && item.withoutTax > 0
                               ? (item.sgst / item.withoutTax) * 100
@@ -1102,6 +1138,8 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                               ? (item.igst / item.withoutTax) * 100
                               : 0;
 
+                           
+
                           return (
                             <tr
                               key={item.id}
@@ -1113,6 +1151,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                               <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
                                 {item.product}
                               </td>
+                              <td className="border-r border-slate-300 px-2 py-2 text-center">
+                                {item.packSize || item.pkgsize || item.size || "-"}
+                              </td> 
                               <td className="border-r border-slate-300 px-2 py-2 text-center text-slate-600">
                                 {item.batchNo || "-"}
                               </td>
@@ -1275,77 +1316,80 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                         );
 
                         return (
-                          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                            {/* S.No */}
-                            <td className="border-r border-slate-300 p-2 text-center">
-                              Total
-                            </td>
+                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                          {/* S.No */}
+                          <td className="border-r border-slate-300 p-2 text-center">
+                            Total
+                          </td>
 
-                            {/* Product */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* Product */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Batch */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* PKG Size */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Expiry */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* Batch */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Qty */}
-                            <td className="border-r border-slate-300 p-2 text-center">
-                              {totalQty}
-                            </td>
+                          {/* Expiry */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Unit Price */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* Qty */}
+                          <td className="border-r border-slate-300 p-2 text-center">
+                            {totalQty}
+                          </td>
 
-                            {/* Before Discount */}
-                            <td className="border-r border-slate-300 p-2 text-right">
-                              {formatCurrency(totalBeforeDiscount)}
-                            </td>
+                          {/* Unit Price */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Discount % */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* Before Discount */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalBeforeDiscount)}
+                          </td>
 
-                            {/* Discount Amount */}
-                            <td className="border-r border-slate-300 p-2 text-right">
-                              {formatCurrency(totalDiscountAmt)}
-                            </td>
+                          {/* Discount % */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Taxable */}
-                            <td className="border-r border-slate-300 p-2 text-right">
-                              {formatCurrency(totalTaxable)}
-                            </td>
+                          {/* Discount Amount */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalDiscountAmt)}
+                          </td>
 
-                            {/* SGST % */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* Taxable */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalTaxable)}
+                          </td>
 
-                            {/* SGST Amount */}
-                            <td className="border-r border-slate-300 p-2 text-right">
-                              {formatCurrency(totalSgst)}
-                            </td>
+                          {/* SGST % */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* CGST % */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* SGST Amount */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalSgst)}
+                          </td>
 
-                            {/* CGST Amount */}
-                            <td className="border-r border-slate-300 p-2 text-right">
-                              {formatCurrency(totalCgst)}
-                            </td>
+                          {/* CGST % */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* IGST % */}
-                            <td className="border-r border-slate-300 p-2" />
+                          {/* CGST Amount */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalCgst)}
+                          </td>
 
-                            {/* IGST Amount */}
-                            <td className="border-r border-slate-300 p-2 text-right">
-                              {formatCurrency(totalIgst)}
-                            </td>
+                          {/* IGST % */}
+                          <td className="border-r border-slate-300 p-2" />
 
-                            {/* Line Total */}
-                            <td className="p-2 text-right">
-                              {formatCurrency(totalLine)}
-                            </td>
-                          </tr>
-                        );
+                          {/* IGST Amount */}
+                          <td className="border-r border-slate-300 p-2 text-right">
+                            {formatCurrency(totalIgst)}
+                          </td>
+
+                          {/* Line Total */}
+                          <td className="p-2 text-right">
+                            {formatCurrency(totalLine)}
+                          </td>
+                        </tr>
+                      );
                       })()}
                     </tfoot>
                     </table>

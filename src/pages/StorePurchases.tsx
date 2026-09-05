@@ -632,7 +632,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
             }
           `}</style>
 
-          <div className="store-purchase-print-area flex h-[86vh] w-[98.5vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+           <div className="store-po-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="store-purchase-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-brand-700">

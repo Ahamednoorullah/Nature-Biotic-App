@@ -48,12 +48,12 @@ const navItems: NavItem[] = [
       },
       {
         key: "delivery-challan",
-        label: "Delivery Challan",
+        label: "Stock Delivery",
         icon: "local_shipping",
       },
       {
         key: "return-challan",
-        label: "Return Challan",
+        label: "Stock Return",
         icon: "assignment_return",
       },
     ],

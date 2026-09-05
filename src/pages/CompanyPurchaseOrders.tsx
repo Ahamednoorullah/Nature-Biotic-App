@@ -603,148 +603,127 @@ export default function CompanyPurchaseOrders() {
                   </div>
 
                   {selected.order?.items?.length ? (
-                    <table className="w-full max-w-7xl table-fixed border-collapse text-[11px]">
-                      <colgroup>
-                        <col className="w-[4%]" />   {/* S.No */}
-                        <col className="w-[24%]" />  {/* Product */}
-                        <col className="w-[6%]" />   {/* HSN */}
-                        <col className="w-[6%]" />   {/* Pkg Size */}
-                        <col className="w-[4%]" />   {/* Qty */}
-                        <col className="w-[7%]" />   {/* Price */}
-                        <col className="w-[8%]" />   {/* Without Tax */}
-                        <col className="w-[4%]" />   {/* SGST % */}
-                        <col className="w-[7%]" />   {/* SGST Amt */}
-                        <col className="w-[4%]" />   {/* CGST % */}
-                        <col className="w-[7%]" />   {/* CGST Amt */}
-                        <col className="w-[4%]" />   {/* IGST % */}
-                        <col className="w-[7%]" />   {/* IGST Amt */}
-                        <col className="w-[8%]" />   {/* Total */}
-                      </colgroup>
-                      <thead>
-                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-center">
-                            S.No
-                          </th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-left">
-                            Product
-                          </th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-center">
-                            HSN
-                          </th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-center">
-                            Pkg Size
-                          </th>
+                  <table className="w-full max-w-7xl table-fixed border-collapse border border-slate-300 text-[11px]">
+                    <colgroup>
+                      ...
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-center">
+                          S.No
+                        </th>
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-left"> 
+                          Product
+                        </th>
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-center">
+                          HSN
+                        </th>
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-center">
+                          Pkg Size
+                        </th>
 
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-right">
-                            Qty
-                          </th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-right">
-                            Price
-                          </th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-2 py-2.5 text-right">
-                            Without Tax
-                          </th>
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-right">
+                          Qty
+                        </th>
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-right">
+                          Price
+                        </th>
+                        <th rowSpan={2} className="border-r border-b border-slate-300 px-2 py-3 text-right">
+                          Without Tax
+                        </th>
 
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-2 text-center">
-                            SGST
-                          </th>
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-2 text-center">
-                            CGST
-                          </th>
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-2 text-center">
-                            IGST
-                          </th>
+                        <th colSpan={2} className="border-r border-b border-slate-300 px-1 py-2 text-center">
+                          SGST
+                        </th>
+                        <th colSpan={2} className="border-r border-b border-slate-300 px-1 py-2 text-center">
+                          CGST
+                        </th>
+                        <th colSpan={2} className="border-r border-b border-slate-300 px-1 py-2 text-center">
+                          IGST
+                        </th>
 
-                          {/* FIX: was colSpan={2} — Total has no % / Amt sub-columns,
-                              so it must be a single rowSpan cell like the other totals.
-                              The old colSpan={2} added a 15th phantom column that the
-                              <colgroup> (14 cols) couldn't account for — that phantom
-                              column was the source of the extra blank space on the right
-                              and the misalignment in tbody/filler/tfoot rows. */}
-                          <th rowSpan={2} className="px-2 py-2.5 text-right">
-                            Total
-                          </th>
+                        <th rowSpan={2} className="border-b border-slate-300 px-2 py-3 text-right">
+                          Total
+                        </th>
+                      </tr>
+
+                      <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
+                        <th className="border-r border-slate-300 px-1 py-1.5 text-center">%</th>
+                        <th className="border-r border-slate-300 px-1 py-1.5 text-right">Amt</th>
+                        <th className="border-r border-slate-300 px-1 py-1.5 text-center">%</th>
+                        <th className="border-r border-slate-300 px-1 py-1.5 text-right">Amt</th>
+                        <th className="border-r border-slate-300 px-1 py-1.5 text-center">%</th>
+                        <th className="border-r border-slate-300 px-1 py-1.5 text-right">Amt</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {selected.order.items.map((item, index) => (
+                        <tr
+                          key={item.id ?? item.key ?? index}
+                          className="border-b border-slate-200"
+                        >
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-center">
+                            {index + 1}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-3.5 font-semibold text-slate-800">
+                            {getPurchaseProductName(item)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-center text-slate-600">
+                            {getPurchaseProductHsn(item)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-center">
+                            {item.packSize || item.pkgsize || "-"}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-right">
+                            {item.quantity ?? item.qty ?? 0}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-right">
+                            {formatCurrency(item.price ?? item.sellingPrice ?? 0)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-right">
+                            {formatCurrency(item.withoutTax ?? 0)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-1 py-3.5 text-center">
+                            {(item.sgst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
+                              ? `${(((item.sgst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                              : "0.00%"}
+                          </td>
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-right">
+                            {formatCurrency(item.sgst ?? 0)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-1 py-3.5 text-center">
+                            {(item.cgst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
+                              ? `${(((item.cgst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                              : "0.00%"}
+                          </td>
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-right">
+                            {formatCurrency(item.cgst ?? 0)}
+                          </td>
+
+                          <td className="border-r border-slate-300 px-1 py-3.5 text-center">
+                            {(item.igst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
+                              ? `${(((item.igst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
+                              : "0.00%"}
+                          </td>
+                          <td className="border-r border-slate-300 px-2 py-3.5 text-right">
+                            {formatCurrency(item.igst ?? 0)}
+                          </td>
+
+                          <td className="px-2 py-3.5 text-right font-bold">
+                            {formatCurrency(item.total ?? item.rowTotal ?? 0)}
+                          </td>
                         </tr>
-
-                        <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {selected.order.items.map((item, index) => (
-                          <tr
-                            key={item.id ?? item.key ?? index}
-                            className="border-b border-slate-200"
-                          >
-                            <td className="border-r border-slate-300 px-2 py-3 text-center">
-                              {index + 1}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-3 font-semibold text-slate-800">
-                              {getPurchaseProductName(item)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-3 text-center text-slate-600">
-                              {getPurchaseProductHsn(item)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-3 text-center">
-                              {item.packSize || item.pkgsize || "-"}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-3 text-right">
-                              {item.quantity ?? item.qty ?? 0}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-3 text-right">
-                              {formatCurrency(
-                                item.price ?? item.sellingPrice ?? 0,
-                              )}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-2 py-3 text-right">
-                              {formatCurrency(item.withoutTax ?? 0)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-1 py-3 text-center">
-                              {(item.sgst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
-                                ? `${(((item.sgst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
-                                : "0.00%"}
-                            </td>
-                            <td className="border-r border-slate-300 px-2 py-3 text-right">
-                              {formatCurrency(item.sgst ?? 0)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-1 py-3 text-center">
-                              {(item.cgst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
-                                ? `${(((item.cgst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
-                                : "0.00%"}
-                            </td>
-                            <td className="border-r border-slate-300 px-2 py-3 text-right">
-                              {formatCurrency(item.cgst ?? 0)}
-                            </td>
-
-                            <td className="border-r border-slate-300 px-1 py-3 text-center">
-                              {(item.igst ?? 0) > 0 && (item.withoutTax ?? 0) > 0
-                                ? `${(((item.igst ?? 0) / (item.withoutTax ?? 1)) * 100).toFixed(2)}%`
-                                : "0.00%"}
-                            </td>
-                            <td className="border-r border-slate-300 px-2 py-3 text-right">
-                              {formatCurrency(item.igst ?? 0)}
-                            </td>
-
-                            <td className="px-2 py-3 text-right font-bold">
-                              {formatCurrency(item.total ?? item.rowTotal ?? 0)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
+                      ))}
+                    </tbody>
 
                       {(() => {
                         const MIN_ROWS = 6;
