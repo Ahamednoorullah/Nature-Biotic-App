@@ -664,7 +664,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
 
             <div className="store-purchase-scroll min-h-0 flex-1 overflow-y-auto p-3">
               <div className="min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-                <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                <div className="grid grid-cols-2 border-b border-slate-300 text-[10px] leading-5">
                   <div className="border-r border-slate-300 px-6 py-3">
                     <div className="flex items-start gap-4">
                       <div className="flex h-16 w-24 shrink-0 items-center justify-center">
@@ -705,7 +705,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
+                <div className="grid grid-cols-2 border-b border-slate-300 text-[10px] leading-5">
                   <div className="border-r border-slate-300 px-3 py-2.5">
                     <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                       Supplier
@@ -717,7 +717,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                     </p>
                   </div>
 
-                  <div className="border-r border-slate-300 px-3 py-2.5">
+                  {/* <div className="border-r border-slate-300 px-3 py-2.5">
                     <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                       Purchase Summary
                     </p>
@@ -751,7 +751,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                         {formatCurrency(selectedInvoice.total)}
                       </span>
                     </p>
-                  </div>
+                  </div> */}
 
                   <div className="px-3 py-2.5">
                     <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
@@ -764,7 +764,7 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
                         {selectedInvoice.invoiceNo}
                       </span>
 
-                      <span className="text-slate-500">Invoice Date</span>
+                      <span className="text-slate-500">Date</span>
                       <span className="font-semibold text-slate-800">
                         {formatDate(selectedInvoice.date)}
                       </span>

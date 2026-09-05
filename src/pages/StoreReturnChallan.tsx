@@ -1103,7 +1103,7 @@ export default function StoreReturnChallan({
                           {selectedChallan.rcNo}
                         </span>
 
-                        <span className="text-slate-500">R.C Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
                           {formatDate(selectedChallan.date)}
                         </span>

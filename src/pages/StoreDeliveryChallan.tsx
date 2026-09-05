@@ -840,7 +840,7 @@ function numberToWords(num: number): string {
                           {selected.dcNo}
                         </span>
 
-                        <span className="text-slate-500">D.C Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
                           {formatDate(selected.date)}
                         </span>

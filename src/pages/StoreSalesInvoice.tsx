@@ -645,7 +645,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       <div className="grid grid-cols-[92px_1fr] gap-y-1">
                         <span className="text-slate-500">Invoice No</span>
                         <span className="font-semibold text-slate-800">{selectedSale.invoiceNo}</span>
-                        <span className="text-slate-500">Invoice Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">{selectedSale.date}</span>
                         <span className="text-slate-500">Through</span>
                         <span className="font-semibold text-slate-800">{selectedSale.through}</span>

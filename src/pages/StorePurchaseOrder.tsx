@@ -983,7 +983,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                           {selectedOrder.poNo}
                         </span>
 
-                        <span className="text-slate-500">PO Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
                           {formatDate(selectedOrder.date)}
                         </span>

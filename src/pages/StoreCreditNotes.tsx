@@ -1113,7 +1113,7 @@ export default function StoreCreditNotes({
                         <span className="font-semibold">
                           {selectedCreditNote.header.creditNoteNo}
                         </span>
-                        <span className="text-slate-500">CN Date</span>
+                        <span className="text-slate-500">Date</span>
                         <span className="font-semibold">
                           {formatDate(selectedCreditNote.header.Date)}
                         </span>
