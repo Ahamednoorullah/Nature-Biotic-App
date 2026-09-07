@@ -1113,7 +1113,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
               @media print {
                 @page {
                   size: A4 landscape;
-                  margin: 6mm;
+                  margin: 4mm;
                 }
 
                 body * {
@@ -1126,15 +1126,18 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                 }
 
                 .purchase-return-print-area {
-                  position: absolute !important;
-                  inset: 0 !important;
+                  position: static !important;
                   width: 100% !important;
                   max-width: none !important;
+                  height: auto !important;
                   max-height: none !important;
                   overflow: visible !important;
+                  border: none !important;
                   border-radius: 0 !important;
                   box-shadow: none !important;
                   background: white !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
                 }
 
                 .purchase-return-screen-only {
@@ -1144,6 +1147,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                 .purchase-return-scroll {
                   overflow: visible !important;
                   padding: 0 !important;
+                  margin: 0 !important;
                 }
 
                 .purchase-return-table {

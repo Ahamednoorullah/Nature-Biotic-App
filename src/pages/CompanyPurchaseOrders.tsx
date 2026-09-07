@@ -270,33 +270,61 @@ export default function CompanyPurchaseOrders() {
   return (
     <div>
       <style>{`
-        @media print {
-          @page {
-            size: landscape;
-            margin: 8mm;
-          }
-          body * {
-            visibility: hidden;
-          }
-          .po-print-area, .po-print-area * {
-            visibility: visible;
-          }
-          .po-print-area {
-            position: absolute !important;
-            inset: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            max-height: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-          }
-          .po-print-area table {
-            font-size: 10px !important;
-          }
-          .po-print-hide {
-            display: none !important;
-          }
-        }
+@media print {
+  @page {
+    size: landscape;
+    margin: 8mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .company-po-print-area, .company-po-print-area * {
+    visibility: visible;
+  }
+  .po-print-backdrop {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    padding: 0 !important;
+    backdrop-filter: none !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+  .company-po-print-area {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .company-po-print-area table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+    font-size: 7px !important;
+  }
+  .company-po-print-area td,
+  .company-po-print-area th {
+    padding: 2px !important;
+    overflow: hidden;
+    word-break: break-word;
+  }
+  .po-print-hide, .store-purchase-screen-only {
+    display: none !important;
+  }
+  .purchase-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow-x: visible !important;
+  }
+  .company-po-print-area .overflow-x-auto {
+    overflow: visible !important;
+  }
+}
       `}</style>
 
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -493,7 +521,7 @@ export default function CompanyPurchaseOrders() {
       {selected &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-           <div className="company-po-print-area flex max-h-[94vh] w-[96vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">                                  
+           <div className="company-po-print-area flex max-h-[94vh] w-[96vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">   
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 po-print-hide">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">

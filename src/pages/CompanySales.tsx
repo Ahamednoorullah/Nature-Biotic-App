@@ -1135,105 +1135,105 @@ export default function CompanySales() {
         createPortal(
           <div className="invoice-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
-  @media print {
-    @page {
-      size: A4 landscape;
-      margin: 6mm;
-    }
+              @media print {
+                @page {
+                  size: A4 landscape;
+                  margin: 8mm;
+                }
 
-    html, body {
-      width: 297mm;
-      margin: 0 !important;
-      padding: 0 !important;
-      background: #fff !important;
-      overflow: visible !important;
-    }
+                html, body {
+                  width: 290mm;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: #fff !important;
+                  overflow: visible !important;
+                }
 
-    * {
-      box-sizing: border-box !important;
-    }
+                * {
+                  box-sizing: border-box !important;
+                }
 
-    body > *:not(.invoice-modal-backdrop) {
-    display: none !important;
-    }
+                body > *:not(.invoice-modal-backdrop) {
+                display: none !important;
+                }
 
-    .invoice-print-area,
-    .invoice-print-area * {
-      visibility: visible !important;
-    }
+                .invoice-print-area,
+                .invoice-print-area * {
+                  visibility: visible !important;
+                }
 
-    .invoice-modal-backdrop {
-      position: static !important;
-      display: block !important;
-      background: none !important;
-      padding: 0 !important;
-      backdrop-filter: none !important;
-      height: auto !important;
-      width: 100% !important;
-    }
+                .invoice-modal-backdrop {
+                  position: static !important;
+                  display: block !important;
+                  background: none !important;
+                  padding: 0 !important;
+                  backdrop-filter: none !important;
+                  height: auto !important;
+                  width: 100% !important;
+                }
 
-    .invoice-print-area {
-      position: static !important;
-      width: 100% !important;
-      height: auto !important;
-      max-height: none !important;
-      overflow: visible !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      background: #fff !important;
-      margin: 0 !important;
-      display: block !important;
-    }
+                .invoice-print-area {
+                  position: static !important;
+                  width: 100% !important;
+                  height: auto !important;
+                  max-height: none !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: #fff !important;
+                  margin: 0 !important;
+                  display: block !important;
+                }
 
-    .invoice-print-scroll {
-      overflow: visible !important;
-      padding: 0 !important;
-      display: block !important;
-      height: auto !important;
-    }
+                .invoice-print-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                  display: block !important;
+                  height: auto !important;
+                }
 
-    .invoice-print-scroll > div {
-      display: block !important;
-      height: auto !important;
-      overflow: visible !important;
-    }
+                .invoice-print-scroll > div {
+                  display: block !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                }
 
-    .invoice-print-table {
-      width: 100% !important;
-      table-layout: auto !important;
-      font-size: 8px !important;
-    }
+                .invoice-print-table {
+                  width: 100% !important;
+                  table-layout: auto !important;
+                  font-size: 8px !important;
+                }
 
-    .invoice-print-table th,
-    .invoice-print-table td {
-      padding: 2px 3px !important;
-      line-height: 1.15 !important;
-    }
+                .invoice-print-table th,
+                .invoice-print-table td {
+                  padding: 2px 3px !important;
+                  line-height: 1.15 !important;
+                }
 
-    .invoice-print-table th:not(:nth-child(2)),
-    .invoice-print-table td:not(:nth-child(2)) {
-      white-space: nowrap !important;
-    }
+                .invoice-print-table th:not(:nth-child(2)),
+                .invoice-print-table td:not(:nth-child(2)) {
+                  white-space: nowrap !important;
+                }
 
-    .invoice-print-table th:nth-child(2),
-    .invoice-print-table td:nth-child(2) {
-      white-space: normal !important;
-      word-break: break-word !important;
-    }
+                .invoice-print-table th:nth-child(2),
+                .invoice-print-table td:nth-child(2) {
+                  white-space: normal !important;
+                  word-break: break-word !important;
+                }
 
-    .invoice-print-header {
-      break-inside: avoid !important;
-    }
+                .invoice-print-header {
+                  break-inside: avoid !important;
+                }
 
-    .invoice-print-footer-block {
-      break-inside: avoid !important;
-    }
+                .invoice-print-footer-block {
+                  break-inside: avoid !important;
+                }
 
-    .invoice-screen-only {
-      display: none !important;
-    }
-  }
-`}</style>
+                .invoice-screen-only {
+                  display: none !important;
+                }
+              }
+            `}</style>
             <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>

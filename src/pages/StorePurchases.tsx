@@ -553,84 +553,99 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
         createPortal(
           <div className="purchase-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
           <style>{`
-            @media print {
-              @page {
-                size: A4 landscape;
-                margin: 6mm;
-              }
+  @media print {
+    @page {
+      size: A4 landscape;
+      margin: 6mm;
+    }
 
-              html, body {
-                width: 297mm;
-                margin: 0 !important;
-                padding: 0 !important;
-                background: #fff !important;
-                overflow: visible !important;
-              }
+    html, body {
+      width: 297mm;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+      overflow: visible !important;
+    }
 
-              /* Hide the entire app (removes it from layout completely) */
-                #root {
-                  display: none !important;
-                }
+    #root {
+      display: none !important;
+    }
 
-              .store-purchase-print-area,
-              .store-purchase-print-area * {
-                visibility: visible !important;
-              }
+    .store-purchase-print-area,
+    .store-purchase-print-area * {
+      visibility: visible !important;
+      box-shadow: none !important;
+      -webkit-box-shadow: none !important;
+      filter: none !important;
+      -webkit-filter: none !important;
+      text-shadow: none !important;
+    }
 
-              .purchase-modal-backdrop {
-                position: static !important;
-                display: block !important;
-                background: none !important;
-                padding: 0 !important;
-                backdrop-filter: none !important;
-                height: auto !important;
-                width: 100% !important;
-              }
+    .purchase-modal-backdrop {
+      position: static !important;
+      display: block !important;
+      background: none !important;
+      padding: 0 !important;
+      height: auto !important;
+      width: 100% !important;
+      box-shadow: none !important;
+    }
 
-              .store-purchase-print-area {
-                position: static !important;
-                width: 100% !important;
-                height: auto !important;
-                max-width: none !important;
-                max-height: none !important;
-                overflow: visible !important;
-                border-radius: 0 !important;
-                box-shadow: none !important;
-                background: white !important;
-                margin: 0 !important;
-                display: flex !important;
-                flex-direction: column !important;
-                min-height: 198mm !important;
-                page-break-inside: avoid !important;
-              }
+    .store-purchase-print-area {
+      position: static !important;
+      width: 100% !important;
+      height: auto !important;
+      max-width: none !important;
+      max-height: none !important;
+      overflow: visible !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      -webkit-box-shadow: none !important;
+      filter: none !important;
+      background: white !important;
+      margin: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      min-height: 198mm !important;
+      page-break-inside: avoid !important;
+    }
 
-              .store-purchase-screen-only {
-                display: none !important;
-              }
+    .store-purchase-screen-only {
+      display: none !important;
+    }
 
-              .store-purchase-scroll {
-                overflow: visible !important;
-                padding: 0 !important;
-                display: flex !important;
-                flex-direction: column !important;
-                flex: 1 !important;
-              }
+    .store-purchase-scroll {
+      overflow: visible !important;
+      padding: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 !important;
+      box-shadow: none !important;
+    }
 
-              .store-purchase-scroll > div {
-                display: flex !important;
-                flex-direction: column !important;
-                flex: 1 !important;
-                min-height: 0 !important;
-                overflow: visible !important;
-                page-break-inside: avoid !important;
-              }
+    .store-purchase-scroll > div {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 !important;
+      min-height: 0 !important;
+      overflow: visible !important;
+      page-break-inside: avoid !important;
+      box-shadow: none !important;
+    }
 
-              .purchase-print-footer-block {
-                margin-top: auto !important;
-                break-inside: avoid !important;
-              }
-            }
-          `}</style>
+    .purchase-print-footer-block {
+      margin-top: auto !important;
+      break-inside: avoid !important;
+      box-shadow: none !important;
+    }
+
+    /* Nuclear option: kill shadow on absolutely everything inside print area */
+    * {
+      box-shadow: none !important;
+      -webkit-box-shadow: none !important;
+    }
+  }
+`}</style>
 
            <div className="store-po-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="store-purchase-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">

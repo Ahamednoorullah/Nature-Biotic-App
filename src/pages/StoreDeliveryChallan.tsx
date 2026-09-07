@@ -698,44 +698,167 @@ function numberToWords(num: number): string {
       {selected &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
-            <style>{`
-              @media print {
-                @page {
-                  size: A4 landscape;
-                  margin: 6mm;
-                }
+          <style>{`
+  @media print {
 
-                body * {
-                  visibility: hidden !important;
-                }
+    @page {
+      size: A4 landscape;
+      margin: 6mm 5mm 5mm 5mm !important;
+    }
 
-                .delivery-challan-print-area,
-                .delivery-challan-print-area * {
-                  visibility: visible !important;
-                }
+    body * {
+      visibility: hidden !important;
+    }
 
-                .delivery-challan-print-area {
-                  position: absolute !important;
-                  inset: 0 !important;
-                  width: 100% !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  overflow: visible !important;
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  background: white !important;
-                }
+    .delivery-challan-print-area,
+    .delivery-challan-print-area * {
+      visibility: visible !important;
+    }
 
-                .delivery-challan-screen-only {
-                  display: none !important;
-                }
+    /* Backdrop */
+    .purchase-modal-backdrop {
+      position: static !important;
+      display: block !important;
+      background: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100% !important;
+      height: auto !important;
+    }
 
-                .delivery-challan-scroll {
-                  overflow: visible !important;
-                  padding: 0 !important;
-                }
-              }
-            `}</style>
+    /* ================================
+       MAIN PRINT AREA
+       ================================ */
+    .delivery-challan-print-area {
+      position: static !important;
+
+      /*
+       * A4 printable width = around 287mm.
+       * Since we are zooming to 82%,
+       * increase actual width so final visual width
+       * still fills the page correctly.
+       */
+      width: 350mm !important;
+      max-width: none !important;
+
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+
+      overflow: visible !important;
+
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      background: white !important;
+
+      margin: 0 !important;
+      padding: 0 !important;
+
+      /*
+       * WHOLE CONTENT ZOOM OUT
+       * This is the main change.
+       */
+      zoom: 0.82 !important;
+
+      /*
+       * Do NOT use transform.
+       * It can cause top clipping.
+       */
+      transform: none !important;
+      transform-origin: top left !important;
+    }
+
+    /* ================================
+       REMOVE EXTRA TABLE HEIGHT
+       ================================ */
+
+    .delivery-challan-print-area table {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    .delivery-challan-print-area tbody {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    .delivery-challan-print-area tbody tr {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    .delivery-challan-print-area tbody td {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
+    /* ================================
+       FLEX HEIGHT FIX
+       ================================ */
+
+    .delivery-challan-print-area .flex-1 {
+      flex: none !important;
+    }
+
+    .delivery-challan-print-area .h-full {
+      height: auto !important;
+    }
+
+    .delivery-challan-print-area .min-h-full {
+      min-height: 0 !important;
+    }
+
+    .delivery-challan-print-area [class*="min-h-"] {
+      min-height: 0 !important;
+    }
+
+    /* ================================
+       SCROLL CONTAINER
+       ================================ */
+
+    .delivery-challan-scroll {
+      overflow: visible !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      max-height: none !important;
+      height: auto !important;
+    }
+
+    /* ================================
+       TEXT
+       ================================ */
+
+    .delivery-challan-print-area h1,
+    .delivery-challan-print-area h2,
+    .delivery-challan-print-area h3,
+    .delivery-challan-print-area p {
+      overflow: visible !important;
+    }
+
+    .delivery-challan-print-area h1 {
+      line-height: 1.4 !important;
+      padding-top: 2px !important;
+    }
+
+    /* ================================
+       TABLE PAGE BREAK
+       ================================ */
+
+    .delivery-challan-print-area table,
+    .delivery-challan-print-area tr {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+
+    /* ================================
+       SCREEN ONLY
+       ================================ */
+
+    .delivery-challan-screen-only {
+      display: none !important;
+    }
+  }
+`}</style>
 
             <div className="delivery-challan-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="delivery-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">

@@ -1110,7 +1110,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                             return (
                               <tr
                                 key={item.id}
-                                className="border-b border-slate-300"
+                                className="border-slate-300"
                               >
                                 <td className="border-r border-slate-300 px-2 py-2 text-center">
                                   {index + 1}

@@ -958,57 +958,83 @@ export default function CompanyCreditNotes() {
 
       {selectedCreditNote &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-             <style>{`
-              @media print {
-                @page { size: A4 landscape; margin: 5mm; }
+          <div className="credit-note-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <style>{`
+@media print {
+  @page { size: A4 landscape; margin: 5mm; }
 
-                /* Hide the entire app (removes it from layout completely) */
-                #root {
-                  display: none !important;
-                }
+  #root {
+    display: none !important;
+  }
 
-                html, body {
-                  height: auto !important;
-                  overflow: visible !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                }
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
 
-                .credit-note-print-area {
-                  display: block !important;
-                  position: static !important;
-                  width: 100% !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  height: auto !important;
-                  overflow: visible !important;
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  background: white !important;
-                }
+  .credit-note-backdrop {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    backdrop-filter: none !important;
+    width: 100% !important;
+    height: auto !important;
+  }
 
-                .credit-note-screen-only { display: none !important; }
-                .credit-note-scroll {
-                  overflow: visible !important;
-                  padding: 0 !important;
-                  max-height: none !important;
-                  height: auto !important;
-                }
-                .credit-note-table { font-size: 7.5px !important; }
-                .credit-note-table th,
-                .credit-note-table td { padding: 3px 4px !important; }
+  /* FIXED: this now targets the actual modal card, not the inner wrapper */
+  .credit-note-print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    filter: none !important;
+    background: white !important;
+    margin: 0 !important;
+  }
 
-                .credit-note-table,
-                .credit-note-table tr,
-                .credit-note-table thead,
-                .credit-note-table tfoot {
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
-                }
-              }
+  .credit-note-print-area .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .credit-note-screen-only { display: none !important; }
+
+  .credit-note-scroll {
+    overflow: visible !important;
+    padding: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  .credit-note-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 6.5px !important;
+  }
+
+  .credit-note-table th,
+  .credit-note-table td { padding: 3px 4px !important; }
+
+  .credit-note-table,
+  .credit-note-table tr,
+  .credit-note-table thead,
+  .credit-note-table tfoot {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}
             `}</style>
-            <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="credit-note-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-5 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
