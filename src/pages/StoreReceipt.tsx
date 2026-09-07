@@ -641,7 +641,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   <div className="grid grid-cols-[1fr_280px]">
                     <div className="border-r border-slate-300 p-4">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Remarks
+                        Notes
                       </p>
                       <p className="mt-2 text-sm text-slate-600">
                         {viewReceipt.remarks ||

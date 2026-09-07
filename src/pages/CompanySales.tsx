@@ -33,6 +33,8 @@ type SaleRow = CompanyStoreSaleRecord & {
   hsn?: string;
   taxPercent?: number;
   discountPercent?: number;
+  shippingAddress?: string;
+  notes?: string;
 };
 
 type AddedRow = {
@@ -668,6 +670,9 @@ export default function CompanySales() {
         storeName: store.name,
         storeLocation: store.location,
         placeOfSupply,
+        notes:
+          remarks.trim() ||
+          "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above.",
         product: r.product?.name || "",
         packSize: r.packSize,
         pkgsize: r.pkgsize,
@@ -1132,8 +1137,13 @@ export default function CompanySales() {
       )}
 
       {selectedInvoice &&
-        createPortal(
-          <div className="invoice-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+  (() => {
+    const invoiceStore = stores.find(
+      (s) => s.id === selectedInvoice.header.storeId,
+    );
+
+    return createPortal(
+    <div className="invoice-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
               @media print {
                 @page {
@@ -1232,6 +1242,10 @@ export default function CompanySales() {
                 .invoice-screen-only {
                   display: none !important;
                 }
+
+                .invoice-print-only {
+                  display: block !important;
+                }
               }
             `}</style>
             <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -1314,39 +1328,48 @@ export default function CompanySales() {
                     </div>
 
                     <div className="grid grid-cols-3 border-t border-slate-300 text-[9px] leading-4">
-                      <div className="border-r border-slate-300 p-3">
-                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                          Billing Address
-                        </p>
-                        <p className="font-bold text-slate-900">
-                          {selectedInvoice.header.storeName}
-                        </p>
-                        <p className="mt-1 text-slate-600">
-                          {selectedStore?.address ||
-                            selectedInvoice.header.storeLocation ||
-                            "-"}
-                        </p>
-                        <p className="mt-1 text-slate-600">
-                          GSTIN: {selectedStore?.gst || "-"}
-                        </p>
-                        <p className="text-slate-600">
-                          Contact: {selectedStore?.phone || "-"}
-                        </p>
-                      </div>
+                     <div className="border-r border-slate-300 p-3">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Billing Address
+                      </p>
+                      <p className="font-bold text-slate-900">
+                        {selectedInvoice.header.storeName}
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        {invoiceStore?.address ||
+                          selectedInvoice.header.storeLocation ||
+                          "-"}
+                      </p>
+                      <p className="mt-1 text-slate-600">
+                        GSTIN: {invoiceStore?.gst || "-"}
+                      </p>
+                      <p className="text-slate-600">
+                        Contact: {invoiceStore?.phone || "-"}
+                      </p>
+                    </div>
 
                       <div className="border-r border-slate-300 p-3">
-                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                          Delivery Address
-                        </p>
-                        <p className="font-bold text-slate-900">
-                          {selectedInvoice.header.storeName}
-                        </p>
-                        <p className="mt-1 text-slate-600">
-                          {selectedStore?.address ||
-                            selectedInvoice.header.storeLocation ||
-                            "-"}
-                        </p>
-                      </div>
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                        Shipping Address
+                      </p>
+                      {(() => {
+                        const addressText =
+                          invoiceStore?.address?.trim() ||
+                          selectedInvoice.header.storeLocation ||
+                          "-";
+
+                        return (
+                          <>
+                            <p className="font-bold text-slate-900">
+                              {selectedInvoice.header.storeName || "-"}
+                            </p>
+                            <p className="mt-1 whitespace-pre-line text-slate-600">
+                              {addressText}
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </div>
 
                       <div className="p-3">
                         <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
@@ -1359,7 +1382,7 @@ export default function CompanySales() {
                             {selectedInvoice.header.invoiceNo}
                           </span>
 
-                          <span className="text-slate-500">Invoice Date</span>
+                          <span className="text-slate-500">Date</span>
                           <span className="font-semibold text-slate-800">
                             {formatDate(selectedInvoice.header.date)}
                           </span>
@@ -1820,11 +1843,59 @@ export default function CompanySales() {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Notes
                     </p>
-                    <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                      This invoice is generated for goods supplied by Nature Biotic to the
-                      registered store shown above.
-                    </p>
+                                        {isPreviewMode || invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
+                      <p className="mt-1 whitespace-pre-line text-[11px] leading-4 text-slate-500">
+                        {selectedInvoice.header.notes ||
+                          "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
+                      </p>
+                    ) : (
+                      <>
+                        <textarea
+                          value={
+                            selectedInvoice.header.notes ??
+                            "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."
+                          }
+                          onChange={(e) => {
+                            const newNotes = e.target.value;
 
+                            setSelectedInvoice((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    header: { ...prev.header, notes: newNotes },
+                                    rows: prev.rows.map((r) => ({
+                                      ...r,
+                                      notes: newNotes,
+                                    })),
+                                  }
+                                : prev,
+                            );
+
+                            setSales((prevSales) => {
+                              const updatedSales = prevSales.map((row) =>
+                                row.invoiceNo === selectedInvoice.header.invoiceNo &&
+                                row.storeId === selectedInvoice.header.storeId &&
+                                row.date === selectedInvoice.header.date
+                                  ? { ...row, notes: newNotes }
+                                  : row,
+                              );
+
+                              saveCompanyStoreSales(updatedSales);
+
+                              return updatedSales;
+                            });
+                          }}
+                          rows={2}
+                          className="invoice-screen-only mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] leading-4 text-slate-600 focus:outline-none focus:border-brand-500"
+                        />
+
+                        {/* Print-only version, since the textarea is hidden on print */}
+                        <p className="invoice-print-only mt-1 hidden whitespace-pre-line text-[11px] leading-4 text-slate-500">
+                          {selectedInvoice.header.notes ||
+                            "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
+                        </p>
+                      </>
+                    )}
                     {(() => {
                       const exactTotal = selectedInvoice.rows.reduce(
                         (sum, row) => sum + Number(row.total || 0),
@@ -1933,12 +2004,14 @@ export default function CompanySales() {
                   <Icon name="print" size={18} />
                   Print Invoice
                 </Button>
-              </div>
+                            </div>
             </div>
           </div>,
           document.body,
-        )}
+        );
+      })()}
 
+      {/* Create Store Sale — same popup shell as Credit Note (portal + fixed header/footer + scroll body) */}
       {/* Create Store Sale — same popup shell as Credit Note (portal + fixed header/footer + scroll body) */}
       {showCreate &&
         createPortal(
@@ -1988,7 +2061,18 @@ export default function CompanySales() {
                       required
                     />
                     <Select
-                      label="Select Store"
+                      label="Bill to"
+                      value={storeId}
+                      onChange={setStoreId}
+                      placeholder="Choose a registered store"
+                      options={stores.map((s) => ({
+                        value: s.id,
+                        label: `${s.name} — ${s.location}`,
+                      }))}
+                      required
+                    />
+                    <Select
+                      label="Bill to"
                       value={storeId}
                       onChange={setStoreId}
                       placeholder="Choose a registered store"
@@ -2338,7 +2422,7 @@ export default function CompanySales() {
                 <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                      Remarks
+                      Notes
                     </label>
                     <textarea
                       value={remarks}

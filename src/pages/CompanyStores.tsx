@@ -12,23 +12,31 @@ export default function CompanyStores() {
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [deleteStore, setDeleteStore] = useState<Store | null>(null);
   const [editForm, setEditForm] = useState({
-    name: "", code: "", owner: "", phone: "", address: "",
-    city: "", district: "", state: "", gst: "", openedDate: "",
-  });
+  name: "", code: "", owner: "", phone: "", address: "",
+  city: "", district: "", state: "", gst: "", openedDate: "",
+  bankAccountName: "", bankAccountNo: "", bankIfsc: "",
+  bankName: "", bankBranch: "", bankUpiId: "",
+});
   const [form, setForm] = useState({
-    name: "",
-    code: "",
-    owner: "",
-    phone: "",
-    email: "",
-    address: "",
-    city: "",
-    district: "",
-    state: "",
-    gst: "",
-    outstandinglimit: "",
-    openedDate: "",
-  });
+  name: "",
+  code: "",
+  owner: "",
+  phone: "",
+  email: "",
+  address: "",
+  city: "",
+  district: "",
+  state: "",
+  gst: "",
+  outstandinglimit: "",
+  openedDate: "",
+  bankAccountName: "",
+  bankAccountNo: "",
+  bankIfsc: "",
+  bankName: "",
+  bankBranch: "",
+  bankUpiId: "",
+});
 
   function update(key: keyof typeof form, value: string) {
     setForm({ ...form, [key]: value });
@@ -36,82 +44,107 @@ export default function CompanyStores() {
 
   function handleSave() {
     const newStore: Store = {
-      id: `s${stores.length + 1}`,
-      code: form.code || form.name.slice(0, 3).toUpperCase(),
-      name: form.name,
-      owner: form.owner,
-      manager: form.owner,
-      location: `${form.city},${form.district}, ${form.state}`,
-      address: form.address,
-      gst: form.gst,
-      phone: form.phone,
-      status: "Active",
-      todaySales: 0,
-      monthlySales: 0,
-      totalProfit: 0,
-      outstanding: 0,
-      activeCustomers: 0,
-      inventoryValue: 0,
-      openedDate: form.openedDate || new Date().toISOString().split("T")[0],
-    };
+  id: `s${stores.length + 1}`,
+  code: form.code || form.name.slice(0, 3).toUpperCase(),
+  name: form.name,
+  owner: form.owner,
+  manager: form.owner,
+  location: `${form.city},${form.district}, ${form.state}`,
+  address: form.address,
+  gst: form.gst,
+  phone: form.phone,
+  status: "Active",
+  todaySales: 0,
+  monthlySales: 0,
+  totalProfit: 0,
+  outstanding: 0,
+  activeCustomers: 0,
+  inventoryValue: 0,
+  openedDate: form.openedDate || new Date().toISOString().split("T")[0],
+  bankAccountName: form.bankAccountName,
+  bankAccountNo: form.bankAccountNo,
+  bankIfsc: form.bankIfsc,
+  bankName: form.bankName,
+  bankBranch: form.bankBranch,
+  bankUpiId: form.bankUpiId,
+} as Store;
+
     setStores([...stores, newStore]);
     setForm({
-      name: "",
-      code: "",
-      owner: "",
-      phone: "",
-      email: "",
-      address: "",
-      city: "",
-      district: "",
-      state: "",
-      gst: "",
-      outstandinglimit: "",
-      openedDate: "",
-    });
+  name: "",
+  code: "",
+  owner: "",
+  phone: "",
+  email: "",
+  address: "",
+  city: "",
+  district: "",
+  state: "",
+  gst: "",
+  outstandinglimit: "",
+  openedDate: "",
+  bankAccountName: "",
+  bankAccountNo: "",
+  bankIfsc: "",
+  bankName: "",
+  bankBranch: "",
+  bankUpiId: "",
+});
     setShowAdd(false);
   }
 
   function openEdit(store: Store) {
-    const location = (store.location || "").split(",").map((v) => v.trim());
-    setEditForm({
-      name: store.name || "",
-      code: store.code || "",
-      owner: store.owner || "",
-      phone: store.phone || "",
-      address: store.address || "",
-      city: location[0] || "",
-      district: location[1] || "",
-      state: location.slice(2).join(", ") || "",
-      gst: store.gst || "",
-      openedDate: store.openedDate || "",
-    });
-    setEditingStore(store);
-    setSelectedStore(null);
-  }
+  const location = (store.location || "").split(",").map((v) => v.trim());
+  setEditForm({
+    name: store.name || "",
+    code: store.code || "",
+    owner: store.owner || "",
+    phone: store.phone || "",
+    address: store.address || "",
+    city: location[0] || "",
+    district: location[1] || "",
+    state: location.slice(2).join(", ") || "",
+    gst: store.gst || "",
+    openedDate: store.openedDate || "",
+    bankAccountName: (store as any).bankAccountName || "",
+    bankAccountNo: (store as any).bankAccountNo || "",
+    bankIfsc: (store as any).bankIfsc || "",
+    bankName: (store as any).bankName || "",
+    bankBranch: (store as any).bankBranch || "",
+    bankUpiId: (store as any).bankUpiId || "",
+  });
+  setEditingStore(store);
+  setSelectedStore(null);
+}
 
   function updateEdit(key: keyof typeof editForm, value: string) {
     setEditForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function handleUpdateStore() {
-    if (!editingStore || !editForm.name.trim() || !editForm.phone.trim()) return;
-    const updated: Store = {
-      ...editingStore,
-      name: editForm.name.trim(),
-      code: editForm.code.trim() || editForm.name.slice(0, 3).toUpperCase(),
-      owner: editForm.owner.trim(),
-      manager: editForm.owner.trim(),
-      phone: editForm.phone.trim(),
-      address: editForm.address.trim(),
-      location: [editForm.city, editForm.district, editForm.state]
-        .map((v) => v.trim()).filter(Boolean).join(", "),
-      gst: editForm.gst.trim(),
-      openedDate: editForm.openedDate,
-    };
-    setStores((prev) => prev.map((s) => s.id === editingStore.id ? updated : s));
-    setEditingStore(null);
-  }
+  if (!editingStore || !editForm.name.trim() || !editForm.phone.trim()) return;
+  const updated: Store = {
+    ...editingStore,
+    name: editForm.name.trim(),
+    code: editForm.code.trim() || editForm.name.slice(0, 3).toUpperCase(),
+    owner: editForm.owner.trim(),
+    manager: editForm.owner.trim(),
+    phone: editForm.phone.trim(),
+    address: editForm.address.trim(),
+    location: [editForm.city, editForm.district, editForm.state]
+      .map((v) => v.trim()).filter(Boolean).join(", "),
+    gst: editForm.gst.trim(),
+    openedDate: editForm.openedDate,
+    bankAccountName: editForm.bankAccountName.trim(),
+    bankAccountNo: editForm.bankAccountNo.trim(),
+    bankIfsc: editForm.bankIfsc.trim(),
+    bankName: editForm.bankName.trim(),
+    bankBranch: editForm.bankBranch.trim(),
+    bankUpiId: editForm.bankUpiId.trim(),
+  } as Store;
+  setStores((prev) => prev.map((s) => s.id === editingStore.id ? updated : s));
+  setEditingStore(null);
+}
 
   function handleDeleteStore() {
     if (!deleteStore) return;
@@ -121,8 +154,7 @@ export default function CompanyStores() {
   }
 
   const isEditValid = editForm.name.trim() && editForm.phone.trim();
-
-  const isValid = form.name && form.phone;
+  const isValid = form.name.trim() && form.phone.trim();
 
   return (
     <div>
@@ -313,6 +345,51 @@ export default function CompanyStores() {
             />
 
           </div>
+
+          {/* Bank Details */}
+          <div className="mt-5">
+            <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-800">
+              Bank Details
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              <StoreInfoBox
+                icon="badge"
+                label="Account Name"
+                value={(selectedStore as any).bankAccountName || "-"}
+              />
+
+              <StoreInfoBox
+                icon="account_balance"
+                label="Account No"
+                value={(selectedStore as any).bankAccountNo || "-"}
+              />
+
+              <StoreInfoBox
+                icon="pin"
+                label="IFSC Code"
+                value={(selectedStore as any).bankIfsc || "-"}
+              />
+
+              <StoreInfoBox
+                icon="account_balance"
+                label="Bank Name"
+                value={(selectedStore as any).bankName || "-"}
+              />
+
+              <StoreInfoBox
+                icon="location_on"
+                label="Branch"
+                value={(selectedStore as any).bankBranch || "-"}
+              />
+
+              <StoreInfoBox
+                icon="qr_code"
+                label="UPI ID"
+                value={(selectedStore as any).bankUpiId || "-"}
+              />
+            </div>
+          </div>
           </div>
 
         {/* Footer */}
@@ -383,11 +460,63 @@ export default function CompanyStores() {
                   <Input label="Mobile Number" value={editForm.phone} onChange={(v) => updateEdit("phone", v)} icon="call" required />
                   <Input label="GST Number" value={editForm.gst} onChange={(v) => updateEdit("gst", v)} icon="receipt_long" />
                   <Input label="Opening Date" type="date" value={editForm.openedDate} onChange={(v) => updateEdit("openedDate", v)} />
-                  <Input label="City" value={editForm.city} onChange={(v) => updateEdit("city", v)} />
+                                    <Input label="City" value={editForm.city} onChange={(v) => updateEdit("city", v)} />
                   <Input label="District" value={editForm.district} onChange={(v) => updateEdit("district", v)} />
                   <Input label="State" value={editForm.state} onChange={(v) => updateEdit("state", v)} />
                   <div className="md:col-span-2 xl:col-span-3">
                     <Input label="Address" value={editForm.address} onChange={(v) => updateEdit("address", v)} icon="location_on" />
+                  </div>
+                </div>
+
+                {/* Bank Details Section */}
+                <div className="mt-7">
+                  <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-800">
+                    Bank Details
+                  </h4>
+
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    <Input
+                      label="Account Name"
+                      value={editForm.bankAccountName}
+                      onChange={(v) => updateEdit("bankAccountName", v)}
+                      placeholder="e.g. Sairam Agri Inputs"
+                      icon="badge"
+                    />
+                    <Input
+                      label="Account No"
+                      value={editForm.bankAccountNo}
+                      onChange={(v) => updateEdit("bankAccountNo", v)}
+                      placeholder="e.g. 50200106535019"
+                      icon="account_balance"
+                    />
+                    <Input
+                      label="IFSC Code"
+                      value={editForm.bankIfsc}
+                      onChange={(v) => updateEdit("bankIfsc", v)}
+                      placeholder="e.g. HDFC0000775"
+                      icon="pin"
+                    />
+                    <Input
+                      label="Bank Name"
+                      value={editForm.bankName}
+                      onChange={(v) => updateEdit("bankName", v)}
+                      placeholder="e.g. HDFC Bank"
+                      icon="account_balance"
+                    />
+                    <Input
+                      label="Branch"
+                      value={editForm.bankBranch}
+                      onChange={(v) => updateEdit("bankBranch", v)}
+                      placeholder="e.g. Rajapalayam"
+                      icon="location_on"
+                    />
+                    <Input
+                      label="UPI ID"
+                      value={editForm.bankUpiId}
+                      onChange={(v) => updateEdit("bankUpiId", v)}
+                      placeholder="e.g. sujiyaso22-1@okhdfcbank"
+                      icon="qr_code"
+                    />
                   </div>
                 </div>
               </div>
@@ -535,13 +664,65 @@ export default function CompanyStores() {
                     />
                   </div>
 
-                  {/* Opening Date occupies the remaining one column */}
+                                    {/* Opening Date occupies the remaining one column */}
                   <div className="xl:col-span-1">
                     <Input
                       label="Opening Date"
                       type="date"
                       value={form.openedDate}
                       onChange={(v) => update("openedDate", v)}
+                    />
+                  </div>
+                </div>
+
+                {/* Bank Details Section */}
+                <div className="mt-7">
+                  <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-800">
+                    Bank Details
+                  </h4>
+
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    <Input
+                      label="Account Name"
+                      value={form.bankAccountName}
+                      onChange={(v) => update("bankAccountName", v)}
+                      placeholder="e.g. Sairam Agri Inputs"
+                      icon="badge"
+                    />
+                    <Input
+                      label="Account No"
+                      value={form.bankAccountNo}
+                      onChange={(v) => update("bankAccountNo", v)}
+                      placeholder="e.g. 50200106535019"
+                      icon="account_balance"
+                    />
+                    <Input
+                      label="IFSC Code"
+                      value={form.bankIfsc}
+                      onChange={(v) => update("bankIfsc", v)}
+                      placeholder="e.g. HDFC0000775"
+                      icon="pin"
+                    />
+                    <Input
+                      label="Bank Name"
+                      value={form.bankName}
+                      onChange={(v) => update("bankName", v)}
+                      placeholder="e.g. HDFC Bank"
+                      icon="account_balance"
+                    />
+                    <Input
+                      label="Branch"
+                      value={form.bankBranch}
+                      onChange={(v) => update("bankBranch", v)}
+                      placeholder="e.g. Rajapalayam"
+                      icon="location_on"
+                    />
+                    <Input
+                      label="UPI ID"
+                      value={form.bankUpiId}
+                      onChange={(v) => update("bankUpiId", v)}
+                      placeholder="e.g. sujiyaso22-1@okhdfcbank"
+                      icon="qr_code"
                     />
                   </div>
                 </div>
@@ -611,3 +792,5 @@ function StoreInfoBox({
     </div>
   );
 }
+
+

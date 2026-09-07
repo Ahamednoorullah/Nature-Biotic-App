@@ -957,9 +957,10 @@ export default function StoreReturnChallan({
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
             <style>{`
               @media print {
+
                 @page {
                   size: A4 landscape;
-                  margin: 6mm;
+                  margin: 6mm 5mm 5mm 5mm !important;
                 }
 
                 body * {
@@ -971,25 +972,147 @@ export default function StoreReturnChallan({
                   visibility: visible !important;
                 }
 
-                .return-challan-print-area {
-                  position: absolute !important;
-                  inset: 0 !important;
+                /* Backdrop */
+                .return-challan-backdrop {
+                  position: static !important;
+                  display: block !important;
+                  background: none !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
                   width: 100% !important;
+                  height: auto !important;
+                }
+
+                /* ================================
+                  MAIN PRINT AREA
+                  ================================ */
+                .return-challan-print-area {
+                  position: static !important;
+
+                  /*
+                  * A4 printable width = around 287mm.
+                  * Since we are zooming to 82%,
+                  * increase actual width so final visual width
+                  * still fills the page correctly.
+                  */
+                  width: 350mm !important;
                   max-width: none !important;
+
+                  height: auto !important;
+                  min-height: 0 !important;
                   max-height: none !important;
+
                   overflow: visible !important;
+
                   border-radius: 0 !important;
                   box-shadow: none !important;
                   background: white !important;
+
+                  margin: 0 !important;
+                  padding: 0 !important;
+
+                  /*
+                  * WHOLE CONTENT ZOOM OUT
+                  * This is the main change.
+                  */
+                  zoom: 0.82 !important;
+
+                  /*
+                  * Do NOT use transform.
+                  * It can cause top clipping.
+                  */
+                  transform: none !important;
+                  transform-origin: top left !important;
                 }
 
-                .return-challan-screen-only {
-                  display: none !important;
+                /* ================================
+                  REMOVE EXTRA TABLE HEIGHT
+                  ================================ */
+
+                .return-challan-print-area table {
+                  height: auto !important;
+                  min-height: 0 !important;
                 }
+
+                .return-challan-print-area tbody {
+                  height: auto !important;
+                  min-height: 0 !important;
+                }
+
+                .return-challan-print-area tbody tr {
+                  height: auto !important;
+                  min-height: 0 !important;
+                }
+
+                .return-challan-print-area tbody td {
+                  height: auto !important;
+                  min-height: 0 !important;
+                }
+
+                /* ================================
+                  FLEX HEIGHT FIX
+                  ================================ */
+
+                .return-challan-print-area .flex-1 {
+                  flex: none !important;
+                }
+
+                .return-challan-print-area .h-full {
+                  height: auto !important;
+                }
+
+                .return-challan-print-area .min-h-full {
+                  min-height: 0 !important;
+                }
+
+                .return-challan-print-area [class*="min-h-"] {
+                  min-height: 0 !important;
+                }
+
+                /* ================================
+                  SCROLL CONTAINER
+                  ================================ */
 
                 .return-challan-scroll {
                   overflow: visible !important;
                   padding: 0 !important;
+                  margin: 0 !important;
+                  max-height: none !important;
+                  height: auto !important;
+                }
+
+                /* ================================
+                  TEXT
+                  ================================ */
+
+                .return-challan-print-area h1,
+                .return-challan-print-area h2,
+                .return-challan-print-area h3,
+                .return-challan-print-area p {
+                  overflow: visible !important;
+                }
+
+                .return-challan-print-area h1 {
+                  line-height: 1.4 !important;
+                  padding-top: 2px !important;
+                }
+
+                /* ================================
+                  TABLE PAGE BREAK
+                  ================================ */
+
+                .return-challan-print-area table,
+                .return-challan-print-area tr {
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+
+                /* ================================
+                  SCREEN ONLY
+                  ================================ */
+
+                .return-challan-screen-only {
+                  display: none !important;
                 }
               }
             `}</style>

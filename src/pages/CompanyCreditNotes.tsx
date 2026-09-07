@@ -47,6 +47,7 @@ type CreditNote = {
   discountAmount?: number;
   taxableAmount?: number;
   taxPercent?: number;
+  notes?: string;
 };
 
 type AddedProduct = {
@@ -167,6 +168,7 @@ export default function CompanyCreditNotes() {
         discountAmount: row.discountAmount,
         taxableAmount: row.taxableAmount,
         taxPercent: row.taxPercent,
+        notes: row.notes,
       };
     });
 
@@ -457,6 +459,10 @@ export default function CompanyCreditNotes() {
 
     const createdAt = new globalThis.Date().getTime();
 
+    const defaultCreditNoteNotes = `This credit note is generated against returned goods from ${selectedStore.name}${
+      invoiceNo ? ` for original invoice ${invoiceNo}.` : "."
+    }`;
+
     // Company Credit Note -> selected Store Debit Note sync
     const syncRows: CompanyCreditNoteSyncRecord[] = added.map(
       (item, index) => ({
@@ -486,6 +492,7 @@ export default function CompanyCreditNotes() {
         reason: item.reason || remarks || "Product Return",
         placeOfReturn: selectedStore.location?.split(",")[0] || "",
         status: "Pending",
+        notes: remarks.trim() || defaultCreditNoteNotes,
       }),
     );
 
@@ -518,6 +525,7 @@ export default function CompanyCreditNotes() {
       discountAmount: item.discountAmount,
       taxableAmount: item.taxableAmount,
       taxPercent: item.taxPercent,
+      notes: remarks.trim() || defaultCreditNoteNotes,
     }));
 
     setCreditNotes((prev) => [...companyRows, ...prev]);
@@ -960,79 +968,80 @@ export default function CompanyCreditNotes() {
         createPortal(
           <div className="credit-note-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
-@media print {
-  @page { size: A4 landscape; margin: 5mm; }
+              @media print {
+                @page { size: A4 landscape; margin: 5mm; }
 
-  #root {
-    display: none !important;
-  }
+                #root {
+                  display: none !important;
+                }
 
-  html, body {
-    height: auto !important;
-    overflow: visible !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
+                html, body {
+                  height: auto !important;
+                  overflow: visible !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
 
-  .credit-note-backdrop {
-    position: static !important;
-    display: block !important;
-    background: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    backdrop-filter: none !important;
-    width: 100% !important;
-    height: auto !important;
-  }
+                .credit-note-backdrop { 
+                  position: static !important;
+                  display: block !important;
+                  background: none !important;
+                  padding: 0 !important;
+                  margin: 0 !important;
+                  backdrop-filter: none !important;
+                  width: 100% !important;
+                  height: auto !important;
+                }
 
-  /* FIXED: this now targets the actual modal card, not the inner wrapper */
-  .credit-note-print-area {
-    display: block !important;
-    position: static !important;
-    width: 100% !important;
-    max-width: none !important;
-    max-height: none !important;
-    height: auto !important;
-    overflow: visible !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    -webkit-box-shadow: none !important;
-    filter: none !important;
-    background: white !important;
-    margin: 0 !important;
-  }
+                /* FIXED: this now targets the actual modal card, not the inner wrapper */
+                .credit-note-print-area {
+                  display: block !important;
+                  position: static !important;
+                  width: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  height: auto !important;
+                  overflow: visible !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  -webkit-box-shadow: none !important;
+                  filter: none !important;
+                  background: white !important;
+                  margin: 0 !important;
+                }
 
-  .credit-note-print-area .overflow-x-auto {
-    overflow: visible !important;
-  }
+                .credit-note-print-area .overflow-x-auto {
+                  overflow: visible !important;
+                }
 
-  .credit-note-screen-only { display: none !important; }
+                .credit-note-screen-only { display: none !important; }
+                .credit-note-print-only { display: block !important; }
 
-  .credit-note-scroll {
-    overflow: visible !important;
-    padding: 0 !important;
-    max-height: none !important;
-    height: auto !important;
-  }
+                .credit-note-scroll {
+                  overflow: visible !important;
+                  padding: 0 !important;
+                  max-height: none !important;
+                  height: auto !important;
+                }
 
-  .credit-note-table {
-    min-width: 0 !important;
-    width: 100% !important;
-    table-layout: fixed !important;
-    font-size: 6.5px !important;
-  }
+                .credit-note-table {
+                  min-width: 0 !important;
+                  width: 100% !important;
+                  table-layout: fixed !important;
+                  font-size: 6.5px !important;
+                }
 
-  .credit-note-table th,
-  .credit-note-table td { padding: 3px 4px !important; }
+                .credit-note-table th,
+                .credit-note-table td { padding: 3px 4px !important; }
 
-  .credit-note-table,
-  .credit-note-table tr,
-  .credit-note-table thead,
-  .credit-note-table tfoot {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-}
+                .credit-note-table,
+                .credit-note-table tr,
+                .credit-note-table thead,
+                .credit-note-table tfoot {
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+              }
             `}</style>
             <div className="credit-note-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-5 py-3">
@@ -1442,56 +1451,86 @@ export default function CompanyCreditNotes() {
                     </table>
                   </div>
 
-                  {/* ROW 1: Amount in Words (left) + Round Off / Total (right) */}
-                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-3 flex items-center">
-                      <p className="text-[12px] font-semibold text-slate-700">
-                        Amount in Words:{" "}
-                        <span className="font-bold text-slate-900">
-                          {numberToWords(
-                            selectedCreditNote.rows.reduce(
-                              (sum, row) => sum + Number(row.total || 0),
-                              0,
-                            ),
-                          )}
-                        </span>
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5 p-3 text-[11px]">
-                      <SummaryRow
-                        label="Round Off"
-                        value={formatCurrency(roundOff)}
-                        muted
-                      />
-
-                      <div className="flex items-center justify-between border-t border-slate-300 pt-2">
-                        <span className="text-sm font-bold text-slate-900">Total</span>
-                        <span className="text-base font-extrabold text-slate-900">
-                          {formatCurrency(
-                            selectedCreditNote.rows.reduce(
-                              (sum, row) => sum + Number(row.total || 0),
-                              0,
-                            ),
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                                    {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
                    <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
                     <div className="border-r border-slate-300 p-3">
                       <p className="text-[11px] font-bold uppercase text-slate-400">
                         Notes
                       </p>
-                      <p className="mt-1.5 text-xs text-slate-500">
-                        This credit note is generated against returned goods
-                        from {selectedCreditNote.header.party}
-                        {selectedCreditNote.header.invoiceNo
-                          ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
-                          : "."}
-                      </p>
+
+                      {(() => {
+                        const isLocked =
+                          selectedCreditNote.header.status === "Approved" ||
+                          selectedCreditNote.header.status === "Rejected";
+
+                        const defaultNotes = `This credit note is generated against returned goods from ${selectedCreditNote.header.party}${
+                          selectedCreditNote.header.invoiceNo
+                            ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
+                            : "."
+                        }`;
+
+                        if (isLocked) {
+                          return (
+                            <p className="mt-1.5 whitespace-pre-line text-xs text-slate-500">
+                              {selectedCreditNote.header.notes || defaultNotes}
+                            </p>
+                          );
+                        }
+
+                        return (
+                          <>
+                            <textarea
+                              value={
+                                selectedCreditNote.header.notes ?? defaultNotes
+                              }
+                              onChange={(e) => {
+                                const newNotes = e.target.value;
+
+                                setSelectedCreditNote((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        header: { ...prev.header, notes: newNotes },
+                                        rows: prev.rows.map((r) => ({
+                                          ...r,
+                                          notes: newNotes,
+                                        })),
+                                      }
+                                    : prev,
+                                );
+
+                                setCreditNotes((prevNotes) =>
+                                  prevNotes.map((row) =>
+                                    row.creditNoteNo ===
+                                      selectedCreditNote.header.creditNoteNo &&
+                                    row.Date === selectedCreditNote.header.Date
+                                      ? { ...row, notes: newNotes }
+                                      : row,
+                                  ),
+                                );
+
+                                // Persist to the synced Company Credit Note records
+                                // so the Store side also sees the updated notes.
+                                const allSynced = getCompanyCreditNoteSyncRecords();
+                                const updatedSynced = allSynced.map((row) =>
+                                  row.creditNoteNo ===
+                                  selectedCreditNote.header.creditNoteNo
+                                    ? { ...row, notes: newNotes }
+                                    : row,
+                                );
+                                addCompanyCreditNoteSyncRecords(updatedSynced);
+                              }}
+                              rows={2}
+                              className="credit-note-screen-only mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:outline-none focus:border-brand-500"
+                            />
+
+                            <p className="credit-note-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                              {selectedCreditNote.header.notes || defaultNotes}
+                            </p>
+                          </>
+                        );
+                      })()}
+
                       <p className="mt-1.5 text-xs text-slate-500">
                         Reason:{" "}
                         {selectedCreditNote.rows

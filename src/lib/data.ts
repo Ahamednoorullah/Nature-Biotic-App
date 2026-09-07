@@ -16,6 +16,12 @@ export type Store = {
   activeCustomers: number;
   inventoryValue: number;
   openedDate: string;
+  bankAccountName?: string;
+  bankAccountNo?: string;
+  bankIfsc?: string;
+  bankName?: string;
+  bankBranch?: string;
+  bankUpiId?: string;
 };
 
 export type ProductCategory =
@@ -246,6 +252,10 @@ export type CompanyCreditNoteSyncRecord = {
   reason: string;
   placeOfReturn: string;
   status: "Pending" | "Approved" | "Rejected";
+  notes?: string;
+  pkgsize?: string;
+  batchNo?: string;
+  expiryDate?: string;
 };
 
 const COMPANY_CREDIT_NOTE_SYNC_KEY =
@@ -1177,6 +1187,14 @@ export type CompanyStoreSaleRecord = {
   cgst: number;
   igst: number;
   total: number;
+  notes?: string;
+  shippingAddress?: string;
+  pkgsize?: string;
+  batchNo?: string;
+  expiryDate?: string;
+  hsn?: string;
+  taxPercent?: number;
+  discount?: number;
 };
 
 const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
