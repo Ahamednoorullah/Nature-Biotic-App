@@ -62,6 +62,7 @@ export default function CompanyReceipts() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [viewReceipt, setViewReceipt] = useState<Receipt | null>(null);
+  const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [receiptDate, setReceiptDate] = useState(
@@ -581,15 +582,38 @@ export default function CompanyReceipts() {
                   </div>
 
                   <div className="grid grid-cols-[1fr_280px]">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Remarks
-                      </p>
-                      <p className="mt-2 text-sm text-slate-600">
-                        {viewReceipt.remarks ||
-                          `Payment received against invoice ${viewReceipt.invoiceNo}.`}
-                      </p>
-                    </div>
+                    {/* NOTES */}
+                        <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            Notes
+                          </p>
+
+                          {(() => {
+                            const storeName =
+                              viewReceipt?.storeName ||
+                              stores.find((s) => s.id === viewReceipt?.storeId)?.name ||
+                              "this store";
+                            const defaultNotes = `Purchase order raised by ${storeName} to Nature Biotic.`;
+
+                            return (
+                              <>
+                                {/* Screen - Editable Notes */}
+                                <textarea
+                                  value={purchaseOrderNotes}
+                                  onChange={(e) => setPurchaseOrderNotes(e.target.value)}
+                                  rows={2}
+                                  placeholder="Enter notes..."
+                                  className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                />
+
+                                {/* Print - Show edited notes */}
+                                <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                  {purchaseOrderNotes || defaultNotes}
+                                </p>
+                              </>
+                            );
+                          })()}
+                        </div>
 
                     <div className="p-4 text-sm">
                       <div className="flex justify-between py-1.5">
