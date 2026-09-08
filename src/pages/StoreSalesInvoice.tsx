@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
 
+
 type SaleType = "Direct" | "Executive";
 
 type SaleRow = {
+  notes: string;
   id: string;
   date: string;
   invoiceNo: string;
@@ -93,6 +95,7 @@ const initialRows: SaleRow[] = [
     igst: 0,
     amount: 2499.84,
     products: [],
+    notes: ""
   },
 ];
 
@@ -129,6 +132,11 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRow | null>(null);
+  useEffect(() => {
+  if (selectedSale) {
+    setInvoiceNotes(selectedSale.notes || "");
+  }
+}, [selectedSale]);
   const store = getStore(storeId);
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
@@ -145,6 +153,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [executiveName, setExecutiveName] = useState("");
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
+  const [invoiceNotes, setInvoiceNotes] = useState("");
 
   const registeredFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
   const storePurchaseRows = useMemo(
@@ -368,6 +377,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       igst: totals.igst,
       amount: totals.grandTotal,
       products: added,
+      notes: ""
     };
 
     const next = [row, ...rows];
@@ -534,25 +544,90 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         createPortal(
           <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
-              @media print {
-                @page { size: A4 landscape; margin: 6mm; }
-                body * { visibility: hidden !important; }
-                .store-invoice-print,
-                .store-invoice-print * { visibility: visible !important; }
-                .store-invoice-print {
-                  position: absolute !important;
-                  inset: 0 !important;
-                  width: 100% !important;
-                  max-width: none !important;
-                  max-height: none !important;
-                  overflow: visible !important;
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  background: white !important;
-                }
-                .store-invoice-screen-only { display: none !important; }
-              }
-            `}</style>
+  @media print {
+
+    @page {
+      size: A4 landscape;
+      margin: 5mm;
+    }
+
+    html,
+    body {
+      width: 100% !important;
+      height: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: visible !important;
+    }
+
+    body {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    body * {
+      visibility: hidden !important;
+    }
+
+    .store-invoice-print,
+    .store-invoice-print * {
+      visibility: visible !important;
+    }
+
+    .store-invoice-print {
+      position: relative !important;
+
+      /* Actual resize instead of transform */
+      zoom: 0.82 !important;
+
+      width: 121.95% !important;
+      max-width: none !important;
+
+      height: auto !important;
+      max-height: none !important;
+
+      margin: 0 !important;
+      padding: 0 !important;
+
+      left: 0 !important;
+      top: 0 !important;
+
+      overflow: visible !important;
+
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      background: #fff !important;
+
+      /* IMPORTANT */
+      transform: none !important;
+      transform-origin: initial !important;
+    }
+
+    .store-invoice-screen-only,
+    .store-invoice-print-hide,
+    .store-purchase-screen-only {
+      display: none !important;
+    }
+
+    .store-invoice-print-only {
+      display: block !important;
+    }
+
+    .store-invoice-print table {
+      page-break-inside: auto !important;
+    }
+
+    .store-invoice-print tr {
+      page-break-inside: avoid !important;
+      page-break-after: auto !important;
+    }
+
+    .store-invoice-print-footer-block {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+  }
+`}</style>
 
             <div className="store-invoice-print flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="store-invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
@@ -972,13 +1047,37 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                   {/* Row 2: Notes (left) + Authorised Signatory (right) */}
                   <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
                     <div className="border-r border-slate-300 min-w-0 p-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {/* NOTES */}
+                    <div className="flex flex-col justify-end border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
                         Notes
                       </p>
-                      <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                        This invoice is generated for goods supplied by Nature Biotic to the
-                        registered store shown above.
-                      </p>
+
+                      {(() => {
+                        const defaultNotes = `Purchase return raised by ${
+                          selectedSale?.placeOfSupply ?? "this store"
+                        } to Nature Biotic.`;
+
+                        return (
+                          <>
+                            {/* Screen - Editable Notes */}
+                            <textarea
+                              value={invoiceNotes}
+                              onChange={(e) => setInvoiceNotes(e.target.value)}
+                              rows={2}
+                              placeholder="Enter notes..."
+                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                            />
+
+                            {/* Print - Show edited notes */}
+                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                              {invoiceNotes || defaultNotes}
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </div>
+                      
 
                       {(() => {
                         const exactTotal = selectedSale.products.length

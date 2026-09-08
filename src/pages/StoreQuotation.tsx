@@ -268,6 +268,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
   // Remarks
   const [remarks, setRemarks] = useState("");
+  const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
 
   // Tax
 
@@ -1735,29 +1736,50 @@ function numberToWords(num: number): string {
                         </div>
                       </div>
 
-                                            {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                      <div className="grid min-h-[110px] grid-cols-[1fr_320px] border-t border-slate-300">
-                        <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                            Notes
-                          </p>
+                      {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
 
-                          <p className="mt-1.5 text-xs text-slate-500">
-                            Products issued from store stock for{" "}
-                            {selectedQuotation.farmer || "field delivery"}.
-                          </p>
-                        </div>
+                    {/* NOTES */}
+                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
+                      </p>
 
-                        <div className="flex items-end justify-center p-3">
-                          <div className="w-full text-center">
-                            <div className="border-b border-slate-300" />
+                      {(() => {
+                        const defaultNotes = `Purchase order raised by ${
+                          selectedQuotation?.placeOfSupply ?? "this store"
+                        } to Nature Biotic.`;
 
-                            <p className="mt-1.5 text-xs font-semibold text-slate-500">
-                              Authorised Signatory
+                        return (
+                          <>
+                            {/* Screen - Editable Notes */}
+                            <textarea
+                              value={purchaseOrderNotes}
+                              onChange={(e) => setPurchaseOrderNotes(e.target.value)}
+                              rows={2}
+                              placeholder="Enter notes..."
+                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                            />
+
+                            {/* Print - Show edited notes */}
+                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                              {purchaseOrderNotes.trim() ? purchaseOrderNotes : defaultNotes}
                             </p>
-                          </div>
-                        </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {/* AUTHORISED SIGNATORY */}
+                    <div className="flex items-end justify-center p-3">
+                      <div className="w-full text-center">
+                        <div className="border-b border-slate-300" />
+                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
                       </div>
+                    </div>
+                  </div>
                     </div>
                   </div>
 

@@ -50,6 +50,7 @@ type StoredPurchaseOrder = {
   total: number;
   status?: "Pending" | "Approved";
   items?: PurchaseOrderItem[];
+  notes?: string;
 };
 
 type PurchaseRequestRow = StoreApprovalRequest & {
@@ -63,6 +64,32 @@ function readStorePurchaseOrders(storeId: string): StoredPurchaseOrder[] {
   } catch {
     return [];
   }
+}
+
+function writeStorePurchaseOrders(
+  storeId: string,
+  orders: StoredPurchaseOrder[],
+) {
+  try {
+    localStorage.setItem(
+      `naturebiotic:purchase-orders:${storeId}`,
+      JSON.stringify(orders),
+    );
+    window.dispatchEvent(new Event("store-purchase-orders-updated"));
+  } catch {}
+}
+
+function updatePurchaseOrderNotes(
+  storeId: string,
+  poNo: string,
+  notes: string,
+) {
+  const orders = readStorePurchaseOrders(storeId);
+  const updated = orders.map((po) =>
+    po.poNo === poNo ? { ...po, notes } : po,
+  );
+  writeStorePurchaseOrders(storeId, updated);
+  return updated;
 }
 
 function handleApprove(request: StoreApprovalRequest) {
@@ -312,8 +339,11 @@ export default function CompanyPurchaseOrders() {
     overflow: hidden;
     word-break: break-word;
   }
-  .po-print-hide, .store-purchase-screen-only {
+    .po-print-hide, .store-purchase-screen-only {
     display: none !important;
+  }
+  .po-print-only {
+    display: block !important;
   }
   .purchase-scroll {
     overflow: visible !important;
@@ -1037,16 +1067,71 @@ export default function CompanyPurchaseOrders() {
               
                                 {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
                                 <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+
+                                  {/* NOTES */}
                                   <div className="flex flex-col justify-end border-r border-slate-300 p-4">
                                     <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
                                       Notes
                                     </p>
-                                    <p className="mt-1.5 text-xs text-slate-500">
-                                      Purchase order raised by{" "}
-                                      {selected.storeName || "this store"} to Nature Biotic.
-                                    </p>
+
+                                    {(() => {
+                                      const defaultNotes = `Purchase order raised by ${
+                                        selected.storeName || "this store"
+                                      } to Nature Biotic.`;
+
+                                      return (
+                                        <>
+                                          {/* Screen - Editable Notes */}
+                                          <textarea
+                                            value={selected.order?.notes ?? defaultNotes}
+                                            onChange={(e) => {
+                                              const newNotes = e.target.value;
+
+                                              // Update modal immediately
+                                              setSelected((prev) =>
+                                                prev
+                                                  ? {
+                                                      ...prev,
+                                                      order: prev.order
+                                                        ? {
+                                                            ...prev.order,
+                                                            notes: newNotes,
+                                                          }
+                                                        : {
+                                                            id: "",
+                                                            poNo: prev.referenceNo,
+                                                            date: prev.date,
+                                                            batchNo: "",
+                                                            expiryDate: "",
+                                                            total: 0,
+                                                            notes: newNotes,
+                                                          },
+                                                    }
+                                                  : prev,
+                                              );
+
+                                              // Save permanently to localStorage
+                                              updatePurchaseOrderNotes(
+                                                selected.storeId,
+                                                selected.referenceNo,
+                                                newNotes,
+                                              );
+                                            }}
+                                            rows={2}
+                                            placeholder="Enter notes..."
+                                            className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                          />
+
+                                          {/* Print - Show edited notes */}
+                                          <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                            {selected.order?.notes || defaultNotes}
+                                          </p>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
-              
+
+                                  {/* AUTHORISED SIGNATORY */}
                                   <div className="flex items-end justify-center p-3">
                                     <div className="w-full text-center">
                                       <div className="border-b border-slate-300" />

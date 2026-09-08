@@ -46,6 +46,7 @@ type PurchaseOrderRow = {
   total: number;
   status: "Pending" | "Approved";
   items: AddedProduct[];
+  notes?: string;
 };
 
 const initialRows: PurchaseOrderRow[] = [
@@ -334,6 +335,9 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
       total: totals.total,
       status: "Pending",
       items: added,
+      notes: `Purchase order raised by ${
+      currentStore?.name || "this store"
+    } to Nature Biotic.`,
     };
     setRows((prev) => [newRow, ...prev]);
     const store = stores.find((item) => item.id === storeId);
@@ -833,8 +837,11 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                   page-break-inside: avoid !important;
                 }
 
-                .store-po-screen-only {
+                .po-print-hide, .store-purchase-screen-only {
                   display: none !important;
+                }
+                .po-print-only {
+                  display: block !important;
                 }
 
                 .store-po-scroll {
@@ -1298,16 +1305,55 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
 
                   {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
                   <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+
+                    {/* NOTES */}
                     <div className="flex flex-col justify-end border-r border-slate-300 p-4">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
                         Notes
                       </p>
-                      <p className="mt-1.5 text-xs text-slate-500">
-                        Purchase order raised by{" "}
-                        {currentStore?.name || "this store"} to Nature Biotic.
-                      </p>
+
+                      {(() => {
+                        const defaultNotes = `Purchase order raised by ${
+                          currentStore?.name || "this store"
+                        } to Nature Biotic.`;
+
+                        const handleNotesChange = (newNotes: string) => {
+                          if (!selectedOrder) return;
+
+                          setSelectedOrder((prev) =>
+                            prev ? { ...prev, notes: newNotes } : prev,
+                          );
+
+                          setRows((prevRows) =>
+                            prevRows.map((row) =>
+                              row.id === selectedOrder.id
+                                ? { ...row, notes: newNotes }
+                                : row,
+                            ),
+                          );
+                        };
+
+                        return (
+                          <>
+                            {/* Screen - Editable Notes */}
+                            <textarea
+                              value={selectedOrder?.notes ?? defaultNotes}
+                              onChange={(e) => handleNotesChange(e.target.value)}
+                              rows={2}
+                              placeholder="Enter notes..."
+                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                            />
+
+                            {/* Print - Show edited notes */}
+                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                              {selectedOrder?.notes || defaultNotes}
+                            </p>
+                          </>
+                        );
+                      })()}
                     </div>
 
+                    {/* AUTHORISED SIGNATORY */}
                     <div className="flex items-end justify-center p-3">
                       <div className="w-full text-center">
                         <div className="border-b border-slate-300" />
@@ -1316,6 +1362,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                         </p>
                       </div>
                     </div>
+
                   </div>
                 </div>
                 </div>
