@@ -1074,61 +1074,49 @@ export default function CompanyPurchaseOrders() {
                                       Notes
                                     </p>
 
-                                    {(() => {
-                                      const defaultNotes = `Purchase order raised by ${
-                                        selected.storeName || "this store"
-                                      } to Nature Biotic.`;
+                                    {/* Screen - Editable Notes */}
+                                    <textarea
+                                      value={selected.order?.notes || ""}
+                                      onChange={(e) => {
+                                        const newNotes = e.target.value;
 
-                                      return (
-                                        <>
-                                          {/* Screen - Editable Notes */}
-                                          <textarea
-                                            value={selected.order?.notes ?? defaultNotes}
-                                            onChange={(e) => {
-                                              const newNotes = e.target.value;
-
-                                              // Update modal immediately
-                                              setSelected((prev) =>
-                                                prev
+                                        setSelected((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                order: prev.order
                                                   ? {
-                                                      ...prev,
-                                                      order: prev.order
-                                                        ? {
-                                                            ...prev.order,
-                                                            notes: newNotes,
-                                                          }
-                                                        : {
-                                                            id: "",
-                                                            poNo: prev.referenceNo,
-                                                            date: prev.date,
-                                                            batchNo: "",
-                                                            expiryDate: "",
-                                                            total: 0,
-                                                            notes: newNotes,
-                                                          },
+                                                      ...prev.order,
+                                                      notes: newNotes,
                                                     }
-                                                  : prev,
-                                              );
+                                                  : {
+                                                      id: "",
+                                                      poNo: prev.referenceNo,
+                                                      date: prev.date,
+                                                      batchNo: "",
+                                                      expiryDate: "",
+                                                      total: 0,
+                                                      notes: newNotes,
+                                                    },
+                                              }
+                                            : prev
+                                        );
 
-                                              // Save permanently to localStorage
-                                              updatePurchaseOrderNotes(
-                                                selected.storeId,
-                                                selected.referenceNo,
-                                                newNotes,
-                                              );
-                                            }}
-                                            rows={2}
-                                            placeholder="Enter notes..."
-                                            className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                                          />
+                                        updatePurchaseOrderNotes(
+                                          selected.storeId,
+                                          selected.referenceNo,
+                                          newNotes
+                                        );
+                                      }}
+                                      rows={2}
+                                      placeholder="Enter notes..."
+                                      className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                    />
 
-                                          {/* Print - Show edited notes */}
-                                          <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                                            {selected.order?.notes || defaultNotes}
-                                          </p>
-                                        </>
-                                      );
-                                    })()}
+                                    {/* Print - Show only edited notes */}
+                                    <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                      {selected.order?.notes || ""}
+                                    </p>
                                   </div>
 
                                   {/* AUTHORISED SIGNATORY */}

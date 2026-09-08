@@ -544,90 +544,90 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         createPortal(
           <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
-  @media print {
+              @media print {
 
-    @page {
-      size: A4 landscape;
-      margin: 5mm;
-    }
+                @page {
+                  size: A4 landscape;
+                  margin: 5mm;
+                }
 
-    html,
-    body {
-      width: 100% !important;
-      height: auto !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      overflow: visible !important;
-    }
+                html,
+                body {
+                  width: 100% !important;
+                  height: auto !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
 
-    body {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
+                body {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
 
-    body * {
-      visibility: hidden !important;
-    }
+                body * {
+                  visibility: hidden !important;
+                }
 
-    .store-invoice-print,
-    .store-invoice-print * {
-      visibility: visible !important;
-    }
+                .store-invoice-print,
+                .store-invoice-print * {
+                  visibility: visible !important;
+                }
 
-    .store-invoice-print {
-      position: relative !important;
+                .store-invoice-print {
+                  position: relative !important;
 
-      /* Actual resize instead of transform */
-      zoom: 0.82 !important;
+                  /* Actual resize instead of transform */
+                  zoom: 0.82 !important;
 
-      width: 121.95% !important;
-      max-width: none !important;
+                  width: 121.95% !important;
+                  max-width: none !important;
 
-      height: auto !important;
-      max-height: none !important;
+                  height: auto !important;
+                  max-height: none !important;
 
-      margin: 0 !important;
-      padding: 0 !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
 
-      left: 0 !important;
-      top: 0 !important;
+                  left: 0 !important;
+                  top: 0 !important;
 
-      overflow: visible !important;
+                  overflow: visible !important;
 
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      background: #fff !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  background: #fff !important;
 
-      /* IMPORTANT */
-      transform: none !important;
-      transform-origin: initial !important;
-    }
+                  /* IMPORTANT */
+                  transform: none !important;
+                  transform-origin: initial !important;
+                }
 
-    .store-invoice-screen-only,
-    .store-invoice-print-hide,
-    .store-purchase-screen-only {
-      display: none !important;
-    }
+                .store-invoice-screen-only,
+                .store-invoice-print-hide,
+                .store-purchase-screen-only {
+                  display: none !important;
+                }
 
-    .store-invoice-print-only {
-      display: block !important;
-    }
+                .store-invoice-print-only {
+                  display: block !important;
+                }
 
-    .store-invoice-print table {
-      page-break-inside: auto !important;
-    }
+                .store-invoice-print table {
+                  page-break-inside: auto !important;
+                }
 
-    .store-invoice-print tr {
-      page-break-inside: avoid !important;
-      page-break-after: auto !important;
-    }
+                .store-invoice-print tr {
+                  page-break-inside: avoid !important;
+                  page-break-after: auto !important;
+                }
 
-    .store-invoice-print-footer-block {
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
-    }
-  }
-`}</style>
+                .store-invoice-print-footer-block {
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                }
+              }
+            `}</style>
 
             <div className="store-invoice-print flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="store-invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">

@@ -1843,7 +1843,7 @@ export default function CompanySales() {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Notes
                     </p>
-                                        {isPreviewMode || invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
+                    {isPreviewMode || invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
                       <p className="mt-1 whitespace-pre-line text-[11px] leading-4 text-slate-500">
                         {selectedInvoice.header.notes ||
                           "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
