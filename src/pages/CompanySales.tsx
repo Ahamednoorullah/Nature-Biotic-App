@@ -13,6 +13,9 @@ import {
   stores,
   getProductMaster,
   productMasterUpdatedEvent,
+  getStoredFarmers,          
+  storeFarmersUpdatedEvent,
+  type Farmer,
   type Product,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
@@ -293,6 +296,12 @@ export default function CompanySales() {
     getProductMaster(),
   );
 
+  const [farmers, setFarmers] = useState<Farmer[]>(() => getStoredFarmers());
+  const [shippingQuery, setShippingQuery] = useState("");
+  const [showFarmerOptions, setShowFarmerOptions] = useState(false);
+  const [selectedFarmer, setSelectedFarmer] = useState<Farmer | null>(null);
+  const [shippingAddress, setShippingAddress] = useState("");
+
   const selectedStore = stores.find((s) => s.id === storeId);
   const entryProduct = productMaster.find((p) => p.id === entry.productId);
 
@@ -374,6 +383,25 @@ export default function CompanySales() {
     };
   }, []);
 
+  useEffect(() => {
+    const refreshFarmers = () => setFarmers(getStoredFarmers());
+    window.addEventListener(storeFarmersUpdatedEvent, refreshFarmers);
+    window.addEventListener("focus", refreshFarmers);
+    return () => {
+      window.removeEventListener(storeFarmersUpdatedEvent, refreshFarmers);
+      window.removeEventListener("focus", refreshFarmers);
+    };
+  }, []);
+
+  {/* Clear farmer/shipping selection when store changes (but not while editing) */}
+  useEffect(() => {
+    if (editingInvoiceNo) return;
+    setSelectedFarmer(null);
+    setShippingQuery("");
+    setShippingAddress("");
+  }, [storeId, editingInvoiceNo]);
+
+  
   const filtered = useMemo(() => {
     const today = new Date();
     const normalize = (value: string) => new Date(`${value}T00:00:00`);
@@ -734,6 +762,10 @@ export default function CompanySales() {
     setSaleDate(header.date);
     setStoreId(header.storeId);
     setPlaceOfSupply(header.placeOfSupply || "Tamil Nadu");
+    setShippingAddress(header.shippingAddress || "");
+    setShippingQuery(header.shippingAddress?.split(",")[0] || "");
+    setSelectedFarmer(null);
+
 
     const nextAdded: AddedRow[] = invoice.rows.map((row, index) => {
       const product = productMaster.find((p) => p.name === row.product);
@@ -787,6 +819,9 @@ export default function CompanySales() {
     setEntry(emptyEntry());
     setAdded([]);
     setEditingInvoiceNo(null);
+    setSelectedFarmer(null);
+    setShippingQuery("");
+    setShippingAddress("");
   }
 
   function closeForm() {
@@ -797,6 +832,30 @@ export default function CompanySales() {
   function handleSaveDraft() {
     // Draft save: keep form open, no-op persistence in this demo
   }
+
+  function buildFarmerAddress(f: Farmer) {
+  return [f.farmAddress, f.village, f.district, f.state, f.pincode]
+    .filter(Boolean)
+    .join(", ");
+  }
+
+  const storeFarmers = useMemo(() => {
+  if (!storeId) return [];
+  return farmers.filter((f) => f.storeId === storeId && f.status === "Active");
+}, [farmers, storeId]);
+
+const filteredFarmerOptions = useMemo(() => {
+  if (!shippingQuery.trim()) return storeFarmers;
+  const q = shippingQuery.toLowerCase();
+  return storeFarmers.filter((f) => f.name.toLowerCase().includes(q));
+}, [storeFarmers, shippingQuery]);
+
+function selectFarmer(farmer: Farmer) {
+  setSelectedFarmer(farmer);
+  setShippingQuery(farmer.name);
+  setShippingAddress(buildFarmerAddress(farmer));
+  setShowFarmerOptions(false);
+}
 
   function handleCreate() {
     if (!canCreate) return;
@@ -1352,23 +1411,12 @@ export default function CompanySales() {
                       <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                         Shipping Address
                       </p>
-                      {(() => {
-                        const addressText =
-                          invoiceStore?.address?.trim() ||
+                      <p className="whitespace-pre-line text-slate-600">
+                        {selectedInvoice.header.shippingAddress ||
+                          invoiceStore?.address ||
                           selectedInvoice.header.storeLocation ||
-                          "-";
-
-                        return (
-                          <>
-                            <p className="font-bold text-slate-900">
-                              {selectedInvoice.header.storeName || "-"}
-                            </p>
-                            <p className="mt-1 whitespace-pre-line text-slate-600">
-                              {addressText}
-                            </p>
-                          </>
-                        );
-                      })()}
+                          "-"}
+                      </p>
                     </div>
 
                       <div className="p-3">
@@ -2071,17 +2119,43 @@ export default function CompanySales() {
                       }))}
                       required
                     />
-                    <Select
-                      label="Shipping Address"
-                      value={storeId}
-                      onChange={setStoreId}
-                      placeholder="Choose a registered store"
-                      options={stores.map((s) => ({
-                        value: s.id,
-                        label: `${s.name} — ${s.location}`,
-                      }))}
-                      required
+                    <div className="relative">
+                    <Input
+                      label="Shipping Address (Farmer)"
+                      value={shippingQuery}
+                      onChange={(v) => {
+                        setShippingQuery(v);
+                        setSelectedFarmer(null);
+                        setShowFarmerOptions(true);
+                      }}
+                      placeholder={storeId ? "Type farmer name..." : "Select store first"}
+                      readOnly={!storeId}
                     />
+
+                    {showFarmerOptions && filteredFarmerOptions.length > 0 && (
+                      <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                        {filteredFarmerOptions.map((f) => (
+                          <button
+                            type="button"
+                            key={f.id}
+                            onClick={() => selectFarmer(f)}
+                            className="block w-full text-left px-3 py-2 text-sm hover:bg-brand-50"
+                          >
+                            <p className="font-semibold text-slate-800">{f.name}</p>
+                            <p className="text-xs text-slate-500 truncate">
+                              {buildFarmerAddress(f)}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {selectedFarmer && (
+                      <p className="mt-1 text-xs text-slate-500 truncate">
+                        {buildFarmerAddress(selectedFarmer)}
+                      </p>
+                    )}
+                  </div>
                     <Select
                       label="Place of Supply"
                       value={placeOfSupply}
