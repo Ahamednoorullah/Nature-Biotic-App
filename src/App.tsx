@@ -13,6 +13,7 @@ import CompanyStaffManagement from "@/pages/CompanyStaffManagement";
 import CompanyCreditNotes from "@/pages/CompanyCreditNotes";
 import CompanyReceipts from "@/pages/CompanyReceipts";
 import CompanyReports from "@/pages/CompanyReports";
+import Settings from "@/pages/CompanySettings";
 import StoreShell from "@/components/StoreShell";
 import StoreDashboard from "@/pages/StoreDashboard";
 import StoreInventory from "@/pages/StoreInventory";
@@ -112,6 +113,7 @@ function AppContent() {
         {route.page === "credit-notes" && <CompanyCreditNotes />}
         {route.page === "receipts" && <CompanyReceipts />}
         {route.page === "reports" && <CompanyReports />}
+        {route.page === "settings" && <Settings />}
       </CompanyShell>
     );
   }

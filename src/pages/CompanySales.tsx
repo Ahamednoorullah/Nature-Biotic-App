@@ -2072,7 +2072,7 @@ export default function CompanySales() {
                       required
                     />
                     <Select
-                      label="Bill to"
+                      label="Shipping Address"
                       value={storeId}
                       onChange={setStoreId}
                       placeholder="Choose a registered store"
