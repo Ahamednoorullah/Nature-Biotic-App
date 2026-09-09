@@ -701,6 +701,9 @@ export default function CompanySales() {
         notes:
           remarks.trim() ||
           "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above.",
+        shippingAddress: selectedFarmer
+          ? `${selectedFarmer.name}, ${buildFarmerAddress(selectedFarmer)}`
+          : shippingAddress,
         product: r.product?.name || "",
         packSize: r.packSize,
         pkgsize: r.pkgsize,
@@ -2119,7 +2122,12 @@ function selectFarmer(farmer: Farmer) {
                       }))}
                       required
                     />
-                    <div className="relative">
+                    <div
+                      className="relative"
+                      onBlur={() => {
+                        window.setTimeout(() => setShowFarmerOptions(false), 150);
+                      }}
+                    >
                     <Input
                       label="Shipping Address (Farmer)"
                       value={shippingQuery}
