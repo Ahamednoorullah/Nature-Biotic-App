@@ -1,9 +1,10 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
-export type UserRole = "company_admin" | "store_admin";
+export type UserRole = "company_admin" | "store_admin" | "fro";
 
 export type AuthUser = {
   id: string;
+  staffId?: string;
   name: string;
   email: string;
   role: UserRole;
@@ -41,10 +42,39 @@ const DEMO_USERS: Array<AuthUser & { password: string }> = [
     roleLabel: "Store Administrator",
     storeId: "s1",
   },
+  {
+    id: "staff-st0",
+    staffId: "st0",
+    name: "Ram Kumar",
+    email: "ram.kumar@naturebiotic.in",
+    password: "fro1234",
+    role: "fro",
+    roleLabel: "Field Representative Officer",
+    storeId: "s1",
+  },
+  {
+    id: "staff-st1",
+    staffId: "st1",
+    name: "Ajith Kumar",
+    email: "ajith.kumar@naturebiotic.in",
+    password: "fro1234",
+    role: "fro",
+    roleLabel: "Field Representative Officer",
+    storeId: "s2",
+  },
+  {
+    id: "staff-st2",
+    staffId: "st2",
+    name: "PeriyaSamy",
+    email: "periyasamy@naturebiotic.in",
+    password: "fro1234",
+    role: "fro",
+    roleLabel: "Field Representative Officer",
+    storeId: "s3",
+  },
 ];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Always start without a logged-in user so the Login page is shown first.
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading] = useState(false);
 
@@ -69,9 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
-  const signOut = () => {
-    setUser(null);
-  };
+  const signOut = () => setUser(null);
 
   return (
     <AuthContext.Provider value={{ user, loading, signIn, signOut }}>

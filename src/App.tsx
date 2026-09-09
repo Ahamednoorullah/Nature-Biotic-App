@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { NavProvider, useNav } from "@/context/NavContext";
+import { canAccessStorePage } from "@/lib/access";
 import { Spinner } from "@/components/ui";
 import Login from "@/pages/Login";
 import CompanyShell from "@/components/CompanyShell";
@@ -15,7 +16,10 @@ import CompanyReceipts from "@/pages/CompanyReceipts";
 import CompanyReports from "@/pages/CompanyReports";
 import Settings from "@/pages/CompanySettings";
 import StoreShell from "@/components/StoreShell";
+import FROShell from "@/components/FROShell";
 import StoreDashboard from "@/pages/StoreDashboard";
+import FRODashboard from "@/pages/FRODashboard";
+import FROVisits from "@/pages/FROVisits";
 import StoreInventory from "@/pages/StoreInventory";
 import StoreFarmers from "@/pages/StoreFarmers";
 import StoreReports from "@/pages/StoreReports";
@@ -49,10 +53,12 @@ function AppContent() {
   const { route, goStore } = useNav();
 
   const isStoreUser = user?.role === "store_admin";
+  const isFROUser = user?.role === "fro";
+  const isStoreScopedUser = isStoreUser || isFROUser;
   const ownStoreId = user?.storeId;
 
   useEffect(() => {
-    if (!user || user.role !== "store_admin" || !user.storeId) {
+    if (!user || !isStoreScopedUser || !user.storeId) {
       return;
     }
 
@@ -60,6 +66,11 @@ function AppContent() {
       route.view === "store" && route.storeId === user.storeId;
 
     if (!isOwnStoreRoute) {
+      goStore(user.storeId, "dashboard");
+      return;
+    }
+
+    if (!canAccessStorePage(user, route.page)) {
       goStore(user.storeId, "dashboard");
     }
   }, [user, route, goStore]);
@@ -74,8 +85,8 @@ function AppContent() {
 
   if (!user) return <Login />;
 
-  // Store users must never see company pages or another store.
-  if (isStoreUser) {
+  // Store-scoped users (Store Admin / FRO) must never see company pages or another store.
+  if (isStoreScopedUser) {
     if (!ownStoreId) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -129,9 +140,14 @@ function AppContent() {
   }
 
   // Store-level views
-  return (
-    <StoreShell storeId={route.storeId} active={route.page}>
-      {route.page === "dashboard" && <StoreDashboard storeId={route.storeId} />}
+  const storeContent = (
+    <>
+      {route.page === "dashboard" &&
+        (isFROUser ? (
+          <FRODashboard storeId={route.storeId} />
+        ) : (
+          <StoreDashboard storeId={route.storeId} />
+        ))}
       {route.page === "stock-management" && (
         <StoreInventory storeId={route.storeId} />
       )}
@@ -167,9 +183,12 @@ function AppContent() {
       )}
       {route.page === "receipt" && <StoreReceipt storeId={route.storeId} />}
       {route.page === "refund" && <StoreRefund storeId={route.storeId} />}
-      {route.page === "attendance" && (
-        <StoreAttendance storeId={route.storeId} />
-      )}
+      {route.page === "attendance" &&
+        (isFROUser ? (
+          <FROVisits storeId={route.storeId} />
+        ) : (
+          <StoreAttendance storeId={route.storeId} />
+        ))}
       {route.page === "reports" && <StoreReports storeId={route.storeId} />}
       {route.page === "add-product" && (
         <StoreAddProduct storeId={route.storeId} />
@@ -191,6 +210,16 @@ function AppContent() {
         <StoreStockAdjustment storeId={route.storeId} />
       )}
       {route.page === "low-stock" && <StoreLowStock storeId={route.storeId} />}
+    </>
+  );
+
+  return isFROUser ? (
+    <FROShell storeId={route.storeId} active={route.page}>
+      {storeContent}
+    </FROShell>
+  ) : (
+    <StoreShell storeId={route.storeId} active={route.page}>
+      {storeContent}
     </StoreShell>
   );
 }
