@@ -664,7 +664,7 @@ export default function CompanyStores() {
                     />
                   </div>
 
-                                    {/* Opening Date occupies the remaining one column */}
+                  {/* Opening Date occupies the remaining one column */}
                   <div className="xl:col-span-1">
                     <Input
                       label="Opening Date"

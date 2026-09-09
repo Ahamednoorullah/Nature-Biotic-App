@@ -364,6 +364,12 @@ export const stores: Store[] = [
     activeCustomers: 142,
     inventoryValue: 540000,
     openedDate: "2021-06-15",
+    bankAccountName: "SAIRAM AGRI INPUTS",
+    bankAccountNo: "50200106535019",
+    bankIfsc: "HDFC0000775",
+    bankName: "HDFC Bank",
+    bankBranch: "Rajapalayam",
+    bankUpiId: "sujiyaso22-1@okhdfcbank",
   },
   {
     id: "s2",
@@ -383,6 +389,12 @@ export const stores: Store[] = [
     activeCustomers: 118,
     inventoryValue: 410000,
     openedDate: "2022-01-20",
+    bankAccountName: "SHRIYA",
+    bankAccountNo: "60484655212398",
+    bankIfsc: "HDFC0000257",
+    bankName: "HDFC Bank",
+    bankBranch: "Tenkasi",
+    bankUpiId: "shriyaso25-1@okhdfcbank",
   },
   {
     id: "s3",
@@ -402,6 +414,12 @@ export const stores: Store[] = [
     activeCustomers: 165,
     inventoryValue: 680000,
     openedDate: "2020-11-08",
+    bankAccountName: "Nature Bio Mart",
+    bankAccountNo: "70106585911327",
+    bankIfsc: "SBI0000851",
+    bankName: "SBI Bank",
+    bankBranch: "Idukki",
+    bankUpiId: "naturebiomart18-1@oksbibank",
   },
 ];
 
