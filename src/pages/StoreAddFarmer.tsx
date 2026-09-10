@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useNav } from "@/context/NavContext";
+import { useAuth } from "@/context/AuthContext";
 import {
   addFarmer,
   cropTypes,
@@ -59,12 +60,23 @@ const emptyForm: FormState = {
 
 export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   const { goStorePage } = useNav();
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saved, setSaved] = useState(false);
   const [profileImage, setProfileImage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [throughType, setThroughType] = useState<'Direct' | 'Executive'>('Direct');
-  const [executiveName, setExecutiveName] = useState('');
+  const [throughType, setThroughType] = useState<"Direct" | "Executive">(
+    "Direct",
+  );
+  const [executiveName, setExecutiveName] = useState("");
+
+  useEffect(() => {
+    if (isFRO) {
+      setThroughType("Executive");
+      setExecutiveName(user?.name ?? "");
+    }
+  }, [isFRO, user?.name]);
 
   function handleProfileUpload(file?: File) {
     if (!file) return;
@@ -121,38 +133,44 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   }
 
   function saveFarmerRecord() {
-  if (!isValid) return false;
+    if (!isValid) return false;
 
-  addFarmer({
-    storeId,
-    name: form.name.trim(),
-    phone: form.phone.trim(),
-    altMobile: form.altMobile.trim(),
-    email: form.email.trim(),
-    aadhar: form.aadhar.trim(),
-    gst: form.gst.trim(),
-    village: form.village.trim(),
-    landmark: form.landmark.trim(),
-    district: form.district.trim(),
-    state: form.state.trim(),
-    pincode: form.pincode.trim(),
-    farmAddress: form.farmerAddress.trim(),
-    customerCategory: form.customerCategory as "Retail" |
-      "Wholesale" |
-      "Dealer",
-    crops: crops.map((crop) => ({
-      ...crop,
-      landSize: Number(crop.landSize || 0),
-    })),
-    profileImage,
-    through: throughType,                                    
-    executiveName: throughType === 'Executive' ? executiveName.trim() : '',  
-    cropType3: undefined,
-    cropType2: undefined
-  });
+    addFarmer({
+      storeId,
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      altMobile: form.altMobile.trim(),
+      email: form.email.trim(),
+      aadhar: form.aadhar.trim(),
+      gst: form.gst.trim(),
+      village: form.village.trim(),
+      landmark: form.landmark.trim(),
+      district: form.district.trim(),
+      state: form.state.trim(),
+      pincode: form.pincode.trim(),
+      farmAddress: form.farmerAddress.trim(),
+      customerCategory: form.customerCategory as
+        | "Retail"
+        | "Wholesale"
+        | "Dealer",
+      crops: crops.map((crop) => ({
+        ...crop,
+        landSize: Number(crop.landSize || 0),
+      })),
+      profileImage,
+      through: isFRO ? "Executive" : throughType,
+      executiveName: (isFRO
+        ? user?.name
+        : throughType === "Executive"
+          ? executiveName
+          : ""
+      ).trim(),
+      cropType3: undefined,
+      cropType2: undefined,
+    });
 
-  return true;
-}
+    return true;
+  }
 
   function handleSave() {
     if (!saveFarmerRecord()) return;
@@ -165,18 +183,18 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   }
 
   function handleSaveAndAdd() {
-  if (!saveFarmerRecord()) return;
+    if (!saveFarmerRecord()) return;
 
-  setSaved(true);
-  setTimeout(() => {
-    setSaved(false);
-    setForm(emptyForm);
-    setCrops([]);
-    setProfileImage("");
-    setThroughType('Direct');     
-    setExecutiveName('');         
-  }, 700);
-}
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      setForm(emptyForm);
+      setCrops([]);
+      setProfileImage("");
+      setThroughType(isFRO ? "Executive" : "Direct");
+      setExecutiveName(isFRO ? (user?.name ?? "") : "");
+    }, 700);
+  }
 
   const isValid =
     form.name &&
@@ -327,42 +345,46 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               label="Through"
               value={throughType}
               onChange={(v) => {
-                setThroughType(v as 'Direct' | 'Executive');
-                if (v === 'Direct') setExecutiveName('');
+                if (isFRO) return;
+                setThroughType(v as "Direct" | "Executive");
+                if (v === "Direct") setExecutiveName("");
               }}
               options={[
-                { value: 'Direct', label: 'Direct' },
-                { value: 'Executive', label: 'Executive' },
+                { value: "Direct", label: "Direct" },
+                { value: "Executive", label: "Executive" },
               ]}
             />
 
-            {throughType === 'Executive' && (
+            {throughType === "Executive" && (
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                   Executive Name<span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={executiveName}
-                  onChange={(e) => setExecutiveName(e.target.value)}
+                  value={isFRO ? (user?.name ?? "") : executiveName}
+                  onChange={
+                    isFRO ? undefined : (e) => setExecutiveName(e.target.value)
+                  }
                   placeholder="Enter executive name"
                   autoComplete="off"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus"
+                  readOnly={isFRO}
+                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus ${isFRO ? "bg-slate-100 cursor-not-allowed" : "bg-white"}`}
                 />
               </div>
             )}
-            
-              <div className="sm:col-span-2">
-                <Textarea
-                  label="Farmer Address"
-                  value={form.farmerAddress}
-                  onChange={(v) => update("farmerAddress", v)}
-                  placeholder="Enter full farmer address..."
-                  rows={2}
-                  required
-                />
-              </div>
+
+            <div className="sm:col-span-2">
+              <Textarea
+                label="Farmer Address"
+                value={form.farmerAddress}
+                onChange={(v) => update("farmerAddress", v)}
+                placeholder="Enter full farmer address..."
+                rows={2}
+                required
+              />
             </div>
+          </div>
         </Card>
 
         {/* FARM DETAILS */}
@@ -435,7 +457,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               placeholder="Select crop"
               options={cropTypes.map((c) => ({ value: c, label: c }))}
             />
-            
+
             <div className="flex items-end translate-y-[-4px]">
               <Button
                 type="button"
@@ -449,41 +471,91 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
           </div>
 
           {crops.length > 0 && (
-            <div className="mt-5 overflow-hidden rounded-xl border border-slate-200">
-              <table className="w-full table-fixed text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <th className="w-[8%] px-3 py-3 text-center">S.No</th>
-                    <th className="w-[26%] px-40 py-3 text-left">Crop</th>
-                    <th className="w-[20%] px-3 py-3 text-center">Land (Acres)</th>
-                    <th className="w-[6%] px-2 py-3 text-center"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {crops.map((crop, index) => (
-                    <tr key={crop.id}>
-                      <td className="px-3 py-3 text-center text-slate-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-40 py-3 font-semibold text-slate-800">
+            <div className="mt-5 rounded-xl border border-slate-200 overflow-hidden">
+              <div className="flex items-center justify-between bg-slate-50 px-4 py-3 border-b border-slate-200">
+                <div>
+                  <p className="text-sm font-bold text-slate-700">
+                    Added Crops
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {crops.length} crop{crops.length === 1 ? "" : "s"} added
+                  </p>
+                </div>
+                <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-bold text-brand-700">
+                  {crops.length}
+                </span>
+              </div>
+
+              {/* Mobile crop cards */}
+              <div className="md:hidden divide-y divide-slate-100 bg-white">
+                {crops.map((crop, index) => (
+                  <div key={crop.id} className="flex items-center gap-3 p-3.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-sm font-bold text-brand-700">
+                      {index + 1}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-800 truncate">
                         {crop.cropType}
-                      </td>
-                      <td className="px-3 py-3 text-center text-slate-700">
-                        {crop.landSize}
-                      </td>
-                      <td className="px-2 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => removeCrop(crop.id)}
-                          className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Icon name="delete" size={16} />
-                        </button>
-                      </td>
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Land:{" "}
+                        <span className="font-semibold text-slate-700">
+                          {crop.landSize} Acres
+                        </span>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeCrop(crop.id)}
+                      className="rounded-lg p-2 text-red-400 hover:bg-red-50 hover:text-red-600 shrink-0"
+                      title="Remove crop"
+                    >
+                      <Icon name="delete" size={17} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop crop table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-white text-xs uppercase tracking-wide text-slate-500 border-b border-slate-100">
+                      <th className="w-16 px-3 py-3 text-center">S.No</th>
+                      <th className="px-4 py-3 text-left">Crop</th>
+                      <th className="w-40 px-3 py-3 text-center">
+                        Land (Acres)
+                      </th>
+                      <th className="w-16 px-2 py-3 text-center"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {crops.map((crop, index) => (
+                      <tr key={crop.id}>
+                        <td className="px-3 py-3 text-center text-slate-500">
+                          {index + 1}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">
+                          {crop.cropType}
+                        </td>
+                        <td className="px-3 py-3 text-center text-slate-700">
+                          {crop.landSize}
+                        </td>
+                        <td className="px-2 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => removeCrop(crop.id)}
+                            className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600"
+                            title="Remove crop"
+                          >
+                            <Icon name="delete" size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </Card>

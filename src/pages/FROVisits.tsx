@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui";
+import { useNav } from "@/context/NavContext";
 
 type FROVisitsProps = { storeId: string };
 
@@ -14,8 +15,10 @@ const visitModules = [
 ];
 
 export default function FROVisits({ storeId }: FROVisitsProps) {
+  const { goStorePage } = useNav();
+
   return (
-    <section className="space-y-4">
+    <section className="px-3 pt-3 pb-24 sm:px-4 sm:pt-4 max-w-md mx-auto">
       {/* <div className="px-1 pt-1">
         <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-600">
           FRO
@@ -40,6 +43,11 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
           <button
             key={item.label}
             type="button"
+            onClick={() => {
+              if (item.label === "Farmers") {
+                goStorePage("farmers");
+              }
+            }}
             className="group flex min-h-[128px] flex-col items-start justify-between rounded-[22px] border border-slate-100 bg-white p-4 text-left shadow-[0_8px_28px_rgba(15,23,42,0.06)] transition active:scale-[0.98]"
           >
             <div className="flex w-full items-center justify-between">

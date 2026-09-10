@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon, EmptyState } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { expenses as allExpenses, type Expense } from "@/lib/purchaseData";
+import { useAuth } from "@/context/AuthContext";
 
 const categories = [
   "Transport",
@@ -11,6 +12,7 @@ const categories = [
   "Office Expense",
   "Maintenance",
   "Miscellaneous",
+  "Food",
 ];
 const methods = ["Cash", "UPI", "Bank Transfer", "Cheque"];
 
@@ -19,7 +21,19 @@ export default function StoreExpenses({
 }: {
   storeId: string;
 }) {
-  const [expenses, setExpenses] = useState<Expense[]>(allExpenses);
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
+
+  const EXPENSE_STORAGE_KEY = "naturebiotic_shared_expenses";
+
+  const [expenses, setExpenses] = useState<Expense[]>(() => {
+    try {
+      const saved = localStorage.getItem(EXPENSE_STORAGE_KEY);
+      return saved ? (JSON.parse(saved) as Expense[]) : allExpenses;
+    } catch {
+      return allExpenses;
+    }
+  });
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [viewing, setViewing] = useState<Expense | null>(null);
@@ -31,9 +45,33 @@ export default function StoreExpenses({
   const [method, setMethod] = useState("");
   const [enteredBy, setEnteredBy] = useState("");
 
+  useEffect(() => {
+    if (isFRO) {
+      setEnteredBy(user?.name ?? "");
+    }
+  }, [isFRO, user?.name]);
+
+  // Keep expenses shared between FRO and Store views in this browser.
+  useEffect(() => {
+    try {
+      localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses));
+    } catch {
+      // Ignore storage errors and keep the in-memory list working.
+    }
+  }, [expenses]);
+
+  const scopedExpenses = useMemo(() => {
+    if (!isFRO || !user?.name) return expenses;
+
+    const currentFRO = user.name.trim().toLowerCase();
+    return expenses.filter(
+      (e) => e.enteredBy.trim().toLowerCase() === currentFRO,
+    );
+  }, [expenses, isFRO, user?.name]);
+
   const filtered = useMemo(
     () =>
-      expenses.filter((e) => {
+      scopedExpenses.filter((e) => {
         const ms =
           e.expenseNo.toLowerCase().includes(search.toLowerCase()) ||
           e.description.toLowerCase().includes(search.toLowerCase()) ||
@@ -41,20 +79,20 @@ export default function StoreExpenses({
         const mc = categoryFilter === "all" || e.category === categoryFilter;
         return ms && mc;
       }),
-    [search, categoryFilter, expenses],
+    [search, categoryFilter, scopedExpenses],
   );
 
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalExpenses = scopedExpenses.reduce((s, e) => s + e.amount, 0);
   const today = new Date().toISOString().split("T")[0];
-  const todayExpenses = expenses
+  const todayExpenses = scopedExpenses
     .filter((e) => e.date === today)
     .reduce((s, e) => s + e.amount, 0);
   const monthStart = new Date();
   monthStart.setDate(monthStart.getDate() - 30);
-  const monthlyExpenses = expenses
+  const monthlyExpenses = scopedExpenses
     .filter((e) => e.date >= monthStart.toISOString().split("T")[0])
     .reduce((s, e) => s + e.amount, 0);
-  const noOfEntries = expenses.length;
+  const noOfEntries = scopedExpenses.length;
 
   const canCreate =
     date &&
@@ -70,7 +108,7 @@ export default function StoreExpenses({
     setDescription("");
     setAmount("");
     setMethod("");
-    setEnteredBy("");
+    setEnteredBy(isFRO ? (user?.name ?? "") : "");
   }
 
   function handleCreateExpense() {
@@ -84,7 +122,7 @@ export default function StoreExpenses({
       description: description.trim(),
       amount: Number(amount),
       method: method as Expense["method"],
-      enteredBy: enteredBy.trim(),
+      enteredBy: isFRO ? (user?.name?.trim() ?? "") : enteredBy.trim(),
     };
     setExpenses((prev) => [newExpense, ...prev]);
     resetCreateForm();
@@ -395,10 +433,15 @@ export default function StoreExpenses({
                     </label>
                     <input
                       type="text"
-                      value={enteredBy}
-                      onChange={(e) => setEnteredBy(e.target.value)}
+                      value={isFRO ? (user?.name ?? "") : enteredBy}
+                      onChange={
+                        isFRO ? undefined : (e) => setEnteredBy(e.target.value)
+                      }
                       placeholder="Enter staff name"
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:shadow-focus"
+                      readOnly={isFRO}
+                      className={`w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:shadow-focus ${
+                        isFRO ? "bg-slate-100 cursor-not-allowed" : "bg-white"
+                      }`}
                     />
                   </div>
                   <div className="md:col-span-3">

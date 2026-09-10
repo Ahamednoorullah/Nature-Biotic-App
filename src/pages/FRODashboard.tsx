@@ -290,28 +290,20 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
       tone: colors.blue,
     },
   ];
-
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-        {/* <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">
-            FRO Dashboard
-          </p>
-          <h1 className="mt-1 text-2xl font-extrabold text-slate-800">
-            Welcome, {user.name}
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {store.name} · {store.location}
-          </p>
-        </div> */}
-        <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+    <div className="px-3 pt-3 pb-24 sm:px-4 sm:pt-4 max-w-md mx-auto">
+      <div className="mb-4 w-full overflow-x-auto scrollbar-hide">
+        <div className="flex min-w-[320px] w-full rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
           {filters.map((filter) => (
             <button
               key={filter.key}
               type="button"
               onClick={() => setDateFilter(filter.key)}
-              className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${dateFilter === filter.key ? "bg-brand-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}
+              className={`flex-1 min-w-0 whitespace-nowrap rounded-lg px-1.5 py-2.5 text-[10px] font-semibold transition ${
+                dateFilter === filter.key
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-slate-50"
+              }`}
             >
               {filter.label}
             </button>
@@ -319,66 +311,34 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8">
+      <div className="grid grid-cols-2 gap-3">
         {cards.map((card) => (
-          <Card key={card.label} className="p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-medium text-slate-500">
-                  {card.label}
-                </p>
-                <p className="mt-1 text-lg font-extrabold text-slate-800">
-                  {card.value}
-                </p>
-              </div>
-              <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.tone}`}
-              >
-                <Icon name={card.icon} size={16} />
+          <Card
+            key={card.label}
+            className="group flex min-h-[128px] flex-col items-start justify-between rounded-[22px] border border-slate-100 bg-white p-4 text-left shadow-[0_8px_28px_rgba(15,23,42,0.06)] transition active:scale-[0.98]"
+          >
+            <div className="flex w-full items-center justify-between">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-50 text-brand-700">
+                <Icon name={card.icon} size={24} fill={false} />
               </span>
+              <Icon
+                name="chevron_right"
+                size={18}
+                className="text-slate-300 transition group-hover:text-brand-500"
+              />
+            </div>
+            <div>
+              <p className="w-full truncate text-[11px] font-semibold text-slate-600">
+                {card.label}
+              </p>
+
+              <p className="mt-1 max-w-full truncate text-[16px] font-extrabold leading-tight text-slate-800">
+                {card.value}
+              </p>
             </div>
           </Card>
         ))}
       </div>
-
-      {/* <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Top Product
-          </p>
-          <div className="mt-3 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <Icon name="inventory_2" size={19} />
-            </div>
-            <div>
-              <p className="font-bold text-slate-800">{summary.product}</p>
-              <p className="text-xs text-slate-500">Best performing product</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Collection Balance
-          </p>
-          <p className="mt-2 text-2xl font-extrabold text-slate-800">
-            {formatCurrency(summary.cash)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Collection currently in hand
-          </p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Outstanding Balance
-          </p>
-          <p className="mt-2 text-2xl font-extrabold text-amber-700">
-            {formatCurrency(summary.outstanding)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Only {user.name}'s portfolio
-          </p>
-        </Card>
-      </div> */}
     </div>
   );
 }
