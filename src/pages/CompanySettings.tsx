@@ -25,6 +25,10 @@ type BankDetails = {
 const ADMIN_STORAGE_KEY = "nature_biotic_admin_details";
 const BANK_STORAGE_KEY = "nature_biotic_admin_bank_details";
 
+const COMPANY_ADDRESS_KEY = "nature_biotic_company_address";
+const defaultCompanyAddress =
+  "4/130/A1, Velavan Nagar, Velayudhampuram, Rajapalayam, Tamil Nadu - 626102";
+
 const defaultAdminDetails: AdminDetails = {
   name: "Administrator",
   email: "admin@naturebiotic.com",
@@ -42,6 +46,22 @@ const defaultBankDetails: BankDetails = {
   bankName: "",
   location: "",
   upiId: "",
+};
+
+type CompanyInfo = {
+  gstNumber: string;
+  businessType: string;
+  headquarters: string;
+  established: string;
+};
+
+const COMPANY_INFO_KEY = "nature_biotic_company_info";
+
+const defaultCompanyInfo: CompanyInfo = {
+  gstNumber: "29ABCDE1234F1Z5",
+  businessType: "Agricultural Manufacturing",
+  headquarters: "Rajapalayam, Tamilnadu",
+  established: "2017",
 };
 
 export default function CompanySettings() {
@@ -62,22 +82,36 @@ export default function CompanySettings() {
   // ---------- Admin & Bank Details (fixed) ----------
   const [adminDetails, setAdminDetails] = useState<AdminDetails>(defaultAdminDetails);
   const [bankDetails, setBankDetails] = useState<BankDetails>(defaultBankDetails);
+  const [companyAddress, setCompanyAddress] = useState<string>(defaultCompanyAddress);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressSaved, setAddressSaved] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState(false);
   const [editingBank, setEditingBank] = useState(false);
   const [adminSaved, setAdminSaved] = useState(false);
   const [bankSaved, setBankSaved] = useState(false);
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo>(defaultCompanyInfo);
+  const [editingCompany, setEditingCompany] = useState(false);
+  const [companySaved, setCompanySaved] = useState(false);
 
   // Load saved admin/bank details from localStorage on mount
   useEffect(() => {
     try {
       const savedAdmin = localStorage.getItem(ADMIN_STORAGE_KEY);
       const savedBank = localStorage.getItem(BANK_STORAGE_KEY);
+      const savedAddress = localStorage.getItem(COMPANY_ADDRESS_KEY);
+      const savedCompanyInfo = localStorage.getItem(COMPANY_INFO_KEY);
 
       if (savedAdmin) {
         setAdminDetails({ ...defaultAdminDetails, ...JSON.parse(savedAdmin) });
       }
       if (savedBank) {
         setBankDetails({ ...defaultBankDetails, ...JSON.parse(savedBank) });
+      }
+      if (savedAddress) {
+        setCompanyAddress(savedAddress);
+      }
+      if (savedCompanyInfo) {
+        setCompanyInfo({ ...defaultCompanyInfo, ...JSON.parse(savedCompanyInfo) });
       }
     } catch (error) {
       console.error("Failed to load settings:", error);
@@ -91,6 +125,10 @@ export default function CompanySettings() {
   const updateBank = (field: keyof BankDetails, value: string) => {
     setBankDetails((prev) => ({ ...prev, [field]: value }));
   };
+
+  const updateCompanyInfo = (field: keyof CompanyInfo, value: string) => {
+  setCompanyInfo((prev) => ({ ...prev, [field]: value }));
+};
 
   const saveAdminDetails = () => {
     try {
@@ -113,6 +151,28 @@ export default function CompanySettings() {
       console.error("Failed to save bank details:", error);
     }
   };
+
+  const saveCompanyInfo = () => {
+  try {
+    localStorage.setItem(COMPANY_INFO_KEY, JSON.stringify(companyInfo));
+    setEditingCompany(false);
+    setCompanySaved(true);
+    setTimeout(() => setCompanySaved(false), 2500);
+  } catch (error) {
+    console.error("Failed to save company info:", error);
+  }
+};
+
+  const saveCompanyAddress = () => {
+  try {
+    localStorage.setItem(COMPANY_ADDRESS_KEY, companyAddress);
+    setEditingAddress(false);
+    setAddressSaved(true);
+    setTimeout(() => setAddressSaved(false), 2500);
+  } catch (error) {
+    console.error("Failed to save company address:", error);
+  }
+};
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -368,16 +428,79 @@ export default function CompanySettings() {
 
         {/* ================= COMPANY DETAILS ================= */}
         <Card className="p-6">
-          <div className="flex items-center gap-2 mb-5">
-            <Icon name="business" size={22} className="text-brand-600" />
-            <h2 className="font-bold text-slate-800">Company Details</h2>
+          <div className="flex items-center justify-between gap-4 mb-5">
+            <div className="flex items-center gap-2">
+              <Icon name="business" size={22} className="text-brand-600" />
+              <h2 className="font-bold text-slate-800">Company Details</h2>
+            </div>
+
+            {!editingCompany && (
+              <Button variant="secondary" onClick={() => setEditingCompany(true)}>
+                <Icon name="edit" size={17} />
+                Edit
+              </Button>
+            )}
           </div>
+
           <div className="grid sm:grid-cols-2 gap-4">
-            <Input label="GST Number" value="29ABCDE1234F1Z5" onChange={() => {}} icon="receipt" />
-            <Input label="Business Type" value="Agricultural Manufacturing" onChange={() => {}} icon="category" />
-            <Input label="Headquarters" value="Bengaluru, Karnataka" onChange={() => {}} icon="location_on" />
-            <Input label="Established" value="2018" onChange={() => {}} icon="event" />
+            <Input
+              label="GST Number"
+              value={companyInfo.gstNumber}
+              onChange={(value) => updateCompanyInfo("gstNumber", value)}
+              icon="receipt"
+              readOnly={!editingCompany}
+            />
+            <Input
+              label="Business Type"
+              value={companyInfo.businessType}
+              onChange={(value) => updateCompanyInfo("businessType", value)}
+              icon="category"
+              readOnly={!editingCompany}
+            />
+            <Input
+              label="Headquarters"
+              value={companyInfo.headquarters}
+              onChange={(value) => updateCompanyInfo("headquarters", value)}
+              icon="location_on"
+              readOnly={!editingCompany}
+            />
+            <Input
+              label="Established"
+              value={companyInfo.established}
+              onChange={(value) => updateCompanyInfo("established", value)}
+              icon="event"
+              readOnly={!editingCompany}
+            />
           </div>
+
+          {editingCompany && (
+            <div className="flex items-center gap-3 mt-5">
+              <Button onClick={saveCompanyInfo}>
+                <Icon name="save" size={18} />
+                Save Changes
+              </Button>
+              <Button variant="secondary" onClick={() => setEditingCompany(false)}>
+                Cancel
+              </Button>
+              {companySaved && (
+                <Badge color="green">
+                  <Icon name="check_circle" size={14} fill />
+                  Saved successfully
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {!editingCompany && companySaved && (
+            <div className="mt-5">
+              <Badge color="green">
+                <Icon name="check_circle" size={14} fill />
+                Saved successfully
+              </Badge>
+            </div>
+          )}
+
+          
         </Card>
       </div>
     </div>
