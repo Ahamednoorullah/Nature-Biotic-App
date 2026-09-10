@@ -1,7 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { createPortal } from "react-dom";
-import { Card, Button, Icon, EmptyState } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+
+import { useState, useEffect } from "react";
 
 type Expense = {
   id: string;
@@ -24,8 +22,6 @@ export default function CompanyExpenses() {
   });
 
   useEffect(() => {
-    // TODO: replace with your actual API call
-    // fetchExpenses().then(setExpenses).finally(() => setLoading(false));
     setLoading(false);
   }, []);
 
@@ -61,7 +57,7 @@ export default function CompanyExpenses() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Company Expenses</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Total: ₹{totalExpenses.toLocaleString("en-IN")}
+            Total: Rs.{totalExpenses.toLocaleString("en-IN")}
           </p>
         </div>
         <button
@@ -96,7 +92,7 @@ export default function CompanyExpenses() {
                   <td className="px-4 py-3">{exp.category}</td>
                   <td className="px-4 py-3 text-slate-500">{exp.description}</td>
                   <td className="px-4 py-3 text-right font-medium">
-                    ₹{exp.amount.toLocaleString("en-IN")}
+                    Rs.{exp.amount.toLocaleString("en-IN")}
                   </td>
                 </tr>
               ))
@@ -140,7 +136,7 @@ export default function CompanyExpenses() {
                 />
               </div>
               <div>
-                <label className="text-sm text-slate-600">Amount (₹)</label>
+                <label className="text-sm text-slate-600">Amount (Rs.)</label>
                 <input
                   type="number"
                   value={form.amount}
