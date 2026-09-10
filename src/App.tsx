@@ -18,6 +18,8 @@ import StoreShell from "@/components/StoreShell";
 import FROShell from "@/components/FROShell";
 import StoreDashboard from "@/pages/StoreDashboard";
 import FRODashboard from "@/pages/FRODashboard";
+import FROSales from "@/pages/FROSales";
+import FROStock from "@/pages/FROStock";
 import FROVisits from "@/pages/FROVisits";
 import StoreInventory from "@/pages/StoreInventory";
 import StoreFarmers from "@/pages/StoreFarmers";
@@ -146,9 +148,8 @@ function AppContent() {
         ) : (
           <StoreDashboard storeId={route.storeId} />
         ))}
-      {route.page === "stock-management" && (
-        <StoreInventory storeId={route.storeId} />
-      )}
+      {route.page === "stock-management" &&
+        (isFROUser ? <FROStock /> : <StoreInventory storeId={route.storeId} />)}
       {route.page === "purchase-order" && (
         <StorePurchaseOrder storeId={route.storeId} />
       )}
@@ -161,12 +162,15 @@ function AppContent() {
       {route.page === "return-stock" && (
         <StorePurchaseReturn storeId={route.storeId} />
       )}
-      {route.page === "sales" && <StoreSales storeId={route.storeId} />}
+      {route.page === "sales" &&
+        (isFROUser ? <FROSales /> : <StoreSales storeId={route.storeId} />)}
       {route.page === "credit-notes" && (
         <StoreCreditNotes storeId={route.storeId} />
       )}
       {route.page === "farmers" && <StoreFarmers storeId={route.storeId} />}
-      {route.page === "quotation" && <StoreQuotation storeId={route.storeId} />}
+      {route.page === "quotation" && (
+        <StoreQuotation storeId={route.storeId} />
+      )}
       {route.page === "delivery-challan" && (
         <StoreDeliveryChallan storeId={route.storeId} />
       )}

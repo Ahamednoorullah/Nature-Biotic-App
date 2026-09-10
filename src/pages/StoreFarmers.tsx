@@ -1,303 +1,530 @@
-  import { useState, useMemo } from 'react';
-  import { getFarmersByStore, cropTypes, deleteFarmer, type Farmer } from '@/lib/data';
-  import { useNav } from '@/context/NavContext';
-  import { Card, Button, Input, Select, Modal, EmptyState, StatCard, Icon } from '@/components/ui';
-  import { formatCurrency, formatCompact, initials } from '@/lib/format';
-  import { createPortal } from 'react-dom';
-  import { useEffect } from 'react';
+import { useState, useMemo } from "react";
+import {
+  getFarmersByStore,
+  cropTypes,
+  deleteFarmer,
+  type Farmer,
+} from "@/lib/data";
+import { useNav } from "@/context/NavContext";
+import {
+  Card,
+  Button,
+  Input,
+  Select,
+  Modal,
+  EmptyState,
+  StatCard,
+  Icon,
+} from "@/components/ui";
+import { formatCurrency, formatCompact, initials } from "@/lib/format";
+import { createPortal } from "react-dom";
+import { useEffect } from "react";
+import { useAuth } from "@/context/AuthContext";
 
+const colorMap: Record<string, string> = {
+  emerald: "from-emerald-400 to-emerald-600",
+  teal: "from-teal-400 to-teal-600",
+  red: "from-red-400 to-red-600",
+  amber: "from-amber-400 to-amber-600",
+  blue: "from-blue-400 to-blue-600",
+  purple: "from-purple-400 to-purple-600",
+};
 
-  const colorMap: Record<string, string> = {
-    emerald: 'from-emerald-400 to-emerald-600',
-    teal: 'from-teal-400 to-teal-600',
-    red: 'from-red-400 to-red-600',
-    amber: 'from-amber-400 to-amber-600',
-    blue: 'from-blue-400 to-blue-600',
-    purple: 'from-purple-400 to-purple-600',
-  };
+export default function StoreFarmers({ storeId }: { storeId: string }) {
+  const { goStorePage, goFarmerProfile } = useNav();
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
+  const [farmers, setFarmers] = useState<Farmer[]>(() =>
+    getFarmersByStore(storeId),
+  );
+  const [search, setSearch] = useState("");
+  const [cropFilter, setCropFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showImport, setShowImport] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  export default function StoreFarmers({ storeId }: { storeId: string }) {
-    const { goStorePage, goFarmerProfile } = useNav();
-    const [farmers, setFarmers] = useState<Farmer[]>(() => getFarmersByStore(storeId));
-    const [search, setSearch] = useState('');
-    const [cropFilter, setCropFilter] = useState('all');
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [showImport, setShowImport] = useState(false);
-    const [exporting, setExporting] = useState(false);
+  useEffect(() => {
+    setFarmers(getFarmersByStore(storeId));
+  }, [storeId]);
 
-    useEffect(() => {
-      setFarmers(getFarmersByStore(storeId));
-    }, [storeId]);
+  const visibleFarmers = useMemo(
+    () =>
+      isFRO
+        ? farmers.filter(
+            (f) =>
+              (f.executiveName || "").trim().toLowerCase() ===
+              (user?.name || "").trim().toLowerCase(),
+          )
+        : farmers,
+    [farmers, isFRO, user?.name],
+  );
 
-    const filtered = useMemo(() => farmers.filter((f) => {
-      const farmerAddress = (f.farmAddress || '').toLowerCase();
-      const ms = f.name.toLowerCase().includes(search.toLowerCase()) ||
-        f.phone.includes(search) ||
-        farmerAddress.includes(search.toLowerCase());
-      const mc = cropFilter === 'all' || f.cropType === cropFilter;
-      const mst = statusFilter === 'all' || f.status === statusFilter;
-      return ms && mc && mst;
-    }), [farmers, search, cropFilter, statusFilter]);
+  const filtered = useMemo(
+    () =>
+      visibleFarmers.filter((f) => {
+        const farmerAddress = (f.farmAddress || "").toLowerCase();
+        const ms =
+          f.name.toLowerCase().includes(search.toLowerCase()) ||
+          f.phone.includes(search) ||
+          farmerAddress.includes(search.toLowerCase());
+        const mc = cropFilter === "all" || f.cropType === cropFilter;
+        const mst = statusFilter === "all" || f.status === statusFilter;
+        return ms && mc && mst;
+      }),
+    [visibleFarmers, search, cropFilter, statusFilter],
+  );
 
-    const totalFarmers = farmers.length;
-    const totalOutstanding = farmers.reduce((s, f) => s + f.outstanding, 0);
-    const totalPurchaseValue = farmers.reduce((s, f) => s + f.totalPurchases, 0);
+  const totalFarmers = visibleFarmers.length;
+  const totalOutstanding = visibleFarmers.reduce(
+    (s, f) => s + f.outstanding,
+    0,
+  );
+  const totalPurchaseValue = visibleFarmers.reduce(
+    (s, f) => s + f.totalPurchases,
+    0,
+  );
 
+  function handleExport() {
+    setExporting(true);
+    setTimeout(() => setExporting(false), 800);
+  }
+  const [deleteTarget, setDeleteTarget] = useState<Farmer | null>(null);
 
-    function handleExport() {
-      setExporting(true);
-      setTimeout(() => setExporting(false), 800);
-    }
-    const [deleteTarget, setDeleteTarget] = useState<Farmer | null>(null);
+  function handleDelete() {
+    if (!deleteTarget) return;
+    deleteFarmer(deleteTarget.id);
+    setFarmers(getFarmersByStore(storeId));
+    setDeleteTarget(null);
+  }
 
-function handleDelete() {
-  if (!deleteTarget) return;
-  deleteFarmer(deleteTarget.id);
-  setFarmers(getFarmersByStore(storeId));
-  setDeleteTarget(null);
-}
-
-    return (
-      <div>
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Farmer Management</h1>
-            <p className="text-slate-500 mt-1">Manage all registered farmers and customers.</p>
-          </div>
-          <Button onClick={() => goStorePage('add-farmer')}>
-            <Icon name="person_add" size={20} fill /> Add Farmer
-          </Button>
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+            Farmer Management
+          </h1>
+          <p className="text-slate-500 mt-1">
+            Manage all registered farmers and customers.
+          </p>
         </div>
+        <Button onClick={() => goStorePage("add-farmer")}>
+          <Icon name="person_add" size={20} fill /> Add Farmer
+        </Button>
+      </div>
 
-        {/* Toolbar */}
-        <Card className="p-4 mb-5">
-          <div className="flex flex-col lg:flex-row gap-3">
-            <div className="flex-1 max-w-md">
-              <Input value={search} onChange={setSearch} placeholder="Search farmers by name, phone, address..." icon="search" />
+      {/* Toolbar */}
+      <Card className="p-4 mb-5">
+        <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex-1 max-w-md">
+            <Input
+              value={search}
+              onChange={setSearch}
+              placeholder="Search farmers by name, phone, address..."
+              icon="search"
+            />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="w-full sm:w-44">
+              <Select
+                value={cropFilter}
+                onChange={setCropFilter}
+                placeholder="All Crops"
+                options={cropTypes.map((c) => ({ value: c, label: c }))}
+              />
             </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="w-full sm:w-44">
-                <Select value={cropFilter} onChange={setCropFilter} placeholder="All Crops"
-                  options={cropTypes.map((c) => ({ value: c, label: c }))} />
-              </div>
-              <div className="w-full sm:w-40">
-                <Select value={statusFilter} onChange={setStatusFilter} placeholder="All Status"
-                  options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]} />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={handleExport} disabled={exporting}>
-                <Icon name="download" size={18} /> {exporting ? 'Exporting...' : 'Export'}
-              </Button>
-              <Button variant="secondary" onClick={() => setShowImport(true)}>
-                <Icon name="upload" size={18} /> Import
-              </Button>
+            <div className="w-full sm:w-40">
+              <Select
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder="All Status"
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "Inactive", label: "Inactive" },
+                ]}
+              />
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <p className="text-slate-500 font-medium">
-              Showing <span className="font-bold text-slate-700">{filtered.length}</span> of {farmers.length} farmers
-            </p>
-            {(search || cropFilter !== 'all' || statusFilter !== 'all') && (
-              <button onClick={() => { setSearch(''); setCropFilter('all'); setStatusFilter('all'); }}
-                className="text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1">
-                <Icon name="filter_alt_off" size={16} /> Clear filters
-              </button>
-            )}
-          </div>
-        </Card>
-
-        {/* Farmer table */}
-        {filtered.length === 0 ? (
-          <Card className="p-0">
-            <EmptyState icon="groups" title="No farmers found"
-              description="Try adjusting your search or filters, or add a new farmer to get started."
-              action={<Button onClick={() => goStorePage('add-farmer')}><Icon name="person_add" size={20} fill /> Add Farmer</Button>} />
-          </Card>
-        ) : (
-          <Card className="overflow-hidden">
-            <div className="w-full">
-              <table className="w-full table-fixed text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                    <th className="w-[4%] text-center font-semibold px-3 py-3.5 border-r">S.No</th>
-                    <th className="w-[5%] text-center font-semibold px-3 py-3.5 border-r">Profile</th>
-                    <th className="w-[12%] text-center font-semibold px-3 py-3.5 border-r">Farmer Details</th>
-                    <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">Village</th>
-                    <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">Through</th>
-                    <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">Land (Acres)</th>
-                    <th className="w-[12%] text-center font-semibold px-3 py-3.5 border-r">Crops</th>
-                    <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">Outstanding</th>
-                    <th className="w-[8%] text-center font-semibold px-3 py-3.5">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.map((f, index) => (
-                    <tr
-                      key={f.id}
-                      className="hover:bg-slate-50/50 transition-base cursor-pointer"
-                      onClick={() => goFarmerProfile(f.id)}
-                      title="Click to view farmer details"
-                    >
-                      {/* S.No */}
-                      <td className="w-[6%] px-3 py-3.5 text-center font-medium text-slate-500 border-r border-slate-200">
-                        {index + 1}
-                      </td>
-
-                      {/* Profile */}
-                      <td className="w-[8%] px-3 py-3.5 border-r border-slate-200">
-                        {f.profileImage ? (
-                          <img
-                            src={f.profileImage}
-                            alt={f.name}
-                            className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                          />
-                        ) : (
-                          <div
-                            className={`w-10 h-10 rounded-full bg-gradient-to-br ${
-                              colorMap[f.profileColor] ?? 'from-slate-400 to-slate-600'
-                            } flex items-center justify-center text-white font-bold text-xs shrink-0`}
-                          >
-                            {initials(f.name)}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Farmer Details */}
-                      <td className="w-[12%] px-3 py-3.5 text-center border-r border-slate-200">
-                        <p className="font-semibold text-slate-800">{f.name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {f.village || '-'}
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {f.phone}
-                        </p>
-                      </td>
-
-                      {/* Village - smaller */}
-                      <td className="w-[3%] px-2 py-3.5 text-center text-slate-600 border-r border-slate-200">
-                        <p className="truncate">{f.village || '-'}</p>
-                      </td>
-
-                      {/* Through - smaller */}
-                      <td className="w-[7%] px-2 py-3.5 text-center text-slate-600 border-r border-slate-200">
-                        {f.through === 'Executive'
-                          ? f.executiveName || '-'
-                          : 'Direct'}
-                      </td>
-
-                      {/* Land */}
-                      <td className="w-[10%] px-3 py-3.5 text-right font-semibold text-slate-700 border-r border-slate-200">
-                        {f.landSize}
-                      </td>
-
-                      {/* Crops - more space */}
-                      <td className="w-[22%] px-3 py-3.5 border-r border-slate-200">
-                        <div className="flex flex-wrap gap-1.5">
-                          {(f.crops?.length
-                            ? f.crops.map((c) => c.cropType)
-                            : [f.cropType, f.cropType2, f.cropType3].filter(Boolean)
-                          ).map((crop, index) => (
-                            <span
-                              key={index}
-                              className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs"
-                            >
-                              {crop}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-
-                      {/* Outstanding */}
-                      <td className="w-[14%] px-3 py-3.5 text-right border-r border-slate-200">
-                        {f.outstanding > 0 ? (
-                          <span className="font-bold text-amber-600">
-                            {formatCurrency(f.outstanding)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">Clear</span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="w-[8%] px-3 py-3.5 text-center">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation(); 
-                            setDeleteTarget(f);
-                          }}
-                          className="p-2 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-base"
-                          title="Delete farmer"
-                        >
-                          <Icon name="delete" size={18} />
-                        </button>
-                      </td>  
-
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-
-        {/* Import modal */}
-        <Modal open={showImport} onClose={() => setShowImport(false)} title="Import Farmers"
-          footer={<>
-            <Button variant="secondary" onClick={() => setShowImport(false)}>Cancel</Button>
-            <Button onClick={() => setShowImport(false)} disabled>Import</Button>
-          </>}>
-          <div className="space-y-4">
-            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-brand-400 transition-base cursor-pointer">
-              <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
-                <Icon name="cloud_upload" size={32} className="text-brand-600" />
-              </div>
-              <p className="font-semibold text-slate-700">Drop your CSV file here</p>
-              <p className="text-sm text-slate-400 mt-1">or click to browse — supports .csv, .xlsx</p>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Icon name="info" size={18} className="text-slate-400" />
-              Download the template format to ensure correct column mapping.
-            </div>
-            <Button variant="secondary" className="w-full">
-              <Icon name="download" size={18} /> Download Template
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={handleExport}
+              disabled={exporting}
+            >
+              <Icon name="download" size={18} />{" "}
+              {exporting ? "Exporting..." : "Export"}
+            </Button>
+            <Button variant="secondary" onClick={() => setShowImport(true)}>
+              <Icon name="upload" size={18} /> Import
             </Button>
           </div>
-        </Modal>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-sm">
+          <p className="text-slate-500 font-medium">
+            Showing{" "}
+            <span className="font-bold text-slate-700">{filtered.length}</span>{" "}
+            of {visibleFarmers.length} farmers
+          </p>
+          {(search || cropFilter !== "all" || statusFilter !== "all") && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setCropFilter("all");
+                setStatusFilter("all");
+              }}
+              className="text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1"
+            >
+              <Icon name="filter_alt_off" size={16} /> Clear filters
+            </button>
+          )}
+        </div>
+      </Card>
 
-        {/* Delete Farmer */}    
-        {deleteTarget && createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <h3 className="text-lg font-bold text-slate-800">Delete Farmer</h3>
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
-              >
-                <Icon name="close" size={20} />
-              </button>
-            </div>
-
-            <div className="px-6 py-5">
-              <p className="text-slate-600">
-                Are you sure you want to delete{' '}
-                <span className="font-semibold text-slate-800">{deleteTarget.name}</span>?
-                This action cannot be undone and will remove all farmer details.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-              <Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-              <Button onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-                <Icon name="delete" size={18} /> Delete
+      {/* Farmer table / mobile cards */}
+      {filtered.length === 0 ? (
+        <Card className="p-0">
+          <EmptyState
+            icon="groups"
+            title="No farmers found"
+            description="Try adjusting your search or filters, or add a new farmer to get started."
+            action={
+              <Button onClick={() => goStorePage("add-farmer")}>
+                <Icon name="person_add" size={20} fill /> Add Farmer
               </Button>
-            </div>
+            }
+          />
+        </Card>
+      ) : (
+        <Card className="overflow-hidden p-0 sm:p-0">
+          {/* Mobile: responsive farmer cards */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {filtered.map((f, index) => (
+              <div
+                key={f.id}
+                className="p-4 bg-white active:bg-slate-50"
+                onClick={() => goFarmerProfile(f.id)}
+              >
+                <div className="flex items-start gap-3">
+                  {f.profileImage ? (
+                    <img
+                      src={f.profileImage}
+                      alt={f.name}
+                      className="w-11 h-11 rounded-full object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div
+                      className={`w-11 h-11 rounded-full bg-gradient-to-br ${
+                        colorMap[f.profileColor] ??
+                        "from-slate-400 to-slate-600"
+                      } flex items-center justify-center text-white font-bold text-xs shrink-0`}
+                    >
+                      {initials(f.name)}
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-800 truncate">
+                          {f.name}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {f.phone}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(f);
+                        }}
+                        className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                        title="Delete farmer"
+                      >
+                        <Icon name="delete" size={17} />
+                      </button>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-xl bg-slate-50 px-3 py-2 min-w-0">
+                        <p className="text-slate-400">Village</p>
+                        <p className="font-semibold text-slate-700 truncate mt-0.5">
+                          {f.village || "-"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-3 py-2 min-w-0">
+                        <p className="text-slate-400">Through</p>
+                        <p className="font-semibold text-slate-700 truncate mt-0.5">
+                          {f.through === "Executive"
+                            ? f.executiveName || "-"
+                            : "Direct"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-3 py-2">
+                        <p className="text-slate-400">Land</p>
+                        <p className="font-semibold text-slate-700 mt-0.5">
+                          {f.landSize || 0} Acres
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-3 py-2">
+                        <p className="text-slate-400">Outstanding</p>
+                        <p
+                          className={`font-bold mt-0.5 ${f.outstanding > 0 ? "text-amber-600" : "text-slate-500"}`}
+                        >
+                          {f.outstanding > 0
+                            ? formatCurrency(f.outstanding)
+                            : "Clear"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1.5">
+                        Crops
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(f.crops?.length
+                          ? f.crops.map((c) => c.cropType)
+                          : [f.cropType, f.cropType2, f.cropType3].filter(
+                              Boolean,
+                            )
+                        ).map((crop, cropIndex) => (
+                          <span
+                            key={cropIndex}
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-semibold text-[11px]"
+                          >
+                            {crop}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <p className="mt-3 text-[11px] text-slate-400 flex items-center gap-1">
+                      <Icon name="touch_app" size={14} /> Tap to view farmer
+                      details
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 text-[10px] text-slate-300">
+                  #{index + 1}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>,
-        document.body
-      )}  
-      </div>
-    );
-  }
+
+          {/* Desktop: existing table */}
+          <div className="hidden md:block w-full overflow-x-auto">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  <th className="w-[5%] text-center font-semibold px-3 py-3.5 border-r">
+                    S.No
+                  </th>
+                  <th className="w-[7%] text-center font-semibold px-3 py-3.5 border-r">
+                    Profile
+                  </th>
+                  <th className="w-[18%] text-center font-semibold px-3 py-3.5 border-r">
+                    Farmer Details
+                  </th>
+                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">
+                    Village
+                  </th>
+                  <th className="w-[13%] text-center font-semibold px-3 py-3.5 border-r">
+                    Through
+                  </th>
+                  <th className="w-[10%] text-center font-semibold px-3 py-3.5 border-r">
+                    Land (Acres)
+                  </th>
+                  <th className="w-[17%] text-center font-semibold px-3 py-3.5 border-r">
+                    Crops
+                  </th>
+                  <th className="w-[12%] text-center font-semibold px-3 py-3.5 border-r">
+                    Outstanding
+                  </th>
+                  <th className="w-[8%] text-center font-semibold px-3 py-3.5">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((f, index) => (
+                  <tr
+                    key={f.id}
+                    className="hover:bg-slate-50/50 transition-base cursor-pointer"
+                    onClick={() => goFarmerProfile(f.id)}
+                    title="Click to view farmer details"
+                  >
+                    <td className="px-3 py-3.5 text-center font-medium text-slate-500 border-r border-slate-200">
+                      {index + 1}
+                    </td>
+                    <td className="px-3 py-3.5 border-r border-slate-200">
+                      {f.profileImage ? (
+                        <img
+                          src={f.profileImage}
+                          alt={f.name}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200 mx-auto"
+                        />
+                      ) : (
+                        <div
+                          className={`w-10 h-10 rounded-full bg-gradient-to-br ${colorMap[f.profileColor] ?? "from-slate-400 to-slate-600"} flex items-center justify-center text-white font-bold text-xs shrink-0 mx-auto`}
+                        >
+                          {initials(f.name)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-3.5 text-center border-r border-slate-200">
+                      <p className="font-semibold text-slate-800 truncate">
+                        {f.name}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5 truncate">
+                        {f.village || "-"}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5 truncate">
+                        {f.phone}
+                      </p>
+                    </td>
+                    <td className="px-3 py-3.5 text-center text-slate-600 border-r border-slate-200">
+                      {f.village || "-"}
+                    </td>
+                    <td className="px-3 py-3.5 text-center text-slate-600 border-r border-slate-200">
+                      {f.through === "Executive"
+                        ? f.executiveName || "-"
+                        : "Direct"}
+                    </td>
+                    <td className="px-3 py-3.5 text-center font-semibold text-slate-700 border-r border-slate-200">
+                      {f.landSize || 0}
+                    </td>
+                    <td className="px-3 py-3.5 border-r border-slate-200">
+                      <div className="flex flex-wrap gap-1.5">
+                        {(f.crops?.length
+                          ? f.crops.map((c) => c.cropType)
+                          : [f.cropType, f.cropType2, f.cropType3].filter(
+                              Boolean,
+                            )
+                        ).map((crop, cropIndex) => (
+                          <span
+                            key={cropIndex}
+                            className="inline-flex items-center px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 font-medium text-xs"
+                          >
+                            {crop}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 text-center border-r border-slate-200">
+                      {f.outstanding > 0 ? (
+                        <span className="font-bold text-amber-600">
+                          {formatCurrency(f.outstanding)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Clear</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3.5 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(f);
+                        }}
+                        className="p-2 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-base"
+                        title="Delete farmer"
+                      >
+                        <Icon name="delete" size={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Import modal */}
+      <Modal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        title="Import Farmers"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => setShowImport(false)} disabled>
+              Import
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-brand-400 transition-base cursor-pointer">
+            <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
+              <Icon name="cloud_upload" size={32} className="text-brand-600" />
+            </div>
+            <p className="font-semibold text-slate-700">
+              Drop your CSV file here
+            </p>
+            <p className="text-sm text-slate-400 mt-1">
+              or click to browse — supports .csv, .xlsx
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Icon name="info" size={18} className="text-slate-400" />
+            Download the template format to ensure correct column mapping.
+          </div>
+          <Button variant="secondary" className="w-full">
+            <Icon name="download" size={18} /> Download Template
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Delete Farmer */}
+      {deleteTarget &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <h3 className="text-lg font-bold text-slate-800">
+                  Delete Farmer
+                </h3>
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+              <div className="px-6 py-5">
+                <p className="text-slate-600">
+                  Are you sure you want to delete{" "}
+                  <span className="font-semibold text-slate-800">
+                    {deleteTarget.name}
+                  </span>
+                  ? This action cannot be undone and will remove all farmer
+                  details.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setDeleteTarget(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleDelete}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  <Icon name="delete" size={18} /> Delete
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}

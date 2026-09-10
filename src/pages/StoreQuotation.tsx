@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { createPortal } from "react-dom"; 
 import { products as allProducts, getFarmersByStore, getStorePurchasesFromCompanySales } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import { useAuth } from "@/context/AuthContext";
 
 
 type ProductRow = {
@@ -33,6 +34,8 @@ type Row = {
   placeOfSupply: string;
   remarks: string;
   products: ProductRow[];
+  executiveName?: string;
+  createdByStaffId?: string;
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -42,10 +45,26 @@ type Row = {
 };
 
 export default function StoreQuotation({ storeId }: { storeId: string }) {
-  const registeredFarmers = useMemo(
-    () => getFarmersByStore(storeId),
-    [storeId],
-  );
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
+
+  const quotationStorageKey = `nature-biotic-quotations-${storeId}`;
+
+  const registeredFarmers = useMemo(() => {
+    const farmers = getFarmersByStore(storeId);
+
+    if (!isFRO || !user?.name) {
+      return farmers;
+    }
+
+    const loggedInName = user.name.trim().toLowerCase();
+
+    return farmers.filter(
+      (farmer) =>
+        farmer.through === "Executive" &&
+        String(farmer.executiveName || "").trim().toLowerCase() === loggedInName,
+    );
+  }, [storeId, isFRO, user?.name]);
 
   const storePurchaseRows = useMemo(
     () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
@@ -202,6 +221,63 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       status: "Converted",
     },
   ]);
+
+  // Keep quotations shared between FRO and Store views for the same store.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(quotationStorageKey);
+
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setRows(parsed);
+        }
+      } else {
+        window.localStorage.setItem(
+          quotationStorageKey,
+          JSON.stringify(rows),
+        );
+      }
+    } catch {
+      // Keep the existing in-memory quotations if localStorage is unavailable.
+    }
+    // quotationStorageKey is derived only from storeId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!isFRO) return;
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== quotationStorageKey || !event.newValue) return;
+
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (Array.isArray(parsed)) {
+          setRows(parsed);
+        }
+      } catch {
+        // Ignore malformed external storage updates.
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [isFRO, quotationStorageKey]);
+
+  const visibleRows = useMemo(() => {
+    if (!isFRO || !user?.name) {
+      return rows;
+    }
+
+    const loggedInName = user.name.trim().toLowerCase();
+
+    return rows.filter(
+      (row) =>
+        String(row.executiveName || "").trim().toLowerCase() === loggedInName &&
+        String(row.createdByStaffId || "") === String(user.staffId ?? user.id),
+    );
+  }, [rows, isFRO, user?.name, user?.staffId, user?.id]);
 
   const [show, setShow] = useState(false);
 
@@ -549,13 +625,43 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       roundOff: Math.round(grandTotal) - grandTotal,
       amount: grandTotal,
       status: "Open",
+      executiveName: isFRO ? user?.name : undefined,
+      createdByStaffId: isFRO ? (user?.staffId ?? user?.id) : undefined,
     };
 
-    setRows((prev) => [newQuotation, ...prev]);
+    setRows((prev) => {
+      const next = [newQuotation, ...prev];
+      try {
+        window.localStorage.setItem(
+          quotationStorageKey,
+          JSON.stringify(next),
+        );
+      } catch {
+        // Keep the in-memory update if localStorage is unavailable.
+      }
+      return next;
+    });
 
     resetForm();
     setShow(false);
   }
+
+function taxRateLabel(
+  products: ProductRow[] | undefined,
+  field: "sgstPercent" | "cgstPercent" | "igstPercent",
+): string {
+  const values = Array.from(
+    new Set(
+      (products || [])
+        .filter((item) => Number(item[field] || 0) > 0)
+        .map((item) => Number(item[field] || 0)),
+    ),
+  );
+
+  if (values.length === 0) return "0.00";
+  if (values.length === 1) return values[0].toFixed(2);
+  return "Mix";
+}
 
 function numberToWords(num: number): string {
   const ones = [
@@ -655,165 +761,124 @@ function numberToWords(num: number): string {
         </Button>
       </div>
 
-      {/* QUOTATION TABLE */}
+      {/* QUOTATION TABLE / MOBILE LIST */}
       <Card className="overflow-hidden p-0">
-        <table className="w-full table-fixed border-collapse text-sm">
-          <thead>
-            <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-              <th rowSpan={2} className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
-                S.No
-              </th>
-              <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
-                Date
-              </th>
-              <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
-                Quotation No
-              </th>
-              <th rowSpan={2} className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
-                Farmer Details
-              </th>
-              <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">
-                Without Tax
-              </th>
-
-              <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
-                SGST
-              </th>
-              <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
-                CGST
-              </th>
-              <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">
-                IGST
-              </th>
-
-              <th rowSpan={2} className="w-[11%] px-2 py-2 text-right font-semibold">
-                Total
-              </th>
-            </tr>
-
-            <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
-              <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
-              <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
-              <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
-              <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
-              <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
-              <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {rows.map((r, index) => (
-              <tr
-                key={r.id}
-                onClick={() => setSelectedQuotation(r)}
-                className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
-                title="Click to view quotation"
-              >
-
-                {/* S.NO */}
-                <td className="border-r border-slate-100 px-2 py-3 text-center">
-                  {index + 1}
-                </td>
-
-                {/* DATE */}
-                <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">
-                  {formatDate(r.date)}
-                </td>
-
-                {/* QUOTATION NO */}
-                <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
-                  {r.quotationNo}
-                </td>
-
-                {/* FARMER DETAILS */}
-                <td className="border-r border-slate-100 px-2 py-3 text-center">
-                  <p className="font-semibold text-slate-800">
-                    {r.farmer}
-                  </p>
-
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {r.village || "-"}
-                  </p>
-
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {r.phone || "-"}
-                  </p>
-                </td>
-
-                {/* WITHOUT TAX */}
-                <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
-                  {formatCurrency(r.withoutTax)}
-                </td>
-
-                <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
-                  {(() => {
-                    const values = Array.from(
-                      new Set(
-                        (r.products || [])
-                          .filter((item) => Number(item.sgstPercent || 0) > 0)
-                          .map((item) => Number(item.sgstPercent || 0)),
-                      ),
-                    );
-                    return values.length === 0
-                      ? "0.00"
-                      : values.length === 1
-                        ? values[0].toFixed(2)
-                        : "Mix";
-                  })()}
-                </td>
-                <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
-                  {formatCurrency(r.sgst)}
-                </td>
-
-                <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
-                  {(() => {
-                    const values = Array.from(
-                      new Set(
-                        (r.products || [])
-                          .filter((item) => Number(item.cgstPercent || 0) > 0)
-                          .map((item) => Number(item.cgstPercent || 0)),
-                      ),
-                    );
-                    return values.length === 0
-                      ? "0.00"
-                      : values.length === 1
-                        ? values[0].toFixed(2)
-                        : "Mix";
-                  })()}
-                </td>
-                <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
-                  {formatCurrency(r.cgst)}
-                </td>
-
-                <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
-                  {(() => {
-                    const values = Array.from(
-                      new Set(
-                        (r.products || [])
-                          .filter((item) => Number(item.igstPercent || 0) > 0)
-                          .map((item) => Number(item.igstPercent || 0)),
-                      ),
-                    );
-                    return values.length === 0
-                      ? "0.00"
-                      : values.length === 1
-                        ? values[0].toFixed(2)
-                        : "Mix";
-                  })()}
-                </td>
-                <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
-                  {formatCurrency(r.igst)}
-                </td>
-
-                {/* TOTAL */}
-                <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                  {formatCurrency(r.amount)}
-                </td>
-
+        {/* Desktop */}
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[1050px] table-fixed border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                <th rowSpan={2} className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold">S.No</th>
+                <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Date</th>
+                <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Quotation No</th>
+                <th rowSpan={2} className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Farmer Details</th>
+                <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Without Tax</th>
+                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">SGST</th>
+                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">CGST</th>
+                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">IGST</th>
+                <th rowSpan={2} className="w-[11%] px-2 py-2 text-right font-semibold">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+              <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-slate-400">
+                    No quotations found.
+                  </td>
+                </tr>
+              ) : (
+                visibleRows.map((r, index) => (
+                  <tr
+                    key={r.id}
+                    onClick={() => setSelectedQuotation(r)}
+                    className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                    title="Click to view quotation"
+                  >
+                    <td className="border-r border-slate-100 px-2 py-3 text-center">{index + 1}</td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">{formatDate(r.date)}</td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">{r.quotationNo}</td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center">
+                      <p className="font-semibold text-slate-800">{r.farmer}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{r.village || "-"}</p>
+                      <p className="mt-0.5 text-xs text-slate-400">{r.phone || "-"}</p>
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">{formatCurrency(r.withoutTax)}</td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">{taxRateLabel(r.products, "sgstPercent")}</td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">{formatCurrency(r.sgst)}</td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">{taxRateLabel(r.products, "cgstPercent")}</td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">{formatCurrency(r.cgst)}</td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">{taxRateLabel(r.products, "igstPercent")}</td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">{formatCurrency(r.igst)}</td>
+                    <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">{formatCurrency(r.amount)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile */}
+        <div className="divide-y divide-slate-100 md:hidden">
+          {visibleRows.length === 0 ? (
+            <div className="px-4 py-12 text-center text-sm text-slate-400">
+              No quotations found.
+            </div>
+          ) : (
+            visibleRows.map((r, index) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setSelectedQuotation(r)}
+                className="block w-full p-4 text-left transition active:bg-brand-50/40"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      #{index + 1} · {formatDate(r.date)}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-extrabold text-slate-800">
+                      {r.quotationNo}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-base font-extrabold text-brand-700">
+                    {formatCurrency(r.amount)}
+                  </p>
+                </div>
+
+                <div className="mt-3 rounded-xl bg-slate-50 p-3">
+                  <p className="text-sm font-bold text-slate-800">{r.farmer}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {r.village || "-"} · {r.phone || "-"}
+                  </p>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-lg border border-slate-100 px-3 py-2">
+                    <p className="text-slate-400">Without Tax</p>
+                    <p className="mt-0.5 font-semibold text-slate-700">{formatCurrency(r.withoutTax)}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 px-3 py-2">
+                    <p className="text-slate-400">Total Tax</p>
+                    <p className="mt-0.5 font-semibold text-slate-700">{formatCurrency(r.sgst + r.cgst + r.igst)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                  <span>SGST {taxRateLabel(r.products, "sgstPercent")}% · CGST {taxRateLabel(r.products, "cgstPercent")}% · IGST {taxRateLabel(r.products, "igstPercent")}%</span>
+                  <Icon name="chevron_right" size={17} />
+                </div>
+              </button>
+            ))
+          )}
+        </div>
       </Card>
 
       {/* =========================
