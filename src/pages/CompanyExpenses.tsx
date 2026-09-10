@@ -1,5 +1,40 @@
 
 import { useState, useEffect } from "react";
+import { ReactNode } from "react";
+import { createPortal } from "react-dom";
+
+type ModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  footer?: ReactNode;
+};
+
+export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) {
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 w-full max-w-md shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold text-slate-800 mb-4">{title}</h2>
+
+        <div className="space-y-3">{children}</div>
+
+        {footer && (
+          <div className="flex justify-end gap-2 mt-6">{footer}</div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 type Expense = {
   id: string;
@@ -101,68 +136,65 @@ export default function CompanyExpenses() {
         </table>
       </div>
 
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-lg">
-            <h2 className="text-lg font-bold text-slate-800 mb-4">Add Expense</h2>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm text-slate-600">Date</label>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-slate-600">Category</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Transport, Salary, Rent"
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-slate-600">Description</label>
-                <input
-                  type="text"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-slate-600">Amount (Rs.)</label>
-                <input
-                  type="number"
-                  value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddExpense}
-                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
-              >
-                Save
-              </button>
-            </div>
-          </div>
+      <Modal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add Expense"
+        footer={
+          <>
+            <button
+              onClick={() => setShowAddModal(false)}
+              className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddExpense}
+              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+            >
+              Save
+            </button>
+          </>
+        }
+      >
+        <div>
+          <label className="text-sm text-slate-600">Date</label>
+          <input
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
         </div>
-      )}
+        <div>
+          <label className="text-sm text-slate-600">Category</label>
+          <input
+            type="text"
+            placeholder="e.g. Transport, Salary, Rent"
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-slate-600">Description</label>
+          <input
+            type="text"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-sm text-slate-600">Amount (Rs.)</label>
+          <input
+            type="number"
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+            className="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
