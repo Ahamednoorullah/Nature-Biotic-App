@@ -9,7 +9,8 @@ export type CompanyPage =
   | "staff-management"
   | "credit-notes"
   | "receipts"
-  | "reports";
+  | "reports"
+  | "settings";
 export type StorePage =
   | "dashboard"
   | "purchase-order"
