@@ -14,11 +14,12 @@ import { useNav } from '@/context/NavContext';
 import { Card, Badge, Button, EmptyState, Icon, Input, Select, Textarea, Modal } from '@/components/ui';
 import { formatCurrency, formatDate, initials } from '@/lib/format';
 
-type Tab = 'overview' | 'purchases' | 'invoices' | 'payments' | 'documents';
+type Tab = 'overview' | 'purchases' | 'invoices' | 'product-history' | 'payments' | 'documents';
 
 const tabs: { key: Tab; label: string; icon: string }[] = [
   { key: 'overview', label: 'Overview', icon: 'dashboard' },
   { key: 'invoices', label: 'Invoices', icon: 'receipt_long' },
+  { key: 'product-history', label: 'Product History', icon: 'inventory_2' },
   { key: 'payments', label: 'Payment Receipt', icon: 'payments' },
 ];
 
@@ -109,6 +110,7 @@ export default function StoreFarmerProfile({ storeId: _storeId, farmerId }: { st
         {tab === 'overview' && <OverviewTab farmer={farmer} purchases={purchases} payments={payments} />}
         {tab === 'purchases' && <PurchasesTab purchases={purchases} />}
         {tab === 'invoices' && <InvoicesTab invoices={invoices} />}
+        {tab === 'product-history' && <ProductHistoryTab purchases={purchases} />}
         {tab === 'payments' && <PaymentsTab payments={payments} />}
         {tab === 'documents' && <DocumentsTab />}
       </div>
@@ -305,7 +307,87 @@ function PaymentsTab({ payments }: { payments: ReturnType<typeof getPaymentsByFa
   );
 }
 
+function ProductHistoryTab({ purchases }: { purchases: ReturnType<typeof getPurchasesByFarmer> }) {
+  // Last 3 months window
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
+  const recentPurchases = purchases.filter((p) => new Date(p.date) >= threeMonthsAgo);
+
+  if (recentPurchases.length === 0) {
+    return (
+      <Card className="p-0">
+        <EmptyState
+          icon="inventory_2"
+          title="No products given recently"
+          description="No products have been supplied to this farmer in the last 3 months."
+        />
+      </Card>
+    );
+  }
+
+  // Group by product name
+  const grouped = recentPurchases.reduce((acc, p) => {
+    if (!acc[p.product]) {
+      acc[p.product] = {
+        product: p.product,
+        totalQuantity: 0,
+        totalAmount: 0,
+        lastDate: p.date,
+        transactions: 0,
+      };
+    }
+    acc[p.product].totalQuantity += p.quantity;
+    acc[p.product].totalAmount += p.amount;
+    acc[p.product].transactions += 1;
+    if (new Date(p.date) > new Date(acc[p.product].lastDate)) {
+      acc[p.product].lastDate = p.date;
+    }
+    return acc;
+  }, {} as Record<string, { product: string; totalQuantity: number; totalAmount: number; lastDate: string; transactions: number }>);
+
+  const rows = Object.values(grouped).sort(
+    (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime()
+  );
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+        <p className="text-xs text-slate-500 font-medium">
+          Showing products supplied in the last 3 months
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+              <th className="text-left font-semibold px-5 py-3.5">Product</th>
+              <th className="text-right font-semibold px-5 py-3.5">Total Quantity</th>
+              <th className="text-center font-semibold px-5 py-3.5">No. of Times</th>
+              <th className="text-left font-semibold px-5 py-3.5">Last Given On</th>
+              <th className="text-right font-semibold px-5 py-3.5">Total Value</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row) => (
+              <tr key={row.product} className="hover:bg-slate-50/50 transition-base">
+                <td className="px-5 py-3.5 font-semibold text-slate-700">{row.product}</td>
+                <td className="px-5 py-3.5 text-right text-slate-600">{row.totalQuantity}</td>
+                <td className="px-5 py-3.5 text-center">
+                  <Badge color="blue">{row.transactions}</Badge>
+                </td>
+                <td className="px-5 py-3.5 text-slate-600">{formatDate(row.lastDate)}</td>
+                <td className="px-5 py-3.5 text-right font-bold text-slate-800">
+                  {formatCurrency(row.totalAmount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
         
   
 
