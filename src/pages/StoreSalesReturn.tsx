@@ -3,6 +3,8 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts, getStore, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
+import { products as reduceFROStock } from "@/lib/data";
+
 
 type SaleType = "Direct" | "Executive";
 

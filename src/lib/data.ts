@@ -2012,3 +2012,225 @@ export function getStoreApprovalRequest(
   );
 }
 export const storeApprovalRequestsUpdatedEvent = STORE_APPROVAL_EVENT;
+
+// ============================================================
+// FRO STOCK MANAGEMENT (Delivery → FRO current stock → Sale/Return)
+// ============================================================
+
+export type FROStockEntry = {
+  id: string;
+  storeId: string;
+  executiveName: string;
+  productId: string;
+  productName: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  unitValue: number;
+  currentQty: number; // Delivered − Returned − Sold
+};
+
+const FRO_STOCK_KEY = "nature-biotic-fro-stock-v1";
+
+function froStockKey(storeId: string) {
+  return `${FRO_STOCK_KEY}:${storeId}`;
+}
+
+function matchKey(executiveName: string, productId: string, packSize: string, batchNo: string) {
+  return `${executiveName}|${productId}|${packSize}|${batchNo}`;
+}
+
+export function getFROStock(storeId: string): FROStockEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(froStockKey(storeId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFROStock(storeId: string, rows: FROStockEntry[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(froStockKey(storeId), JSON.stringify(rows));
+    window.dispatchEvent(new Event("fro-stock-updated"));
+  } catch {}
+}
+
+// Called from Delivery Challan → Store gives stock to FRO
+export function addFROStock(
+  storeId: string,
+  executiveName: string,
+  items: {
+    productId: string;
+    productName: string;
+    packSize: string;
+    batchNo: string;
+    expiryDate: string;
+    unitValue: number;
+    qty: number;
+  }[],
+) {
+  const rows = getFROStock(storeId);
+  const map = new Map(
+    rows.map((r) => [matchKey(r.executiveName, r.productId, r.packSize, r.batchNo), r]),
+  );
+
+  items.forEach((item) => {
+    const key = matchKey(executiveName, item.productId, item.packSize, item.batchNo);
+    const existing = map.get(key);
+    if (existing) {
+      existing.currentQty += item.qty;
+    } else {
+      map.set(key, {
+        id: `fro-stock-${Date.now()}-${Math.random()}`,
+        storeId,
+        executiveName,
+        productId: item.productId,
+        productName: item.productName,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        unitValue: item.unitValue,
+        currentQty: item.qty,
+      });
+    }
+  });
+
+  saveFROStock(storeId, Array.from(map.values()));
+}
+
+// Called from Return Challan (FRO → Store) AND from Executive Sale (FRO → Farmer)
+export function reduceFROStock(
+  storeId: string,
+  executiveName: string,
+  items: { productId: string; packSize: string; batchNo: string; qty: number }[],
+) {
+  const rows = getFROStock(storeId);
+  items.forEach((item) => {
+    const row = rows.find(
+      (r) =>
+        r.executiveName === executiveName &&
+        r.productId === item.productId &&
+        r.packSize === item.packSize &&
+        r.batchNo === item.batchNo,
+    );
+    if (row) row.currentQty = Math.max(0, row.currentQty - item.qty);
+  });
+  saveFROStock(storeId, rows);
+}
+
+export function getFROStockByExecutive(storeId: string, executiveName: string) {
+  return getFROStock(storeId).filter(
+    (r) => r.executiveName === executiveName && r.currentQty > 0,
+  );
+}
+
+// ============================================================
+// FRO SALES / COLLECTION / OUTSTANDING / CASH-IN-HAND LEDGER
+// ============================================================
+
+export type FROSaleRecord = {
+  id: string;
+  storeId: string;
+  executiveName: string;
+  date: string;
+  invoiceNo: string;
+  farmerId: string;
+  farmerName: string;
+  amount: number;
+  collectedAmount: number;
+  outstandingAmount: number;
+  // CashInHand = FRO holding cash, not yet deposited to store
+  // Deposited = FRO gave the collected cash to store
+  collectionMode: "CashInHand" | "Deposited" | "Pending";
+};
+
+const FRO_SALES_KEY = "nature-biotic-fro-sales-v1";
+
+function froSalesKey(storeId: string) {
+  return `${FRO_SALES_KEY}:${storeId}`;
+}
+
+export function getFROSales(storeId: string): FROSaleRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(froSalesKey(storeId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFROSalesRows(storeId: string, rows: FROSaleRecord[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(froSalesKey(storeId), JSON.stringify(rows));
+    window.dispatchEvent(new Event("fro-sales-updated"));
+  } catch {}
+}
+
+export function addFROSale(storeId: string, row: Omit<FROSaleRecord, "id">) {
+  const rows = getFROSales(storeId);
+  const next: FROSaleRecord = { ...row, id: `fro-sale-${Date.now()}-${Math.random()}` };
+  saveFROSalesRows(storeId, [next, ...rows]);
+  return next;
+}
+
+// When FRO deposits cash-in-hand to the store
+export function depositFROCash(storeId: string, executiveName: string, amount: number) {
+  const rows = getFROSales(storeId);
+  let remaining = amount;
+  for (const row of rows) {
+    if (row.executiveName !== executiveName || row.collectionMode !== "CashInHand") continue;
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, row.collectedAmount);
+    row.collectedAmount -= take; // moved out of "in hand" bucket
+    remaining -= take;
+    // Optionally track deposited separately; simplest: mark as Deposited once fully moved
+    if (row.collectedAmount === 0) row.collectionMode = "Deposited";
+  }
+  saveFROSalesRows(storeId, rows);
+}
+
+export function getFROSummary(storeId: string, executiveName: string) {
+  const sales = getFROSales(storeId).filter((s) => s.executiveName === executiveName);
+  const totalSales = sales.reduce((s, r) => s + r.amount, 0);
+  const totalCollection = sales.reduce((s, r) => s + r.collectedAmount, 0);
+  const cashInHand = sales
+    .filter((r) => r.collectionMode === "CashInHand")
+    .reduce((s, r) => s + r.collectedAmount, 0);
+  const outstanding = sales.reduce((s, r) => s + r.outstandingAmount, 0);
+  return { totalSales, totalCollection, cashInHand, outstanding, saleRows: sales };
+}
+
+// ============================================================
+// FARMER PURCHASE HISTORY — persisted (currently in-memory only)
+// ============================================================
+
+const FARMER_PURCHASES_KEY = "nature-biotic-farmer-purchases-v1";
+
+export function getStoredFarmerPurchases(): FarmerPurchase[] {
+  if (typeof window === "undefined") return farmerPurchases;
+  try {
+    const raw = window.localStorage.getItem(FARMER_PURCHASES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return farmerPurchases;
+}
+
+function saveFarmerPurchasesRows(rows: FarmerPurchase[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FARMER_PURCHASES_KEY, JSON.stringify(rows));
+    window.dispatchEvent(new Event("farmer-purchases-updated"));
+  } catch {}
+}
+
+export function addFarmerPurchaseRecord(row: Omit<FarmerPurchase, "id">) {
+  const rows = getStoredFarmerPurchases();
+  const next: FarmerPurchase = { ...row, id: `fp-${Date.now()}-${Math.random()}` };
+  saveFarmerPurchasesRows([next, ...rows]);
+  return next;
+}

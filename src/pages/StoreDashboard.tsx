@@ -11,6 +11,7 @@ import {
 } from "@/components/ui";
 import { formatCurrency, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
+import { getFROSummary, getFROStockByExecutive } from "@/lib/data";
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -751,9 +752,34 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const [directDetail, setDirectDetail] =
     useState<DirectDetailSelection>(null);
 
+  const execLiveSummaries = useMemo(() => {
+    const result: Record<ExecKey, {
+      sales: number; collection: number; collectionInHand: number;
+      outstanding: number; stockValue: number; stockQty: number;
+    }> = {} as any;
+
+    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
+      const name = execNames[key];
+      const summary = getFROSummary(storeId, name);
+      const stock = getFROStockByExecutive(storeId, name);
+      const stockValue = stock.reduce((s, r) => s + r.currentQty * r.unitValue, 0);
+      const stockQty = stock.reduce((s, r) => s + r.currentQty, 0);
+
+      result[key] = {
+        sales: summary.totalSales,
+        collection: summary.totalCollection,
+        collectionInHand: summary.cashInHand,
+        outstanding: summary.outstanding,
+        stockValue,
+        stockQty,
+      };
+    });
+
+    return result;
+  }, [storeId, dateFilter]);
+
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
-
 
   if (!store) return <EmptyState icon="error" title="Store not found" />;
 
@@ -897,7 +923,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </h2>
         <div className="space-y-3">
           {(Object.keys(execNames) as ExecKey[]).map((key) => {
-            const e = execData[key][dateFilter];
+            const e = { ...execData[key][dateFilter], ...execLiveSummaries[key] };
             const target = execTargets[key][dateFilter];
             return (
               <Card key={key} className="p-4">
@@ -991,11 +1017,20 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     label="Farms"
                     value={String(e.farms)}
                   />
-                  <ExecField icon="spa" label="Crops" value={String(e.crops)} />
+                  <ExecField
+                    icon="spa"
+                    label="Crops"
+                    value={String(e.crops)}
+                  />
                   <ExecField
                     icon="receipt"
                     label="Visits"
                     value={String(e.visits)}
+                  />
+                  <ExecField
+                    icon="inventory_2"
+                    label="Stocks"
+                    value={formatCurrency(e.stockValue)}
                   />
                 </div>
               </Card>

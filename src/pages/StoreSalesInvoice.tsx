@@ -3,7 +3,7 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
-
+import { reduceFROStock, addFROSale, addFarmerPurchaseRecord } from "@/lib/data";
 
 type SaleType = "Direct" | "Executive";
 
@@ -62,26 +62,6 @@ type AddedRow = {
 
 const STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
-const PAYMENT_BANK = {
-  accountName: "Nature Biotic",
-  accountNo: "-",
-  ifsc: "-",
-  bankName: "-",
-  branch: "-",
-  upiId: "naturebiotic@upi",
-} as const;
-
-function buildPaymentQrUrl(payableTotal: number, invoiceNo: string): string {
-  const paymentUrl = new URL("upi://pay");
-  paymentUrl.searchParams.set("pa", PAYMENT_BANK.upiId);
-  paymentUrl.searchParams.set("pn", PAYMENT_BANK.accountName);
-  paymentUrl.searchParams.set("am", payableTotal.toFixed(2));
-  paymentUrl.searchParams.set("cu", "INR");
-  paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
-
-  return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
-}
-
 const initialRows: SaleRow[] = [
   {
     id: "store-sale-1",
@@ -120,6 +100,28 @@ function formatDateInput(value: string) {
 
 export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_KEY}:${storeId}`;
+  const store = getStore(storeId);
+
+  const storeAny = store as any;
+  const paymentBank = {
+    accountName: storeAny?.bankAccountName || storeAny?.accountName || store?.name || "-",
+    accountNo: storeAny?.bankAccountNo || storeAny?.accountNo || "-",
+    ifsc: storeAny?.bankIfsc || storeAny?.ifsc || "-",
+    bankName: storeAny?.bankName || "-",
+    branch: storeAny?.bankBranch || storeAny?.branch || "-",
+    upiId: storeAny?.upiId || storeAny?.bankUpiId || "-",
+  };
+
+  function buildPaymentQrUrl(payableTotal: number, invoiceNo: string): string {
+    const paymentUrl = new URL("upi://pay");
+    paymentUrl.searchParams.set("pa", paymentBank.upiId);
+    paymentUrl.searchParams.set("pn", paymentBank.accountName);
+    paymentUrl.searchParams.set("am", payableTotal.toFixed(2));
+    paymentUrl.searchParams.set("cu", "INR");
+    paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
+    return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
+  }
+  
 
   const [rows, setRows] = useState<SaleRow[]>(() => {
     try {
@@ -137,7 +139,6 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     setInvoiceNotes(selectedSale.notes || "");
   }
 }, [selectedSale]);
-  const store = getStore(storeId);
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -387,8 +388,48 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
 
-    setShowCreate(false);
-    resetForm();
+  // ✅ ADD: If sale is through an Executive (FRO), deduct FRO stock + log FRO sale
+  if (through === "Executive") {
+    reduceFROStock(
+      storeId,
+      executiveName,
+      added.map((item) => ({
+        productId: item.productId,
+        packSize: item.pkgsize,
+        batchNo: item.batchNo,
+        qty: item.quantity,
+      })),
+    );
+
+    addFROSale(storeId, {
+      storeId,
+      executiveName,
+      date: formatDateInput(saleDate),
+      invoiceNo: invoiceNo.trim(),
+      farmerId,
+      farmerName: partyName.trim(),
+      amount: totals.grandTotal,
+      collectedAmount: 0,          // TODO: wire to actual payment-received amount if you add that field
+      outstandingAmount: totals.grandTotal,
+      collectionMode: "Pending",
+    });
+  }
+
+  // ✅ ADD: Push every sold product into Farmer Profile → Product History
+  added.forEach((item) => {
+    addFarmerPurchaseRecord({
+      farmerId,
+      invoiceNo: invoiceNo.trim(),
+      date: formatDateInput(saleDate),
+      product: item.product?.name || "",
+      quantity: item.quantity,
+      amount: item.rowTotal,
+      paymentStatus: "Pending",
+    });
+  });
+
+  setShowCreate(false);
+  resetForm();
   }
 
   const canCreate =
@@ -1097,37 +1138,37 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                 <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                                   <span className="whitespace-nowrap">
                                     <span className="text-slate-500">Account Name : </span>
-                                    <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
+                                    <span className="font-bold text-slate-800">{paymentBank.accountName}</span>
                                   </span>
                                   <span className="text-slate-300">|</span>
 
                                   <span className="whitespace-nowrap">
                                     <span className="text-slate-500">Account No : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.accountNo}</span>
                                   </span>
                                   <span className="text-slate-300">|</span>
 
                                   <span className="whitespace-nowrap">
                                     <span className="text-slate-500">IFSC Code : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.ifsc}</span>
                                   </span>
                                   <span className="text-slate-300">|</span>
 
                                   <span className="whitespace-nowrap">
                                     <span className="text-slate-500">Bank Name : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.bankName}</span>
                                   </span>
                                   <span className="text-slate-300">|</span>
 
                                   <span className="whitespace-nowrap">
                                     <span className="text-slate-500">Branch : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.branch}</span>
                                   </span>
                                   <span className="text-slate-300">|</span>
 
                                   <span className="whitespace-nowrap">
                                     <span className="text-slate-500">UPI ID : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.upiId}</span>
                                   </span>
                                 </div>
                               </div>

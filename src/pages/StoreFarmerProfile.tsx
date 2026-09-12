@@ -307,27 +307,60 @@ function PaymentsTab({ payments }: { payments: ReturnType<typeof getPaymentsByFa
   );
 }
 
+type PeriodFilter = 'this-month' | '3-months' | '6-months';
+
+const periodOptions: { value: PeriodFilter; label: string }[] = [
+  { value: 'this-month', label: 'This Month' },
+  { value: '3-months', label: 'Last 3 Months' },
+  { value: '6-months', label: 'Last 6 Months' },
+];
+
+function getPeriodStartDate(period: PeriodFilter): Date {
+  const now = new Date();
+  if (period === 'this-month') {
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  if (period === '3-months') {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - 3);
+    return d;
+  }
+  // 6-months
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - 6);
+  return d;
+}
+
 function ProductHistoryTab({ purchases }: { purchases: ReturnType<typeof getPurchasesByFarmer> }) {
-  // Last 3 months window
-  const threeMonthsAgo = new Date();
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  const [selectedProduct, setSelectedProduct] = useState<string>('all');
+  const [period, setPeriod] = useState<PeriodFilter>('3-months');
 
-  const recentPurchases = purchases.filter((p) => new Date(p.date) >= threeMonthsAgo);
+  const startDate = getPeriodStartDate(period);
+  const periodPurchases = purchases.filter((p) => new Date(p.date) >= startDate);
 
-  if (recentPurchases.length === 0) {
+  // Unique product list for the dropdown (from all purchases, not just filtered)
+  const productOptions = Array.from(new Set(purchases.map((p) => p.product))).sort();
+
+  // Apply product filter (if not "all")
+  const filteredPurchases =
+    selectedProduct === 'all'
+      ? periodPurchases
+      : periodPurchases.filter((p) => p.product === selectedProduct);
+
+  if (purchases.length === 0) {
     return (
       <Card className="p-0">
         <EmptyState
           icon="inventory_2"
-          title="No products given recently"
-          description="No products have been supplied to this farmer in the last 3 months."
+          title="No products given yet"
+          description="No products have been supplied to this farmer."
         />
       </Card>
     );
   }
 
   // Group by product name
-  const grouped = recentPurchases.reduce((acc, p) => {
+  const grouped = filteredPurchases.reduce((acc, p) => {
     if (!acc[p.product]) {
       acc[p.product] = {
         product: p.product,
@@ -350,41 +383,76 @@ function ProductHistoryTab({ purchases }: { purchases: ReturnType<typeof getPurc
     (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime()
   );
 
+  const periodLabel = periodOptions.find((p) => p.value === period)?.label ?? '';
+
   return (
     <Card className="overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+      {/* Filter bar */}
+      <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-xs text-slate-500 font-medium">
-          Showing products supplied in the last 3 months
+          Showing products supplied — {periodLabel.toLowerCase()}
         </p>
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <div className="w-full sm:w-44">
+            <Select
+              value={period}
+              onChange={(v) => setPeriod(v as PeriodFilter)}
+              options={periodOptions}
+            />
+          </div>
+          <div className="w-full sm:w-56">
+            <Select
+              value={selectedProduct}
+              onChange={setSelectedProduct}
+              options={[
+                { value: 'all', label: 'All Products' },
+                ...productOptions.map((p) => ({ value: p, label: p })),
+              ]}
+            />
+          </div>
+        </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[600px]">
-          <thead>
-            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-              <th className="text-left font-semibold px-5 py-3.5">Product</th>
-              <th className="text-right font-semibold px-5 py-3.5">Total Quantity</th>
-              <th className="text-center font-semibold px-5 py-3.5">No. of Times</th>
-              <th className="text-left font-semibold px-5 py-3.5">Last Given On</th>
-              <th className="text-right font-semibold px-5 py-3.5">Total Value</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((row) => (
-              <tr key={row.product} className="hover:bg-slate-50/50 transition-base">
-                <td className="px-5 py-3.5 font-semibold text-slate-700">{row.product}</td>
-                <td className="px-5 py-3.5 text-right text-slate-600">{row.totalQuantity}</td>
-                <td className="px-5 py-3.5 text-center">
-                  <Badge color="blue">{row.transactions}</Badge>
-                </td>
-                <td className="px-5 py-3.5 text-slate-600">{formatDate(row.lastDate)}</td>
-                <td className="px-5 py-3.5 text-right font-bold text-slate-800">
-                  {formatCurrency(row.totalAmount)}
-                </td>
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon="inventory_2"
+          title="No data found"
+          description={
+            selectedProduct === 'all'
+              ? `No products have been supplied ${periodLabel.toLowerCase()}.`
+              : `"${selectedProduct}" has not been given ${periodLabel.toLowerCase()}.`
+          }
+        />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[600px]">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                <th className="text-left font-semibold px-5 py-3.5">Product</th>
+                <th className="text-right font-semibold px-5 py-3.5">Total Quantity</th>
+                <th className="text-center font-semibold px-5 py-3.5">No. of Times</th>
+                <th className="text-left font-semibold px-5 py-3.5">Last Given On</th>
+                <th className="text-right font-semibold px-5 py-3.5">Total Value</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((row) => (
+                <tr key={row.product} className="hover:bg-slate-50/50 transition-base">
+                  <td className="px-5 py-3.5 font-semibold text-slate-700">{row.product}</td>
+                  <td className="px-5 py-3.5 text-right text-slate-600">{row.totalQuantity}</td>
+                  <td className="px-5 py-3.5 text-center">
+                    <Badge color="blue">{row.transactions}</Badge>
+                  </td>
+                  <td className="px-5 py-3.5 text-slate-600">{formatDate(row.lastDate)}</td>
+                  <td className="px-5 py-3.5 text-right font-bold text-slate-800">
+                    {formatCurrency(row.totalAmount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
