@@ -818,27 +818,77 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   }, [storeId, dateFilter]);
 
   const execStockData = useMemo(() => {
-    return (Object.keys(execNames) as ExecKey[]).reduce(
-      (result, key) => {
-        const rows = getStockByExecutive(
-          storeId,
-          execNames[key]
-        ) as unknown as AggregatedStockRow[];
-        const totalQty = rows.reduce((sum, row) => sum + Number(row.qty || 0), 0);
-        const totalValue = rows.reduce(
-          (sum, row) => sum + Number(row.qty || 0) * Number(row.unitValue || 0),
-          0,
-        );
+  const startDate = getFilterStartDate(dateFilter);
+  const result: Record<
+    ExecKey,
+    {
+      deliveryRows: AggregatedStockRow[];
+      salesRows: AggregatedStockRow[];
+      balanceRows: AggregatedStockRow[];
+      deliveryTotalQty: number;
+      deliveryTotalValue: number;
+      salesTotalQty: number;
+      salesTotalValue: number;
+      balanceTotalQty: number;
+      balanceTotalValue: number;
+    }
+  > = {} as any;
 
-        result[key] = { rows, totalQty, totalValue };
-        return result;
-      },
-      {} as Record<
-        ExecKey,
-        { rows: AggregatedStockRow[]; totalQty: number; totalValue: number }
-      >,
-    );
-  }, [storeId]);
+  function aggregate(txns: ReturnType<typeof getFROStockTxnsByExecutive>) {
+    const map = new Map<string, AggregatedStockRow>();
+    txns.forEach((t) => {
+      const k = `${t.productId}|${t.packSize}|${t.batchNo}`;
+      const existing = map.get(k);
+      if (existing) {
+        existing.qty += t.qty;
+      } else {
+        map.set(k, {
+          productId: t.productId,
+          productName: t.productName,
+          packSize: t.packSize,
+          batchNo: t.batchNo,
+          expiryDate: t.expiryDate,
+          unitValue: t.unitValue,
+          qty: t.qty,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  (Object.keys(execNames) as ExecKey[]).forEach((key) => {
+    const name = execNames[key];
+    const allTxns = getFROStockTxnsByExecutive(storeId, name);
+    const filteredTxns = allTxns.filter((t) => new Date(t.date) >= startDate);
+
+    // Delivery only (stock IN from store)
+    const deliveryTxns = filteredTxns.filter((t) => t.type === "Delivery");
+    const deliveryRows = aggregate(deliveryTxns).filter((r) => r.qty > 0);
+
+    // Sales only (FRO → Farmer)
+    const saleTxns = filteredTxns.filter((t) => t.type === "Sale");
+    const salesRows = aggregate(
+      saleTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
+    ).filter((r) => r.qty > 0);
+
+    // Balance = Delivery − Sale − Return (net of ALL txn types in period)
+    const balanceRows = aggregate(filteredTxns).filter((r) => r.qty > 0);
+
+    result[key] = {
+      deliveryRows,
+      salesRows,
+      balanceRows,
+      deliveryTotalQty: deliveryRows.reduce((s, r) => s + r.qty, 0),
+      deliveryTotalValue: deliveryRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+      salesTotalQty: salesRows.reduce((s, r) => s + r.qty, 0),
+      salesTotalValue: salesRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+      balanceTotalQty: balanceRows.reduce((s, r) => s + r.qty, 0),
+      balanceTotalValue: balanceRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+    };
+  });
+
+  return result;
+}, [storeId, dateFilter]);
 
 
   if (!store) return <EmptyState icon="error" title="Store not found" />;
@@ -1093,7 +1143,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   <ExecField
                     icon="inventory_2"
                     label="Stocks in Hand"
-                    value={formatCurrency(execStockData[key].totalValue)}
+                    value={formatCurrency(execStockData[key].balanceTotalValue)}
                     color="text-indigo-600"
                     onClick={() => setExecDetail({ execKey: key, type: "stocks" })}
                   />
@@ -1108,9 +1158,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         createPortal(
           <ExecutiveDetailModal
             selection={execDetail}
-            stockRows={execStockData[execDetail.execKey].rows}       
-            stockTotalQty={execStockData[execDetail.execKey].totalQty}   
-            stockTotalValue={execStockData[execDetail.execKey].totalValue} 
+            stockData={execStockData[execDetail.execKey]}
             onClose={() => setExecDetail(null)}
           />,
           document.body,
@@ -1589,18 +1637,25 @@ function BusinessOverviewCard({
 
 function ExecutiveDetailModal({
   selection,
-  stockRows,
-  stockTotalQty,
-  stockTotalValue,
+  stockData,
   onClose,
 }: {
   selection: Exclude<ExecDetailSelection, null>;
-  stockRows: AggregatedStockRow[];
-  stockTotalQty: number;
-  stockTotalValue: number;
+  stockData: {
+    deliveryRows: AggregatedStockRow[];
+    salesRows: AggregatedStockRow[];
+    balanceRows: AggregatedStockRow[];
+    deliveryTotalQty: number;
+    deliveryTotalValue: number;
+    salesTotalQty: number;
+    salesTotalValue: number;
+    balanceTotalQty: number;
+    balanceTotalValue: number;
+  };
   onClose: () => void;
 }) {
   const { execKey, type } = selection;
+  const [stockTab, setStockTab] = useState<"delivery" | "sales" | "balance">("balance");
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -1618,11 +1673,38 @@ function ExecutiveDetailModal({
     stocks: "inventory_2",
   };
 
-  // ---- STOCKS: date-filtered, calculated data ----
+  // ---- STOCKS: Delivery / Sales / Balance tabs ----
   if (type === "stocks") {
+    const activeRows =
+      stockTab === "delivery"
+        ? stockData.deliveryRows
+        : stockTab === "sales"
+          ? stockData.salesRows
+          : stockData.balanceRows;
+
+    const activeQty =
+      stockTab === "delivery"
+        ? stockData.deliveryTotalQty
+        : stockTab === "sales"
+          ? stockData.salesTotalQty
+          : stockData.balanceTotalQty;
+
+    const activeValue =
+      stockTab === "delivery"
+        ? stockData.deliveryTotalValue
+        : stockTab === "sales"
+          ? stockData.salesTotalValue
+          : stockData.balanceTotalValue;
+
+    const tabLabels: Record<typeof stockTab, string> = {
+      delivery: "Stock Delivery",
+      sales: "Stock Sales",
+      balance: "Balance Stock",
+    };
+
     return (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-        <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex h-[76vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
@@ -1633,8 +1715,7 @@ function ExecutiveDetailModal({
                   {execNames[execKey]} — {titles[type]}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Net stock held in the selected period (deliveries minus
-                  returns minus sales).
+                  Products delivered, sold and remaining with this executive
                 </p>
               </div>
             </div>
@@ -1648,6 +1729,24 @@ function ExecutiveDetailModal({
             </button>
           </div>
 
+          {/* Tab switcher */}
+          <div className="flex gap-2 border-b border-slate-200 bg-white px-5 py-3">
+            {(["delivery", "sales", "balance"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setStockTab(tab)}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition-base ${
+                  stockTab === tab
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {tabLabels[tab]}
+              </button>
+            ))}
+          </div>
+
           <div className="border-b border-slate-200 bg-white px-5 py-4">
             <div className="flex flex-wrap gap-3">
               <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1655,7 +1754,7 @@ function ExecutiveDetailModal({
                   Total Qty
                 </span>
                 <span className="text-lg font-extrabold text-slate-800">
-                  {stockTotalQty}
+                  {activeQty}
                 </span>
               </div>
               <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1663,7 +1762,7 @@ function ExecutiveDetailModal({
                   Total Value
                 </span>
                 <span className="text-lg font-extrabold text-indigo-700">
-                  {formatCurrency(stockTotalValue)}
+                  {formatCurrency(activeValue)}
                 </span>
               </div>
             </div>
@@ -1685,14 +1784,14 @@ function ExecutiveDetailModal({
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {stockRows.length === 0 ? (
+                {activeRows.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
-                      No stock held by this executive in the selected period.
+                      No {tabLabels[stockTab].toLowerCase()} records in this period.
                     </td>
                   </tr>
                 ) : (
-                  stockRows.map((row, index) => (
+                  activeRows.map((row, index) => (
                     <tr
                       key={`${row.productId}-${row.packSize}-${row.batchNo}`}
                       className="hover:bg-slate-50"
@@ -1726,18 +1825,18 @@ function ExecutiveDetailModal({
                 )}
               </tbody>
 
-              {stockRows.length > 0 && (
+              {activeRows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
                     <td colSpan={5} className="px-4 py-3 text-right text-slate-600">
                       Total
                     </td>
                     <td className="px-4 py-3 text-right text-slate-900">
-                      {stockTotalQty}
+                      {activeQty}
                     </td>
                     <td className="px-4 py-3" />
                     <td className="px-4 py-3 text-right text-slate-900">
-                      {formatCurrency(stockTotalValue)}
+                      {formatCurrency(activeValue)}
                     </td>
                   </tr>
                 </tfoot>
@@ -1754,6 +1853,8 @@ function ExecutiveDetailModal({
       </div>
     );
   }
+
+
 
   // ...rest of the function stays EXACTLY as it already is (sales/collection/cash/outstanding table) — no change needed below this point
 
