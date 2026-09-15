@@ -3,7 +3,7 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
-import { reduceFROStock, addFROSale, addFarmerPurchaseRecord } from "@/lib/data";
+
 
 type SaleType = "Direct" | "Executive";
 
@@ -388,45 +388,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
 
-  // ✅ ADD: If sale is through an Executive (FRO), deduct FRO stock + log FRO sale
-  if (through === "Executive") {
-    reduceFROStock(
-      storeId,
-      executiveName,
-      added.map((item) => ({
-        productId: item.productId,
-        packSize: item.pkgsize,
-        batchNo: item.batchNo,
-        qty: item.quantity,
-      })),
-    );
-
-    addFROSale(storeId, {
-      storeId,
-      executiveName,
-      date: formatDateInput(saleDate),
-      invoiceNo: invoiceNo.trim(),
-      farmerId,
-      farmerName: partyName.trim(),
-      amount: totals.grandTotal,
-      collectedAmount: 0,          // TODO: wire to actual payment-received amount if you add that field
-      outstandingAmount: totals.grandTotal,
-      collectionMode: "Pending",
-    });
-  }
-
-  // ✅ ADD: Push every sold product into Farmer Profile → Product History
-  added.forEach((item) => {
-    addFarmerPurchaseRecord({
-      farmerId,
-      invoiceNo: invoiceNo.trim(),
-      date: formatDateInput(saleDate),
-      product: item.product?.name || "",
-      quantity: item.quantity,
-      amount: item.rowTotal,
-      paymentStatus: "Pending",
-    });
-  });
+ 
 
   setShowCreate(false);
   resetForm();

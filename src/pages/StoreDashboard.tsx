@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useEffect } from "react";
-import { getStore } from "@/lib/data";
+import { getStore, getFROTotalStockCount, getFROCurrentStock, products } from "@/lib/data";
 import {
   Card,
   StatCard,
@@ -9,9 +9,12 @@ import {
   Select,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, initials } from "@/lib/format";
+import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
-import { getFROSummary, getFROStockByExecutive } from "@/lib/data";
+
+const getStockByExecutive = (storeId: string, executiveName: string) =>
+  getFROCurrentStock(storeId, executiveName);
+
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -24,7 +27,7 @@ const filterTabs: { key: DateFilter; label: string }[] = [
 ];
 
 type ExecKey = "ram" | "ajith" | "periya";
-type ExecDetailType = "sales" | "collection" | "cash" | "outstanding";
+type ExecDetailType = "sales" | "collection" | "cash" | "outstanding" | "stocks";
 
 type DirectDetailType = "sales" | "collection" | "outstanding";
 
@@ -752,34 +755,9 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const [directDetail, setDirectDetail] =
     useState<DirectDetailSelection>(null);
 
-  const execLiveSummaries = useMemo(() => {
-    const result: Record<ExecKey, {
-      sales: number; collection: number; collectionInHand: number;
-      outstanding: number; stockValue: number; stockQty: number;
-    }> = {} as any;
-
-    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
-      const name = execNames[key];
-      const summary = getFROSummary(storeId, name);
-      const stock = getFROStockByExecutive(storeId, name);
-      const stockValue = stock.reduce((s, r) => s + r.currentQty * r.unitValue, 0);
-      const stockQty = stock.reduce((s, r) => s + r.currentQty, 0);
-
-      result[key] = {
-        sales: summary.totalSales,
-        collection: summary.totalCollection,
-        collectionInHand: summary.cashInHand,
-        outstanding: summary.outstanding,
-        stockValue,
-        stockQty,
-      };
-    });
-
-    return result;
-  }, [storeId, dateFilter]);
-
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
+
 
   if (!store) return <EmptyState icon="error" title="Store not found" />;
 
@@ -923,7 +901,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </h2>
         <div className="space-y-3">
           {(Object.keys(execNames) as ExecKey[]).map((key) => {
-            const e = { ...execData[key][dateFilter], ...execLiveSummaries[key] };
+            const e = execData[key][dateFilter];
             const target = execTargets[key][dateFilter];
             return (
               <Card key={key} className="p-4">
@@ -1017,11 +995,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     label="Farms"
                     value={String(e.farms)}
                   />
-                  <ExecField
+                  {/* <ExecField
                     icon="spa"
                     label="Crops"
                     value={String(e.crops)}
-                  />
+                  /> */}
                   <ExecField
                     icon="receipt"
                     label="Visits"
@@ -1029,8 +1007,15 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   />
                   <ExecField
                     icon="inventory_2"
-                    label="Stocks"
-                    value={formatCurrency(e.stockValue)}
+                    label="Stocks in Hand"
+                    value={formatCurrency(
+                      getStockByExecutive(storeId, execNames[key]).reduce(
+                        (sum, item) => sum + item.currentQty * item.unitValue,
+                        0,
+                      ),
+                    )}
+                    color="text-indigo-600"
+                    onClick={() => setExecDetail({ execKey: key, type: "stocks" })}
                   />
                 </div>
               </Card>
@@ -1043,12 +1028,57 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         createPortal(
           <ExecutiveDetailModal
             selection={execDetail}
+            storeId={storeId}  
             onClose={() => setExecDetail(null)}
           />,
           document.body,
         )}
 
 
+    </div>
+  );
+}
+
+function FROStockDetailModal({
+  executiveName,
+  storeId,
+  onClose,
+}: {
+  executiveName: string;
+  storeId: string;
+  onClose: () => void;
+}) {
+  const stockCount = getFROTotalStockCount(executiveName, storeId);
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
+              <Icon name="inventory_2" size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800">Stock in Hand</h3>
+              <p className="text-xs text-slate-500">{executiveName}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+          >
+            <Icon name="close" size={19} />
+          </button>
+        </div>
+        <div className="px-5 py-8 text-center">
+          <p className="text-sm font-medium text-slate-500">Total stock assigned</p>
+          <p className="mt-2 text-4xl font-extrabold text-purple-700">{stockCount}</p>
+        </div>
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1381,20 +1411,21 @@ function BusinessOverviewCard({
 
 function ExecutiveDetailModal({
   selection,
+  storeId,
   onClose,
 }: {
   selection: Exclude<ExecDetailSelection, null>;
+  storeId: string;
   onClose: () => void;
 }) {
   const { execKey, type } = selection;
-  const rows = execDetailData[execKey][type];
-  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
     collection: "Collection Details",
     cash: "Cash in Hand Details",
     outstanding: "Outstanding Details",
+    stocks: "Stocks in Hand Details",
   };
 
   const icons: Record<ExecDetailType, string> = {
@@ -1402,7 +1433,153 @@ function ExecutiveDetailModal({
     collection: "account_balance_wallet",
     cash: "savings",
     outstanding: "receipt_long",
+    stocks: "inventory_2",
   };
+
+  // ---- STOCKS: real, calculated data ----
+  if (type === "stocks") {
+    const stockRows = getStockByExecutive(storeId, execNames[execKey]);
+    const totalQty = stockRows.reduce((sum, r) => sum + r.currentQty, 0);
+    const totalValue = stockRows.reduce(
+      (sum, r) => sum + r.currentQty * r.unitValue,
+      0,
+    );
+
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+        <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                <Icon name={icons[type]} size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">
+                  {execNames[execKey]} — {titles[type]}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Current stock held by this executive, calculated from
+                  deliveries minus returns minus sales.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+            >
+              <Icon name="close" size={19} />
+            </button>
+          </div>
+
+          <div className="border-b border-slate-200 bg-white px-5 py-4">
+            <div className="flex flex-wrap gap-3">
+              <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Total Qty
+                </span>
+                <span className="text-lg font-extrabold text-slate-800">
+                  {totalQty}
+                </span>
+              </div>
+              <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Total Value
+                </span>
+                <span className="text-lg font-extrabold text-indigo-700">
+                  {formatCurrency(totalValue)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full min-w-[760px] table-fixed text-sm">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-[6%] px-4 py-3 text-center">S.No</th>
+                  <th className="w-[22%] px-4 py-3 text-left">Product</th>
+                  <th className="w-[12%] px-4 py-3 text-center">Pack Size</th>
+                  <th className="w-[14%] px-4 py-3 text-left">Batch No</th>
+                  <th className="w-[12%] px-4 py-3 text-center">Expiry</th>
+                  <th className="w-[10%] px-4 py-3 text-right">Qty</th>
+                  <th className="w-[12%] px-4 py-3 text-right">Unit Value</th>
+                  <th className="w-[12%] px-4 py-3 text-right">Total Value</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {stockRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                      No stock currently held by this executive.
+                    </td>
+                  </tr>
+                ) : (
+                  stockRows.map((row, index) => (
+                    <tr key={row.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {row.productName}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {row.packSize}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {row.batchNo || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {row.expiryDate || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {row.currentQty}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {formatCurrency(row.unitValue)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {formatCurrency(row.currentQty * row.unitValue)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+
+              {stockRows.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
+                    <td colSpan={5} className="px-4 py-3 text-right text-slate-600">
+                      Total
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-900">
+                      {totalQty}
+                    </td>
+                    <td className="px-4 py-3" />
+                    <td className="px-4 py-3 text-right text-slate-900">
+                      {formatCurrency(totalValue)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
+          <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- SALES / COLLECTION / CASH / OUTSTANDING: existing dummy-data behavior unchanged ----
+  const rows = execDetailData[execKey][type];
+  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
@@ -1464,7 +1641,6 @@ function ExecutiveDetailModal({
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-5 py-3 text-left">Date</th>
                   <th className="px-5 py-3 text-left">Farmer Name</th>
-
                   <th className="px-5 py-3 text-left">Village</th>
                   <th className="px-5 py-3 text-left">Phone No</th>
                   <th className="px-5 py-3 text-right">Amount</th>
@@ -1524,7 +1700,6 @@ function ExecutiveDetailModal({
                     >
                       <td className="px-5 py-3 text-slate-600">{row.date}</td>
                       <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-
                       <td className="px-5 py-3 text-slate-600">
                         {row.village}
                       </td>
