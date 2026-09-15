@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product } from "@/lib/data";
+import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product, reduceFROStock } from "@/lib/data";
 import { createPortal } from "react-dom";
 
 
@@ -388,7 +388,19 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
 
- 
+    reduceFROStock(
+      storeId,
+      executiveName,
+      added.map((item) => ({
+        productId: item.productId,
+        packSize: item.pkgsize,
+        batchNo: item.batchNo,
+        qty: item.quantity,
+      })),
+      saleDate,  
+      "Sale",    
+    );
+    
 
   setShowCreate(false);
   resetForm();

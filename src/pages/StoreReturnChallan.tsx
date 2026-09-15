@@ -2,7 +2,7 @@ import { ReactNode, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select, EmptyState } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { products as allProducts } from "@/lib/data"; 
+import { products as allProducts, reduceFROStock } from "@/lib/data"; 
 
 type ReturnItem = {
   product: string;
@@ -224,6 +224,19 @@ export default function StoreReturnChallan({
     farmer: undefined,
     productId: ""
   };
+
+  reduceFROStock(
+  storeId,
+  executive,
+  items.map((item) => ({
+    productId: item.productId,
+    packSize: item.packSize,
+    batchNo: item.batchNo,
+    qty: Number(item.returnedQty || 0),
+  })),
+  date,      // ✅ ADD
+  "Return",  // ✅ ADD
+);
 
   persist([row, ...rows]);
   closeForm();

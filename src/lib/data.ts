@@ -1,3 +1,5 @@
+import { Key } from "react";
+
 export type Store = {
   id: string;
   code: string;
@@ -2031,6 +2033,180 @@ export type FROStockRow = {
   currentStock: number; // issued - returned
 };
 
+// ============================================================
+// FRO STOCK TRANSACTION LOG (date-wise, for filterable "Stocks in Hand")
+// ============================================================
+
+export type FROStockTxn = {
+  id: string;
+  storeId: string;
+  executiveName: string;
+  productId: string;
+  productName: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  unitValue: number;
+  qty: number; // positive = Delivery (IN), negative = Return/Sale (OUT)
+  date: string; // yyyy-mm-dd
+  type: "Delivery" | "Return" | "Sale";
+};
+
+// Called from Delivery Challan → Store gives stock to FRO
+export function addFROStock(
+  storeId: string,
+  executiveName: string,
+  items: {
+    productId: string;
+    productName: string;
+    packSize: string;
+    batchNo: string;
+    expiryDate: string;
+    unitValue: number;
+    qty: number;
+  }[],
+  date?: string, // ✅ NEW — pass actual challan date
+) {
+  const rows = getFROStock(storeId);
+  const map = new Map(
+    rows.map((r) => [matchKey(r.executiveName, r.productId, r.packSize, r.batchNo), r]),
+  );
+
+  items.forEach((item) => {
+    const key = matchKey(executiveName, item.productId, item.packSize, item.batchNo);
+    const existing = map.get(key);
+    if (existing) {
+      existing.currentQty += item.qty;
+    } else {
+      map.set(key, {
+        id: `fro-stock-${Date.now()}-${Math.random()}`,
+        storeId,
+        executiveName,
+        productId: item.productId,
+        productName: item.productName,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        unitValue: item.unitValue,
+        currentQty: item.qty,
+        issuedQty: 0,
+        returnedQty: 0,
+        currentStock: 0
+      });
+    }
+  });
+
+  saveFROStock(storeId, Array.from(map.values()));
+
+  // ✅ NEW — log dated transaction for filterable reporting
+  const txnDate = date || new Date().toISOString().split("T")[0];
+  addFROStockTxns(
+    storeId,
+    items.map((item) => ({
+      id: `fro-txn-${Date.now()}-${Math.random()}`,
+      storeId,
+      executiveName,
+      productId: item.productId,
+      productName: item.productName,
+      packSize: item.packSize,
+      batchNo: item.batchNo,
+      expiryDate: item.expiryDate,
+      unitValue: item.unitValue,
+      qty: item.qty,
+      date: txnDate,
+      type: "Delivery" as const,
+    })),
+  );
+}
+
+// Called from Return Challan (FRO → Store) AND from Executive Sale (FRO → Farmer)
+export function reduceFROStock(
+  storeId: string,
+  executiveName: string,
+  items: { productId: string; packSize: string; batchNo: string; qty: number }[],
+  date?: string,           // ✅ NEW
+  txnType: "Return" | "Sale" = "Sale", // ✅ NEW
+) {
+  const rows = getFROStock(storeId);
+  items.forEach((item) => {
+    const row = rows.find(
+      (r) =>
+        r.executiveName === executiveName &&
+        r.productId === item.productId &&
+        r.packSize === item.packSize &&
+        r.batchNo === item.batchNo,
+    );
+    if (row) row.currentQty = Math.max(0, row.currentQty - item.qty);
+  });
+  saveFROStock(storeId, rows);
+
+  // ✅ NEW — log dated transaction (negative qty = stock going OUT)
+  const txnDate = date || new Date().toISOString().split("T")[0];
+  const rowsMap = getFROStock(storeId);
+  addFROStockTxns(
+    storeId,
+    items.map((item) => {
+      const ref = rowsMap.find(
+        (r) =>
+          r.executiveName === executiveName &&
+          r.productId === item.productId &&
+          r.packSize === item.packSize &&
+          r.batchNo === item.batchNo,
+      );
+      return {
+        id: `fro-txn-${Date.now()}-${Math.random()}`,
+        storeId,
+        executiveName,
+        productId: item.productId,
+        productName: ref?.productName || "",
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: ref?.expiryDate || "",
+        unitValue: ref?.unitValue || 0,
+        qty: -Math.abs(item.qty),
+        date: txnDate,
+        type: txnType,
+      };
+    }),
+  );
+}
+
+const FRO_STOCK_TXN_KEY = "nature-biotic-fro-stock-txns-v1";
+
+function froStockTxnKey(storeId: string) {
+  return `${FRO_STOCK_TXN_KEY}:${storeId}`;
+}
+
+export function getFROStockTxns(storeId: string): FROStockTxn[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(froStockTxnKey(storeId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFROStockTxns(storeId: string, rows: FROStockTxn[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(froStockTxnKey(storeId), JSON.stringify(rows));
+    window.dispatchEvent(new Event("fro-stock-txns-updated"));
+  } catch {}
+}
+
+function addFROStockTxns(storeId: string, txns: FROStockTxn[]) {
+  const existing = getFROStockTxns(storeId);
+  saveFROStockTxns(storeId, [...txns, ...existing]);
+}
+
+export function getFROStockTxnsByExecutive(
+  storeId: string,
+  executiveName: string,
+): FROStockTxn[] {
+  return getFROStockTxns(storeId).filter((t) => t.executiveName === executiveName);
+}
+
 const DELIVERY_CHALLAN_PREFIX = "nature-biotic-store-delivery-challans-v2";
 const RETURN_CHALLAN_PREFIX = "nature-biotic-store-return-challans-v2";
 
@@ -2055,6 +2231,9 @@ export function getFROCurrentStock(
         c.items.forEach((item: any) => {
         const key = `${item.productId || item.product}-${item.packSize}-${item.batchNo}`;
         const existing = map.get(key) || {
+          id: item.id ?? null,
+          unitValue: item.unitValue ?? 0,
+          currentQty: item.currentQty ?? 0,
           productId: item.productId || "",
           productName: item.product,
           packSize: item.packSize,
@@ -2083,6 +2262,9 @@ export function getFROCurrentStock(
         r.items.forEach((item: any) => {
           const key = `${item.productId || item.product}-${item.packSize}-${item.batchNo}`;
           const existing = map.get(key) || {
+            id: item.id ?? null,
+            unitValue: item.unitValue ?? 0,
+            currentQty: item.currentQty ?? 0,
             productId: item.productId || "",
             productName: item.product,
             packSize: item.packSize,
@@ -2116,3 +2298,41 @@ export function getFROTotalStockCount(
     0,
   );
 }
+
+const FRO_STOCK_KEY = "nature-biotic-fro-stock-v1";
+
+type StoredFROStockRow = Omit<FROStockRow, "id"> & {
+  id: string;
+  storeId: string;
+  executiveName: string;
+  productName: string;
+  expiryDate: string;
+};
+
+function getFROStock(storeId: string): StoredFROStockRow[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(`${FRO_STOCK_KEY}:${storeId}`);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFROStock(storeId: string, rows: StoredFROStockRow[]) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      `${FRO_STOCK_KEY}:${storeId}`,
+      JSON.stringify(rows),
+    );
+    window.dispatchEvent(new Event("fro-stock-updated"));
+  } catch {}
+}
+function matchKey(executiveName: string, productId: string, packSize: string, batchNo: string): any {
+  throw new Error("Function not implemented.");
+}
+
