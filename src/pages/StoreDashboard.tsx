@@ -51,6 +51,46 @@ function getFilterStartDate(filter: DateFilter): Date {
   }
 }
 
+function getCalendarPeriodStart(filter: DateFilter): Date {
+  const now = new Date();
+
+  switch (filter) {
+    case "today": {
+      const s = new Date(now);
+      s.setHours(0, 0, 0, 0);
+      return s;
+    }
+
+    case "weekly": {
+      // Start of week = Monday
+      const s = new Date(now);
+      const day = s.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      s.setDate(s.getDate() - diffToMonday);
+      s.setHours(0, 0, 0, 0);
+      return s;
+    }
+
+    case "monthly": {
+      // Start of this calendar month
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    case "quarterly": {
+      // Calendar quarter: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
+      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      return new Date(now.getFullYear(), quarterStartMonth, 1);
+    }
+
+    case "yearly": {
+      // Financial year starting April 1
+      const fyStartYear =
+        now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+      return new Date(fyStartYear, 3, 1); // April = month index 3
+    }
+  }
+}
+
 type ExecKey = "ram" | "ajith" | "periya";
 type ExecDetailType = "sales" | "collection" | "cash" | "outstanding" | "stocks";
 
@@ -793,7 +833,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
   const stockPurchases = useMemo(() => {
-    const startDate = getFilterStartDate(dateFilter);
+    const startDate = getCalendarPeriodStart(dateFilter);
     const allPurchases = getStorePurchasesFromCompanySales(storeId);
 
     const filtered = allPurchases.filter((row) => {
@@ -824,11 +864,14 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     {
       deliveryRows: AggregatedStockRow[];
       salesRows: AggregatedStockRow[];
+      returnRows: AggregatedStockRow[]; 
       balanceRows: AggregatedStockRow[];
       deliveryTotalQty: number;
       deliveryTotalValue: number;
       salesTotalQty: number;
       salesTotalValue: number;
+      returnTotalQty: number;               
+      returnTotalValue: number;
       balanceTotalQty: number;
       balanceTotalValue: number;
     }
@@ -871,17 +914,26 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       saleTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
     ).filter((r) => r.qty > 0);
 
+    // Returns only (FRO → store)
+    const returnTxns = filteredTxns.filter((t) => t.type === "Return");
+    const returnRows = aggregate(
+      returnTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
+    ).filter((r) => r.qty > 0);
+
     // Balance = Delivery − Sale − Return (net of ALL txn types in period)
     const balanceRows = aggregate(filteredTxns).filter((r) => r.qty > 0);
 
     result[key] = {
       deliveryRows,
       salesRows,
+      returnRows,
       balanceRows,
       deliveryTotalQty: deliveryRows.reduce((s, r) => s + r.qty, 0),
       deliveryTotalValue: deliveryRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
       salesTotalQty: salesRows.reduce((s, r) => s + r.qty, 0),
       salesTotalValue: salesRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+      returnTotalQty: returnRows.reduce((s, r) => s + r.qty, 0),
+      returnTotalValue: returnRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
       balanceTotalQty: balanceRows.reduce((s, r) => s + r.qty, 0),
       balanceTotalValue: balanceRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
     };
@@ -1006,7 +1058,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             color="brand"
           />
           <DirectSalesCard
-            label="Stocks"
+            label="Current Stocks"
             value={formatCurrency(stockPurchases.totalValue)}
             icon="inventory_2"
             color="blue"
@@ -1644,18 +1696,21 @@ function ExecutiveDetailModal({
   stockData: {
     deliveryRows: AggregatedStockRow[];
     salesRows: AggregatedStockRow[];
+    returnRows: AggregatedStockRow[];
     balanceRows: AggregatedStockRow[];
     deliveryTotalQty: number;
     deliveryTotalValue: number;
     salesTotalQty: number;
     salesTotalValue: number;
+    returnTotalQty: number;
+    returnTotalValue: number;
     balanceTotalQty: number;
     balanceTotalValue: number;
   };
   onClose: () => void;
 }) {
   const { execKey, type } = selection;
-  const [stockTab, setStockTab] = useState<"delivery" | "sales" | "balance">("balance");
+  const [stockTab, setStockTab] = useState<"delivery" | "sales" | "return" | "balance">("balance");
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -1674,32 +1729,39 @@ function ExecutiveDetailModal({
   };
 
   // ---- STOCKS: Delivery / Sales / Balance tabs ----
-  if (type === "stocks") {
+    if (type === "stocks") {
     const activeRows =
       stockTab === "delivery"
         ? stockData.deliveryRows
         : stockTab === "sales"
           ? stockData.salesRows
-          : stockData.balanceRows;
+          : stockTab === "return"
+            ? stockData.returnRows
+            : stockData.balanceRows;
 
     const activeQty =
       stockTab === "delivery"
         ? stockData.deliveryTotalQty
         : stockTab === "sales"
           ? stockData.salesTotalQty
-          : stockData.balanceTotalQty;
+          : stockTab === "return"
+            ? stockData.returnTotalQty
+            : stockData.balanceTotalQty;
 
     const activeValue =
       stockTab === "delivery"
         ? stockData.deliveryTotalValue
         : stockTab === "sales"
           ? stockData.salesTotalValue
-          : stockData.balanceTotalValue;
+          : stockTab === "return"
+            ? stockData.returnTotalValue
+            : stockData.balanceTotalValue;
 
     const tabLabels: Record<typeof stockTab, string> = {
-      delivery: "Stock Delivery",
+      delivery: "Stock Received",
       sales: "Stock Sales",
-      balance: "Balance Stock",
+      return: "Sales Return",
+      balance: "Hand Stock",
     };
 
     return (
@@ -1731,7 +1793,7 @@ function ExecutiveDetailModal({
 
           {/* Tab switcher */}
           <div className="flex gap-2 border-b border-slate-200 bg-white px-5 py-3">
-            {(["delivery", "sales", "balance"] as const).map((tab) => (
+            {(["delivery", "sales", "return", "balance"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
