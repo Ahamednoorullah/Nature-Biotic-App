@@ -2332,7 +2332,123 @@ function saveFROStock(storeId: string, rows: StoredFROStockRow[]) {
     window.dispatchEvent(new Event("fro-stock-updated"));
   } catch {}
 }
-function matchKey(executiveName: string, productId: string, packSize: string, batchNo: string): any {
-  throw new Error("Function not implemented.");
+// ✅ Correct implementation
+function matchKey(executiveName: string, productId: string, packSize: string, batchNo: string): string {
+  return `${executiveName}|${productId}|${packSize}|${batchNo}`;
 }
+
+// ============================================================
+// FRO current stock (by executive) — used by Sales Invoice + Dashboard
+// ============================================================
+
+export function getFROStockByExecutive(storeId: string, executiveName: string) {
+  return getFROStock(storeId).filter(
+    (r) => r.executiveName === executiveName && r.currentQty > 0,
+  );
+}
+
+// ============================================================
+// FRO SALES / COLLECTION / OUTSTANDING / CASH-IN-HAND LEDGER
+// ============================================================
+
+export type FROSaleRecord = {
+  id: string;
+  storeId: string;
+  executiveName: string;
+  date: string;
+  invoiceNo: string;
+  farmerId: string;
+  farmerName: string;
+  amount: number;
+  collectedAmount: number;
+  outstandingAmount: number;
+  collectionMode: "CashInHand" | "Deposited" | "Pending";
+};
+
+const FRO_SALES_KEY = "nature-biotic-fro-sales-v1";
+
+function froSalesKey(storeId: string) {
+  return `${FRO_SALES_KEY}:${storeId}`;
+}
+
+export function getFROSales(storeId: string): FROSaleRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(froSalesKey(storeId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFROSalesRows(storeId: string, rows: FROSaleRecord[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(froSalesKey(storeId), JSON.stringify(rows));
+    window.dispatchEvent(new Event("fro-sales-updated"));
+  } catch {}
+}
+
+export function addFROSale(storeId: string, row: Omit<FROSaleRecord, "id">) {
+  const rows = getFROSales(storeId);
+  const next: FROSaleRecord = { ...row, id: `fro-sale-${Date.now()}-${Math.random()}` };
+  saveFROSalesRows(storeId, [next, ...rows]);
+  return next;
+}
+
+export function depositFROCash(storeId: string, executiveName: string, amount: number) {
+  const rows = getFROSales(storeId);
+  let remaining = amount;
+  for (const row of rows) {
+    if (row.executiveName !== executiveName || row.collectionMode !== "CashInHand") continue;
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, row.collectedAmount);
+    row.collectedAmount -= take;
+    remaining -= take;
+    if (row.collectedAmount === 0) row.collectionMode = "Deposited";
+  }
+  saveFROSalesRows(storeId, rows);
+}
+
+export function getFROSummary(storeId: string, executiveName: string) {
+  const sales = getFROSales(storeId).filter((s) => s.executiveName === executiveName);
+  const totalSales = sales.reduce((s, r) => s + r.amount, 0);
+  const totalCollection = sales.reduce((s, r) => s + r.collectedAmount, 0);
+  const cashInHand = sales
+    .filter((r) => r.collectionMode === "CashInHand")
+    .reduce((s, r) => s + r.collectedAmount, 0);
+  const outstanding = sales.reduce((s, r) => s + r.outstandingAmount, 0);
+  return { totalSales, totalCollection, cashInHand, outstanding, saleRows: sales };
+}
+
+// ============================================================
+// FARMER PURCHASE HISTORY — persisted (so Product History tab updates live)
+// ============================================================
+
+const FARMER_PURCHASES_KEY = "nature-biotic-farmer-purchases-v1";
+
+export function getStoredFarmerPurchases(): FarmerPurchase[] {
+  if (typeof window === "undefined") return farmerPurchases;
+  try {
+    const raw = window.localStorage.getItem(FARMER_PURCHASES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return farmerPurchases;
+}
+
+function saveFarmerPurchasesRows(rows: FarmerPurchase[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FARMER_PURCHASES_KEY, JSON.stringify(rows));
+    window.dispatchEvent(new Event("farmer-purchases-updated"));
+  } catch {}
+}
+
+export function addFarmerPurchaseRecord(row: Omit<FarmerPurchase, "id">) {
+  const rows = getStoredFarmerPurchases();
+  const next: FarmerPurchase = { ...row, id: `fp-${Date.now()}-${Math.random()}` };
+  saveFarmerPurchasesRows([next, ...rows]);
+  return next;
+}
+
 

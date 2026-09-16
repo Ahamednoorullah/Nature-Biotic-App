@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { addFROStock, products as allProducts } from "@/lib/data";
+import { products as allProducts, addFROStock } from "@/lib/data";
 
 type Item = {
   productId: string;

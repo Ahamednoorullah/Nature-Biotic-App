@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product, reduceFROStock } from "@/lib/data";
+import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, getFROStockByExecutive, type Product, reduceFROStock } from "@/lib/data";
 import { createPortal } from "react-dom";
 
 
@@ -190,22 +190,47 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       .filter((item) => item.name && item.quantity > 0);
   }, [storePurchaseRows]);
 
+  // FRO's own delivered stock — used when Through = Executive
+const froStockVariants = useMemo(() => {
+  if (through !== "Executive" || !executiveName) return [];
+  return getFROStockByExecutive(storeId, executiveName)
+    .map((item: any, index: number) => {
+      const master = allProducts.find((p) => p.id === item.productId);
+      return {
+        key: `${item.productId}-${item.packSize}-${item.batchNo}-${item.expiryDate}-${index}`,
+        productId: item.productId,
+        product: master,
+        name: item.productName,
+        size: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        quantity: item.currentQty,   // ✅ this field DOES exist on FROStockEntry
+        sellingPrice: item.unitValue,
+        taxPercentage: Number(master?.taxPercentage ?? 0),
+      };
+    })
+    .filter((item: any) => item.name && item.quantity > 0);
+}, [through, executiveName, storeId]);
+
+// Switch source based on sale type
+const activeStockVariants = through === "Executive" ? froStockVariants : storeStockVariants;
+
   const storeProductChoices = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string }>();
-    storeStockVariants.forEach((item) => {
-      const key = item.name.toLowerCase();
-      if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
-    });
-    return Array.from(seen.values());
-  }, [storeStockVariants]);
+  const seen = new Map<string, { value: string; label: string }>();
+  activeStockVariants.forEach((item: { name: string; }) => {
+    const key = item.name.toLowerCase();
+    if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
+  });
+  return Array.from(seen.values());
+}, [activeStockVariants]);
 
   const selectedProductName =
-    storeStockVariants.find((item) => item.productId === entry.productId)?.name || "";
+    activeStockVariants.find((item: { productId: string; }) => item.productId === entry.productId)?.name || "";
 
   const selectedSizeVariants = useMemo(
-    () => storeStockVariants.filter((item) => item.name === selectedProductName),
-    [storeStockVariants, selectedProductName],
-  );
+  () => activeStockVariants.filter((item: { name: any; }) => item.name === selectedProductName),
+  [activeStockVariants, selectedProductName],
+);
 
   const entryProduct = allProducts.find((p) => p.id === entry.productId);
 
@@ -250,16 +275,16 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }
 
   function selectProductName(productName: string) {
-    const first = storeStockVariants.find((item) => item.name === productName);
-    setEntry((prev) => ({
-      ...prev,
-      productId: first?.productId || "",
-      pkgsize: "",
-      batchNo: "",
-      expiryDate: "",
-      sellingPrice: 0,
-    }));
-  }
+  const first = activeStockVariants.find((item: { name: string; }) => item.name === productName);
+  setEntry((prev) => ({
+    ...prev,
+    productId: first?.productId || "",
+    pkgsize: "",
+    batchNo: "",
+    expiryDate: "",
+    sellingPrice: 0,
+  }));
+}
 
   function selectProductSize(size: string) {
     const variant = selectedSizeVariants.find((item) => item.size === size);
@@ -284,7 +309,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       return;
     }
 
-    const selectedStock = storeStockVariants.find(
+    const selectedStock = activeStockVariants.find(
       (item) =>
         item.productId === entry.productId &&
         item.size === entry.pkgsize &&
@@ -294,7 +319,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     const product = selectedStock?.product || allProducts.find((p) => p.id === entry.productId);
     if (!selectedStock || !product) return;
     if (entry.quantity > selectedStock.quantity) {
-      window.alert(`Only ${selectedStock.quantity} available in store stock.`);
+      window.alert(`Only ${selectedStock.quantity} available in ${through === "Executive" ? "FRO" : "store"} stock.`);
       return;
     }
 
@@ -1246,7 +1271,11 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     <Select
                       label="Sale Type"
                       value={through}
-                      onChange={(value) => setThrough(value as SaleType)}
+                      onChange={(value) => {
+                        setThrough(value as SaleType);
+                        setEntry(emptyEntry());   
+                        setAdded([]);             
+                      }}
                       options={[
                         { value: "Direct", label: "Direct" },
                         { value: "Executive", label: "Executive" },
@@ -1275,7 +1304,11 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       <Select
                         label="Executive"
                         value={executiveName}
-                        onChange={setExecutiveName}
+                        onChange={(value) => {
+                          setExecutiveName(value);
+                          setEntry(emptyEntry());   
+                          setAdded([]);           
+                        }}
                         placeholder="Select executive"
                         options={[
                           { value: "Ram Kumar", label: "Ram Kumar" },
@@ -1309,8 +1342,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         onChange={selectProductSize}
                         placeholder={selectedProductName ? "Select available size" : "Select product first"}
                         options={Array.from(
-                          new Map(
-                            selectedSizeVariants.map((item) => [
+                          new Map<string, { value: string; label: string }>(
+                            selectedSizeVariants.map((item: { size: any; }) => [
                               item.size,
                               { value: item.size, label: item.size },
                             ]),
