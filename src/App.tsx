@@ -22,6 +22,8 @@ import FRODashboard from "@/pages/FRODashboard";
 import FROSales from "@/pages/FROSales";
 import FROStock from "@/pages/FROStock";
 import FROVisits from "@/pages/FROVisits";
+import FROPayment from "@/pages/FROPayment";
+import FROExpenses from "@/pages/FROExpenses";
 import StoreInventory from "@/pages/StoreInventory";
 import StoreFarmers from "@/pages/StoreFarmers";
 import StoreReports from "@/pages/StoreReports";
@@ -72,7 +74,12 @@ function AppContent() {
       return;
     }
 
-    if (!canAccessStorePage(user, route.page)) {
+    const isFROPaymentRoute =
+      user.role === "fro" &&
+      route.view === "store" &&
+      route.page === "payments";
+
+    if (!isFROPaymentRoute && !canAccessStorePage(user, route.page)) {
       goStore(user.storeId, "dashboard");
     }
   }, [user, route, goStore]);
@@ -159,8 +166,18 @@ function AppContent() {
       {route.page === "debit-notes" && (
         <StoreDebitNotes storeId={route.storeId} />
       )}
-      {route.page === "payments" && <StorePayments storeId={route.storeId} />}
-      {route.page === "expenses" && <StoreExpenses storeId={route.storeId} />}
+      {route.page === "payments" &&
+        (isFROUser ? (
+          <FROPayment storeId={route.storeId} />
+        ) : (
+          <StorePayments storeId={route.storeId} />
+        ))}
+      {route.page === "expenses" &&
+        (isFROUser ? (
+          <FROExpenses storeId={route.storeId} />
+        ) : (
+          <StoreExpenses storeId={route.storeId} />
+        ))}
       {route.page === "return-stock" && (
         <StorePurchaseReturn storeId={route.storeId} />
       )}
@@ -170,9 +187,7 @@ function AppContent() {
         <StoreCreditNotes storeId={route.storeId} />
       )}
       {route.page === "farmers" && <StoreFarmers storeId={route.storeId} />}
-      {route.page === "quotation" && (
-        <StoreQuotation storeId={route.storeId} />
-      )}
+      {route.page === "quotation" && <StoreQuotation storeId={route.storeId} />}
       {route.page === "delivery-challan" && (
         <StoreDeliveryChallan storeId={route.storeId} />
       )}

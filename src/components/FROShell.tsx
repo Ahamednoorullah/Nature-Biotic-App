@@ -129,6 +129,7 @@ function FROMobileShell({
     active === "credit-notes" ||
     active === "receipt" ||
     active === "refund" ||
+    active === "payments" ||
     active === "delivery-challan" ||
     active === "return-challan";
 

@@ -1,16 +1,9 @@
 import { ReactNode, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Card,
-  Button,
-  Input,
-  Select,
-  EmptyState,
-  Icon,
-} from "@/components/ui";
+import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getFarmersByStore, getStore } from "@/lib/data";
-
+import { useAuth } from "@/context/AuthContext";
 
 type StoredSaleInvoice = {
   id: string;
@@ -32,8 +25,7 @@ type StoredSaleInvoice = {
   amount: number;
 };
 
-const STORE_SALES_INVOICE_STORAGE_KEY =
-  "nature-biotic-store-sales-invoices-v2";
+const STORE_SALES_INVOICE_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
 type RefundRow = {
   id: string;
@@ -66,6 +58,31 @@ const reasons = [
 
 const STORAGE_PREFIX = "nature-biotic-store-refunds-v2";
 
+function DetailField({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p
+        className={`mt-1 text-sm font-bold ${
+          highlight ? "text-brand-700" : "text-slate-800"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function loadRows(storageKey: string): RefundRow[] {
   try {
     const saved = localStorage.getItem(storageKey);
@@ -76,6 +93,8 @@ function loadRows(storageKey: string): RefundRow[] {
 }
 
 export default function StoreRefund({ storeId }: { storeId: string }) {
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
   const farmers = getFarmersByStore(storeId);
   const currentStore = getStore(storeId);
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
@@ -95,21 +114,33 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     }
   }, [storeId, showCreate]);
 
+  const visibleSaleInvoices = useMemo(() => {
+    if (!isFRO || !user?.name) return saleInvoices;
+
+    const froName = user.name.trim().toLowerCase();
+
+    return saleInvoices.filter(
+      (invoice) =>
+        invoice.through === "Executive" &&
+        String(invoice.executiveName || "")
+          .trim()
+          .toLowerCase() === froName,
+    );
+  }, [saleInvoices, isFRO, user?.name]);
+
   const invoiceOptions = useMemo(
     () =>
-      saleInvoices.map((invoice) => ({
+      visibleSaleInvoices.map((invoice) => ({
         value: invoice.invoiceNo,
         label: `${invoice.invoiceNo} - ${invoice.partyName}`,
       })),
-    [saleInvoices],
+    [visibleSaleInvoices],
   );
 
   const selectedInvoice = useMemo(
     () =>
-      saleInvoices.find(
-        (invoice) => invoice.invoiceNo === referenceNo,
-      ),
-    [saleInvoices, referenceNo],
+      visibleSaleInvoices.find((invoice) => invoice.invoiceNo === referenceNo),
+    [visibleSaleInvoices, referenceNo],
   );
 
   const [rows, setRows] = useState<RefundRow[]>(() => {
@@ -119,9 +150,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState("");
   const [selectedRefund, setSelectedRefund] = useState<RefundRow | null>(null);
 
-  const [date, setDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [refundNo, setRefundNo] = useState("");
   const [reason, setReason] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -142,19 +171,33 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     amount > 0 &&
     amount <= invoiceAmount;
 
+  const scopedRows = useMemo(() => {
+    if (!isFRO || !user?.name) return rows;
+
+    const froName = user.name.trim().toLowerCase();
+
+    return rows.filter(
+      (row) =>
+        row.through === "Executive" &&
+        String(row.executiveName || "")
+          .trim()
+          .toLowerCase() === froName,
+    );
+  }, [rows, isFRO, user?.name]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
 
-    if (!q) return rows;
+    if (!q) return scopedRows;
 
-    return rows.filter(
+    return scopedRows.filter(
       (row) =>
         row.refundNo.toLowerCase().includes(q) ||
         row.farmerName.toLowerCase().includes(q) ||
         row.referenceNo.toLowerCase().includes(q) ||
         row.reason.toLowerCase().includes(q),
     );
-  }, [rows, search]);
+  }, [scopedRows, search]);
 
   function resetForm() {
     setDate(new Date().toISOString().split("T")[0]);
@@ -189,14 +232,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       refundNo: refundNo.trim(),
       farmerId: selectedInvoice.farmerId || "",
       farmerName: selectedInvoice.partyName || "Farmer",
-      phone:
-        selectedInvoice.farmerPhone ||
-        selectedFarmer?.phone ||
-        "",
-      village:
-        selectedInvoice.farmerVillage ||
-        selectedFarmer?.village ||
-        "",
+      phone: selectedInvoice.farmerPhone || selectedFarmer?.phone || "",
+      village: selectedInvoice.farmerVillage || selectedFarmer?.village || "",
       referenceNo: selectedInvoice.invoiceNo,
       invoiceAmount: Number(selectedInvoice.amount || 0),
       reason,
@@ -208,8 +245,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
         selectedInvoice.through === "Executive"
           ? selectedInvoice.executiveName || ""
           : "",
-      placeOfSupply:
-        selectedInvoice.placeOfSupply || "Tamil Nadu",
+      placeOfSupply: selectedInvoice.placeOfSupply || "Tamil Nadu",
     };
 
     saveRows([row, ...rows]);
@@ -255,85 +291,139 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <table className="w-full table-fixed border-collapse text-sm">
-            <thead>
-              <tr className="border-b-2 border-slate-200 bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-                <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center">
-                  S.No
-                </th>
-                <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-center">
-                  Date
-                </th>
-                <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
-                  Ref No
-                </th>
-                <th className="w-[15%] border-r border-slate-200 px-2 py-3 text-center">
-                  Farmer Details
-                </th>
-                <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
-                  Invoice No
-                </th>
-                <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
-                  Reason
-                </th>
-                <th className="w-[13%] border-r border-slate-200 px-2 py-3 text-center">
-                  Pay Method
-                </th>
-                <th className="w-[12%] px-2 py-3 text-right">
-                  Amount
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filtered.map((row, index) => (
-                <tr
-                  key={row.id}
-                  onClick={() => setSelectedRefund(row)}
-                  className={`cursor-pointer border-b border-slate-100 ${
-                    index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
-                  } transition hover:bg-brand-50/40`}
-                  title="Click to view refund details"
-                >
-                  <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-500">
-                    {index + 1}
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-500">
-                    {formatDate(row.date)}
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
-                    {row.refundNo}
-                  </td>
-                  {/* Farmer Details */}
-                    <td className="w-[15%] border-r border-slate-200 px-3 py-3.5 text-center">
-                    <p className="font-semibold text-slate-800">
-                      {row.farmerName}
-                    </p>
-
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {row.village || "-"}
-                    </p>
-
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      {row.phone || "-"}
-                    </p>
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
-                    {row.referenceNo}
-                  </td>
-                  <td className="truncate border-r border-slate-100 px-2 py-3 text-center text-slate-600">
-                    {row.reason}
-                  </td>
-                  <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
-                    {row.paymentMethod}
-                  </td>
-                  <td className="px-2 py-3 text-right font-bold text-slate-800">
-                    {formatCurrency(row.amount)}
-                  </td>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full table-fixed border-collapse text-sm">
+              <thead>
+                <tr className="border-b-2 border-slate-200 bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
+                  <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center">
+                    S.No
+                  </th>
+                  <th className="w-[10%] border-r border-slate-200 px-2 py-3 text-center">
+                    Date
+                  </th>
+                  <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-center">
+                    Ref No
+                  </th>
+                  <th className="w-[15%] border-r border-slate-200 px-2 py-3 text-center">
+                    Farmer Details
+                  </th>
+                  <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
+                    Invoice No
+                  </th>
+                  <th className="w-[16%] border-r border-slate-200 px-2 py-3 text-center">
+                    Reason
+                  </th>
+                  <th className="w-[13%] border-r border-slate-200 px-2 py-3 text-center">
+                    Pay Method
+                  </th>
+                  <th className="w-[12%] px-2 py-3 text-right">Amount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {filtered.map((row, index) => (
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectedRefund(row)}
+                    className={`cursor-pointer border-b border-slate-100 ${
+                      index % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                    } transition hover:bg-brand-50/40`}
+                    title="Click to view refund details"
+                  >
+                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-500">
+                      {index + 1}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-500">
+                      {formatDate(row.date)}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
+                      {row.refundNo}
+                    </td>
+                    {/* Farmer Details */}
+                    <td className="w-[15%] border-r border-slate-200 px-3 py-3.5 text-center">
+                      <p className="font-semibold text-slate-800">
+                        {row.farmerName}
+                      </p>
+
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {row.village || "-"}
+                      </p>
+
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {row.phone || "-"}
+                      </p>
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
+                      {row.referenceNo}
+                    </td>
+                    <td className="truncate border-r border-slate-100 px-2 py-3 text-center text-slate-600">
+                      {row.reason}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
+                      {row.paymentMethod}
+                    </td>
+                    <td className="px-2 py-3 text-right font-bold text-slate-800">
+                      {formatCurrency(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="divide-y divide-slate-100 md:hidden">
+            {filtered.map((row, index) => (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => setSelectedRefund(row)}
+                className="block w-full p-4 text-left active:bg-brand-50/40"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      #{index + 1} · {formatDate(row.date)}
+                    </p>
+                    <p className="mt-1 text-sm font-extrabold text-slate-800">
+                      {row.refundNo}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-base font-extrabold text-brand-700">
+                    {formatCurrency(row.amount)}
+                  </p>
+                </div>
+
+                <div className="mt-3 rounded-xl bg-slate-50 p-3">
+                  <p className="text-sm font-bold text-slate-800">
+                    {row.farmerName}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Invoice: {row.referenceNo}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {row.reason} · {row.paymentMethod}
+                  </p>
+                </div>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-slate-100 px-3 py-2">
+                    <p className="text-[10px] text-slate-400">Invoice Amount</p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-700">
+                      {formatCurrency(row.invoiceAmount)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-100 px-3 py-2">
+                    <p className="text-[10px] text-slate-400">Balance</p>
+                    <p className="mt-0.5 text-xs font-semibold text-slate-700">
+                      {formatCurrency(
+                        Math.max(row.invoiceAmount - row.amount, 0),
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </Card>
       )}
 
@@ -347,7 +437,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     Create Refund
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Select a completed sales invoice, then refund the required amount to the farmer.
+                    Select a completed sales invoice, then refund the required
+                    amount to the farmer.
                   </p>
                 </div>
 
@@ -469,9 +560,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     value={String(amount)}
                     onChange={(value) => {
                       const next = Number(value) || 0;
-                      setAmount(
-                        Math.min(next, invoiceAmount || next),
-                      );
+                      setAmount(Math.min(next, invoiceAmount || next));
                     }}
                     placeholder="Enter refund amount"
                     required
@@ -479,9 +568,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
 
                   <Input
                     label="Balance Value"
-                    value={formatCurrency(
-                      Math.max(invoiceAmount - amount, 0),
-                    )}
+                    value={formatCurrency(Math.max(invoiceAmount - amount, 0))}
                     onChange={() => {}}
                     readOnly
                   />
@@ -502,10 +589,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   Cancel
                 </Button>
 
-                <Button
-                  onClick={createRefund}
-                  disabled={!canCreate}
-                >
+                <Button onClick={createRefund} disabled={!canCreate}>
                   <Icon name="save" size={17} />
                   Create Refund
                 </Button>
@@ -578,167 +662,220 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
               </div>
 
               <div className="refund-scroll min-h-0 flex-1 overflow-y-auto p-4">
-                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
-                          <img
-                            src="/logo_NB.webp"
-                            alt="Nature Biotic"
-                            className="max-h-14 max-w-full object-contain"
-                          />
-                        </div>
-
-                        <div>
-                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                {isFRO && (
+                  <div className="space-y-3 md:hidden">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src="/logo_NB.webp"
+                          alt="Nature Biotic"
+                          className="h-12 w-16 object-contain"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-slate-900">
                             {currentStore?.name || "SAIRAM AGRI INPUT"}
-                          </h3>
-                          <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                          </p>
+                          <p className="mt-1 text-[10px] text-slate-500">
                             {currentStore?.address ||
                               currentStore?.location ||
                               "Rajapalayam, Tamil Nadu"}
                           </p>
-                          <p className="mt-1 text-[11px] text-slate-600">
-                            GSTIN: {currentStore?.gst || "-"}
-                          </p>
-                          <p className="text-[11px] text-slate-600">
-                            Cell: {currentStore?.phone || "-"}
-                          </p>
                         </div>
+                      </div>
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <p className="text-lg font-extrabold uppercase text-slate-900">
+                          Refund Receipt
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-brand-700">
+                          {selectedRefund.refundNo}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-center p-4">
-                      <h3 className="text-2xl font-bold uppercase text-slate-900">
-                        Refund Receipt
-                      </h3>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 border-b border-slate-300 text-sm">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                         Refund To
                       </p>
-
-                      <p className="mt-2 font-bold text-slate-900">
+                      <p className="mt-1 text-sm font-extrabold text-slate-900">
                         {selectedRefund.farmerName}
                       </p>
-                      <p className="mt-1 text-slate-500">
+                      <p className="mt-1 text-xs text-slate-500">
                         {selectedRefund.village || "-"}
                       </p>
-                      <p className="mt-1 text-slate-500">
+                      <p className="text-xs text-slate-500">
                         Mobile: {selectedRefund.phone || "-"}
                       </p>
                     </div>
 
-                    <div className="p-4">
-                      <div className="grid grid-cols-[120px_1fr] gap-y-2">
-                        <span className="text-slate-500">Refund No</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedRefund.refundNo}
-                        </span>
-
-                        <span className="text-slate-500">Refund Date</span>
-                        <span className="font-semibold text-slate-800">
-                          {formatDate(selectedRefund.date)}
-                        </span>
-
-                        <span className="text-slate-500">Invoice No</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedRefund.referenceNo}
-                        </span>
-
-                        <span className="text-slate-500">Payment Method</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedRefund.paymentMethod}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 border-b border-slate-300 bg-slate-50">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        Invoice Amount
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-slate-800">
-                        {formatCurrency(selectedRefund.invoiceAmount || 0)}
-                      </p>
-                    </div>
-
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        Refund Amount
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-brand-700">
-                        {formatCurrency(selectedRefund.amount)}
-                      </p>
-                    </div>
-
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        Balance Value
-                      </p>
-                      <p className="mt-1 text-lg font-bold text-slate-800">
-                        {formatCurrency(
+                    <div className="grid grid-cols-2 gap-2">
+                      <DetailField
+                        label="Refund No"
+                        value={selectedRefund.refundNo}
+                      />
+                      <DetailField
+                        label="Refund Date"
+                        value={formatDate(selectedRefund.date)}
+                      />
+                      <DetailField
+                        label="Invoice No"
+                        value={selectedRefund.referenceNo}
+                      />
+                      <DetailField
+                        label="Payment Method"
+                        value={selectedRefund.paymentMethod}
+                      />
+                      <DetailField
+                        label="Invoice Amount"
+                        value={formatCurrency(selectedRefund.invoiceAmount)}
+                      />
+                      <DetailField
+                        label="Refund Amount"
+                        value={formatCurrency(selectedRefund.amount)}
+                        highlight
+                      />
+                      <DetailField
+                        label="Balance"
+                        value={formatCurrency(
                           Math.max(
-                            (selectedRefund.invoiceAmount || 0) -
+                            selectedRefund.invoiceAmount -
                               selectedRefund.amount,
                             0,
                           ),
                         )}
+                      />
+                      <DetailField
+                        label="Reason"
+                        value={selectedRefund.reason}
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Received / Created By
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-800">
+                        {selectedRefund.executiveName || "-"}
                       </p>
                     </div>
 
-                    <div className="p-4">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        Reason
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-slate-800">
-                        {selectedRefund.reason}
-                      </p>
-                    </div>
+                    {selectedRefund.remarks && (
+                      <div className="rounded-xl border border-slate-200 bg-white p-4">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          Remarks
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">
+                          {selectedRefund.remarks}
+                        </p>
+                      </div>
+                    )}
                   </div>
+                )}
 
-                  <div className="grid grid-cols-[1fr_280px]">
-                    <div className="border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Remarks
-                      </p>
-                      <p className="mt-2 text-sm text-slate-600">
-                        {selectedRefund.remarks ||
-                          `Refund issued against invoice ${selectedRefund.referenceNo}.`}
-                      </p>
+                <div className={isFRO ? "hidden md:block" : "block"}>
+                  <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                    <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                      <div className="border-r border-slate-300 p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                            <img
+                              src="/logo_NB.webp"
+                              alt="Nature Biotic"
+                              className="max-h-14 max-w-full object-contain"
+                            />
+                          </div>
+
+                          <div>
+                            <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                              {currentStore?.name || "SAIRAM AGRI INPUT"}
+                            </h3>
+                            <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                              {currentStore?.address ||
+                                currentStore?.location ||
+                                "Rajapalayam, Tamil Nadu"}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-600">
+                              GSTIN: {currentStore?.gst || "-"}
+                            </p>
+                            <p className="text-[11px] text-slate-600">
+                              Cell: {currentStore?.phone || "-"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center p-4">
+                        <h3 className="text-2xl font-bold uppercase text-slate-900">
+                          Refund Receipt
+                        </h3>
+                      </div>
                     </div>
 
-                    <div className="p-4 text-sm">
-                      <div className="flex justify-between py-1.5">
-                        <span className="text-slate-500">
+                    <div className="grid grid-cols-2 border-b border-slate-300 text-sm">
+                      <div className="border-r border-slate-300 p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                          Refund To
+                        </p>
+
+                        <p className="mt-2 font-bold text-slate-900">
+                          {selectedRefund.farmerName}
+                        </p>
+                        <p className="mt-1 text-slate-500">
+                          {selectedRefund.village || "-"}
+                        </p>
+                        <p className="mt-1 text-slate-500">
+                          Mobile: {selectedRefund.phone || "-"}
+                        </p>
+                      </div>
+
+                      <div className="p-4">
+                        <div className="grid grid-cols-[120px_1fr] gap-y-2">
+                          <span className="text-slate-500">Refund No</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedRefund.refundNo}
+                          </span>
+
+                          <span className="text-slate-500">Refund Date</span>
+                          <span className="font-semibold text-slate-800">
+                            {formatDate(selectedRefund.date)}
+                          </span>
+
+                          <span className="text-slate-500">Invoice No</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedRefund.referenceNo}
+                          </span>
+
+                          <span className="text-slate-500">Payment Method</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedRefund.paymentMethod}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-4 border-b border-slate-300 bg-slate-50">
+                      <div className="border-r border-slate-300 p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
                           Invoice Amount
-                        </span>
-                        <span className="font-semibold">
-                          {formatCurrency(
-                            selectedRefund.invoiceAmount || 0,
-                          )}
-                        </span>
+                        </p>
+                        <p className="mt-1 text-lg font-bold text-slate-800">
+                          {formatCurrency(selectedRefund.invoiceAmount || 0)}
+                        </p>
                       </div>
 
-                      <div className="flex justify-between py-1.5">
-                        <span className="text-slate-500">
-                          Refunded
-                        </span>
-                        <span className="font-semibold text-brand-700">
+                      <div className="border-r border-slate-300 p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Refund Amount
+                        </p>
+                        <p className="mt-1 text-lg font-bold text-brand-700">
                           {formatCurrency(selectedRefund.amount)}
-                        </span>
+                        </p>
                       </div>
 
-                      <div className="mt-2 flex justify-between border-t border-slate-300 pt-2">
-                        <span className="font-bold text-slate-900">
+                      <div className="border-r border-slate-300 p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
                           Balance Value
-                        </span>
-                        <span className="font-bold text-slate-900">
+                        </p>
+                        <p className="mt-1 text-lg font-bold text-slate-800">
                           {formatCurrency(
                             Math.max(
                               (selectedRefund.invoiceAmount || 0) -
@@ -746,17 +883,69 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                               0,
                             ),
                           )}
-                        </span>
+                        </p>
+                      </div>
+
+                      <div className="p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                          Reason
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-800">
+                          {selectedRefund.reason}
+                        </p>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex justify-end border-t border-slate-300 p-4">
-                    <div className="w-52 text-center">
-                      <div className="h-12 border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
+                    <div className="grid grid-cols-[1fr_280px]">
+                      <div className="border-r border-slate-300 p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                          Remarks
+                        </p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {selectedRefund.remarks ||
+                            `Refund issued against invoice ${selectedRefund.referenceNo}.`}
+                        </p>
+                      </div>
+
+                      <div className="p-4 text-sm">
+                        <div className="flex justify-between py-1.5">
+                          <span className="text-slate-500">Invoice Amount</span>
+                          <span className="font-semibold">
+                            {formatCurrency(selectedRefund.invoiceAmount || 0)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between py-1.5">
+                          <span className="text-slate-500">Refunded</span>
+                          <span className="font-semibold text-brand-700">
+                            {formatCurrency(selectedRefund.amount)}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 flex justify-between border-t border-slate-300 pt-2">
+                          <span className="font-bold text-slate-900">
+                            Balance Value
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {formatCurrency(
+                              Math.max(
+                                (selectedRefund.invoiceAmount || 0) -
+                                  selectedRefund.amount,
+                                0,
+                              ),
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end border-t border-slate-300 p-4">
+                      <div className="w-52 text-center">
+                        <div className="h-12 border-b border-slate-300" />
+                        <p className="mt-2 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -769,16 +958,17 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                 >
                   Close
                 </Button>
-                <Button onClick={() => window.print()}>
-                  <Icon name="print" size={18} />
-                  Print Refund
-                </Button>
+                {!isFRO && (
+                  <Button onClick={() => window.print()}>
+                    <Icon name="print" size={18} />
+                    Print Refund
+                  </Button>
+                )}
               </div>
             </div>
           </div>,
           document.body,
         )}
-
     </div>
   );
 }

@@ -33,6 +33,12 @@ const salesCards = [
     icon: "currency_exchange",
     tone: "bg-rose-50 text-rose-700",
   },
+  {
+    label: "Payment",
+    value: "₹18,500",
+    icon: "payments",
+    tone: "bg-green-50 text-green-700",
+  },
 ];
 
 export default function FROSales() {
@@ -44,7 +50,7 @@ export default function FROSales() {
 
   return (
     <div className="px-3 pt-3 pb-24 sm:px-4 sm:pt-4 max-w-md mx-auto">
-      <div className="mb-4">
+      {/* <div className="mb-4">
         <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
           SALES
         </p>
@@ -52,10 +58,10 @@ export default function FROSales() {
         <p className="mt-1 text-xs text-slate-500">
           Manage your sales activities
         </p>
-      </div>
+      </div> */}
 
       <div className="grid grid-cols-2 gap-3">
-        {salesCards.map((card, index) => (
+        {salesCards.map((card) => (
           <Card
             key={card.label}
             onClick={() => {
@@ -66,27 +72,31 @@ export default function FROSales() {
                   "Sales Return": "sales-return",
                   Receipt: "receipt",
                   Refund: "refund",
+                  Payment: "payments",
                 };
               const page = pageMap[card.label];
               if (page) goStorePage(page);
             }}
-            className={`h-[142px] cursor-pointer rounded-2xl border border-slate-100 bg-white p-3 shadow-sm transition active:scale-[0.98] hover:shadow-md ${
-              index === salesCards.length - 1 ? "col-span-2 sm:col-span-1" : ""
-            }`}
+            className="group flex min-h-[128px] flex-col items-start justify-between rounded-[22px] border border-slate-100 bg-white p-4 text-left shadow-[0_8px_28px_rgba(15,23,42,0.06)] transition active:scale-[0.98]"
           >
-            <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="flex w-full items-center justify-between">
               <span
-                className={`mb-3 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${card.tone}`}
+                className={`flex h-11 w-11 items-center justify-center rounded-2xl ${card.tone}`}
               >
-                <Icon name={card.icon} size={21} />
+                <Icon name={card.icon} size={24} fill={false} />
               </span>
-
-              <p className="w-full truncate text-[11px] font-semibold text-slate-600">
+              <Icon
+                name="chevron_right"
+                size={18}
+                className="text-slate-300 transition group-hover:text-brand-500"
+              />
+            </div>
+            <div>
+              <p className="text-sm font-extrabold text-slate-800">
                 {card.label}
               </p>
-
-              <p className="mt-1 text-[20px] font-extrabold leading-tight text-slate-800">
-                {card.value}
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                View &amp; manage
               </p>
             </div>
           </Card>

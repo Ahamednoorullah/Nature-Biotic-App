@@ -1,16 +1,9 @@
 import { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
-import {
-  Card,
-  Button,
-  Input,
-  Select,
-  EmptyState,
-  Icon,
-} from "@/components/ui";
+import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getFarmersByStore, getStore } from "@/lib/data";
-
+import { useAuth } from "@/context/AuthContext";
 
 type StoredSaleInvoice = {
   id: string;
@@ -32,8 +25,7 @@ type StoredSaleInvoice = {
   amount: number;
 };
 
-const STORE_SALES_INVOICE_STORAGE_KEY =
-  "nature-biotic-store-sales-invoices-v2";
+const STORE_SALES_INVOICE_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
 type Receipt = {
   id: string;
@@ -57,6 +49,8 @@ const STORAGE_PREFIX = "nature-biotic-store-receipts-v3";
 const receipts: Receipt[] = [];
 
 export default function StoreReceipt({ storeId }: { storeId: string }) {
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
   const farmers = getFarmersByStore(storeId);
   const currentStore = getStore(storeId);
 
@@ -76,21 +70,32 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     }
   }, [storeId, showCreate]);
 
+  const visibleSaleInvoices = useMemo(() => {
+    if (!isFRO || !user?.name) return saleInvoices;
+
+    const froName = user.name.trim().toLowerCase();
+
+    return saleInvoices.filter(
+      (invoice) =>
+        String(invoice.executiveName || "")
+          .trim()
+          .toLowerCase() === froName,
+    );
+  }, [saleInvoices, isFRO, user?.name]);
+
   const invoiceOptions = useMemo(
     () =>
-      saleInvoices.map((invoice) => ({
+      visibleSaleInvoices.map((invoice) => ({
         value: invoice.invoiceNo,
         label: `${invoice.invoiceNo} - ${invoice.partyName}`,
       })),
-    [saleInvoices],
+    [visibleSaleInvoices],
   );
 
   const selectedInvoice = useMemo(
     () =>
-      saleInvoices.find(
-        (invoice) => invoice.invoiceNo === invoiceNo,
-      ),
-    [saleInvoices, invoiceNo],
+      visibleSaleInvoices.find((invoice) => invoice.invoiceNo === invoiceNo),
+    [visibleSaleInvoices, invoiceNo],
   );
   const [search, setSearch] = useState("");
   const [farmerFilter, setFarmerFilter] = useState("all");
@@ -116,14 +121,14 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   const [method, setMethod] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
   const [amountReceived, setAmountReceived] = useState(0);
-  const [receivedBy, setReceivedBy] = useState("");
+  const [receivedBy, setReceivedBy] = useState(
+    user?.role === "fro" ? user.name : "",
+  );
   const [remarks, setRemarks] = useState("");
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const portalRoot = typeof document !== "undefined" ? document.body : null;
 
-  const createFarmer = farmers.find(
-    (f) => f.id === selectedInvoice?.farmerId,
-  );
+  const createFarmer = farmers.find((f) => f.id === selectedInvoice?.farmerId);
   const canCreate =
     !!receiptNo.trim() &&
     !!selectedInvoice &&
@@ -138,7 +143,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     setMethod("");
     setInvoiceAmount(0);
     setAmountReceived(0);
-    setReceivedBy("");
+    setReceivedBy(isFRO ? (user?.name ?? "") : "");
     setRemarks("");
   }
 
@@ -160,7 +165,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       invoiceNo: selectedInvoice.invoiceNo,
       invoiceAmount: selectedInvoice.amount,
       amount: amountReceived,
-      receivedBy,
+      receivedBy: isFRO ? (user?.name ?? "") : receivedBy,
       remarks,
     };
 
@@ -238,15 +243,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
       return matchesSearch && matchesFarmer && matchesDate(r.date);
     });
-  }, [
-    search,
-    farmerFilter,
-    dateFilter,
-    customFrom,
-    customTo,
-    createdReceipts,
-  ]);
-
+  }, [search, farmerFilter, dateFilter, customFrom, customTo, createdReceipts]);
 
   return (
     <>
@@ -289,7 +286,15 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                 value={farmerFilter}
                 onChange={setFarmerFilter}
                 placeholder="All Farmers"
-                options={farmers.map((farmer) => ({
+                options={(isFRO && user?.name
+                  ? farmers.filter(
+                      (farmer) =>
+                        String(farmer.executiveName || "")
+                          .trim()
+                          .toLowerCase() === user.name.trim().toLowerCase(),
+                    )
+                  : farmers
+                ).map((farmer) => ({
                   value: farmer.id,
                   label: farmer.name,
                 }))}
@@ -377,76 +382,136 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
           </Card>
         ) : (
           <Card className="overflow-hidden p-0">
-            <table className="w-full table-fixed border-collapse text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
-                  <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    S.No
-                  </th>
-                  <th className="w-[11%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    Date
-                  </th>
-                  <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    Receipt No
-                  </th>
-                  <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    Invoice No
-                  </th>
-                  <th className="w-[18%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    Farmer Name
-                  </th>
-                  <th className="w-[13%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
-                    Pay Method
-                  </th>
-                  <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
-                    Amount
-                  </th>
-                  <th className="w-[12%] px-2 py-3 text-right font-semibold">
-                    Balance
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {filtered.map((r, i) => (
-                  <tr
-                    key={r.id}
-                    onClick={() => setViewReceipt(r)}
-                    title="Click to view receipt details"
-                    className={`cursor-pointer border-b border-slate-100 ${
-                      i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
-                    } transition hover:bg-brand-50/40`}
-                  >
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-600">
-                      {i + 1}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-500">
-                      {formatDate(r.date)}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
-                      {r.receiptNo}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-700">
-                      {r.invoiceNo}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-700">
-                      {r.farmerName}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
-                      {r.method}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                      {formatCurrency(r.amount)}
-                    </td>
-                    <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                      {formatCurrency(
-                        Math.max(r.invoiceAmount - r.amount, 0),
-                      )}
-                    </td>
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full table-fixed border-collapse text-sm">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
+                    <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      S.No
+                    </th>
+                    <th className="w-[11%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      Date
+                    </th>
+                    <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      Receipt No
+                    </th>
+                    <th className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      Invoice No
+                    </th>
+                    <th className="w-[18%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      Farmer Name
+                    </th>
+                    <th className="w-[13%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      Pay Method
+                    </th>
+                    <th className="w-[12%] border-r border-slate-200 px-2 py-3 text-right font-semibold">
+                      Amount
+                    </th>
+                    <th className="w-[12%] px-2 py-3 text-right font-semibold">
+                      Balance
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+
+                <tbody>
+                  {filtered.map((r, i) => (
+                    <tr
+                      key={r.id}
+                      onClick={() => setViewReceipt(r)}
+                      title="Click to view receipt details"
+                      className={`cursor-pointer border-b border-slate-100 ${
+                        i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                      } transition hover:bg-brand-50/40`}
+                    >
+                      <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-600">
+                        {i + 1}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-500">
+                        {formatDate(r.date)}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
+                        {r.receiptNo}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-700">
+                        {r.invoiceNo}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-700">
+                        {r.farmerName}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-3 text-center text-slate-600">
+                        {r.method}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                        {formatCurrency(r.amount)}
+                      </td>
+                      <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                        {formatCurrency(
+                          Math.max(r.invoiceAmount - r.amount, 0),
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="divide-y divide-slate-100 md:hidden">
+              {filtered.map((r, i) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setViewReceipt(r)}
+                  className="block w-full p-4 text-left"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-slate-400">
+                        #{i + 1} · {formatDate(r.date)}
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-slate-800">
+                        {r.receiptNo}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Invoice: {r.invoiceNo}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-bold text-brand-700">
+                      {formatCurrency(r.amount)}
+                    </p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">Farmer</p>
+                      <p className="mt-0.5 truncate text-xs font-semibold text-slate-700">
+                        {r.farmerName}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">Method</p>
+                      <p className="mt-0.5 truncate text-xs font-semibold text-slate-700">
+                        {r.method}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">
+                        Invoice Amount
+                      </p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-700">
+                        {formatCurrency(r.invoiceAmount)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">Balance</p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-700">
+                        {formatCurrency(
+                          Math.max(r.invoiceAmount - r.amount, 0),
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </Card>
         )}
 
@@ -499,6 +564,14 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       display: block !important;
     }
   }
+
+  @media (max-width: 767px) {
+    .receipt-print-area {
+      width: calc(100vw - 24px) !important;
+      max-width: 420px !important;
+      max-height: 92vh !important;
+    }
+  }
 `}</style>
 
                 <div className="receipt-print-area flex max-h-[94vh] w-[94vw] max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -522,58 +595,49 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   </div>
 
                   <div className="receipt-scroll min-h-0 flex-1 overflow-y-auto p-4">
-                    <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-                      <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                        <div className="border-r border-slate-300 p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-16 w-24 shrink-0 items-center justify-center">
-                              <img
-                                src="/logo_NB.webp"
-                                alt="Nature Biotic"
-                                className="max-h-14 max-w-full object-contain"
-                              />
-                            </div>
-
-                            <div>
-                              <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                    {isFRO && (
+                      <div className="md:hidden space-y-3">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src="/logo_NB.webp"
+                              alt="Nature Biotic"
+                              className="h-12 w-16 object-contain"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-extrabold text-slate-900">
                                 {currentStore?.name || "SAIRAM AGRI INPUT"}
-                              </h3>
-                              <p className="mt-1 text-[11px] leading-4 text-slate-600">
-                                {currentStore?.address ||
-                                  currentStore?.location ||
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                {currentStore?.location ||
+                                  currentStore?.address ||
                                   "Rajapalayam, Tamil Nadu"}
-                              </p>
-                              <p className="mt-1 text-[11px] text-slate-600">
-                                GSTIN: {currentStore?.gst || "-"}
-                              </p>
-                              <p className="text-[11px] text-slate-600">
-                                Cell: {currentStore?.phone || "-"}
                               </p>
                             </div>
                           </div>
+                          <div className="mt-3 border-t border-slate-100 pt-3">
+                            <p className="text-lg font-extrabold uppercase text-slate-900">
+                              Payment Receipt
+                            </p>
+                            <p className="mt-1 text-xs text-brand-700">
+                              {viewReceipt.receiptNo}
+                            </p>
+                          </div>
                         </div>
 
-                        <div className="flex items-center justify-center p-4">
-                          <h3 className="text-2xl font-bold uppercase text-slate-900">
-                            Payment Receipt
-                          </h3>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 border-b border-slate-300 text-sm">
-                        <div className="border-r border-slate-300 p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                             Received From
                           </p>
-                          <p className="mt-2 font-bold text-slate-900">
+                          <p className="mt-1 text-sm font-extrabold text-slate-900">
                             {viewReceipt.farmerName}
                           </p>
-                          <p className="mt-1 text-slate-500">
+                          <p className="mt-1 text-xs text-slate-500">
                             {farmers.find(
                               (farmer) => farmer.id === viewReceipt.farmerId,
                             )?.village || "-"}
                           </p>
-                          <p className="mt-1 text-slate-500">
+                          <p className="text-xs text-slate-500">
                             Mobile:{" "}
                             {farmers.find(
                               (farmer) => farmer.id === viewReceipt.farmerId,
@@ -581,114 +645,236 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                           </p>
                         </div>
 
-                        <div className="p-4">
-                          <div className="grid grid-cols-[120px_1fr] gap-y-2">
-                            <span className="text-slate-500">Receipt No</span>
-                            <span className="font-semibold text-slate-800">
-                              {viewReceipt.receiptNo}
-                            </span>
-
-                            <span className="text-slate-500">Receipt Date</span>
-                            <span className="font-semibold text-slate-800">
-                              {formatDate(viewReceipt.date)}
-                            </span>
-
-                            <span className="text-slate-500">Invoice No</span>
-                            <span className="font-semibold text-slate-800">
-                              {viewReceipt.invoiceNo}
-                            </span>
-
-                            <span className="text-slate-500">Payment Method</span>
-                            <span className="font-semibold text-slate-800">
-                              {viewReceipt.method}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 border-b border-slate-300 bg-slate-50">
-                        <div className="border-r border-slate-300 p-4">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                            Invoice Amount
-                          </p>
-                          <p className="mt-1 text-lg font-bold text-slate-800">
-                            {formatCurrency(viewReceipt.invoiceAmount)}
-                          </p>
-                        </div>
-
-                        <div className="border-r border-slate-300 p-4">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                            Amount Received
-                          </p>
-                          <p className="mt-1 text-lg font-bold text-brand-700">
-                            {formatCurrency(viewReceipt.amount)}
-                          </p>
-                        </div>
-
-                        <div className="border-r border-slate-300 p-4">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                            Balance
-                          </p>
-                          <p className="mt-1 text-lg font-bold text-slate-800">
-                            {formatCurrency(
+                        <div className="grid grid-cols-2 gap-2">
+                          <DetailField
+                            label="Receipt No"
+                            value={viewReceipt.receiptNo}
+                          />
+                          <DetailField
+                            label="Receipt Date"
+                            value={formatDate(viewReceipt.date)}
+                          />
+                          <DetailField
+                            label="Invoice No"
+                            value={viewReceipt.invoiceNo}
+                          />
+                          <DetailField
+                            label="Payment Method"
+                            value={viewReceipt.method}
+                          />
+                          <DetailField
+                            label="Invoice Amount"
+                            value={formatCurrency(viewReceipt.invoiceAmount)}
+                          />
+                          <DetailField
+                            label="Amount Received"
+                            value={formatCurrency(viewReceipt.amount)}
+                            highlight
+                          />
+                          <DetailField
+                            label="Balance"
+                            value={formatCurrency(
                               Math.max(
                                 viewReceipt.invoiceAmount - viewReceipt.amount,
                                 0,
                               ),
                             )}
-                          </p>
+                          />
+                          <DetailField
+                            label="Received By"
+                            value={viewReceipt.receivedBy || "-"}
+                          />
                         </div>
 
-                        <div className="p-4">
-                          <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                            Received By
-                          </p>
-                          <p className="mt-1 text-lg font-bold text-slate-800">
-                            {viewReceipt.receivedBy || "-"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                      <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
-                        {/* NOTES */}
-                        <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                            Notes
-                          </p>
-
-                          {(() => {
-                            const defaultNotes = `Purchase order raised by ${
-                              currentStore?.name ?? "this store"
-                            } to Nature Biotic.`;
-
-                            return (
-                              <>
-                                {/* Screen - Editable Notes */}
-                                <textarea
-                                  value={purchaseOrderNotes}
-                                  onChange={(e) => setPurchaseOrderNotes(e.target.value)}
-                                  rows={2}
-                                  placeholder="Enter notes..."
-                                  className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                                />
-
-                                {/* Print - Show edited notes */}
-                                <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                                  {purchaseOrderNotes || defaultNotes}
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </div>
-
-                        {/* AUTHORISED SIGNATORY */}
-                        <div className="flex items-end justify-center p-3">
-                          <div className="w-full text-center">
-                            <div className="border-b border-slate-300" />
-                            <p className="mt-1.5 text-xs font-semibold text-slate-500">
-                              Authorised Signatory
+                        {viewReceipt.remarks && (
+                          <div className="rounded-xl border border-slate-200 bg-white p-4">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                              Remarks
                             </p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">
+                              {viewReceipt.remarks}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className={isFRO ? "hidden md:block" : "block"}>
+                      <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                        <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                          <div className="border-r border-slate-300 p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-16 w-24 shrink-0 items-center justify-center">
+                                <img
+                                  src="/logo_NB.webp"
+                                  alt="Nature Biotic"
+                                  className="max-h-14 max-w-full object-contain"
+                                />
+                              </div>
+
+                              <div>
+                                <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                                  {currentStore?.name || "SAIRAM AGRI INPUT"}
+                                </h3>
+                                <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                                  {currentStore?.address ||
+                                    currentStore?.location ||
+                                    "Rajapalayam, Tamil Nadu"}
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-600">
+                                  GSTIN: {currentStore?.gst || "-"}
+                                </p>
+                                <p className="text-[11px] text-slate-600">
+                                  Cell: {currentStore?.phone || "-"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-center p-4">
+                            <h3 className="text-2xl font-bold uppercase text-slate-900">
+                              Payment Receipt
+                            </h3>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 border-b border-slate-300 text-sm">
+                          <div className="border-r border-slate-300 p-4">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                              Received From
+                            </p>
+                            <p className="mt-2 font-bold text-slate-900">
+                              {viewReceipt.farmerName}
+                            </p>
+                            <p className="mt-1 text-slate-500">
+                              {farmers.find(
+                                (farmer) => farmer.id === viewReceipt.farmerId,
+                              )?.village || "-"}
+                            </p>
+                            <p className="mt-1 text-slate-500">
+                              Mobile:{" "}
+                              {farmers.find(
+                                (farmer) => farmer.id === viewReceipt.farmerId,
+                              )?.phone || "-"}
+                            </p>
+                          </div>
+
+                          <div className="p-4">
+                            <div className="grid grid-cols-[120px_1fr] gap-y-2">
+                              <span className="text-slate-500">Receipt No</span>
+                              <span className="font-semibold text-slate-800">
+                                {viewReceipt.receiptNo}
+                              </span>
+
+                              <span className="text-slate-500">
+                                Receipt Date
+                              </span>
+                              <span className="font-semibold text-slate-800">
+                                {formatDate(viewReceipt.date)}
+                              </span>
+
+                              <span className="text-slate-500">Invoice No</span>
+                              <span className="font-semibold text-slate-800">
+                                {viewReceipt.invoiceNo}
+                              </span>
+
+                              <span className="text-slate-500">
+                                Payment Method
+                              </span>
+                              <span className="font-semibold text-slate-800">
+                                {viewReceipt.method}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-4 border-b border-slate-300 bg-slate-50">
+                          <div className="border-r border-slate-300 p-4">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              Invoice Amount
+                            </p>
+                            <p className="mt-1 text-lg font-bold text-slate-800">
+                              {formatCurrency(viewReceipt.invoiceAmount)}
+                            </p>
+                          </div>
+
+                          <div className="border-r border-slate-300 p-4">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              Amount Received
+                            </p>
+                            <p className="mt-1 text-lg font-bold text-brand-700">
+                              {formatCurrency(viewReceipt.amount)}
+                            </p>
+                          </div>
+
+                          <div className="border-r border-slate-300 p-4">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              Balance
+                            </p>
+                            <p className="mt-1 text-lg font-bold text-slate-800">
+                              {formatCurrency(
+                                Math.max(
+                                  viewReceipt.invoiceAmount -
+                                    viewReceipt.amount,
+                                  0,
+                                ),
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="p-4">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              Received By
+                            </p>
+                            <p className="mt-1 text-lg font-bold text-slate-800">
+                              {viewReceipt.receivedBy || "-"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                        <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                          {/* NOTES */}
+                          <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                              Notes
+                            </p>
+
+                            {(() => {
+                              const defaultNotes = `Purchase order raised by ${
+                                currentStore?.name ?? "this store"
+                              } to Nature Biotic.`;
+
+                              return (
+                                <>
+                                  {/* Screen - Editable Notes */}
+                                  <textarea
+                                    value={purchaseOrderNotes}
+                                    onChange={(e) =>
+                                      setPurchaseOrderNotes(e.target.value)
+                                    }
+                                    rows={2}
+                                    placeholder="Enter notes..."
+                                    className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                  />
+
+                                  {/* Print - Show edited notes */}
+                                  <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                    {purchaseOrderNotes || defaultNotes}
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </div>
+
+                          {/* AUTHORISED SIGNATORY */}
+                          <div className="flex items-end justify-center p-3">
+                            <div className="w-full text-center">
+                              <div className="border-b border-slate-300" />
+                              <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                                Authorised Signatory
+                              </p>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -701,10 +887,12 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                       >
                         Close
                       </Button>
-                      <Button onClick={() => window.print()}>
-                        <Icon name="print" size={18} />
-                        Print Receipt
-                      </Button>
+                      {!isFRO && (
+                        <Button onClick={() => window.print()}>
+                          <Icon name="print" size={18} />
+                          Print Receipt
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -725,7 +913,8 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                       Create Receipt
                     </h2>
                     <p className="text-sm text-slate-500 mt-1">
-                      Select a completed sales invoice, then record the amount received from the farmer.
+                      Select a completed sales invoice, then record the amount
+                      received from the farmer.
                     </p>
                   </div>
                   <button
@@ -786,7 +975,11 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
                     <Input
                       label="Mobile Number"
-                      value={selectedInvoice?.farmerPhone || createFarmer?.phone || ""}
+                      value={
+                        selectedInvoice?.farmerPhone ||
+                        createFarmer?.phone ||
+                        ""
+                      }
                       onChange={() => {}}
                       placeholder="Auto-filled from farmer"
                       readOnly
@@ -794,7 +987,11 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
                     <Input
                       label="Village"
-                      value={selectedInvoice?.farmerVillage || createFarmer?.village || ""}
+                      value={
+                        selectedInvoice?.farmerVillage ||
+                        createFarmer?.village ||
+                        ""
+                      }
                       onChange={() => {}}
                       placeholder="Auto-filled from farmer"
                       readOnly
@@ -832,13 +1029,22 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                       required
                     />
 
-                    <Select
-                      label="Received By"
-                      value={receivedBy}
-                      onChange={setReceivedBy}
-                      placeholder="Select staff"
-                      options={receivers.map((p) => ({ value: p, label: p }))}
-                    />
+                    {isFRO ? (
+                      <Input
+                        label="Received By"
+                        value={user?.name ?? ""}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    ) : (
+                      <Select
+                        label="Received By"
+                        value={receivedBy}
+                        onChange={setReceivedBy}
+                        placeholder="Select staff"
+                        options={receivers.map((p) => ({ value: p, label: p }))}
+                      />
+                    )}
 
                     <Input
                       label="Remarks"

@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, type Product } from "@/lib/data";
+import {
+  products as allProducts,
+  getStore,
+  getFarmersByStore,
+  getStorePurchasesFromCompanySales,
+  type Product,
+} from "@/lib/data";
 import { createPortal } from "react-dom";
-
+import { useAuth } from "@/context/AuthContext";
 
 type SaleType = "Direct" | "Executive";
 
@@ -95,7 +101,7 @@ const initialRows: SaleRow[] = [
     igst: 0,
     amount: 2499.84,
     products: [],
-    notes: ""
+    notes: "",
   },
 ];
 
@@ -119,6 +125,9 @@ function formatDateInput(value: string) {
 }
 
 export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
+  const { user } = useAuth();
+  const isFRO = user?.role === "fro";
+  const froName = user?.name?.trim() || "";
   const storageKey = `${STORAGE_KEY}:${storeId}`;
 
   const [rows, setRows] = useState<SaleRow[]>(() => {
@@ -133,16 +142,24 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRow | null>(null);
   useEffect(() => {
-  if (selectedSale) {
-    setInvoiceNotes(selectedSale.notes || "");
-  }
-}, [selectedSale]);
+    if (selectedSale) {
+      setInvoiceNotes(selectedSale.notes || "");
+    }
+  }, [selectedSale]);
+  useEffect(() => {
+    if (isFRO) {
+      setThrough("Executive");
+      setExecutiveName(froName);
+    }
+  }, [isFRO, froName]);
   const store = getStore(storeId);
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [invoiceNo, setInvoiceNo] = useState("");
-  const [through, setThrough] = useState<SaleType>("Direct");
+  const [through, setThrough] = useState<SaleType>(
+    isFRO ? "Executive" : "Direct",
+  );
   const [partyName, setPartyName] = useState("");
   const [farmerId, setFarmerId] = useState("");
   const [farmerPhone, setFarmerPhone] = useState("");
@@ -150,12 +167,33 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [farmerCrop, setFarmerCrop] = useState("");
   const [farmerAcre, setFarmerAcre] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
-  const [executiveName, setExecutiveName] = useState("");
+  const [executiveName, setExecutiveName] = useState(froName);
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
   const [invoiceNotes, setInvoiceNotes] = useState("");
 
-  const registeredFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
+  const registeredFarmers = useMemo(() => {
+    const storeFarmers = getFarmersByStore(storeId);
+
+    if (!isFRO) return storeFarmers;
+
+    const normalizedFroName = froName.toLowerCase();
+    return storeFarmers.filter(
+      (farmer) =>
+        String(farmer.executiveName || "")
+          .trim()
+          .toLowerCase() === normalizedFroName,
+    );
+  }, [storeId, isFRO, froName]);
+
+  const visibleRows = useMemo(() => {
+    if (!isFRO) return rows;
+
+    const normalizedFroName = froName.toLowerCase();
+    return rows.filter(
+      (row) => row.executiveName?.trim().toLowerCase() === normalizedFroName,
+    );
+  }, [rows, isFRO, froName]);
   const storePurchaseRows = useMemo(
     () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
     [storeId],
@@ -167,11 +205,18 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         const master = allProducts.find(
           (p) =>
             p.id === row.productId ||
-            p.name.toLowerCase() === String(row.productName ?? row.product ?? "").toLowerCase(),
+            p.name.toLowerCase() ===
+              String(row.productName ?? row.product ?? "").toLowerCase(),
         );
-        const productId = String(master?.id ?? row.productId ?? `stock-${index}`);
-        const name = String(row.productName ?? row.product ?? master?.name ?? "").trim();
-        const size = String(row.packSize ?? row.pkgsize ?? row.size ?? master?.size ?? "").trim();
+        const productId = String(
+          master?.id ?? row.productId ?? `stock-${index}`,
+        );
+        const name = String(
+          row.productName ?? row.product ?? master?.name ?? "",
+        ).trim();
+        const size = String(
+          row.packSize ?? row.pkgsize ?? row.size ?? master?.size ?? "",
+        ).trim();
         const quantity = Number(row.quantity ?? row.qty ?? 0);
         return {
           key: `${productId}-${size}-${row.batchNo ?? ""}-${row.expiryDate ?? ""}-${index}`,
@@ -182,8 +227,16 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
           batchNo: String(row.batchNo ?? ""),
           expiryDate: String(row.expiryDate ?? ""),
           quantity,
-          sellingPrice: Number(row.sellingPrice ?? row.rate ?? row.price ?? master?.sellingPrice ?? 0),
-          taxPercentage: Number(row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0),
+          sellingPrice: Number(
+            row.sellingPrice ??
+              row.rate ??
+              row.price ??
+              master?.sellingPrice ??
+              0,
+          ),
+          taxPercentage: Number(
+            row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
+          ),
         };
       })
       .filter((item) => item.name && item.quantity > 0);
@@ -199,10 +252,12 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }, [storeStockVariants]);
 
   const selectedProductName =
-    storeStockVariants.find((item) => item.productId === entry.productId)?.name || "";
+    storeStockVariants.find((item) => item.productId === entry.productId)
+      ?.name || "";
 
   const selectedSizeVariants = useMemo(
-    () => storeStockVariants.filter((item) => item.name === selectedProductName),
+    () =>
+      storeStockVariants.filter((item) => item.name === selectedProductName),
     [storeStockVariants, selectedProductName],
   );
 
@@ -241,10 +296,13 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     setFarmerPhone(farmer.phone || "");
     setFarmerVillage(farmer.village || "");
     setFarmerCrop(farmer.cropType || farmer.crops?.[0]?.cropType || "");
-    const acre = Number(farmer.landSize || 0) || Number(farmer.crops?.[0]?.landSize || 0);
+    const acre =
+      Number(farmer.landSize || 0) || Number(farmer.crops?.[0]?.landSize || 0);
     setFarmerAcre(acre > 0 ? String(acre) : "");
     setPlaceOfSupply(
-      (farmer.state || "").toLowerCase() === "tamil nadu" ? "Tamil Nadu" : "Others",
+      (farmer.state || "").toLowerCase() === "tamil nadu"
+        ? "Tamil Nadu"
+        : "Others",
     );
   }
 
@@ -290,7 +348,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         item.batchNo === entry.batchNo &&
         item.expiryDate === entry.expiryDate,
     );
-    const product = selectedStock?.product || allProducts.find((p) => p.id === entry.productId);
+    const product =
+      selectedStock?.product ||
+      allProducts.find((p) => p.id === entry.productId);
     if (!selectedStock || !product) return;
     if (entry.quantity > selectedStock.quantity) {
       window.alert(`Only ${selectedStock.quantity} available in store stock.`);
@@ -299,9 +359,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
     const gross = entry.quantity * entry.sellingPrice;
     const withoutTax = Math.max(0, gross - entry.discount);
-    const taxPercent = selectedStock.taxPercentage || product.taxPercentage || 0;
-    const taxAmount =
-      Math.round(withoutTax * (taxPercent / 100) * 100) / 100;
+    const taxPercent =
+      selectedStock.taxPercentage || product.taxPercentage || 0;
+    const taxAmount = Math.round(withoutTax * (taxPercent / 100) * 100) / 100;
     const rowTotal = Math.round((withoutTax + taxAmount) * 100) / 100;
 
     const row: AddedRow = {
@@ -322,7 +382,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       rowTotal,
       igst: 0,
       cgst: 0,
-      sgst: 0
+      sgst: 0,
     };
 
     setAdded((prev) => [...prev, row]);
@@ -336,7 +396,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   function resetForm() {
     setSaleDate(new Date().toISOString().split("T")[0]);
     setInvoiceNo("");
-    setThrough("Direct");
+    setThrough(isFRO ? "Executive" : "Direct");
     setPartyName("");
     setFarmerId("");
     setFarmerPhone("");
@@ -344,7 +404,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     setFarmerCrop("");
     setFarmerAcre("");
     setPlaceOfSupply("Tamil Nadu");
-    setExecutiveName("");
+    setExecutiveName(isFRO ? froName : "");
     setEntry(emptyEntry());
     setAdded([]);
   }
@@ -356,7 +416,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
   function handleCreate() {
     if (!invoiceNo.trim() || !partyName.trim() || added.length === 0) return;
-    if (through === "Executive" && !executiveName.trim()) return;
+    if (through === "Executive" && !(isFRO ? froName : executiveName).trim())
+      return;
 
     const row: SaleRow = {
       id: `store-sale-${Date.now()}`,
@@ -370,14 +431,15 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       farmerCrop,
       farmerAcre,
       placeOfSupply,
-      executiveName: through === "Executive" ? executiveName : "",
+      executiveName:
+        through === "Executive" ? (isFRO ? froName : executiveName.trim()) : "",
       withoutTax: totals.withoutTax,
       sgst: totals.sgst,
       cgst: totals.cgst,
       igst: totals.igst,
       amount: totals.grandTotal,
       products: added,
-      notes: ""
+      notes: "",
     };
 
     const next = [row, ...rows];
@@ -420,124 +482,188 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       </div>
 
       <Card className="overflow-hidden p-0">
-        <table className="w-full table-fixed border-collapse text-sm">
-          <thead>
-            <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-              <th
-                rowSpan={2}
-                className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-              >
-                S.No
-              </th>
-              <th
-                rowSpan={2}
-                className="w-[10%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-              >
-                Date
-              </th>
-              <th
-                rowSpan={2}
-                className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-              >
-                Invoice No
-              </th>
-              <th
-                rowSpan={2}
-                className="w-[11%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-              >
-                Through
-              </th>
-              <th
-                rowSpan={2}
-                className="w-[15%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
-              >
-                Farmer Name
-              </th>
-              <th
-                rowSpan={2}
-                className="w-[11%] border-r border-slate-200 px-2 py-3 text-right font-semibold"
-              >
-                Without Tax
-              </th>
-              <th
-                colSpan={3}
-                className="w-[21%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-              >
-                Tax
-              </th>
-              <th
-                rowSpan={2}
-                className="w-[12%] px-2 py-3 text-right font-semibold"
-              >
-                Total
-              </th>
-            </tr>
-
-            <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-              <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
-                SGST
-              </th>
-              <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
-                CGST
-              </th>
-              <th className="border-r border-slate-200 px-2 py-2 text-right font-semibold">
-                IGST
-              </th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {rows.map((r, i) => (
-              <tr
-                key={r.id}
-                onClick={() => setSelectedSale(r)}
-                title="Click to view invoice"
-                className={`cursor-pointer border-b border-slate-100 ${
-                  i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
-                } transition hover:bg-brand-50/30`}
-              >
-                <td className="px-2 py-3 text-center font-medium text-slate-500">
-                  {i + 1}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-center text-slate-500">
-                  {r.date}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
-                  {r.invoiceNo}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-center">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      r.through === "Direct"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-blue-50 text-blue-700"
-                    }`}
-                  >
-                    {r.through}
-                  </span>
-                </td>
-                <td className="truncate border-l border-slate-100 px-2 py-3 text-center text-slate-700">
-                  {r.partyName}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-800">
-                  {formatCurrency(r.withoutTax)}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
-                  {formatCurrency(r.sgst)}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
-                  {formatCurrency(r.cgst)}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
-                  {formatCurrency(r.igst)}
-                </td>
-                <td className="border-l border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                  {formatCurrency(r.amount)}
-                </td>
+        <div className="hidden md:block">
+          <table className="w-full table-fixed border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
+                <th
+                  rowSpan={2}
+                  className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
+                  S.No
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[10%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
+                  Date
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[14%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
+                  Invoice No
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[11%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
+                  Through
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[15%] border-r border-slate-200 px-2 py-3 text-center font-semibold"
+                >
+                  Farmer Name
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[11%] border-r border-slate-200 px-2 py-3 text-right font-semibold"
+                >
+                  Without Tax
+                </th>
+                <th
+                  colSpan={3}
+                  className="w-[21%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  Tax
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[12%] px-2 py-3 text-right font-semibold"
+                >
+                  Total
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+
+              <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
+                  SGST
+                </th>
+                <th className="border-r border-slate-100 px-2 py-2 text-right font-semibold">
+                  CGST
+                </th>
+                <th className="border-r border-slate-200 px-2 py-2 text-right font-semibold">
+                  IGST
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {visibleRows.map((r, i) => (
+                <tr
+                  key={r.id}
+                  onClick={() => setSelectedSale(r)}
+                  title="Click to view invoice"
+                  className={`cursor-pointer border-b border-slate-100 ${
+                    i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                  } transition hover:bg-brand-50/30`}
+                >
+                  <td className="px-2 py-3 text-center font-medium text-slate-500">
+                    {i + 1}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-center text-slate-500">
+                    {r.date}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
+                    {r.invoiceNo}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-center">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        r.through === "Direct"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-blue-50 text-blue-700"
+                      }`}
+                    >
+                      {r.through === "Executive"
+                        ? r.executiveName || "Executive"
+                        : "Direct"}
+                    </span>
+                  </td>
+                  <td className="truncate border-l border-slate-100 px-2 py-3 text-center text-slate-700">
+                    {r.partyName}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-800">
+                    {formatCurrency(r.withoutTax)}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                    {formatCurrency(r.sgst)}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                    {formatCurrency(r.cgst)}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-right tabular-nums text-slate-600">
+                    {formatCurrency(r.igst)}
+                  </td>
+                  <td className="border-l border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                    {formatCurrency(r.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="block md:hidden">
+          {visibleRows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-slate-400">
+              No sales invoices found.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {visibleRows.map((r, i) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setSelectedSale(r)}
+                  className="block w-full p-4 text-left transition active:bg-slate-50"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        Invoice {i + 1}
+                      </p>
+                      <p className="mt-1 truncate text-sm font-bold text-slate-800">
+                        {r.invoiceNo}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                      {r.through}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">Date</p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-700">
+                        {r.date}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">Farmer</p>
+                      <p className="mt-0.5 truncate text-xs font-semibold text-slate-700">
+                        {r.partyName}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-2.5">
+                      <p className="text-[10px] text-slate-400">Without Tax</p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-700">
+                        {formatCurrency(r.withoutTax)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-brand-50 p-2.5">
+                      <p className="text-[10px] text-brand-600">Total</p>
+                      <p className="mt-0.5 text-sm font-bold text-brand-700">
+                        {formatCurrency(r.amount)}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
 
       {selectedSale &&
@@ -613,6 +739,14 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                   display: block !important;
                 }
 
+                .store-invoice-desktop-view {
+                  display: block !important;
+                }
+
+                .store-invoice-mobile-view {
+                  display: none !important;
+                }
+
                 .store-invoice-print table {
                   page-break-inside: auto !important;
                 }
@@ -649,531 +783,928 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                    <div className="border-r border-slate-300 p-3">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
-                          <img
-                            src="/logo_NB.webp"
-                            alt="Nature Biotic"
-                            className="max-h-14 max-w-full object-contain"
+                <div className="store-invoice-mobile-view md:hidden">
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-brand-700">
+                            Tax Invoice
+                          </p>
+                          <p className="mt-1 text-lg font-extrabold text-slate-900">
+                            {selectedSale.invoiceNo}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700">
+                          {selectedSale.through}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <DetailField label="Date" value={selectedSale.date} />
+                        <DetailField
+                          label="Executive"
+                          value={selectedSale.executiveName || "-"}
+                        />
+                        <DetailField
+                          label="Farmer"
+                          value={selectedSale.partyName}
+                        />
+                        <DetailField
+                          label="Phone"
+                          value={selectedSale.farmerPhone || "-"}
+                        />
+                        <DetailField
+                          label="Village"
+                          value={selectedSale.farmerVillage || "-"}
+                        />
+                        <DetailField
+                          label="Place of Supply"
+                          value={selectedSale.placeOfSupply || "Tamil Nadu"}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        Farmer Details
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        <DetailField
+                          label="Name"
+                          value={selectedSale.partyName}
+                        />
+                        <DetailField
+                          label="Contact"
+                          value={selectedSale.farmerPhone || "-"}
+                        />
+                        <DetailField
+                          label="Village"
+                          value={selectedSale.farmerVillage || "-"}
+                        />
+                        <DetailField
+                          label="Crop"
+                          value={selectedSale.farmerCrop || "-"}
+                        />
+                        <DetailField
+                          label="Acre"
+                          value={selectedSale.farmerAcre || "-"}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                          Products
+                        </p>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          {selectedSale.products.length} item(s)
+                        </span>
+                      </div>
+
+                      {selectedSale.products.length ? (
+                        <div className="space-y-3">
+                          {selectedSale.products.map((item, index) => (
+                            <div
+                              key={item.key}
+                              className="rounded-lg bg-slate-50 p-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-semibold text-slate-400">
+                                    Product {index + 1}
+                                  </p>
+                                  <p className="mt-0.5 truncate text-sm font-bold text-slate-800">
+                                    {item.product?.name || "Product"}
+                                  </p>
+                                </div>
+                                <p className="shrink-0 text-sm font-extrabold text-slate-900">
+                                  {formatCurrency(item.rowTotal)}
+                                </p>
+                              </div>
+                              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+                                <DetailField
+                                  label="Pkg Size"
+                                  value={item.pkgsize || item.packSize || "-"}
+                                />
+                                <DetailField
+                                  label="Batch No"
+                                  value={item.batchNo || "-"}
+                                />
+                                <DetailField
+                                  label="Expiry"
+                                  value={item.expiryDate || "-"}
+                                />
+                                <DetailField
+                                  label="Qty"
+                                  value={String(item.quantity)}
+                                />
+                                <DetailField
+                                  label="Unit Price"
+                                  value={formatCurrency(item.sellingPrice)}
+                                />
+                                <DetailField
+                                  label="Discount"
+                                  value={formatCurrency(item.discount)}
+                                />
+                                <DetailField
+                                  label="Tax"
+                                  value={formatCurrency(item.taxAmount)}
+                                />
+                                <DetailField
+                                  label="Taxable"
+                                  value={formatCurrency(item.withoutTax)}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="py-6 text-center text-xs text-slate-400">
+                          No product details available.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="space-y-2 text-sm">
+                        <SummaryRow
+                          label="Without Tax"
+                          value={formatCurrency(selectedSale.withoutTax)}
+                        />
+                        <SummaryRow
+                          label="SGST"
+                          value={formatCurrency(selectedSale.sgst)}
+                        />
+                        <SummaryRow
+                          label="CGST"
+                          value={formatCurrency(selectedSale.cgst)}
+                        />
+                        <SummaryRow
+                          label="IGST"
+                          value={formatCurrency(selectedSale.igst)}
+                        />
+                        <div className="border-t border-slate-200 pt-3">
+                          <SummaryRow
+                            label="Grand Total"
+                            value={formatCurrency(selectedSale.amount)}
+                            bold
                           />
                         </div>
-                        <div className="leading-tight">
-                          <h3 className="text-base font-extrabold tracking-wide text-slate-900">
-                            {store?.name || "SAIRAM AGRI INPUT"}
-                          </h3>
-                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
-                            {store?.address || store?.location || "Rajapalayam, Tamil Nadu"}
-                          </p>
-                          <p className="mt-1 text-[10px] text-slate-600">
-                            GSTIN: {store?.gst || "-"}
-                          </p>
-                          <p className="text-[10px] text-slate-600">
-                            Contact: {store?.phone || "-"}
-                          </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="store-invoice-desktop-view hidden md:block">
+                  <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                    <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
+                      <div className="border-r border-slate-300 p-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
+                            <img
+                              src="/logo_NB.webp"
+                              alt="Nature Biotic"
+                              className="max-h-14 max-w-full object-contain"
+                            />
+                          </div>
+                          <div className="leading-tight">
+                            <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                              {store?.name || "SAIRAM AGRI INPUT"}
+                            </h3>
+                            <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
+                              {store?.address ||
+                                store?.location ||
+                                "Rajapalayam, Tamil Nadu"}
+                            </p>
+                            <p className="mt-1 text-[10px] text-slate-600">
+                              GSTIN: {store?.gst || "-"}
+                            </p>
+                            <p className="text-[10px] text-slate-600">
+                              Contact: {store?.phone || "-"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center p-3">
+                        <div className="text-center">
+                          <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
+                            TAX INVOICE
+                          </h2>
+                          {/* <p className="mt-1 text-[10px] text-slate-500">
+                          Store to Farmer
+                        </p> */}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-center p-3">
-                      <div className="text-center">
-                        <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
-                          TAX INVOICE
-                        </h2>
-                        {/* <p className="mt-1 text-[10px] text-slate-500">
-                          Store to Farmer
-                        </p> */}
+                    <div className="grid grid-cols-3 border-b border-slate-300 text-[9px] leading-4">
+                      <div className="border-r border-slate-300 p-3">
+                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                          Billing Address
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {selectedSale.partyName}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          {selectedSale.farmerVillage || "-"}
+                        </p>
+                        <p className="text-slate-600">
+                          Contact: {selectedSale.farmerPhone || "-"}
+                        </p>
+                        <p className="text-slate-600">
+                          Crop / Acre:{" "}
+                          {[
+                            selectedSale.farmerCrop,
+                            selectedSale.farmerAcre
+                              ? `${selectedSale.farmerAcre} Acre`
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" / ") || "-"}
+                        </p>
+                      </div>
+
+                      <div className="border-r border-slate-300 p-3">
+                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                          Delivery Address
+                        </p>
+                        <p className="font-bold text-slate-900">
+                          {selectedSale.partyName}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          {selectedSale.farmerVillage || "-"}
+                        </p>
+                        <p className="mt-1 text-slate-600">
+                          Place of Supply:{" "}
+                          {selectedSale.placeOfSupply || "Tamil Nadu"}
+                        </p>
+                      </div>
+
+                      <div className="p-3">
+                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                          Invoice Details
+                        </p>
+                        <div className="grid grid-cols-[92px_1fr] gap-y-1">
+                          <span className="text-slate-500">Invoice No</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedSale.invoiceNo}
+                          </span>
+                          <span className="text-slate-500">Date</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedSale.date}
+                          </span>
+                          <span className="text-slate-500">Through</span>
+                          <span className="font-semibold text-slate-800">
+                            {selectedSale.through}
+                          </span>
+                          {selectedSale.through === "Executive" && (
+                            <>
+                              <span className="text-slate-500">Executive</span>
+                              <span className="font-semibold text-slate-800">
+                                {selectedSale.executiveName || "-"}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-3 border-b border-slate-300 text-[9px] leading-4">
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Billing Address
-                      </p>
-                      <p className="font-bold text-slate-900">{selectedSale.partyName}</p>
-                      <p className="mt-1 text-slate-600">{selectedSale.farmerVillage || "-"}</p>
-                      <p className="text-slate-600">Contact: {selectedSale.farmerPhone || "-"}</p>
-                      <p className="text-slate-600">
-                        Crop / Acre: {[selectedSale.farmerCrop, selectedSale.farmerAcre ? `${selectedSale.farmerAcre} Acre` : ""].filter(Boolean).join(" / ") || "-"}
-                      </p>
-                    </div>
+                    <div className="w-full overflow-x-auto">
+                      <table className="w-full border-collapse text-[8.5px] xl:text-[9px]">
+                        <thead>
+                          <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              S.No
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Product
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              HSN Code
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              PKG Size
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Batch No
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Exp Date
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Qty
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Unit Price
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Before Discount
+                            </th>
+                            <th
+                              colSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Discount
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Taxable (₹)
+                            </th>
+                            <th
+                              colSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              CGST
+                            </th>
+                            <th
+                              colSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              SGST (₹)
+                            </th>
+                            <th
+                              colSpan={2}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              IGST (₹)
+                            </th>
+                            <th rowSpan={2} className="px-1 py-1.5 text-center">
+                              Line Total
+                            </th>
+                          </tr>
+                          <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amt
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Rate %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amount
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Rate %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amount
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Rate %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amount
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedSale.products.length > 0 ? (
+                            selectedSale.products.map((item, index) => {
+                              const beforeDiscount =
+                                Number(item.quantity || 0) *
+                                Number(item.sellingPrice || 0);
+                              const discountAmount = Number(item.discount || 0);
+                              const discountPercent =
+                                beforeDiscount > 0
+                                  ? (discountAmount / beforeDiscount) * 100
+                                  : 0;
+                              const isTamilNadu =
+                                (selectedSale.placeOfSupply || "Tamil Nadu") ===
+                                "Tamil Nadu";
+                              const cgstRate = isTamilNadu
+                                ? Number(item.taxPercent || 0) / 2
+                                : 0;
+                              const sgstRate = isTamilNadu
+                                ? Number(item.taxPercent || 0) / 2
+                                : 0;
+                              const igstRate = !isTamilNadu
+                                ? Number(item.taxPercent || 0)
+                                : 0;
+                              const cgstAmt = isTamilNadu
+                                ? Number(item.taxAmount || 0) / 2
+                                : 0;
+                              const sgstAmt = isTamilNadu
+                                ? Number(item.taxAmount || 0) / 2
+                                : 0;
+                              const igstAmt = !isTamilNadu
+                                ? Number(item.taxAmount || 0)
+                                : 0;
 
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Delivery Address
-                      </p>
-                      <p className="font-bold text-slate-900">{selectedSale.partyName}</p>
-                      <p className="mt-1 text-slate-600">{selectedSale.farmerVillage || "-"}</p>
-                      <p className="mt-1 text-slate-600">
-                        Place of Supply: {selectedSale.placeOfSupply || "Tamil Nadu"}
-                      </p>
-                    </div>
+                              return (
+                                <tr key={item.key} className="border-slate-300">
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                    {index + 1}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 font-semibold">
+                                    {item.product?.name || "Product"}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                    {item.hsn || "-"}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                    {item.pkgsize || item.packSize || "-"}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                    {item.batchNo || "-"}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                    {item.expiryDate || "-"}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                    {item.quantity}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {formatCurrency(item.sellingPrice)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">
+                                    {formatCurrency(beforeDiscount)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {discountPercent.toFixed(2)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {formatCurrency(discountAmount)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">
+                                    {formatCurrency(item.withoutTax)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {cgstRate.toFixed(2)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {formatCurrency(cgstAmt)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {sgstRate.toFixed(2)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {formatCurrency(sgstAmt)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {igstRate.toFixed(2)}
+                                  </td>
+                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                                    {formatCurrency(igstAmt)}
+                                  </td>
+                                  <td className="px-1 py-1.5 text-right font-bold">
+                                    {formatCurrency(item.rowTotal)}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td
+                                colSpan={19}
+                                className="px-4 py-8 text-center text-slate-400"
+                              >
+                                Product-level details are not available for this
+                                old sample invoice.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
 
-                    <div className="p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Invoice Details
-                      </p>
-                      <div className="grid grid-cols-[92px_1fr] gap-y-1">
-                        <span className="text-slate-500">Invoice No</span>
-                        <span className="font-semibold text-slate-800">{selectedSale.invoiceNo}</span>
-                        <span className="text-slate-500">Date</span>
-                        <span className="font-semibold text-slate-800">{selectedSale.date}</span>
-                        <span className="text-slate-500">Through</span>
-                        <span className="font-semibold text-slate-800">{selectedSale.through}</span>
-                        {selectedSale.through === "Executive" && (
-                          <>
-                            <span className="text-slate-500">Executive</span>
-                            <span className="font-semibold text-slate-800">
-                              {selectedSale.executiveName || "-"}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                        {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                        {(() => {
+                          const MIN_ROWS = 10;
+                          const fillerCount = Math.max(
+                            0,
+                            MIN_ROWS - selectedSale.products.length,
+                          );
+                          const columnCount = 19;
 
-                  <div className="w-full overflow-x-auto">
-                    <table className="w-full border-collapse text-[8.5px] xl:text-[9px]">
-                      <thead>
-                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">S.No</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Product</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">HSN Code</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">PKG Size</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Batch No</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Exp Date</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Qty</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Unit Price</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Before Discount</th>
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Discount</th>
-                          <th rowSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">Taxable (₹)</th>
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">CGST</th>
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">SGST (₹)</th>
-                          <th colSpan={2} className="border-r border-slate-300 px-1 py-1.5 text-center">IGST (₹)</th>
-                          <th rowSpan={2} className="px-1 py-1.5 text-center">Line Total</th>
-                        </tr>
-                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amt</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Rate %</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amount</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Rate %</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amount</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Rate %</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedSale.products.length > 0 ? (
-                          selectedSale.products.map((item, index) => {
-                            const beforeDiscount = Number(item.quantity || 0) * Number(item.sellingPrice || 0);
-                            const discountAmount = Number(item.discount || 0);
-                            const discountPercent = beforeDiscount > 0 ? (discountAmount / beforeDiscount) * 100 : 0;
-                            const isTamilNadu = (selectedSale.placeOfSupply || "Tamil Nadu") === "Tamil Nadu";
-                            const cgstRate = isTamilNadu ? Number(item.taxPercent || 0) / 2 : 0;
-                            const sgstRate = isTamilNadu ? Number(item.taxPercent || 0) / 2 : 0;
-                            const igstRate = !isTamilNadu ? Number(item.taxPercent || 0) : 0;
-                            const cgstAmt = isTamilNadu ? Number(item.taxAmount || 0) / 2 : 0;
-                            const sgstAmt = isTamilNadu ? Number(item.taxAmount || 0) / 2 : 0;
-                            const igstAmt = !isTamilNadu ? Number(item.taxAmount || 0) : 0;
+                          return Array.from({ length: fillerCount }).map(
+                            (_, i) => (
+                              <tr key={`filler-${i}`}>
+                                {Array.from({ length: columnCount }).map(
+                                  (_, colIdx) => (
+                                    <td
+                                      key={colIdx}
+                                      className={`px-1 py-1.5 ${
+                                        colIdx < columnCount - 1
+                                          ? "border-r border-slate-300"
+                                          : ""
+                                      }`}
+                                    >
+                                      &nbsp;
+                                    </td>
+                                  ),
+                                )}
+                              </tr>
+                            ),
+                          );
+                        })()}
+
+                        <tfoot>
+                          {(() => {
+                            const products = selectedSale.products || [];
+
+                            const totalQty = products.reduce(
+                              (sum, item) => sum + Number(item.quantity || 0),
+                              0,
+                            );
+
+                            const totalBeforeDiscount = products.reduce(
+                              (sum, item) =>
+                                sum +
+                                Number(item.quantity || 0) *
+                                  Number(item.sellingPrice || 0),
+                              0,
+                            );
+
+                            const totalDiscount = products.reduce(
+                              (sum, item) => sum + Number(item.discount || 0),
+                              0,
+                            );
+
+                            const totalTaxable = products.reduce(
+                              (sum, item) => sum + Number(item.withoutTax || 0),
+                              0,
+                            );
+
+                            const isTamilNadu =
+                              (selectedSale.placeOfSupply || "Tamil Nadu") ===
+                              "Tamil Nadu";
+
+                            const totalCGST = isTamilNadu
+                              ? products.reduce(
+                                  (sum, item) =>
+                                    sum + Number(item.taxAmount || 0) / 2,
+                                  0,
+                                )
+                              : 0;
+
+                            const totalSGST = isTamilNadu
+                              ? products.reduce(
+                                  (sum, item) =>
+                                    sum + Number(item.taxAmount || 0) / 2,
+                                  0,
+                                )
+                              : 0;
+
+                            const totalIGST = !isTamilNadu
+                              ? products.reduce(
+                                  (sum, item) =>
+                                    sum + Number(item.taxAmount || 0),
+                                  0,
+                                )
+                              : 0;
+
+                            const totalLine = products.reduce(
+                              (sum, item) => sum + Number(item.rowTotal || 0),
+                              0,
+                            );
 
                             return (
-                              <tr key={item.key} className="border-slate-300">
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{index + 1}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 font-semibold">{item.product?.name || "Product"}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.hsn || "-"}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.pkgsize || item.packSize || "-"}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.batchNo || "-"}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.expiryDate || "-"}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">{item.quantity}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(item.sellingPrice)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">{formatCurrency(beforeDiscount)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{discountPercent.toFixed(2)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(discountAmount)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">{formatCurrency(item.withoutTax)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{cgstRate.toFixed(2)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(cgstAmt)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{sgstRate.toFixed(2)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(sgstAmt)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{igstRate.toFixed(2)}</td>
-                                <td className="border-r border-slate-300 px-1 py-1.5 text-right">{formatCurrency(igstAmt)}</td>
-                                <td className="px-1 py-1.5 text-right font-bold">{formatCurrency(item.rowTotal)}</td>
+                              <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                                {/* S.No + Product + HSN + PKG + Batch + Exp Date */}
+                                <td
+                                  colSpan={6}
+                                  className="border-r border-slate-300 px-1 py-2 text-center"
+                                >
+                                  TOTAL
+                                </td>
+
+                                {/* Qty */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-center">
+                                  {totalQty}
+                                </td>
+
+                                {/* Unit Price */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  -
+                                </td>
+
+                                {/* Before Discount */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  {formatCurrency(totalBeforeDiscount)}
+                                </td>
+
+                                {/* Discount % */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  -
+                                </td>
+
+                                {/* Discount Amount */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  {formatCurrency(totalDiscount)}
+                                </td>
+
+                                {/* Taxable */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  {formatCurrency(totalTaxable)}
+                                </td>
+
+                                {/* CGST Rate */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  -
+                                </td>
+
+                                {/* CGST Amount */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  {formatCurrency(totalCGST)}
+                                </td>
+
+                                {/* SGST Rate */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  -
+                                </td>
+
+                                {/* SGST Amount */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  {formatCurrency(totalSGST)}
+                                </td>
+
+                                {/* IGST Rate */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  -
+                                </td>
+
+                                {/* IGST Amount */}
+                                <td className="border-r border-slate-300 px-1 py-2 text-right">
+                                  {formatCurrency(totalIGST)}
+                                </td>
+
+                                {/* Line Total */}
+                                <td className="px-1 py-2 text-right font-extrabold">
+                                  {formatCurrency(totalLine)}
+                                </td>
                               </tr>
                             );
-                          })
-                        ) : (
-                          <tr>
-                            <td colSpan={19} className="px-4 py-8 text-center text-slate-400">
-                              Product-level details are not available for this old sample invoice.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
+                          })()}
+                        </tfoot>
+                      </table>
+                    </div>
 
-                      {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                    {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
+                    <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                      <div className="border-r border-slate-300 p-2.5 flex items-center">
                         {(() => {
-                        const MIN_ROWS = 10;
-                        const fillerCount = Math.max(0, MIN_ROWS - selectedSale.products.length);
-                        const columnCount = 19;
-
-                        return Array.from({ length: fillerCount }).map((_, i) => (
-                          <tr key={`filler-${i}`}>
-                            {Array.from({ length: columnCount }).map((_, colIdx) => (
-                              <td
-                                key={colIdx}
-                                className={`px-1 py-1.5 ${
-                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
-                                }`}
-                              >
-                                &nbsp;
-                              </td>
-                            ))}
-                          </tr>
-                        ));
-                      })()}
-
-
-                      <tfoot>
-                        {(() => {
-                          const products = selectedSale.products || [];
-
-                          const totalQty = products.reduce(
-                            (sum, item) => sum + Number(item.quantity || 0),
-                            0
-                          );
-
-                          const totalBeforeDiscount = products.reduce(
-                            (sum, item) =>
-                              sum +
-                              Number(item.quantity || 0) * Number(item.sellingPrice || 0),
-                            0
-                          );
-
-                          const totalDiscount = products.reduce(
-                            (sum, item) => sum + Number(item.discount || 0),
-                            0
-                          );
-
-                          const totalTaxable = products.reduce(
-                            (sum, item) => sum + Number(item.withoutTax || 0),
-                            0
-                          );
-
-                          const isTamilNadu =
-                            (selectedSale.placeOfSupply || "Tamil Nadu") === "Tamil Nadu";
-
-                          const totalCGST = isTamilNadu
-                            ? products.reduce(
-                                (sum, item) => sum + Number(item.taxAmount || 0) / 2,
-                                0
+                          const grandTotal = selectedSale.products.length
+                            ? selectedSale.products.reduce(
+                                (sum, row) => sum + Number(row.rowTotal || 0),
+                                0,
                               )
-                            : 0;
+                            : Number(selectedSale.amount || 0);
 
-                          const totalSGST = isTamilNadu
-                            ? products.reduce(
-                                (sum, item) => sum + Number(item.taxAmount || 0) / 2,
-                                0
-                              )
-                            : 0;
-
-                          const totalIGST = !isTamilNadu
-                            ? products.reduce(
-                                (sum, item) => sum + Number(item.taxAmount || 0),
-                                0
-                              )
-                            : 0;
-
-                          const totalLine = products.reduce(
-                            (sum, item) => sum + Number(item.rowTotal || 0),
-                            0
-                          );
+                          const roundedTotal = Math.round(grandTotal);
 
                           return (
-                          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-
-                            {/* S.No + Product + HSN + PKG + Batch + Exp Date */}
-                            <td
-                              colSpan={6}
-                              className="border-r border-slate-300 px-1 py-2 text-center"
-                            >
-                              TOTAL
-                            </td>
-
-                            {/* Qty */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-center">
-                              {totalQty}
-                            </td>
-
-                            {/* Unit Price */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              -
-                            </td>
-
-                            {/* Before Discount */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              {formatCurrency(totalBeforeDiscount)}
-                            </td>
-
-                            {/* Discount % */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              -
-                            </td>
-
-                            {/* Discount Amount */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              {formatCurrency(totalDiscount)}
-                            </td>
-
-                            {/* Taxable */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              {formatCurrency(totalTaxable)}
-                            </td>
-
-                            {/* CGST Rate */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              -
-                            </td>
-
-                            {/* CGST Amount */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              {formatCurrency(totalCGST)}
-                            </td>
-
-                            {/* SGST Rate */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              -
-                            </td>
-
-                            {/* SGST Amount */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              {formatCurrency(totalSGST)}
-                            </td>
-
-                            {/* IGST Rate */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              -
-                            </td>
-
-                            {/* IGST Amount */}
-                            <td className="border-r border-slate-300 px-1 py-2 text-right">
-                              {formatCurrency(totalIGST)}
-                            </td>
-
-                            {/* Line Total */}
-                            <td className="px-1 py-2 text-right font-extrabold">
-                              {formatCurrency(totalLine)}
-                            </td>
-
-                          </tr>
-                        );
+                            <p className="text-[10px] font-semibold text-slate-700">
+                              Amount in Words :{" "}
+                              <span className="font-bold text-slate-900">
+                                {numberToWords(roundedTotal)}
+                              </span>
+                            </p>
+                          );
                         })()}
-                      </tfoot>
-                    </table>
-                  </div>
+                      </div>
 
-                  {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
-                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-2.5 flex items-center">
-                      {(() => {
-                        const grandTotal = selectedSale.products.length
-                          ? selectedSale.products.reduce(
-                              (sum, row) => sum + Number(row.rowTotal || 0),
-                              0,
-                            )
-                          : Number(selectedSale.amount || 0);
-
-                        const roundedTotal = Math.round(grandTotal);
-
-                        return (
-                          <p className="text-[10px] font-semibold text-slate-700">
-                            Amount in Words :{" "}
-                            <span className="font-bold text-slate-900">
-                              {numberToWords(roundedTotal)}
-                            </span>
-                          </p>
-                        );
-                      })()}
-                    </div>
-
-                    <div className="space-y-1 p-2.5 text-[11px]">
-                      <SummaryRow
-                        label="Round Off"
-                        value={formatCurrency(
-                          (selectedSale.products.length
-                            ? selectedSale.products.reduce(
-                                (sum, row) => sum + Number(row.rowTotal || 0),
-                                0,
-                              )
-                            : Number(selectedSale.amount || 0)) -
+                      <div className="space-y-1 p-2.5 text-[11px]">
+                        <SummaryRow
+                          label="Round Off"
+                          value={formatCurrency(
                             (selectedSale.products.length
                               ? selectedSale.products.reduce(
-                              (sum, row) =>
-                                sum +
-                                Number(row.withoutTax || 0) +
-                                Number(row.sgst || 0) +
-                                Number(row.cgst || 0) +
-                                Number(row.igst || 0),
-                              0,
-                            )
-                              : Number(selectedSale.withoutTax || 0) +
-                                Number(selectedSale.sgst || 0) +
-                                Number(selectedSale.cgst || 0) +
-                                Number(selectedSale.igst || 0)),
-                        )}
-                        muted
-                      />
+                                  (sum, row) => sum + Number(row.rowTotal || 0),
+                                  0,
+                                )
+                              : Number(selectedSale.amount || 0)) -
+                              (selectedSale.products.length
+                                ? selectedSale.products.reduce(
+                                    (sum, row) =>
+                                      sum +
+                                      Number(row.withoutTax || 0) +
+                                      Number(row.sgst || 0) +
+                                      Number(row.cgst || 0) +
+                                      Number(row.igst || 0),
+                                    0,
+                                  )
+                                : Number(selectedSale.withoutTax || 0) +
+                                  Number(selectedSale.sgst || 0) +
+                                  Number(selectedSale.cgst || 0) +
+                                  Number(selectedSale.igst || 0)),
+                          )}
+                          muted
+                        />
 
-                      <div className="border-t border-slate-300 pt-1.5">
-                      <SummaryRow
-                        label="Grand Total"
-                        value={formatCurrency(
-                          selectedSale.products.length
+                        <div className="border-t border-slate-300 pt-1.5">
+                          <SummaryRow
+                            label="Grand Total"
+                            value={formatCurrency(
+                              selectedSale.products.length
+                                ? selectedSale.products.reduce(
+                                    (sum, row) =>
+                                      sum + Number(row.rowTotal || 0),
+                                    0,
+                                  )
+                                : Number(selectedSale.amount || 0),
+                            )}
+                            bold
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Notes (left) + Authorised Signatory (right) */}
+                    <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
+                      <div className="border-r border-slate-300 min-w-0 p-2">
+                        {/* NOTES */}
+                        <div className="flex flex-col justify-end border-slate-300 p-4">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            Notes
+                          </p>
+
+                          {(() => {
+                            const defaultNotes = `Purchase return raised by ${
+                              selectedSale?.placeOfSupply ?? "this store"
+                            } to Nature Biotic.`;
+
+                            return (
+                              <>
+                                {/* Screen - Editable Notes */}
+                                <textarea
+                                  value={invoiceNotes}
+                                  onChange={(e) =>
+                                    setInvoiceNotes(e.target.value)
+                                  }
+                                  rows={2}
+                                  placeholder="Enter notes..."
+                                  className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                />
+
+                                {/* Print - Show edited notes */}
+                                <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                  {invoiceNotes || defaultNotes}
+                                </p>
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        {(() => {
+                          const exactTotal = selectedSale.products.length
                             ? selectedSale.products.reduce(
                                 (sum, row) => sum + Number(row.rowTotal || 0),
                                 0,
                               )
-                            : Number(selectedSale.amount || 0),
-                        )}
-                        bold
-                      />
-                    </div>
-                    </div>
-                  </div>
+                            : Number(selectedSale.amount || 0);
+                          const payableTotal = Math.round(exactTotal);
 
-                  {/* Row 2: Notes (left) + Authorised Signatory (right) */}
-                  <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 min-w-0 p-2">
-                      {/* NOTES */}
-                    <div className="flex flex-col justify-end border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Notes
-                      </p>
+                          return (
+                            <div className="mt-1.5">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Payment Details
+                              </p>
 
-                      {(() => {
-                        const defaultNotes = `Purchase return raised by ${
-                          selectedSale?.placeOfSupply ?? "this store"
-                        } to Nature Biotic.`;
+                              <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+                                <div className="text-[8.5px] leading-4 text-slate-600">
+                                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Account Name :{" "}
+                                      </span>
+                                      <span className="font-bold text-slate-800">
+                                        {PAYMENT_BANK.accountName}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
 
-                        return (
-                          <>
-                            {/* Screen - Editable Notes */}
-                            <textarea
-                              value={invoiceNotes}
-                              onChange={(e) => setInvoiceNotes(e.target.value)}
-                              rows={2}
-                              placeholder="Enter notes..."
-                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                            />
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Account No :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {PAYMENT_BANK.accountNo}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
 
-                            {/* Print - Show edited notes */}
-                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                              {invoiceNotes || defaultNotes}
-                            </p>
-                          </>
-                        );
-                      })()}
-                    </div>
-                      
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        IFSC Code :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {PAYMENT_BANK.ifsc}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
 
-                      {(() => {
-                        const exactTotal = selectedSale.products.length
-                          ? selectedSale.products.reduce(
-                              (sum, row) => sum + Number(row.rowTotal || 0),
-                              0,
-                            )
-                          : Number(selectedSale.amount || 0);
-                        const payableTotal = Math.round(exactTotal);
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Bank Name :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {PAYMENT_BANK.bankName}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
 
-                        return (
-                          <div className="mt-1.5">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Branch :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {PAYMENT_BANK.branch}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
 
-                            <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
-                              <div className="text-[8.5px] leading-4 text-slate-600">
-                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Account Name : </span>
-                                    <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Account No : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">IFSC Code : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Bank Name : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Branch : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">UPI ID : </span>
-                                    <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <div className="rounded-lg border border-slate-300 bg-white p-1.5">
-                                  <img
-                                    src={buildPaymentQrUrl(
-                                      payableTotal,
-                                      selectedSale.invoiceNo,
-                                    )}
-                                    alt={`UPI QR for ${formatCurrency(payableTotal)}`}
-                                    className="h-[70px] w-[70px] object-contain"
-                                  />
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        UPI ID :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {PAYMENT_BANK.upiId}
+                                      </span>
+                                    </span>
+                                  </div>
                                 </div>
 
-                                <div className="min-w-0">
-                                  <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
-                                    Scan QR to Pay
-                                  </p>
-                                  <p className="mt-0.5 text-xs font-extrabold text-slate-900">
-                                    {formatCurrency(payableTotal)}
-                                  </p>
+                                <div className="flex items-center gap-2">
+                                  <div className="rounded-lg border border-slate-300 bg-white p-1.5">
+                                    <img
+                                      src={buildPaymentQrUrl(
+                                        payableTotal,
+                                        selectedSale.invoiceNo,
+                                      )}
+                                      alt={`UPI QR for ${formatCurrency(payableTotal)}`}
+                                      className="h-[70px] w-[70px] object-contain"
+                                    />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
+                                      Scan QR to Pay
+                                    </p>
+                                    <p className="mt-0.5 text-xs font-extrabold text-slate-900">
+                                      {formatCurrency(payableTotal)}
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
+                          );
+                        })()}
+                      </div>
 
-                    <div className="p-2 text-center flex flex-col justify-end">
-                      <div className="h-12 border-b border-slate-300" />
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Authorised Signatory
-                      </p>
+                      <div className="p-2 text-center flex flex-col justify-end">
+                        <div className="h-12 border-b border-slate-300" />
+                        <p className="mt-2 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="store-invoice-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
-                <Button variant="secondary" onClick={() => setSelectedSale(null)}>
+              <div className="store-invoice-screen-only flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end sm:px-6 sm:py-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedSale(null)}
+                  className="w-full sm:w-auto"
+                >
                   Close
                 </Button>
-                <Button onClick={() => window.print()}>
+                <Button
+                  onClick={() => window.print()}
+                  className="w-full sm:w-auto"
+                >
                   <Icon name="print" size={18} />
                   Print Invoice
                 </Button>
@@ -1186,7 +1717,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       {showCreate &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex max-h-[94vh] w-[calc(100vw-16px)] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:w-[94vw]">
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">
@@ -1228,15 +1759,26 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       required
                     />
 
-                    <Select
-                      label="Sale Type"
-                      value={through}
-                      onChange={(value) => setThrough(value as SaleType)}
-                      options={[
-                        { value: "Direct", label: "Direct" },
-                        { value: "Executive", label: "Executive" },
-                      ]}
-                    />
+                    {!isFRO && (
+                      <Select
+                        label="Sale Type"
+                        value={through}
+                        onChange={(value) => setThrough(value as SaleType)}
+                        options={[
+                          { value: "Direct", label: "Direct" },
+                          { value: "Executive", label: "Executive" },
+                        ]}
+                      />
+                    )}
+
+                    {isFRO && (
+                      <Input
+                        label="Executive"
+                        value={froName}
+                        onChange={() => {}}
+                        readOnly
+                      />
+                    )}
 
                     <Select
                       label="Farmer Name"
@@ -1250,13 +1792,38 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       required
                     />
 
-                    <Input label="Mobile Number" value={farmerPhone} onChange={() => {}} readOnly />
-                    <Input label="Village" value={farmerVillage} onChange={() => {}} readOnly />
-                    <Input label="Crop" value={farmerCrop} onChange={() => {}} readOnly />
-                    <Input label="Acre" value={farmerAcre} onChange={() => {}} readOnly />
-                    <Input label="Place of Supply" value={placeOfSupply} onChange={() => {}} readOnly />
+                    <Input
+                      label="Mobile Number"
+                      value={farmerPhone}
+                      onChange={() => {}}
+                      readOnly
+                    />
+                    <Input
+                      label="Village"
+                      value={farmerVillage}
+                      onChange={() => {}}
+                      readOnly
+                    />
+                    <Input
+                      label="Crop"
+                      value={farmerCrop}
+                      onChange={() => {}}
+                      readOnly
+                    />
+                    <Input
+                      label="Acre"
+                      value={farmerAcre}
+                      onChange={() => {}}
+                      readOnly
+                    />
+                    <Input
+                      label="Place of Supply"
+                      value={placeOfSupply}
+                      onChange={() => {}}
+                      readOnly
+                    />
 
-                    {through === "Executive" && (
+                    {!isFRO && through === "Executive" && (
                       <Select
                         label="Executive"
                         value={executiveName}
@@ -1292,7 +1859,11 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         label="PKG Size"
                         value={entry.pkgsize}
                         onChange={selectProductSize}
-                        placeholder={selectedProductName ? "Select available size" : "Select product first"}
+                        placeholder={
+                          selectedProductName
+                            ? "Select available size"
+                            : "Select product first"
+                        }
                         options={Array.from(
                           new Map(
                             selectedSizeVariants.map((item) => [
@@ -1417,94 +1988,157 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       </p>
                     </div>
                   ) : (
-                    <div className="overflow-hidden rounded-2xl border border-slate-200">
-                      <table className="w-full table-fixed text-sm">
-                        <thead>
-                          <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-                            <th className="w-[6%] px-2 py-3 text-center">
-                              S.No
-                            </th>
-                            <th className="w-[15%] px-2 py-3 text-left">
-                              Product
-                            </th>
-                            <th className="w-[11%] px-2 py-3 text-left">
-                              Batch
-                            </th>
-                            <th className="w-[11%] px-2 py-3 text-center">
-                              Expiry
-                            </th>
-                            <th className="w-[10%] px-2 py-3 text-center">
-                              Size
-                            </th>
-                            <th className="w-[8%] px-2 py-3 text-right">
-                              Qty
-                            </th>
-                            <th className="w-[11%] px-2 py-3 text-right">
-                              Price
-                            </th>
-                            <th className="w-[10%] px-2 py-3 text-right">
-                              Discount
-                            </th>
-                            <th className="w-[9%] px-2 py-3 text-right">
-                              Tax
-                            </th>
-                            <th className="w-[9%] px-2 py-3 text-right">
-                              Total
-                            </th>
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {added.map((r, i) => (
-                            <tr
-                              key={r.key}
-                              
-                            >
-                              <td className="px-2 py-3 text-center">
-                                {i + 1}
-                              </td>
-                              <td className="truncate px-2 py-3 font-semibold">
-                                {r.product?.name}
-                              </td>
-                              <td className="px-2 py-3">{r.batchNo}</td>
-                              <td className="px-2 py-3 text-center">
-                                {r.expiryDate}
-                              </td>
-                              <td className="px-2 py-3 text-center">
-                                {r.packSize}
-                              </td>
-                              <td className="px-2 py-3 text-right">
-                                {r.quantity}
-                              </td>
-                              <td className="px-2 py-3 text-right">
-                                {formatCurrency(r.sellingPrice)}
-                              </td>
-                              <td className="px-2 py-3 text-right">
-                                {formatCurrency(r.discount)}
-                              </td>
-                              <td className="px-2 py-3 text-right">
-                                {formatCurrency(r.taxAmount)}
-                              </td>
-                              <td className="px-2 py-3 text-right font-bold">
-                                <div className="flex items-center justify-end gap-2">
-                                  <span>{formatCurrency(r.rowTotal)}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeAdded(r.key)}
-                                    className="rounded-lg p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
-                                  >
-                                    <Icon name="delete" size={16} />
-                                  </button>
-                                </div>
-                              </td>
+                    <>
+                      <div className="hidden overflow-hidden rounded-2xl border border-slate-200 md:block">
+                        <table className="w-full table-fixed text-sm">
+                          <thead>
+                            <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
+                              <th className="w-[6%] px-2 py-3 text-center">
+                                S.No
+                              </th>
+                              <th className="w-[15%] px-2 py-3 text-left">
+                                Product
+                              </th>
+                              <th className="w-[11%] px-2 py-3 text-left">
+                                Batch
+                              </th>
+                              <th className="w-[11%] px-2 py-3 text-center">
+                                Expiry
+                              </th>
+                              <th className="w-[10%] px-2 py-3 text-center">
+                                Size
+                              </th>
+                              <th className="w-[8%] px-2 py-3 text-right">
+                                Qty
+                              </th>
+                              <th className="w-[11%] px-2 py-3 text-right">
+                                Price
+                              </th>
+                              <th className="w-[10%] px-2 py-3 text-right">
+                                Discount
+                              </th>
+                              <th className="w-[9%] px-2 py-3 text-right">
+                                Tax
+                              </th>
+                              <th className="w-[9%] px-2 py-3 text-center">
+                                Total
+                              </th>
                             </tr>
-                          ))}
-                        </tbody>
+                          </thead>
 
-                        
+                          <tbody>
+                            {added.map((r, i) => (
+                              <tr key={r.key}>
+                                <td className="px-2 py-3 text-center">
+                                  {i + 1}
+                                </td>
+                                <td className="truncate px-2 py-3 font-semibold">
+                                  {r.product?.name}
+                                </td>
+                                <td className="px-2 py-3">{r.batchNo}</td>
+                                <td className="px-2 py-3 text-center">
+                                  {r.expiryDate}
+                                </td>
+                                <td className="px-2 py-3 text-center">
+                                  {r.packSize}
+                                </td>
+                                <td className="px-2 py-3 text-right">
+                                  {r.quantity}
+                                </td>
+                                <td className="px-2 py-3 text-right">
+                                  {formatCurrency(r.sellingPrice)}
+                                </td>
+                                <td className="px-2 py-3 text-right">
+                                  {formatCurrency(r.discount)}
+                                </td>
+                                <td className="px-2 py-3 text-right">
+                                  {formatCurrency(r.taxAmount)}
+                                </td>
+                                <td className="px-2 py-3 text-right font-bold">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span>{formatCurrency(r.rowTotal)}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeAdded(r.key)}
+                                      className="rounded-lg p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+                                    >
+                                      <Icon name="delete" size={16} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
 
-                      </table>
-                    </div>
+                      <div className="space-y-3 md:hidden">
+                        {added.map((r, i) => (
+                          <div
+                            key={r.key}
+                            className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                  Product {i + 1}
+                                </p>
+                                <p className="mt-0.5 truncate text-sm font-bold text-slate-800">
+                                  {r.product?.name || "Product"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeAdded(r.key)}
+                                className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600"
+                                aria-label="Remove product"
+                              >
+                                <Icon name="delete" size={16} />
+                              </button>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                              <DetailField
+                                label="Batch"
+                                value={r.batchNo || "-"}
+                              />
+                              <DetailField
+                                label="Expiry"
+                                value={r.expiryDate || "-"}
+                              />
+                              <DetailField
+                                label="Size"
+                                value={r.packSize || r.pkgsize || "-"}
+                              />
+                              <DetailField
+                                label="Qty"
+                                value={String(r.quantity)}
+                              />
+                              <DetailField
+                                label="Price"
+                                value={formatCurrency(r.sellingPrice)}
+                              />
+                              <DetailField
+                                label="Discount"
+                                value={formatCurrency(r.discount)}
+                              />
+                              <DetailField
+                                label="Tax"
+                                value={formatCurrency(r.taxAmount)}
+                              />
+                              <div className="rounded-lg bg-brand-50 px-2 py-1.5">
+                                <p className="text-[10px] font-medium text-brand-600">
+                                  Total
+                                </p>
+                                <p className="mt-0.5 text-xs font-bold text-brand-700">
+                                  {formatCurrency(r.rowTotal)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </section>
 
@@ -1545,11 +2179,19 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                 </section>
               </div>
 
-              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button variant="secondary" onClick={closeForm}>
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
+                <Button
+                  variant="secondary"
+                  onClick={closeForm}
+                  className="w-full sm:w-auto"
+                >
                   Cancel
                 </Button>
-                <Button onClick={handleCreate} disabled={!canCreate}>
+                <Button
+                  onClick={handleCreate}
+                  disabled={!canCreate}
+                  className="w-full sm:w-auto"
+                >
                   <Icon name="check_circle" size={18} />
                   Create Sale
                 </Button>

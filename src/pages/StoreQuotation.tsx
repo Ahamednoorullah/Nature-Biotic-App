@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { createPortal } from "react-dom"; 
-import { products as allProducts, getFarmersByStore, getStorePurchasesFromCompanySales } from "@/lib/data";
+import { createPortal } from "react-dom";
+import {
+  products as allProducts,
+  getFarmersByStore,
+  getStorePurchasesFromCompanySales,
+} from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
-
 
 type ProductRow = {
   id: string;
@@ -62,7 +65,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     return farmers.filter(
       (farmer) =>
         farmer.through === "Executive" &&
-        String(farmer.executiveName || "").trim().toLowerCase() === loggedInName,
+        String(farmer.executiveName || "")
+          .trim()
+          .toLowerCase() === loggedInName,
     );
   }, [storeId, isFRO, user?.name]);
 
@@ -102,28 +107,18 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       );
 
       const size = String(
-        row.packSize ??
-          row.pkgsize ??
-          row.size ??
-          master?.size ??
-          "",
+        row.packSize ?? row.pkgsize ?? row.size ?? master?.size ?? "",
       ).trim();
 
       const qty = Number(row.quantity ?? row.qty ?? 0);
       if (qty <= 0) return;
 
       const sellingPrice = Number(
-        row.sellingPrice ??
-          row.price ??
-          master?.sellingPrice ??
-          0,
+        row.sellingPrice ?? row.price ?? master?.sellingPrice ?? 0,
       );
 
       const taxPercentage = Number(
-        row.taxPercent ??
-          row.taxPercentage ??
-          master?.taxPercentage ??
-          0,
+        row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
       );
 
       const key = `${master?.id ?? row.productId ?? name}-${size || "default"}`;
@@ -233,10 +228,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
           setRows(parsed);
         }
       } else {
-        window.localStorage.setItem(
-          quotationStorageKey,
-          JSON.stringify(rows),
-        );
+        window.localStorage.setItem(quotationStorageKey, JSON.stringify(rows));
       }
     } catch {
       // Keep the existing in-memory quotations if localStorage is unavailable.
@@ -274,7 +266,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     return rows.filter(
       (row) =>
-        String(row.executiveName || "").trim().toLowerCase() === loggedInName &&
+        String(row.executiveName || "")
+          .trim()
+          .toLowerCase() === loggedInName &&
         String(row.createdByStaffId || "") === String(user.staffId ?? user.id),
     );
   }, [rows, isFRO, user?.name, user?.staffId, user?.id]);
@@ -306,14 +300,11 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     igstPercent: 0,
   });
 
-  const [draftProduct, setDraftProduct] = useState<ProductRow>(
-    emptyDraftProduct(),
-  );
+  const [draftProduct, setDraftProduct] =
+    useState<ProductRow>(emptyDraftProduct());
 
   const productNameOptions = useMemo(() => {
-    const names = Array.from(
-      new Set(storeProducts.map((item) => item.name)),
-    );
+    const names = Array.from(new Set(storeProducts.map((item) => item.name)));
 
     return names.map((name) => ({
       value: name,
@@ -359,15 +350,11 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const taxTotals = useMemo(() => {
     return products.reduce(
       (total, item) => {
-        const base =
-          (Number(item.qty) || 0) * (Number(item.rate) || 0);
+        const base = (Number(item.qty) || 0) * (Number(item.rate) || 0);
 
-        total.sgst +=
-          (base * Number(item.sgstPercent || 0)) / 100;
-        total.cgst +=
-          (base * Number(item.cgstPercent || 0)) / 100;
-        total.igst +=
-          (base * Number(item.igstPercent || 0)) / 100;
+        total.sgst += (base * Number(item.sgstPercent || 0)) / 100;
+        total.cgst += (base * Number(item.cgstPercent || 0)) / 100;
+        total.igst += (base * Number(item.igstPercent || 0)) / 100;
 
         return total;
       },
@@ -386,10 +373,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
   const quotationTaxRates = useMemo(() => {
     const activeItems = products.filter(
-      (item) =>
-        item.product &&
-        Number(item.qty) > 0 &&
-        Number(item.rate) > 0,
+      (item) => item.product && Number(item.qty) > 0 && Number(item.rate) > 0,
     );
 
     const getCommon = (
@@ -412,9 +396,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   function applyFarmerDetails(id: string) {
     setFarmerId(id);
 
-    const selectedFarmer = registeredFarmers.find(
-      (item) => item.id === id,
-    );
+    const selectedFarmer = registeredFarmers.find((item) => item.id === id);
 
     if (!selectedFarmer) {
       setFarmer("");
@@ -430,9 +412,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     setVillage(selectedFarmer.village || "");
 
     const farmerCrop =
-      selectedFarmer.cropType ||
-      selectedFarmer.crops?.[0]?.cropType ||
-      "";
+      selectedFarmer.cropType || selectedFarmer.crops?.[0]?.cropType || "";
     setCrop(farmerCrop);
 
     const landSize =
@@ -476,10 +456,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   function applyTaxForSupply(supply: string) {
     setProducts((current) =>
       current.map((item) => {
-        const split = getTaxSplit(
-          supply,
-          Number(item.taxPercent || 0),
-        );
+        const split = getTaxSplit(supply, Number(item.taxPercent || 0));
 
         return {
           ...item,
@@ -487,8 +464,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         };
       }),
     );
-
-
   }
 
   function openQuotation() {
@@ -545,11 +520,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     setProducts((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function updateAddedProduct(
-    id: string,
-    field: "qty",
-    value: string,
-  ) {
+  function updateAddedProduct(id: string, field: "qty", value: string) {
     setProducts((prev) =>
       prev.map((item) =>
         item.id === id
@@ -575,19 +546,18 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     setDraftProduct(emptyDraftProduct());
   }
 
-    const canSave =
+  const canSave =
     farmer.trim() !== "" &&
-      phone.trim() !== "" &&
+    phone.trim() !== "" &&
     products.some(
-      (item) => item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
+      (item) =>
+        item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
     );
 
   function save() {
     const hasValidProduct = products.some(
       (item) =>
-        item.product.trim() &&
-        Number(item.qty) > 0 &&
-        Number(item.rate) > 0
+        item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
     );
 
     if (!farmer.trim()) {
@@ -632,10 +602,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     setRows((prev) => {
       const next = [newQuotation, ...prev];
       try {
-        window.localStorage.setItem(
-          quotationStorageKey,
-          JSON.stringify(next),
-        );
+        window.localStorage.setItem(quotationStorageKey, JSON.stringify(next));
       } catch {
         // Keep the in-memory update if localStorage is unavailable.
       }
@@ -646,109 +613,107 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     setShow(false);
   }
 
-function taxRateLabel(
-  products: ProductRow[] | undefined,
-  field: "sgstPercent" | "cgstPercent" | "igstPercent",
-): string {
-  const values = Array.from(
-    new Set(
-      (products || [])
-        .filter((item) => Number(item[field] || 0) > 0)
-        .map((item) => Number(item[field] || 0)),
-    ),
-  );
-
-  if (values.length === 0) return "0.00";
-  if (values.length === 1) return values[0].toFixed(2);
-  return "Mix";
-}
-
-function numberToWords(num: number): string {
-  const ones = [
-    "",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
-  ];
-
-  const tens = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
-
-  function convert(n: number): string {
-    if (n < 20) return ones[n];
-    if (n < 100) {
-      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-    }
-    if (n < 1000) {
-      return (
-        ones[Math.floor(n / 100)] +
-        " Hundred" +
-        (n % 100 ? " " + convert(n % 100) : "")
-      );
-    }
-    if (n < 100000) {
-      return (
-        convert(Math.floor(n / 1000)) +
-        " Thousand" +
-        (n % 1000 ? " " + convert(n % 1000) : "")
-      );
-    }
-    if (n < 10000000) {
-      return (
-        convert(Math.floor(n / 100000)) +
-        " Lakh" +
-        (n % 100000 ? " " + convert(n % 100000) : "")
-      );
-    }
-
-    return (
-      convert(Math.floor(n / 10000000)) +
-      " Crore" +
-      (n % 10000000 ? " " + convert(n % 10000000) : "")
+  function taxRateLabel(
+    products: ProductRow[] | undefined,
+    field: "sgstPercent" | "cgstPercent" | "igstPercent",
+  ): string {
+    const values = Array.from(
+      new Set(
+        (products || [])
+          .filter((item) => Number(item[field] || 0) > 0)
+          .map((item) => Number(item[field] || 0)),
+      ),
     );
+
+    if (values.length === 0) return "0.00";
+    if (values.length === 1) return values[0].toFixed(2);
+    return "Mix";
   }
 
-  const rounded = Math.round(Number(num) || 0);
+  function numberToWords(num: number): string {
+    const ones = [
+      "",
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven",
+      "Eight",
+      "Nine",
+      "Ten",
+      "Eleven",
+      "Twelve",
+      "Thirteen",
+      "Fourteen",
+      "Fifteen",
+      "Sixteen",
+      "Seventeen",
+      "Eighteen",
+      "Nineteen",
+    ];
 
-  if (rounded === 0) return "Zero Rupees Only";
+    const tens = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
 
-  return `${convert(rounded)} Rupees Only`;
-}
+    function convert(n: number): string {
+      if (n < 20) return ones[n];
+      if (n < 100) {
+        return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+      }
+      if (n < 1000) {
+        return (
+          ones[Math.floor(n / 100)] +
+          " Hundred" +
+          (n % 100 ? " " + convert(n % 100) : "")
+        );
+      }
+      if (n < 100000) {
+        return (
+          convert(Math.floor(n / 1000)) +
+          " Thousand" +
+          (n % 1000 ? " " + convert(n % 1000) : "")
+        );
+      }
+      if (n < 10000000) {
+        return (
+          convert(Math.floor(n / 100000)) +
+          " Lakh" +
+          (n % 100000 ? " " + convert(n % 100000) : "")
+        );
+      }
+
+      return (
+        convert(Math.floor(n / 10000000)) +
+        " Crore" +
+        (n % 10000000 ? " " + convert(n % 10000000) : "")
+      );
+    }
+
+    const rounded = Math.round(Number(num) || 0);
+
+    if (rounded === 0) return "Zero Rupees Only";
+
+    return `${convert(rounded)} Rupees Only`;
+  }
 
   return (
     <div>
       {/* PAGE HEADER */}
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Quotation
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-800">Quotation</h1>
 
           <p className="mt-1 text-slate-500">
             Create and manage farmer quotations.
@@ -768,29 +733,89 @@ function numberToWords(num: number): string {
           <table className="w-full min-w-[1050px] table-fixed border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                <th rowSpan={2} className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold">S.No</th>
-                <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Date</th>
-                <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Quotation No</th>
-                <th rowSpan={2} className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Farmer Details</th>
-                <th rowSpan={2} className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold">Without Tax</th>
-                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">SGST</th>
-                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">CGST</th>
-                <th colSpan={2} className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold">IGST</th>
-                <th rowSpan={2} className="w-[11%] px-2 py-2 text-right font-semibold">Total</th>
+                <th
+                  rowSpan={2}
+                  className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  S.No
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  Date
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  Quotation No
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  Farmer Details
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                >
+                  Without Tax
+                </th>
+                <th
+                  colSpan={2}
+                  className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                >
+                  SGST
+                </th>
+                <th
+                  colSpan={2}
+                  className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                >
+                  CGST
+                </th>
+                <th
+                  colSpan={2}
+                  className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                >
+                  IGST
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[11%] px-2 py-2 text-right font-semibold"
+                >
+                  Total
+                </th>
               </tr>
               <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
-                <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">%</th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">Amt</th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">
+                  %
+                </th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">
+                  Amt
+                </th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">
+                  %
+                </th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">
+                  Amt
+                </th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">
+                  %
+                </th>
+                <th className="border-r border-slate-200 px-1 py-2 text-center">
+                  Amt
+                </th>
               </tr>
             </thead>
             <tbody>
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-sm text-slate-400">
+                  <td
+                    colSpan={12}
+                    className="px-4 py-12 text-center text-sm text-slate-400"
+                  >
                     No quotations found.
                   </td>
                 </tr>
@@ -802,22 +827,48 @@ function numberToWords(num: number): string {
                     className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
                     title="Click to view quotation"
                   >
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">{index + 1}</td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">{formatDate(r.date)}</td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">{r.quotationNo}</td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center">
+                      {index + 1}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">
+                      {formatDate(r.date)}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
+                      {r.quotationNo}
+                    </td>
                     <td className="border-r border-slate-100 px-2 py-3 text-center">
                       <p className="font-semibold text-slate-800">{r.farmer}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{r.village || "-"}</p>
-                      <p className="mt-0.5 text-xs text-slate-400">{r.phone || "-"}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {r.village || "-"}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {r.phone || "-"}
+                      </p>
                     </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">{formatCurrency(r.withoutTax)}</td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">{taxRateLabel(r.products, "sgstPercent")}</td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">{formatCurrency(r.sgst)}</td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">{taxRateLabel(r.products, "cgstPercent")}</td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">{formatCurrency(r.cgst)}</td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">{taxRateLabel(r.products, "igstPercent")}</td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">{formatCurrency(r.igst)}</td>
-                    <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">{formatCurrency(r.amount)}</td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
+                      {formatCurrency(r.withoutTax)}
+                    </td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                      {taxRateLabel(r.products, "sgstPercent")}
+                    </td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
+                      {formatCurrency(r.sgst)}
+                    </td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                      {taxRateLabel(r.products, "cgstPercent")}
+                    </td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
+                      {formatCurrency(r.cgst)}
+                    </td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                      {taxRateLabel(r.products, "igstPercent")}
+                    </td>
+                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
+                      {formatCurrency(r.igst)}
+                    </td>
+                    <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                      {formatCurrency(r.amount)}
+                    </td>
                   </tr>
                 ))
               )}
@@ -863,16 +914,24 @@ function numberToWords(num: number): string {
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-lg border border-slate-100 px-3 py-2">
                     <p className="text-slate-400">Without Tax</p>
-                    <p className="mt-0.5 font-semibold text-slate-700">{formatCurrency(r.withoutTax)}</p>
+                    <p className="mt-0.5 font-semibold text-slate-700">
+                      {formatCurrency(r.withoutTax)}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-slate-100 px-3 py-2">
                     <p className="text-slate-400">Total Tax</p>
-                    <p className="mt-0.5 font-semibold text-slate-700">{formatCurrency(r.sgst + r.cgst + r.igst)}</p>
+                    <p className="mt-0.5 font-semibold text-slate-700">
+                      {formatCurrency(r.sgst + r.cgst + r.igst)}
+                    </p>
                   </div>
                 </div>
 
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                  <span>SGST {taxRateLabel(r.products, "sgstPercent")}% · CGST {taxRateLabel(r.products, "cgstPercent")}% · IGST {taxRateLabel(r.products, "igstPercent")}%</span>
+                  <span>
+                    SGST {taxRateLabel(r.products, "sgstPercent")}% · CGST{" "}
+                    {taxRateLabel(r.products, "cgstPercent")}% · IGST{" "}
+                    {taxRateLabel(r.products, "igstPercent")}%
+                  </span>
                   <Icon name="chevron_right" size={17} />
                 </div>
               </button>
@@ -885,291 +944,279 @@ function numberToWords(num: number): string {
           NEW QUOTATION POPUP
          ========================= */}
       {show &&
-      createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
-      <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            {/* MODAL HEADER */}
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">
-                  Create Quotation
-                </h2>
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              {/* MODAL HEADER */}
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">
+                    Create Quotation
+                  </h2>
 
-                <p className="mt-0.5 text-sm text-slate-500">
-                  Create a quotation for farmer
-                </p>
+                  <p className="mt-0.5 text-sm text-slate-500">
+                    Create a quotation for farmer
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeQuotation}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                >
+                  ×
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={closeQuotation}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* MODAL BODY */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="space-y-6 p-6">
-
-
-                {/* FARMER DETAILS */}
-                <div>
-                  <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
-                    Farmer Details
-                  </h3>
-
-                  <div className="grid gap-4 md:grid-cols-3">
-                  {/* ROW 1 */}
-
-                  <Select
-                    label="Farmer"
-                    value={farmerId}
-                    onChange={applyFarmerDetails}
-                    placeholder="Select registered farmer"
-                    options={registeredFarmers.map((item) => ({
-                      value: item.id,
-                      label: `${item.name} - ${item.phone}`,
-                    }))}
-                  />
-
-                  <Input
-                    label="Mobile Number"
-                    type="tel"
-                    value={phone}
-                    onChange={() => {}}
-                    readOnly
-                  />
-
-                  <Input
-                    label="Village"
-                    value={village}
-                    onChange={() => {}}
-                    readOnly
-                  />
-
-                  {/* ROW 2 */}
-
-                  <Input
-                    label="Crop"
-                    value={crop}
-                    onChange={() => {}}
-                    readOnly
-                  />
-
-                  <Select
-                    label="Place of Supply"
-                    value={placeOfSupply}
-                    onChange={(value) => {
-                      setPlaceOfSupply(value);
-                      applyTaxForSupply(value);
-                    }}
-                    placeholder="Select Place of Supply"
-                    options={[
-                      {
-                        value: "Tamil Nadu",
-                        label: "Tamil Nadu",
-                      },
-                      {
-                        value: "Others",
-                        label: "Others",
-                      },
-                    ]}
-                  />
-
-                  <Input
-                    label="Acre"
-                    type="number"
-                    value={acre}
-                    onChange={() => {}}
-                    readOnly
-                  />
-                </div>
-
-                </div>
-
-                {/* PRODUCTS */}
-                <div>
-                  <div className="mb-3">
-                    <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
-                      Add Product
+              {/* MODAL BODY */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="space-y-6 p-6">
+                  {/* FARMER DETAILS */}
+                  <div>
+                    <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                      Farmer Details
                     </h3>
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      Select products available in this store stock
-                    </p>
-                  </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(220px,1.4fr)_180px_100px_140px_100px_150px] md:items-end">
-                      <Select
-                        label="Product"
-                        value={draftProduct.product}
-                        onChange={(value) => {
-                          setDraftProduct((current) => ({
-                            ...current,
-                            product: value,
-                            productName: value,
-                            pkgsize: "",
-                            rate: "",
-                            taxPercent: 0,
-                            sgstPercent: 0,
-                            cgstPercent: 0,
-                            igstPercent: 0,
-                          }));
-                        }}
-                        placeholder={
-                          productNameOptions.length
-                            ? "Select product"
-                            : "No stock products"
-                        }
-                        options={productNameOptions}
-                      />
+                    <div className="grid gap-4 md:grid-cols-3">
+                      {/* ROW 1 */}
 
                       <Select
-                        label="PKG Size"
-                        value={draftProduct.pkgsize}
-                        onChange={(value) => {
-                          const variant = storeProducts.find(
-                            (item) =>
-                              item.name === draftProduct.product &&
-                              item.size === value,
-                          );
-
-                          if (!variant) {
-                            setDraftProduct((current) => ({
-                              ...current,
-                              pkgsize: value,
-                            }));
-                            return;
-                          }
-
-                          const split = getTaxSplit(
-                            placeOfSupply,
-                            Number(variant.taxPercentage || 0),
-                          );
-
-                          setDraftProduct((current) => ({
-                            ...current,
-                            pkgsize: variant.size,
-                            rate: String(variant.sellingPrice || 0),
-                            taxPercent: Number(
-                              variant.taxPercentage || 0,
-                            ),
-                            ...split,
-                          }));
-                        }}
-                        placeholder={
-                          draftProduct.product
-                            ? "Select size"
-                            : "Select product first"
-                        }
-                        options={sizeOptions}
+                        label="Farmer"
+                        value={farmerId}
+                        onChange={applyFarmerDetails}
+                        placeholder="Select registered farmer"
+                        options={registeredFarmers.map((item) => ({
+                          value: item.id,
+                          label: `${item.name} - ${item.phone}`,
+                        }))}
                       />
 
                       <Input
-                        label="Qty"
+                        label="Mobile Number"
+                        type="tel"
+                        value={phone}
+                        onChange={() => {}}
+                        readOnly
+                      />
+
+                      <Input
+                        label="Village"
+                        value={village}
+                        onChange={() => {}}
+                        readOnly
+                      />
+
+                      {/* ROW 2 */}
+
+                      <Input
+                        label="Crop"
+                        value={crop}
+                        onChange={() => {}}
+                        readOnly
+                      />
+
+                      <Select
+                        label="Place of Supply"
+                        value={placeOfSupply}
+                        onChange={(value) => {
+                          setPlaceOfSupply(value);
+                          applyTaxForSupply(value);
+                        }}
+                        placeholder="Select Place of Supply"
+                        options={[
+                          {
+                            value: "Tamil Nadu",
+                            label: "Tamil Nadu",
+                          },
+                          {
+                            value: "Others",
+                            label: "Others",
+                          },
+                        ]}
+                      />
+
+                      <Input
+                        label="Acre"
                         type="number"
-                        value={draftProduct.qty}
-                        onChange={(value) =>
-                          setDraftProduct((current) => ({
-                            ...current,
-                            qty: value,
-                          }))
-                        }
-                      />
-
-                      <Input
-                        label="Price"
-                        value={draftProduct.rate}
-                        onChange={() => {}}
-                        placeholder="Auto"
-                        readOnly
-                      />
-
-                      <Input
-                        label="GST %"
-                        value={
-                          draftProduct.taxPercent
-                            ? draftProduct.taxPercent.toFixed(2)
-                            : "0.00"
-                        }
+                        value={acre}
                         onChange={() => {}}
                         readOnly
                       />
-
-                      <Button onClick={addProduct} className="h-10">
-                        <Icon name="add" size={17} />
-                        Add Product
-                      </Button>
                     </div>
                   </div>
 
-                  <div className="mt-5">
-                    <div className="mb-2 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
-                          Added Products
-                        </h3>
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {products.length} item(s) added
-                        </p>
+                  {/* PRODUCTS */}
+                  <div>
+                    <div className="mb-3">
+                      <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                        Add Product
+                      </h3>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        Select products available in this store stock
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(220px,1.4fr)_180px_100px_140px_100px_150px] md:items-end">
+                        <Select
+                          label="Product"
+                          value={draftProduct.product}
+                          onChange={(value) => {
+                            setDraftProduct((current) => ({
+                              ...current,
+                              product: value,
+                              productName: value,
+                              pkgsize: "",
+                              rate: "",
+                              taxPercent: 0,
+                              sgstPercent: 0,
+                              cgstPercent: 0,
+                              igstPercent: 0,
+                            }));
+                          }}
+                          placeholder={
+                            productNameOptions.length
+                              ? "Select product"
+                              : "No stock products"
+                          }
+                          options={productNameOptions}
+                        />
+
+                        <Select
+                          label="PKG Size"
+                          value={draftProduct.pkgsize}
+                          onChange={(value) => {
+                            const variant = storeProducts.find(
+                              (item) =>
+                                item.name === draftProduct.product &&
+                                item.size === value,
+                            );
+
+                            if (!variant) {
+                              setDraftProduct((current) => ({
+                                ...current,
+                                pkgsize: value,
+                              }));
+                              return;
+                            }
+
+                            const split = getTaxSplit(
+                              placeOfSupply,
+                              Number(variant.taxPercentage || 0),
+                            );
+
+                            setDraftProduct((current) => ({
+                              ...current,
+                              pkgsize: variant.size,
+                              rate: String(variant.sellingPrice || 0),
+                              taxPercent: Number(variant.taxPercentage || 0),
+                              ...split,
+                            }));
+                          }}
+                          placeholder={
+                            draftProduct.product
+                              ? "Select size"
+                              : "Select product first"
+                          }
+                          options={sizeOptions}
+                        />
+
+                        <Input
+                          label="Qty"
+                          type="number"
+                          value={draftProduct.qty}
+                          onChange={(value) =>
+                            setDraftProduct((current) => ({
+                              ...current,
+                              qty: value,
+                            }))
+                          }
+                        />
+
+                        <Input
+                          label="Price"
+                          value={draftProduct.rate}
+                          onChange={() => {}}
+                          placeholder="Auto"
+                          readOnly
+                        />
+
+                        <Input
+                          label="GST %"
+                          value={
+                            draftProduct.taxPercent
+                              ? draftProduct.taxPercent.toFixed(2)
+                              : "0.00"
+                          }
+                          onChange={() => {}}
+                          readOnly
+                        />
+
+                        <Button onClick={addProduct} className="h-10">
+                          <Icon name="add" size={17} />
+                          Add Product
+                        </Button>
                       </div>
                     </div>
 
-                    <div className="overflow-hidden rounded-xl border border-slate-200">
-                      <table className="w-full table-fixed border-collapse text-sm">
-                        <thead>
-                          <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                            <th className="w-[5%] px-2 py-3 text-center">S.No</th>
-                            <th className="w-[20%] px-3 py-3 text-left">Product</th>
-                            <th className="w-[11%] px-2 py-3 text-center">PKG Size</th>
-                            <th className="w-[9%] px-2 py-3 text-center">Qty</th>
-                            <th className="w-[12%] px-2 py-3 text-right">Price</th>
-                            <th className="w-[9%] px-2 py-3 text-center">GST %</th>
-                            <th className="w-[12%] px-2 py-3 text-right">Without Tax</th>
-                            <th className="w-[12%] px-2 py-3 text-right">Tax</th>
-                            <th className="w-[12%] px-2 py-3 text-right">Total</th>
-                            <th className="w-[5%] px-2 py-3 text-center"></th>
-                          </tr>
-                        </thead>
+                    <div className="mt-5">
+                      <div className="mb-2 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                            Added Products
+                          </h3>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {products.length} item(s) added
+                          </p>
+                        </div>
+                      </div>
 
-                        <tbody>
-                          {products.length === 0 ? (
-                            <tr>
-                              <td
-                                colSpan={10}
-                                className="px-4 py-10 text-center text-sm text-slate-400"
+                      {/* Mobile added-products cards */}
+                      <div className="quotation-mobile-products md:hidden space-y-2.5">
+                        {products.length === 0 ? (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                            No products added yet.
+                          </div>
+                        ) : (
+                          products.map((item, index) => {
+                            const withoutTax =
+                              Number(item.qty || 0) * Number(item.rate || 0);
+                            const tax =
+                              (withoutTax * Number(item.taxPercent || 0)) / 100;
+                            const total = withoutTax + tax;
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
                               >
-                                No products added yet.
-                              </td>
-                            </tr>
-                          ) : (
-                            products.map((item, index) => {
-                              const withoutTax =
-                                Number(item.qty || 0) *
-                                Number(item.rate || 0);
-                              const tax =
-                                (withoutTax *
-                                  Number(item.taxPercent || 0)) /
-                                100;
-                              const total = withoutTax + tax;
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                      Product {index + 1}
+                                    </p>
+                                    <p className="mt-0.5 truncate text-sm font-extrabold text-slate-800">
+                                      {item.productName || item.product}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                      {item.pkgsize || "-"}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeProduct(item.id)}
+                                    className="shrink-0 rounded-lg p-2 text-red-400 hover:bg-red-50 hover:text-red-600"
+                                    aria-label={`Remove ${item.productName || item.product}`}
+                                  >
+                                    <Icon name="delete" size={18} />
+                                  </button>
+                                </div>
 
-                              return (
-                                <tr
-                                  key={item.id}
-                                  className="border-t border-slate-100"
-                                >
-                                  <td className="px-2 py-3 text-center">
-                                    {index + 1}
-                                  </td>
-                                  <td className="px-3 py-3 font-semibold text-slate-800">
-                                    {item.productName}
-                                  </td>
-                                  <td className="px-2 py-3 text-center text-slate-600">
-                                    {item.pkgsize}
-                                  </td>
-                                  <td className="px-2 py-3">
+                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                                    <p className="text-[10px] text-slate-400">
+                                      Qty
+                                    </p>
                                     <Input
                                       type="number"
                                       value={item.qty}
@@ -1181,175 +1228,299 @@ function numberToWords(num: number): string {
                                         )
                                       }
                                     />
-                                  </td>
-                                  <td className="px-2 py-3 text-right">
-                                    {formatCurrency(
-                                      Number(item.rate || 0),
-                                    )}
-                                  </td>
-                                  <td className="px-2 py-3 text-center">
-                                    {Number(
-                                      item.taxPercent || 0,
-                                    ).toFixed(2)}
-                                  </td>
-                                  <td className="px-2 py-3 text-right">
+                                  </div>
+                                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                                    <p className="text-[10px] text-slate-400">
+                                      Price
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-700">
+                                      {formatCurrency(Number(item.rate || 0))}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                                    <p className="text-[10px] text-slate-400">
+                                      GST
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-700">
+                                      {Number(item.taxPercent || 0).toFixed(2)}%
+                                    </p>
+                                  </div>
+                                  <div className="rounded-lg bg-brand-50 px-3 py-2">
+                                    <p className="text-[10px] text-brand-600">
+                                      Total
+                                    </p>
+                                    <p className="mt-1 text-sm font-extrabold text-brand-700">
+                                      {formatCurrency(total)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+                                  <span className="text-slate-400">
+                                    Without Tax
+                                  </span>
+                                  <span className="font-semibold text-slate-600">
                                     {formatCurrency(withoutTax)}
-                                  </td>
-                                  <td className="px-2 py-3 text-right">
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-slate-400">Tax</span>
+                                  <span className="font-semibold text-slate-600">
                                     {formatCurrency(tax)}
-                                  </td>
-                                  <td className="px-2 py-3 text-right font-bold text-slate-800">
-                                    {formatCurrency(total)}
-                                  </td>
-                                  <td className="px-2 py-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        removeProduct(item.id)
-                                      }
-                                      className="text-red-400 hover:text-red-600"
-                                    >
-                                      <Icon name="delete" size={17} />
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="quotation-desktop-products hidden md:block overflow-hidden rounded-xl border border-slate-200">
+                        <table className="w-full table-fixed border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                              <th className="w-[5%] px-2 py-3 text-center">
+                                S.No
+                              </th>
+                              <th className="w-[20%] px-3 py-3 text-left">
+                                Product
+                              </th>
+                              <th className="w-[11%] px-2 py-3 text-center">
+                                PKG Size
+                              </th>
+                              <th className="w-[9%] px-2 py-3 text-center">
+                                Qty
+                              </th>
+                              <th className="w-[12%] px-2 py-3 text-right">
+                                Price
+                              </th>
+                              <th className="w-[9%] px-2 py-3 text-center">
+                                GST %
+                              </th>
+                              <th className="w-[12%] px-2 py-3 text-right">
+                                Without Tax
+                              </th>
+                              <th className="w-[12%] px-2 py-3 text-right">
+                                Tax
+                              </th>
+                              <th className="w-[12%] px-2 py-3 text-right">
+                                Total
+                              </th>
+                              <th className="w-[5%] px-2 py-3 text-center"></th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {products.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={10}
+                                  className="px-4 py-10 text-center text-sm text-slate-400"
+                                >
+                                  No products added yet.
+                                </td>
+                              </tr>
+                            ) : (
+                              products.map((item, index) => {
+                                const withoutTax =
+                                  Number(item.qty || 0) *
+                                  Number(item.rate || 0);
+                                const tax =
+                                  (withoutTax * Number(item.taxPercent || 0)) /
+                                  100;
+                                const total = withoutTax + tax;
+
+                                return (
+                                  <tr
+                                    key={item.id}
+                                    className="border-t border-slate-100"
+                                  >
+                                    <td className="px-2 py-3 text-center">
+                                      {index + 1}
+                                    </td>
+                                    <td className="px-3 py-3 font-semibold text-slate-800">
+                                      {item.productName}
+                                    </td>
+                                    <td className="px-2 py-3 text-center text-slate-600">
+                                      {item.pkgsize}
+                                    </td>
+                                    <td className="px-2 py-3">
+                                      <Input
+                                        type="number"
+                                        value={item.qty}
+                                        onChange={(value) =>
+                                          updateAddedProduct(
+                                            item.id,
+                                            "qty",
+                                            value,
+                                          )
+                                        }
+                                      />
+                                    </td>
+                                    <td className="px-2 py-3 text-right">
+                                      {formatCurrency(Number(item.rate || 0))}
+                                    </td>
+                                    <td className="px-2 py-3 text-center">
+                                      {Number(item.taxPercent || 0).toFixed(2)}
+                                    </td>
+                                    <td className="px-2 py-3 text-right">
+                                      {formatCurrency(withoutTax)}
+                                    </td>
+                                    <td className="px-2 py-3 text-right">
+                                      {formatCurrency(tax)}
+                                    </td>
+                                    <td className="px-2 py-3 text-right font-bold text-slate-800">
+                                      {formatCurrency(total)}
+                                    </td>
+                                    <td className="px-2 py-3 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => removeProduct(item.id)}
+                                        className="text-red-400 hover:text-red-600"
+                                      >
+                                        <Icon name="delete" size={17} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* BOTTOM SECTION */}
-                <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-                  {/* REMARKS */}
-                  <div>
-                    <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
-                      Remarks
-                    </h3>
+                  {/* BOTTOM SECTION */}
+                  <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+                    {/* REMARKS */}
+                    <div>
+                      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                        Remarks
+                      </h3>
 
-                    <textarea
-                      value={remarks}
-                      onChange={(e) => setRemarks(e.target.value)}
-                      placeholder="Enter any additional remarks..."
-                      rows={7}
-                      className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                    />
-                  </div>
+                      <textarea
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        placeholder="Enter any additional remarks..."
+                        rows={7}
+                        className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                      />
+                    </div>
 
-                  {/* SUMMARY */}
-                  <div>
-                    <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
-                      Quotation Summary
-                    </h3>
+                    {/* SUMMARY */}
+                    <div>
+                      <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                        Quotation Summary
+                      </h3>
 
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                      <div className="space-y-3 text-sm">
-                        {/* SUBTOTAL */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">
-                            Subtotal
-                          </span>
-
-                          <span className="font-semibold text-slate-800">
-                            {formatCurrency(subtotal)}
-                          </span>
-                        </div>
-
-                        {/* TOTAL TAX */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">
-                            Total Tax
-                          </span>
-
-                          <span className="font-semibold text-slate-800">
-                            {formatCurrency(
-                              cgstAmount + sgstAmount + igstAmount
-                            )}
-                          </span>
-                        </div>
-
-                        {/* TAX BREAKDOWN */}
-                        <div className="space-y-2 border-t border-slate-200 pt-3 pl-8">
-                          {/* SGST */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                        <div className="space-y-3 text-sm">
+                          {/* SUBTOTAL */}
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">
-                              SGST
-                            </span>
+                            <span className="text-slate-500">Subtotal</span>
 
-                            <span className="text-xs font-medium text-slate-600">
-                              {formatCurrency(sgstAmount)}
+                            <span className="font-semibold text-slate-800">
+                              {formatCurrency(subtotal)}
                             </span>
                           </div>
 
-                          {/* CGST */}
+                          {/* TOTAL TAX */}
                           <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">
-                              CGST
-                            </span>
+                            <span className="text-slate-500">Total Tax</span>
 
-                            <span className="text-xs font-medium text-slate-600">
-                              {formatCurrency(cgstAmount)}
+                            <span className="font-semibold text-slate-800">
+                              {formatCurrency(
+                                cgstAmount + sgstAmount + igstAmount,
+                              )}
                             </span>
                           </div>
 
-                          {/* IGST */}
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-400">
-                              IGST
+                          {/* TAX BREAKDOWN */}
+                          <div className="space-y-2 border-t border-slate-200 pt-3 pl-8">
+                            {/* SGST */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-400">
+                                SGST
+                              </span>
+
+                              <span className="text-xs font-medium text-slate-600">
+                                {formatCurrency(sgstAmount)}
+                              </span>
+                            </div>
+
+                            {/* CGST */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-400">
+                                CGST
+                              </span>
+
+                              <span className="text-xs font-medium text-slate-600">
+                                {formatCurrency(cgstAmount)}
+                              </span>
+                            </div>
+
+                            {/* IGST */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-400">
+                                IGST
+                              </span>
+
+                              <span className="text-xs font-medium text-slate-600">
+                                {formatCurrency(igstAmount)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* GRAND TOTAL */}
+                          <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-4">
+                            <span className="font-bold text-slate-800">
+                              Grand Total
                             </span>
 
-                            <span className="text-xs font-medium text-slate-600">
-                              {formatCurrency(igstAmount)}
+                            <span className="text-lg font-bold text-emerald-700">
+                              {formatCurrency(grandTotal)}
                             </span>
                           </div>
-                        </div>
-
-                        {/* GRAND TOTAL */}
-                        <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-4">
-                          <span className="font-bold text-slate-800">
-                            Grand Total
-                          </span>
-
-                          <span className="text-lg font-bold text-emerald-700">
-                            {formatCurrency(grandTotal)}
-                          </span>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* MODAL FOOTER */}
-            <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
-              <button
-                type="button"
-                onClick={closeQuotation}
-                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-              >
-                Cancel
-              </button>
+              {/* MODAL FOOTER */}
+              <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+                <button
+                  type="button"
+                  onClick={closeQuotation}
+                  className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
 
-              <Button
-                onClick={save}
-                disabled={!canSave}
-              >
-                Save Quotation
-              </Button>
+                <Button onClick={save} disabled={!canSave}>
+                  Save Quotation
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body,
+        )}
 
       {selectedQuotation &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
             <style>{`
+              /* Default: desktop uses the full quotation document; mobile uses cards. */
+              .quotation-mobile-detail {
+                display: none;
+              }
+
+              .quotation-desktop-detail {
+                display: block;
+              }
+
               @media print {
                 @page {
                   size: A4 landscape;
@@ -1381,9 +1552,45 @@ function numberToWords(num: number): string {
                   display: none !important;
                 }
 
+                .quotation-mobile-detail {
+                  display: none !important;
+                }
+
+                .quotation-desktop-detail {
+                  display: block !important;
+                }
+
                 .quotation-scroll {
                   overflow: visible !important;
                   padding: 0 !important;
+                }
+              }
+
+              @media (max-width: 767px) {
+                .quotation-mobile-detail,
+                .quotation-mobile-products {
+                  display: block;
+                }
+
+                .quotation-desktop-detail,
+                .quotation-desktop-products {
+                  display: none;
+                }
+
+                .quotation-scroll {
+                  padding: 0.75rem !important;
+                }
+              }
+
+              @media print {
+                .quotation-mobile-detail,
+                .quotation-mobile-products {
+                  display: none !important;
+                }
+
+                .quotation-desktop-detail,
+                .quotation-desktop-products {
+                  display: block !important;
                 }
               }
             `}</style>
@@ -1412,7 +1619,211 @@ function numberToWords(num: number): string {
               </div>
 
               <div className="quotation-scroll min-h-0 flex-1 overflow-y-auto p-3">
-                <div className="min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+                {/* Mobile quotation detail */}
+                <div className="quotation-mobile-detail space-y-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-14 w-16 shrink-0 items-center justify-center rounded-lg bg-slate-50">
+                        <img
+                          src="/logo_NB.webp"
+                          alt="Nature Biotic"
+                          className="max-h-12 max-w-full object-contain"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-base font-extrabold leading-5 text-slate-900">
+                          SAIRAM AGRI INPUTS
+                        </p>
+                        <p className="mt-1 text-[10px] font-semibold text-slate-500">
+                          Rajapalayam, Tamil Nadu
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          Nature Biotic Store
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <p className="text-lg font-extrabold uppercase text-slate-900">
+                        Quotation
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-bold text-brand-700">
+                          {selectedQuotation.quotationNo}
+                        </span>
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
+                          {selectedQuotation.status}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                          {formatDate(selectedQuotation.date)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Farmer Details
+                      </p>
+                      <p className="mt-1 text-sm font-extrabold text-slate-900">
+                        {selectedQuotation.farmer}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {selectedQuotation.village || "-"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {selectedQuotation.phone || "-"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Farm Details
+                      </p>
+                      <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-400">Crop</span>
+                          <p className="font-semibold text-slate-700">
+                            {selectedQuotation.crop || "-"}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Acre</span>
+                          <p className="font-semibold text-slate-700">
+                            {selectedQuotation.acre || "-"}
+                          </p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-slate-400">
+                            Place of Supply
+                          </span>
+                          <p className="font-semibold text-slate-700">
+                            {selectedQuotation.placeOfSupply || "-"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          Products
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {selectedQuotation.products?.length || 0} item(s)
+                        </p>
+                      </div>
+                      <span className="text-sm font-extrabold text-brand-700">
+                        {formatCurrency(selectedQuotation.amount)}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {(selectedQuotation.products || []).map((item, index) => {
+                        const withoutTax =
+                          Number(item.qty || 0) * Number(item.rate || 0);
+                        const tax =
+                          (withoutTax * Number(item.taxPercent || 0)) / 100;
+                        return (
+                          <div
+                            key={item.id}
+                            className="rounded-lg bg-slate-50 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-[10px] text-slate-400">
+                                  #{index + 1}
+                                </p>
+                                <p className="text-sm font-bold text-slate-800">
+                                  {item.productName || item.product}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  {item.pkgsize || "-"} · Qty {item.qty}
+                                </p>
+                              </div>
+                              <p className="shrink-0 text-sm font-extrabold text-slate-800">
+                                {formatCurrency(withoutTax + tax)}
+                              </p>
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+                              <div>
+                                <span className="text-slate-400">Rate</span>
+                                <p className="font-semibold text-slate-600">
+                                  {formatCurrency(Number(item.rate || 0))}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-slate-400">GST</span>
+                                <p className="font-semibold text-slate-600">
+                                  {Number(item.taxPercent || 0).toFixed(2)}%
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-slate-400">Tax</span>
+                                <p className="font-semibold text-slate-600">
+                                  {formatCurrency(tax)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      Quotation Summary
+                    </p>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Without Tax</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.withoutTax)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">SGST</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.sgst)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">CGST</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.cgst)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">IGST</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.igst)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-200 pt-2">
+                        <span className="font-bold text-slate-800">
+                          Grand Total
+                        </span>
+                        <span className="text-base font-extrabold text-brand-700">
+                          {formatCurrency(selectedQuotation.amount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(selectedQuotation.remarks || purchaseOrderNotes) && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
+                      </p>
+                      <p className="mt-1.5 whitespace-pre-line text-xs leading-5 text-slate-600">
+                        {purchaseOrderNotes.trim() || selectedQuotation.remarks}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="quotation-desktop-detail min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
                   <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
                     <div className="border-r border-slate-300 px-6 py-3">
                       <div className="flex items-start gap-4">
@@ -1517,47 +1928,89 @@ function numberToWords(num: number): string {
                     <table className="w-full table-fixed border-collapse text-[10px]">
                       <thead>
                         <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th rowSpan={2} className="w-[4%] border-r border-slate-300 px-2 py-2 text-center">
+                          <th
+                            rowSpan={2}
+                            className="w-[4%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
                             S.No
                           </th>
-                          <th rowSpan={2} className="w-[18%] border-r border-slate-300 px-2 py-2 text-left">
+                          <th
+                            rowSpan={2}
+                            className="w-[18%] border-r border-slate-300 px-2 py-2 text-left"
+                          >
                             Product
                           </th>
-                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2 text-center">
+                          <th
+                            rowSpan={2}
+                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
                             Pkg Size
                           </th>
-                          <th rowSpan={2} className="w-[5%] border-r border-slate-300 px-2 py-2 text-center">
+                          <th
+                            rowSpan={2}
+                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
+                          >
                             Qty
                           </th>
-                          <th rowSpan={2} className="w-[8%] border-r border-slate-300 px-2 py-2 text-right">
+                          <th
+                            rowSpan={2}
+                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-right"
+                          >
                             Rate
                           </th>
-                          <th rowSpan={2} className="w-[10%] border-r border-slate-300 px-2 py-2 text-right">
+                          <th
+                            rowSpan={2}
+                            className="w-[10%] border-r border-slate-300 px-2 py-2 text-right"
+                          >
                             Without Tax
                           </th>
 
-                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center">
+                          <th
+                            colSpan={2}
+                            className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
                             SGST
                           </th>
-                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center">
+                          <th
+                            colSpan={2}
+                            className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
                             CGST
                           </th>
-                          <th colSpan={2} className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center">
+                          <th
+                            colSpan={2}
+                            className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center"
+                          >
                             IGST
                           </th>
 
-                          <th rowSpan={2} className="w-[11%] px-2 py-2 text-right">
+                          <th
+                            rowSpan={2}
+                            className="w-[11%] px-2 py-2 text-right"
+                          >
                             Line Total
                           </th>
                         </tr>
 
                         <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">%</th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">Amt</th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-center">
+                            %
+                          </th>
+                          <th className="border-r border-slate-300 px-1 py-1 text-right">
+                            Amt
+                          </th>
                         </tr>
                       </thead>
 
@@ -1565,33 +2018,23 @@ function numberToWords(num: number): string {
                         {(selectedQuotation.products || []).map(
                           (item, index) => {
                             const withoutTax =
-                              Number(item.qty || 0) *
-                              Number(item.rate || 0);
+                              Number(item.qty || 0) * Number(item.rate || 0);
 
                             const sgstAmount =
-                              (withoutTax *
-                                Number(item.sgstPercent || 0)) /
+                              (withoutTax * Number(item.sgstPercent || 0)) /
                               100;
                             const cgstAmount =
-                              (withoutTax *
-                                Number(item.cgstPercent || 0)) /
+                              (withoutTax * Number(item.cgstPercent || 0)) /
                               100;
                             const igstAmount =
-                              (withoutTax *
-                                Number(item.igstPercent || 0)) /
+                              (withoutTax * Number(item.igstPercent || 0)) /
                               100;
 
                             const lineTotal =
-                              withoutTax +
-                              sgstAmount +
-                              cgstAmount +
-                              igstAmount;
+                              withoutTax + sgstAmount + cgstAmount + igstAmount;
 
                             return (
-                              <tr
-                                key={item.id}
-                                className="border-slate-300"
-                              >
+                              <tr key={item.id} className="border-slate-300">
                                 <td className="border-r border-slate-300 px-2 py-2 text-center">
                                   {index + 1}
                                 </td>
@@ -1642,25 +2085,34 @@ function numberToWords(num: number): string {
                       </tbody>
 
                       {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
-                        {(() => {
+                      {(() => {
                         const MIN_ROWS = 10;
-                        const fillerCount = Math.max(0, MIN_ROWS - selectedQuotation.products.length);
+                        const fillerCount = Math.max(
+                          0,
+                          MIN_ROWS - selectedQuotation.products.length,
+                        );
                         const columnCount = 13;
 
-                        return Array.from({ length: fillerCount }).map((_, i) => (
-                          <tr key={`filler-${i}`}>
-                            {Array.from({ length: columnCount }).map((_, colIdx) => (
-                              <td
-                                key={colIdx}
-                                className={`px-1 py-1.5 ${
-                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
-                                }`}
-                              >
-                                &nbsp;
-                              </td>
-                            ))}
-                          </tr>
-                        ));
+                        return Array.from({ length: fillerCount }).map(
+                          (_, i) => (
+                            <tr key={`filler-${i}`}>
+                              {Array.from({ length: columnCount }).map(
+                                (_, colIdx) => (
+                                  <td
+                                    key={colIdx}
+                                    className={`px-1 py-1.5 ${
+                                      colIdx < columnCount - 1
+                                        ? "border-r border-slate-300"
+                                        : ""
+                                    }`}
+                                  >
+                                    &nbsp;
+                                  </td>
+                                ),
+                              )}
+                            </tr>
+                          ),
+                        );
                       })()}
 
                       <tfoot>
@@ -1744,66 +2196,67 @@ function numberToWords(num: number): string {
                   </div>
 
                   {/* ROW 1: Amount in Words (left, bottom-aligned) + breakdown/Round Off/Grand Total (right) */}
-                      <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
-                        <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
-                          <p className="text-[10px] font-semibold text-slate-700">
-                            Amount in Words :{" "}
-                            <span className="font-bold text-slate-900">
-                              {numberToWords(selectedQuotation.amount)}
-                            </span>
-                          </p>
-                        </div>
+                  <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
+                    <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
+                      <p className="text-[10px] font-semibold text-slate-700">
+                        Amount in Words :{" "}
+                        <span className="font-bold text-slate-900">
+                          {numberToWords(selectedQuotation.amount)}
+                        </span>
+                      </p>
+                    </div>
 
-                        <div className="space-y-1 p-2.5 text-[11px]">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">Without Tax</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(selectedQuotation.withoutTax)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">SGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(selectedQuotation.sgst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">CGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(selectedQuotation.cgst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">IGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(selectedQuotation.igst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
-                            <span className="text-slate-500">Round Off</span>
-                            <span className="font-semibold text-slate-500">
-                              {formatCurrency(selectedQuotation.roundOff)}
-                            </span>
-                          </div>
-
-                          <div className="border-t border-slate-300 pt-1.5">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="font-bold text-slate-800">Grand Total</span>
-                              <span className="text-lg font-bold text-slate-900">
-                                {formatCurrency(selectedQuotation.amount)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
+                    <div className="space-y-1 p-2.5 text-[11px]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Without Tax</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.withoutTax)}
+                        </span>
                       </div>
 
-                      {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">SGST</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.sgst)}
+                        </span>
+                      </div>
 
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">CGST</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.cgst)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">IGST</span>
+                        <span className="font-semibold text-slate-700">
+                          {formatCurrency(selectedQuotation.igst)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
+                        <span className="text-slate-500">Round Off</span>
+                        <span className="font-semibold text-slate-500">
+                          {formatCurrency(selectedQuotation.roundOff)}
+                        </span>
+                      </div>
+
+                      <div className="border-t border-slate-300 pt-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-bold text-slate-800">
+                            Grand Total
+                          </span>
+                          <span className="text-lg font-bold text-slate-900">
+                            {formatCurrency(selectedQuotation.amount)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
                     {/* NOTES */}
                     <div className="flex flex-col justify-end border-r border-slate-300 p-4">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
@@ -1820,7 +2273,9 @@ function numberToWords(num: number): string {
                             {/* Screen - Editable Notes */}
                             <textarea
                               value={purchaseOrderNotes}
-                              onChange={(e) => setPurchaseOrderNotes(e.target.value)}
+                              onChange={(e) =>
+                                setPurchaseOrderNotes(e.target.value)
+                              }
                               rows={2}
                               placeholder="Enter notes..."
                               className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
@@ -1828,7 +2283,9 @@ function numberToWords(num: number): string {
 
                             {/* Print - Show edited notes */}
                             <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                              {purchaseOrderNotes.trim() ? purchaseOrderNotes : defaultNotes}
+                              {purchaseOrderNotes.trim()
+                                ? purchaseOrderNotes
+                                : defaultNotes}
                             </p>
                           </>
                         );
@@ -1845,8 +2302,8 @@ function numberToWords(num: number): string {
                       </div>
                     </div>
                   </div>
-                    </div>
-                  </div>
+                </div>
+              </div>
 
               <div className="quotation-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 <Button
