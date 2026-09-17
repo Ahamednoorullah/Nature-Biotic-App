@@ -222,6 +222,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       {initials(f.name)}
                     </div>
                   )}
+                  
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">

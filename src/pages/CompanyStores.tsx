@@ -257,8 +257,8 @@ export default function CompanyStores() {
 
       {selectedStore &&
     createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="flex w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[90vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
@@ -282,7 +282,7 @@ export default function CompanyStores() {
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
 
@@ -559,7 +559,7 @@ export default function CompanyStores() {
       {showAdd &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[88vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex h-[90vh] max-h-[900px] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">

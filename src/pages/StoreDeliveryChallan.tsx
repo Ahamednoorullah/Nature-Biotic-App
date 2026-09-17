@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { products as allProducts } from "@/lib/data";
+import { products as allProducts, addFROStock } from "@/lib/data";
 
 type Item = {
   productId: string;
@@ -172,6 +172,21 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     igstPercent,
     items,
   };
+
+  addFROStock(
+  storeId,
+  executive,
+  items.map((item) => ({
+    productId: item.productId,
+    productName: item.product,
+    packSize: item.packSize,
+    batchNo: item.batchNo,
+    expiryDate: item.expiryDate,
+    unitValue: Number(item.unitValue || 0),
+    qty: Number(item.qty || 0),
+  })),
+  date, // ✅ ADD — challan's own date state
+);
 
   const updated = [next, ...challans];
   setChallans(updated);

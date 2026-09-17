@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
+<<<<<<< HEAD
 import {
   products as allProducts,
   getStore,
@@ -8,6 +9,9 @@ import {
   getStorePurchasesFromCompanySales,
   type Product,
 } from "@/lib/data";
+=======
+import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, getFROStockByExecutive, type Product, reduceFROStock } from "@/lib/data";
+>>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 
@@ -68,26 +72,6 @@ type AddedRow = {
 
 const STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
-const PAYMENT_BANK = {
-  accountName: "Nature Biotic",
-  accountNo: "-",
-  ifsc: "-",
-  bankName: "-",
-  branch: "-",
-  upiId: "naturebiotic@upi",
-} as const;
-
-function buildPaymentQrUrl(payableTotal: number, invoiceNo: string): string {
-  const paymentUrl = new URL("upi://pay");
-  paymentUrl.searchParams.set("pa", PAYMENT_BANK.upiId);
-  paymentUrl.searchParams.set("pn", PAYMENT_BANK.accountName);
-  paymentUrl.searchParams.set("am", payableTotal.toFixed(2));
-  paymentUrl.searchParams.set("cu", "INR");
-  paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
-
-  return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
-}
-
 const initialRows: SaleRow[] = [
   {
     id: "store-sale-1",
@@ -129,6 +113,28 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const isFRO = user?.role === "fro";
   const froName = user?.name?.trim() || "";
   const storageKey = `${STORAGE_KEY}:${storeId}`;
+  const store = getStore(storeId);
+
+  const storeAny = store as any;
+  const paymentBank = {
+    accountName: storeAny?.bankAccountName || storeAny?.accountName || store?.name || "-",
+    accountNo: storeAny?.bankAccountNo || storeAny?.accountNo || "-",
+    ifsc: storeAny?.bankIfsc || storeAny?.ifsc || "-",
+    bankName: storeAny?.bankName || "-",
+    branch: storeAny?.bankBranch || storeAny?.branch || "-",
+    upiId: storeAny?.upiId || storeAny?.bankUpiId || "-",
+  };
+
+  function buildPaymentQrUrl(payableTotal: number, invoiceNo: string): string {
+    const paymentUrl = new URL("upi://pay");
+    paymentUrl.searchParams.set("pa", paymentBank.upiId);
+    paymentUrl.searchParams.set("pn", paymentBank.accountName);
+    paymentUrl.searchParams.set("am", payableTotal.toFixed(2));
+    paymentUrl.searchParams.set("cu", "INR");
+    paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
+    return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
+  }
+  
 
   const [rows, setRows] = useState<SaleRow[]>(() => {
     try {
@@ -142,6 +148,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRow | null>(null);
   useEffect(() => {
+<<<<<<< HEAD
     if (selectedSale) {
       setInvoiceNotes(selectedSale.notes || "");
     }
@@ -153,6 +160,12 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     }
   }, [isFRO, froName]);
   const store = getStore(storeId);
+=======
+  if (selectedSale) {
+    setInvoiceNotes(selectedSale.notes || "");
+  }
+}, [selectedSale]);
+>>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -242,16 +255,42 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       .filter((item) => item.name && item.quantity > 0);
   }, [storePurchaseRows]);
 
+  // FRO's own delivered stock — used when Through = Executive
+const froStockVariants = useMemo(() => {
+  if (through !== "Executive" || !executiveName) return [];
+  return getFROStockByExecutive(storeId, executiveName)
+    .map((item: any, index: number) => {
+      const master = allProducts.find((p) => p.id === item.productId);
+      return {
+        key: `${item.productId}-${item.packSize}-${item.batchNo}-${item.expiryDate}-${index}`,
+        productId: item.productId,
+        product: master,
+        name: item.productName,
+        size: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        quantity: item.currentQty,   // ✅ this field DOES exist on FROStockEntry
+        sellingPrice: item.unitValue,
+        taxPercentage: Number(master?.taxPercentage ?? 0),
+      };
+    })
+    .filter((item: any) => item.name && item.quantity > 0);
+}, [through, executiveName, storeId]);
+
+// Switch source based on sale type
+const activeStockVariants = through === "Executive" ? froStockVariants : storeStockVariants;
+
   const storeProductChoices = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string }>();
-    storeStockVariants.forEach((item) => {
-      const key = item.name.toLowerCase();
-      if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
-    });
-    return Array.from(seen.values());
-  }, [storeStockVariants]);
+  const seen = new Map<string, { value: string; label: string }>();
+  activeStockVariants.forEach((item: { name: string; }) => {
+    const key = item.name.toLowerCase();
+    if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
+  });
+  return Array.from(seen.values());
+}, [activeStockVariants]);
 
   const selectedProductName =
+<<<<<<< HEAD
     storeStockVariants.find((item) => item.productId === entry.productId)
       ?.name || "";
 
@@ -260,6 +299,14 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       storeStockVariants.filter((item) => item.name === selectedProductName),
     [storeStockVariants, selectedProductName],
   );
+=======
+    activeStockVariants.find((item: { productId: string; }) => item.productId === entry.productId)?.name || "";
+
+  const selectedSizeVariants = useMemo(
+  () => activeStockVariants.filter((item: { name: any; }) => item.name === selectedProductName),
+  [activeStockVariants, selectedProductName],
+);
+>>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
 
   const entryProduct = allProducts.find((p) => p.id === entry.productId);
 
@@ -307,16 +354,16 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }
 
   function selectProductName(productName: string) {
-    const first = storeStockVariants.find((item) => item.name === productName);
-    setEntry((prev) => ({
-      ...prev,
-      productId: first?.productId || "",
-      pkgsize: "",
-      batchNo: "",
-      expiryDate: "",
-      sellingPrice: 0,
-    }));
-  }
+  const first = activeStockVariants.find((item: { name: string; }) => item.name === productName);
+  setEntry((prev) => ({
+    ...prev,
+    productId: first?.productId || "",
+    pkgsize: "",
+    batchNo: "",
+    expiryDate: "",
+    sellingPrice: 0,
+  }));
+}
 
   function selectProductSize(size: string) {
     const variant = selectedSizeVariants.find((item) => item.size === size);
@@ -341,7 +388,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       return;
     }
 
-    const selectedStock = storeStockVariants.find(
+    const selectedStock = activeStockVariants.find(
       (item) =>
         item.productId === entry.productId &&
         item.size === entry.pkgsize &&
@@ -353,7 +400,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       allProducts.find((p) => p.id === entry.productId);
     if (!selectedStock || !product) return;
     if (entry.quantity > selectedStock.quantity) {
-      window.alert(`Only ${selectedStock.quantity} available in store stock.`);
+      window.alert(`Only ${selectedStock.quantity} available in ${through === "Executive" ? "FRO" : "store"} stock.`);
       return;
     }
 
@@ -449,8 +496,22 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
 
-    setShowCreate(false);
-    resetForm();
+    reduceFROStock(
+      storeId,
+      executiveName,
+      added.map((item) => ({
+        productId: item.productId,
+        packSize: item.pkgsize,
+        batchNo: item.batchNo,
+        qty: item.quantity,
+      })),
+      saleDate,  
+      "Sale",    
+    );
+    
+
+  setShowCreate(false);
+  resetForm();
   }
 
   const canCreate =
@@ -1644,6 +1705,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                     </span>
                                     <span className="text-slate-300">|</span>
 
+<<<<<<< HEAD
                                     <span className="whitespace-nowrap">
                                       <span className="text-slate-500">
                                         UPI ID :{" "}
@@ -1653,6 +1715,58 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                       </span>
                                     </span>
                                   </div>
+=======
+                            <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+                              <div className="text-[8.5px] leading-4 text-slate-600">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Account Name : </span>
+                                    <span className="font-bold text-slate-800">{paymentBank.accountName}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Account No : </span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.accountNo}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">IFSC Code : </span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.ifsc}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Bank Name : </span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.bankName}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">Branch : </span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.branch}</span>
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+
+                                  <span className="whitespace-nowrap">
+                                    <span className="text-slate-500">UPI ID : </span>
+                                    <span className="font-semibold text-slate-800">{paymentBank.upiId}</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <div className="rounded-lg border border-slate-300 bg-white p-1.5">
+                                  <img
+                                    src={buildPaymentQrUrl(
+                                      payableTotal,
+                                      selectedSale.invoiceNo,
+                                    )}
+                                    alt={`UPI QR for ${formatCurrency(payableTotal)}`}
+                                    className="h-[70px] w-[70px] object-contain"
+                                  />
+>>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
                                 </div>
 
                                 <div className="flex items-center gap-2">
@@ -1759,6 +1873,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       required
                     />
 
+<<<<<<< HEAD
                     {!isFRO && (
                       <Select
                         label="Sale Type"
@@ -1779,6 +1894,21 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         readOnly
                       />
                     )}
+=======
+                    <Select
+                      label="Sale Type"
+                      value={through}
+                      onChange={(value) => {
+                        setThrough(value as SaleType);
+                        setEntry(emptyEntry());   
+                        setAdded([]);             
+                      }}
+                      options={[
+                        { value: "Direct", label: "Direct" },
+                        { value: "Executive", label: "Executive" },
+                      ]}
+                    />
+>>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
 
                     <Select
                       label="Farmer Name"
@@ -1827,7 +1957,11 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       <Select
                         label="Executive"
                         value={executiveName}
-                        onChange={setExecutiveName}
+                        onChange={(value) => {
+                          setExecutiveName(value);
+                          setEntry(emptyEntry());   
+                          setAdded([]);           
+                        }}
                         placeholder="Select executive"
                         options={[
                           { value: "Ram Kumar", label: "Ram Kumar" },
@@ -1865,8 +1999,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                             : "Select product first"
                         }
                         options={Array.from(
-                          new Map(
-                            selectedSizeVariants.map((item) => [
+                          new Map<string, { value: string; label: string }>(
+                            selectedSizeVariants.map((item: { size: any; }) => [
                               item.size,
                               { value: item.size, label: item.size },
                             ]),

@@ -81,15 +81,15 @@ const PAYMENT_BANK = {
   upiId: "sujiyaso22-1@okhdfcbank",
 };
 
-function buildPaymentQrUrl(amount: number, invoiceNo: string) {
+function buildPaymentQrUrl(amount: number, invoiceNo: string, bank: typeof PAYMENT_BANK) {
   const payableAmount = Math.max(0, Math.round(amount));
   const upiPayload =
-    `upi://pay?pa=${encodeURIComponent(PAYMENT_BANK.upiId)}` +
-    `&pn=${encodeURIComponent(PAYMENT_BANK.accountName)}` +
+    `pa=${encodeURIComponent(bank.upiId)}` +
+    `&pn=${encodeURIComponent(bank.accountName)}` +
     `&am=${payableAmount.toFixed(2)}` +
     `&cu=INR` +
     `&tn=${encodeURIComponent(`Invoice ${invoiceNo}`)}`;
-
+    
   return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data=${encodeURIComponent(
     upiPayload,
   )}`;
@@ -305,6 +305,17 @@ export default function CompanySales() {
   const selectedStore = stores.find((s) => s.id === storeId);
   const entryProduct = productMaster.find((p) => p.id === entry.productId);
 
+  const [paymentBank, setPaymentBank] = useState(PAYMENT_BANK);
+  const [invoiceCompanyAddress, setInvoiceCompanyAddress] = useState(
+    "4/130/A1, Velavan Nagar, Velayudhampuram, Rajapalayam, Tamil Nadu - 626102",
+  );
+  const [companyInfo, setCompanyInfo] = useState({
+    gstNumber: "33AEZPV5328P1ZC",
+    businessType: "Agricultural Manufacturing",
+    headquarters: "Rajapalayam, Tamilnadu",
+    established: "2017",
+  });
+
   const productChoices = useMemo(() => {
     const byName = new Map<string, Product>();
 
@@ -392,6 +403,39 @@ export default function CompanySales() {
       window.removeEventListener("focus", refreshFarmers);
     };
   }, []);
+
+  useEffect(() => {
+  const loadCompanySettings = () => {
+    try {
+      const savedBank = localStorage.getItem("nature_biotic_admin_bank_details");
+      if (savedBank) {
+        const parsed = JSON.parse(savedBank);
+        setPaymentBank({
+          accountName: parsed.accountName || PAYMENT_BANK.accountName,
+          accountNo: parsed.accountNumber || PAYMENT_BANK.accountNo,
+          ifsc: parsed.ifscCode || PAYMENT_BANK.ifsc,
+          bankName: parsed.bankName || PAYMENT_BANK.bankName,
+          branch: parsed.location || PAYMENT_BANK.branch,
+          upiId: parsed.upiId || PAYMENT_BANK.upiId,
+        });
+      }
+
+      const savedAddress = localStorage.getItem("nature_biotic_company_address");
+      if (savedAddress) setInvoiceCompanyAddress(savedAddress);
+
+      const savedCompanyInfo = localStorage.getItem("nature_biotic_company_info");
+      if (savedCompanyInfo) {
+        setCompanyInfo((prev) => ({ ...prev, ...JSON.parse(savedCompanyInfo) }));
+      }
+    } catch {
+      // defaults stay as-is
+    }
+  };
+
+  loadCompanySettings();
+  window.addEventListener("focus", loadCompanySettings);
+  return () => window.removeEventListener("focus", loadCompanySettings);
+}, []);
 
   {/* Clear farmer/shipping selection when store changes (but not while editing) */}
   useEffect(() => {
@@ -1364,11 +1408,10 @@ function selectFarmer(farmer: Farmer) {
                               NATURE BIOTIC
                             </h3>
                             <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
-                              4/130/A1, Velavan Nagar, Velayudhampuram,
-                              Rajapalayam, Tamil Nadu - 626102
+                              {invoiceCompanyAddress}
                             </p>
                             <p className="mt-1 text-[10px] text-slate-600">
-                              GSTIN: 33AEZPV5328P1ZC
+                              GSTIN: {companyInfo.gstNumber}
                             </p>
                             <p className="text-[10px] text-slate-600">
                               Cell: 96008 44446
@@ -1963,37 +2006,37 @@ function selectFarmer(farmer: Farmer) {
                               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                                 <span className="whitespace-nowrap">
                                   <span className="text-slate-500">Account Name : </span>
-                                  <span className="font-bold text-slate-800">{PAYMENT_BANK.accountName}</span>
+                                  <span className="font-bold text-slate-800">{paymentBank.accountName}</span>
                                 </span>
                                 <span className="text-slate-300">|</span>
 
                                 <span className="whitespace-nowrap">
                                   <span className="text-slate-500">Account No : </span>
-                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.accountNo}</span>
+                                  <span className="font-semibold text-slate-800">{paymentBank.accountNo}</span>
                                 </span>
                                 <span className="text-slate-300">|</span>
 
                                 <span className="whitespace-nowrap">
                                   <span className="text-slate-500">IFSC Code : </span>
-                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.ifsc}</span>
+                                  <span className="font-semibold text-slate-800">{paymentBank.ifsc}</span>
                                 </span>
                                 <span className="text-slate-300">|</span>
 
                                 <span className="whitespace-nowrap">
                                   <span className="text-slate-500">Bank Name : </span>
-                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.bankName}</span>
+                                  <span className="font-semibold text-slate-800">{paymentBank.bankName}</span>
                                 </span>
                                 <span className="text-slate-300">|</span>
 
                                 <span className="whitespace-nowrap">
                                   <span className="text-slate-500">Branch : </span>
-                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.branch}</span>
+                                  <span className="font-semibold text-slate-800">{paymentBank.branch}</span>
                                 </span>
                                 <span className="text-slate-300">|</span>
 
                                 <span className="whitespace-nowrap">
                                   <span className="text-slate-500">UPI ID : </span>
-                                  <span className="font-semibold text-slate-800">{PAYMENT_BANK.upiId}</span>
+                                  <span className="font-semibold text-slate-800">{paymentBank.upiId}</span>
                                 </span>
                               </div>
                             </div>
@@ -2001,10 +2044,7 @@ function selectFarmer(farmer: Farmer) {
                             <div className="flex items-center gap-2">
                               <div className="rounded-lg border border-slate-300 bg-white p-1.5">
                                 <img
-                                  src={buildPaymentQrUrl(
-                                    payableTotal,
-                                    selectedInvoice.invoiceNo,
-                                  )}
+                                  src={buildPaymentQrUrl(payableTotal, selectedInvoice.invoiceNo, paymentBank)}
                                   alt={`UPI QR for ${formatCurrency(payableTotal)}`}
                                   className="h-[70px] w-[70px] object-contain"
                                 />
@@ -2062,7 +2102,7 @@ function selectFarmer(farmer: Farmer) {
         );
       })()}
 
-      {/* Create Store Sale — same popup shell as Credit Note (portal + fixed header/footer + scroll body) */}
+      
       {/* Create Store Sale — same popup shell as Credit Note (portal + fixed header/footer + scroll body) */}
       {showCreate &&
         createPortal(

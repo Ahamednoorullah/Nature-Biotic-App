@@ -15,7 +15,7 @@ const navItems: { key: CompanyPage; label: string; icon: string }[] = [
     icon: "shopping_cart_checkout",
   },
   { key: "sales", label: "Sales ", icon: "point_of_sale" },
-
+  { key: "expenses", label: "Expenses ", icon: "receipt_long" },
   { key: "credit-notes", label: "Credit Notes", icon: "undo" },
   { key: "receipts", label: "Receipts", icon: "receipt" },
   { key: "reports", label: "Reports", icon: "bar_chart" },

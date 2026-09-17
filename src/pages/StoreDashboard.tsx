@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useEffect } from "react";
-import { getStore } from "@/lib/data";
+import { getStore, getFROTotalStockCount, getFROCurrentStock, products } from "@/lib/data";
 import {
   Card,
   StatCard,
@@ -9,8 +9,14 @@ import {
   Select,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, initials } from "@/lib/format";
+import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
+import { getStorePurchasesFromCompanySales } from "@/lib/data";
+import { getFROStockTxnsByExecutive } from "@/lib/data";
+
+const getStockByExecutive = (storeId: string, executiveName: string) =>
+  getFROCurrentStock(storeId, executiveName);
+
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -22,10 +28,73 @@ const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "yearly", label: "Yearly" },
 ];
 
-type ExecKey = "ram" | "ajith" | "periya";
-type ExecDetailType = "sales" | "collection" | "cash" | "outstanding";
+function getFilterStartDate(filter: DateFilter): Date {
+  const now = new Date();
+  const start = new Date(now);
 
-type DirectDetailType = "sales" | "collection" | "outstanding";
+  switch (filter) {
+    case "today":
+      start.setHours(0, 0, 0, 0);
+      return start;
+    case "weekly":
+      start.setDate(start.getDate() - 7);
+      return start;
+    case "monthly":
+      start.setMonth(start.getMonth() - 1);
+      return start;
+    case "quarterly":
+      start.setMonth(start.getMonth() - 3);
+      return start;
+    case "yearly":
+      start.setFullYear(start.getFullYear() - 1);
+      return start;
+  }
+}
+
+function getCalendarPeriodStart(filter: DateFilter): Date {
+  const now = new Date();
+
+  switch (filter) {
+    case "today": {
+      const s = new Date(now);
+      s.setHours(0, 0, 0, 0);
+      return s;
+    }
+
+    case "weekly": {
+      // Start of week = Monday
+      const s = new Date(now);
+      const day = s.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      s.setDate(s.getDate() - diffToMonday);
+      s.setHours(0, 0, 0, 0);
+      return s;
+    }
+
+    case "monthly": {
+      // Start of this calendar month
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    case "quarterly": {
+      // Calendar quarter: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
+      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      return new Date(now.getFullYear(), quarterStartMonth, 1);
+    }
+
+    case "yearly": {
+      // Financial year starting April 1
+      const fyStartYear =
+        now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+      return new Date(fyStartYear, 3, 1); // April = month index 3
+    }
+  }
+}
+
+type ExecKey = "ram" | "ajith" | "periya";
+type ExecDetailType = "sales" | "collection" | "cash" | "outstanding" | "stocks";
+
+type DirectDetailType = "sales" | "collection" | "outstanding" | "stocks";
 
 type DirectDetailSelection = DirectDetailType | null;
 
@@ -741,6 +810,16 @@ const directSalesData: Record<DateFilter, DirectSalesSummary> = {
   },
 };
 
+type AggregatedStockRow = {
+  productId: string;
+  productName: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  unitValue: number;
+  qty: number;
+};
+
 export default function StoreDashboard({ storeId }: { storeId: string }) {
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -753,6 +832,115 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
 
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
+  const stockPurchases = useMemo(() => {
+    const startDate = getCalendarPeriodStart(dateFilter);
+    const allPurchases = getStorePurchasesFromCompanySales(storeId);
+
+    const filtered = allPurchases.filter((row) => {
+      const rowDate = new Date(row.date);
+      return rowDate >= startDate;
+    });
+
+    const totalValue = filtered.reduce(
+      (sum, row) => sum + Number(row.total || 0),
+      0,
+    );
+    const totalQty = filtered.reduce(
+      (sum, row) => sum + Number(row.quantity || 0),
+      0,
+    );
+
+    return {
+      rows: filtered.sort((a, b) => b.date.localeCompare(a.date)),
+      totalValue,
+      totalQty,
+    };
+  }, [storeId, dateFilter]);
+
+  const execStockData = useMemo(() => {
+  const startDate = getFilterStartDate(dateFilter);
+  const result: Record<
+    ExecKey,
+    {
+      deliveryRows: AggregatedStockRow[];
+      salesRows: AggregatedStockRow[];
+      returnRows: AggregatedStockRow[]; 
+      balanceRows: AggregatedStockRow[];
+      deliveryTotalQty: number;
+      deliveryTotalValue: number;
+      salesTotalQty: number;
+      salesTotalValue: number;
+      returnTotalQty: number;               
+      returnTotalValue: number;
+      balanceTotalQty: number;
+      balanceTotalValue: number;
+    }
+  > = {} as any;
+
+  function aggregate(txns: ReturnType<typeof getFROStockTxnsByExecutive>) {
+    const map = new Map<string, AggregatedStockRow>();
+    txns.forEach((t) => {
+      const k = `${t.productId}|${t.packSize}|${t.batchNo}`;
+      const existing = map.get(k);
+      if (existing) {
+        existing.qty += t.qty;
+      } else {
+        map.set(k, {
+          productId: t.productId,
+          productName: t.productName,
+          packSize: t.packSize,
+          batchNo: t.batchNo,
+          expiryDate: t.expiryDate,
+          unitValue: t.unitValue,
+          qty: t.qty,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  (Object.keys(execNames) as ExecKey[]).forEach((key) => {
+    const name = execNames[key];
+    const allTxns = getFROStockTxnsByExecutive(storeId, name);
+    const filteredTxns = allTxns.filter((t) => new Date(t.date) >= startDate);
+
+    // Delivery only (stock IN from store)
+    const deliveryTxns = filteredTxns.filter((t) => t.type === "Delivery");
+    const deliveryRows = aggregate(deliveryTxns).filter((r) => r.qty > 0);
+
+    // Sales only (FRO → Farmer)
+    const saleTxns = filteredTxns.filter((t) => t.type === "Sale");
+    const salesRows = aggregate(
+      saleTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
+    ).filter((r) => r.qty > 0);
+
+    // Returns only (FRO → store)
+    const returnTxns = filteredTxns.filter((t) => t.type === "Return");
+    const returnRows = aggregate(
+      returnTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
+    ).filter((r) => r.qty > 0);
+
+    // Balance = Delivery − Sale − Return (net of ALL txn types in period)
+    const balanceRows = aggregate(filteredTxns).filter((r) => r.qty > 0);
+
+    result[key] = {
+      deliveryRows,
+      salesRows,
+      returnRows,
+      balanceRows,
+      deliveryTotalQty: deliveryRows.reduce((s, r) => s + r.qty, 0),
+      deliveryTotalValue: deliveryRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+      salesTotalQty: salesRows.reduce((s, r) => s + r.qty, 0),
+      salesTotalValue: salesRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+      returnTotalQty: returnRows.reduce((s, r) => s + r.qty, 0),
+      returnTotalValue: returnRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+      balanceTotalQty: balanceRows.reduce((s, r) => s + r.qty, 0),
+      balanceTotalValue: balanceRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+    };
+  });
+
+  return result;
+}, [storeId, dateFilter]);
 
 
   if (!store) return <EmptyState icon="error" title="Store not found" />;
@@ -870,10 +1058,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             color="brand"
           />
           <DirectSalesCard
-            label="Crops"
-            value={String(directSales.crops)}
-            icon="spa"
+            label="Current Stocks"
+            value={formatCurrency(stockPurchases.totalValue)}
+            icon="inventory_2"
             color="blue"
+            onClick={() => setDirectDetail("stocks")}
           />
         </div>
       </div>
@@ -884,6 +1073,8 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             type={directDetail}
             dateFilter={dateFilter}
             summary={directSales}
+            stockRows={stockPurchases.rows}      
+            stockTotalValue={stockPurchases.totalValue} 
             storeName={store.name}
             onClose={() => setDirectDetail(null)}
           />,
@@ -991,11 +1182,22 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     label="Farms"
                     value={String(e.farms)}
                   />
-                  <ExecField icon="spa" label="Crops" value={String(e.crops)} />
+                  {/* <ExecField
+                    icon="spa"
+                    label="Crops"
+                    value={String(e.crops)}
+                  /> */}
                   <ExecField
                     icon="receipt"
                     label="Visits"
                     value={String(e.visits)}
+                  />
+                  <ExecField
+                    icon="inventory_2"
+                    label="Stocks in Hand"
+                    value={formatCurrency(execStockData[key].balanceTotalValue)}
+                    color="text-indigo-600"
+                    onClick={() => setExecDetail({ execKey: key, type: "stocks" })}
                   />
                 </div>
               </Card>
@@ -1008,12 +1210,57 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         createPortal(
           <ExecutiveDetailModal
             selection={execDetail}
+            stockData={execStockData[execDetail.execKey]}
             onClose={() => setExecDetail(null)}
           />,
           document.body,
         )}
 
 
+    </div>
+  );
+}
+
+function FROStockDetailModal({
+  executiveName,
+  storeId,
+  onClose,
+}: {
+  executiveName: string;
+  storeId: string;
+  onClose: () => void;
+}) {
+  const stockCount = getFROTotalStockCount(executiveName, storeId);
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
+              <Icon name="inventory_2" size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800">Stock in Hand</h3>
+              <p className="text-xs text-slate-500">{executiveName}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+          >
+            <Icon name="close" size={19} />
+          </button>
+        </div>
+        <div className="px-5 py-8 text-center">
+          <p className="text-sm font-medium text-slate-500">Total stock assigned</p>
+          <p className="mt-2 text-4xl font-extrabold text-purple-700">{stockCount}</p>
+        </div>
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1068,12 +1315,16 @@ function DirectSalesDetailModal({
   type,
   dateFilter,
   summary,
+  stockRows,
+  stockTotalValue,
   storeName,
   onClose,
 }: {
   type: DirectDetailType;
   dateFilter: DateFilter;
   summary: DirectSalesSummary;
+  stockRows: ReturnType<typeof getStorePurchasesFromCompanySales>;
+  stockTotalValue: number;
   storeName: string;
   onClose: () => void;
 }) {
@@ -1085,13 +1336,129 @@ function DirectSalesDetailModal({
     yearly: "This Year",
   };
 
-  const titles: Record<DirectDetailType, string> = {
+  // ---- STOCKS: real data from Company → Store purchases ----
+  if (type === "stocks") {
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+        <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                <Icon name="inventory_2" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">Store Stock Purchases</h3>
+                <p className="text-xs text-slate-500">
+                  {storeName} · {dateLabel[dateFilter]} · Purchased from Company
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+            >
+              <Icon name="close" size={19} />
+            </button>
+          </div>
+
+          <div className="border-b border-slate-200 bg-white px-5 py-4">
+            <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Total Purchase Value
+              </span>
+              <span className="text-lg font-extrabold text-slate-800">
+                {formatCurrency(stockTotalValue)}
+              </span>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full min-w-[820px] table-fixed text-sm">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-[6%] px-4 py-3 text-center">S.No</th>
+                  <th className="w-[12%] px-4 py-3 text-left">Date</th>
+                  <th className="w-[16%] px-4 py-3 text-left">Invoice No</th>
+                  <th className="w-[20%] px-4 py-3 text-left">Product</th>
+                  <th className="w-[10%] px-4 py-3 text-center">Pack Size</th>
+                  <th className="w-[10%] px-4 py-3 text-right">Qty</th>
+                  <th className="w-[12%] px-4 py-3 text-right">Rate</th>
+                  <th className="w-[14%] px-4 py-3 text-right">Amount</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {stockRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                      No stock purchases from Company in this period.
+                    </td>
+                  </tr>
+                ) : (
+                  stockRows.map((row, index) => (
+                    <tr key={row.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate ? formatDate(row.date) : row.date}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {row.invoiceNo}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{row.product}</td>
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {row.packSize}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                        {row.quantity}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {formatCurrency(row.rate)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {formatCurrency(row.total)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+
+              {stockRows.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
+                    <td colSpan={7} className="px-4 py-3 text-right text-slate-600">
+                      Total
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-900">
+                      {formatCurrency(stockTotalValue)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
+          <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- SALES / COLLECTION / OUTSTANDING: existing dummy-data behavior unchanged ----
+  const titles: Record<Exclude<DirectDetailType, "stocks">, string> = {
     sales: "Direct Sales Details",
     collection: "Direct Collection Details",
     outstanding: "Direct Outstanding Details",
   };
 
-  const icons: Record<DirectDetailType, string> = {
+  const icons: Record<Exclude<DirectDetailType, "stocks">, string> = {
     sales: "payments",
     collection: "account_balance_wallet",
     outstanding: "receipt_long",
@@ -1106,10 +1473,8 @@ function DirectSalesDetailModal({
 
   const splitAmount = (total: number, ratios: number[]) => {
     let used = 0;
-
     return ratios.map((ratio, index) => {
       if (index === ratios.length - 1) return Math.max(0, total - used);
-
       const amount = Math.round(total * ratio);
       used += amount;
       return amount;
@@ -1118,12 +1483,8 @@ function DirectSalesDetailModal({
 
   const farmers = ["Murugan", "Selvam", "Kannan", "Raja"];
   const saleAmounts = splitAmount(summary.sales, [0.34, 0.28, 0.22, 0.16]);
-  const collectionAmounts = splitAmount(summary.collection, [
-    0.36, 0.27, 0.21, 0.16,
-  ]);
-  const outstandingAmounts = splitAmount(summary.outstanding, [
-    0.38, 0.27, 0.2, 0.15,
-  ]);
+  const collectionAmounts = splitAmount(summary.collection, [0.36, 0.27, 0.21, 0.16]);
+  const outstandingAmounts = splitAmount(summary.outstanding, [0.38, 0.27, 0.2, 0.15]);
 
   const displayDates =
     dateFilter === "today"
@@ -1209,12 +1570,8 @@ function DirectSalesDetailModal({
                 if (type === "sales") {
                   return (
                     <tr key={`direct-sale-${index}`} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {displayDates[index]}
-                      </td>
+                      <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
+                      <td className="px-4 py-3 text-slate-600">{displayDates[index]}</td>
                       <td className="px-4 py-3 font-semibold text-slate-700">
                         {`SAI-INV-${String(1201 + index).padStart(4, "0")}`}
                       </td>
@@ -1229,22 +1586,15 @@ function DirectSalesDetailModal({
 
                 if (type === "collection") {
                   const methods = ["Cash", "UPI", "Cash", "Bank"];
-
                   return (
                     <tr key={`direct-collection-${index}`} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {displayDates[index]}
-                      </td>
+                      <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
+                      <td className="px-4 py-3 text-slate-600">{displayDates[index]}</td>
                       <td className="px-4 py-3 font-semibold text-slate-700">
                         {`SAI-RCP-${String(501 + index).padStart(4, "0")}`}
                       </td>
                       <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {methods[index]}
-                      </td>
+                      <td className="px-4 py-3 text-slate-600">{methods[index]}</td>
                       <td className="px-4 py-3 text-right font-bold text-slate-800">
                         {formatCurrency(collectionAmounts[index])}
                       </td>
@@ -1253,22 +1603,15 @@ function DirectSalesDetailModal({
                 }
 
                 const ageing = ["0-30 Days", "0-30 Days", "31-60 Days", "61-90 Days"];
-
                 return (
                   <tr key={`direct-outstanding-${index}`} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-center text-slate-500">
-                      {index + 1}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {displayDates[index]}
-                    </td>
+                    <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
+                    <td className="px-4 py-3 text-slate-600">{displayDates[index]}</td>
                     <td className="px-4 py-3 font-semibold text-slate-700">
                       {`SAI-INV-${String(1181 + index).padStart(4, "0")}`}
                     </td>
                     <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                    <td className="px-4 py-3 text-center text-slate-600">
-                      {ageing[index]}
-                    </td>
+                    <td className="px-4 py-3 text-center text-slate-600">{ageing[index]}</td>
                     <td className="px-4 py-3 text-right font-bold text-amber-700">
                       {formatCurrency(outstandingAmounts[index])}
                     </td>
@@ -1346,20 +1689,35 @@ function BusinessOverviewCard({
 
 function ExecutiveDetailModal({
   selection,
+  stockData,
   onClose,
 }: {
   selection: Exclude<ExecDetailSelection, null>;
+  stockData: {
+    deliveryRows: AggregatedStockRow[];
+    salesRows: AggregatedStockRow[];
+    returnRows: AggregatedStockRow[];
+    balanceRows: AggregatedStockRow[];
+    deliveryTotalQty: number;
+    deliveryTotalValue: number;
+    salesTotalQty: number;
+    salesTotalValue: number;
+    returnTotalQty: number;
+    returnTotalValue: number;
+    balanceTotalQty: number;
+    balanceTotalValue: number;
+  };
   onClose: () => void;
 }) {
   const { execKey, type } = selection;
-  const rows = execDetailData[execKey][type];
-  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
+  const [stockTab, setStockTab] = useState<"delivery" | "sales" | "return" | "balance">("balance");
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
     collection: "Collection Details",
     cash: "Cash in Hand Details",
     outstanding: "Outstanding Details",
+    stocks: "Stocks in Hand Details",
   };
 
   const icons: Record<ExecDetailType, string> = {
@@ -1367,7 +1725,204 @@ function ExecutiveDetailModal({
     collection: "account_balance_wallet",
     cash: "savings",
     outstanding: "receipt_long",
+    stocks: "inventory_2",
   };
+
+  // ---- STOCKS: Delivery / Sales / Balance tabs ----
+    if (type === "stocks") {
+    const activeRows =
+      stockTab === "delivery"
+        ? stockData.deliveryRows
+        : stockTab === "sales"
+          ? stockData.salesRows
+          : stockTab === "return"
+            ? stockData.returnRows
+            : stockData.balanceRows;
+
+    const activeQty =
+      stockTab === "delivery"
+        ? stockData.deliveryTotalQty
+        : stockTab === "sales"
+          ? stockData.salesTotalQty
+          : stockTab === "return"
+            ? stockData.returnTotalQty
+            : stockData.balanceTotalQty;
+
+    const activeValue =
+      stockTab === "delivery"
+        ? stockData.deliveryTotalValue
+        : stockTab === "sales"
+          ? stockData.salesTotalValue
+          : stockTab === "return"
+            ? stockData.returnTotalValue
+            : stockData.balanceTotalValue;
+
+    const tabLabels: Record<typeof stockTab, string> = {
+      delivery: "Stock Received",
+      sales: "Stock Sales",
+      return: "Sales Return",
+      balance: "Hand Stock",
+    };
+
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+        <div className="flex h-[76vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                <Icon name={icons[type]} size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">
+                  {execNames[execKey]} — {titles[type]}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Products delivered, sold and remaining with this executive
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+            >
+              <Icon name="close" size={19} />
+            </button>
+          </div>
+
+          {/* Tab switcher */}
+          <div className="flex gap-2 border-b border-slate-200 bg-white px-5 py-3">
+            {(["delivery", "sales", "return", "balance"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setStockTab(tab)}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition-base ${
+                  stockTab === tab
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {tabLabels[tab]}
+              </button>
+            ))}
+          </div>
+
+          <div className="border-b border-slate-200 bg-white px-5 py-4">
+            <div className="flex flex-wrap gap-3">
+              <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Total Qty
+                </span>
+                <span className="text-lg font-extrabold text-slate-800">
+                  {activeQty}
+                </span>
+              </div>
+              <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Total Value
+                </span>
+                <span className="text-lg font-extrabold text-indigo-700">
+                  {formatCurrency(activeValue)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full min-w-[760px] table-fixed text-sm">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="w-[6%] px-4 py-3 text-center">S.No</th>
+                  <th className="w-[22%] px-4 py-3 text-left">Product</th>
+                  <th className="w-[12%] px-4 py-3 text-center">Pack Size</th>
+                  <th className="w-[14%] px-4 py-3 text-left">Batch No</th>
+                  <th className="w-[12%] px-4 py-3 text-center">Expiry</th>
+                  <th className="w-[10%] px-4 py-3 text-right">Qty</th>
+                  <th className="w-[12%] px-4 py-3 text-right">Unit Value</th>
+                  <th className="w-[12%] px-4 py-3 text-right">Total Value</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {activeRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                      No {tabLabels[stockTab].toLowerCase()} records in this period.
+                    </td>
+                  </tr>
+                ) : (
+                  activeRows.map((row, index) => (
+                    <tr
+                      key={`${row.productId}-${row.packSize}-${row.batchNo}`}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">
+                        {row.productName}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {row.packSize}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {row.batchNo || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {row.expiryDate || "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {row.qty}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-600">
+                        {formatCurrency(row.unitValue)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-800">
+                        {formatCurrency(row.qty * row.unitValue)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+
+              {activeRows.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
+                    <td colSpan={5} className="px-4 py-3 text-right text-slate-600">
+                      Total
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-900">
+                      {activeQty}
+                    </td>
+                    <td className="px-4 py-3" />
+                    <td className="px-4 py-3 text-right text-slate-900">
+                      {formatCurrency(activeValue)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+
+          <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+
+  // ...rest of the function stays EXACTLY as it already is (sales/collection/cash/outstanding table) — no change needed below this point
+
+  // ---- SALES / COLLECTION / CASH / OUTSTANDING: existing dummy-data behavior unchanged ----
+  const rows = execDetailData[execKey][type];
+  const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
@@ -1429,7 +1984,6 @@ function ExecutiveDetailModal({
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-5 py-3 text-left">Date</th>
                   <th className="px-5 py-3 text-left">Farmer Name</th>
-
                   <th className="px-5 py-3 text-left">Village</th>
                   <th className="px-5 py-3 text-left">Phone No</th>
                   <th className="px-5 py-3 text-right">Amount</th>
@@ -1489,7 +2043,6 @@ function ExecutiveDetailModal({
                     >
                       <td className="px-5 py-3 text-slate-600">{row.date}</td>
                       <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-
                       <td className="px-5 py-3 text-slate-600">
                         {row.village}
                       </td>
