@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-<<<<<<< HEAD
 import {
   products as allProducts,
   getStore,
   getFarmersByStore,
   getStorePurchasesFromCompanySales,
+  getFROStockByExecutive,
+  reduceFROStock,
   type Product,
 } from "@/lib/data";
-=======
-import { products as allProducts, getStore, getFarmersByStore, getStorePurchasesFromCompanySales, getFROStockByExecutive, type Product, reduceFROStock } from "@/lib/data";
->>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 
@@ -117,7 +115,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
   const storeAny = store as any;
   const paymentBank = {
-    accountName: storeAny?.bankAccountName || storeAny?.accountName || store?.name || "-",
+    accountName:
+      storeAny?.bankAccountName || storeAny?.accountName || store?.name || "-",
     accountNo: storeAny?.bankAccountNo || storeAny?.accountNo || "-",
     ifsc: storeAny?.bankIfsc || storeAny?.ifsc || "-",
     bankName: storeAny?.bankName || "-",
@@ -134,7 +133,6 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
     return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
   }
-  
 
   const [rows, setRows] = useState<SaleRow[]>(() => {
     try {
@@ -148,24 +146,17 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRow | null>(null);
   useEffect(() => {
-<<<<<<< HEAD
     if (selectedSale) {
       setInvoiceNotes(selectedSale.notes || "");
     }
   }, [selectedSale]);
+
   useEffect(() => {
     if (isFRO) {
       setThrough("Executive");
       setExecutiveName(froName);
     }
   }, [isFRO, froName]);
-  const store = getStore(storeId);
-=======
-  if (selectedSale) {
-    setInvoiceNotes(selectedSale.notes || "");
-  }
-}, [selectedSale]);
->>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -256,57 +247,49 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }, [storePurchaseRows]);
 
   // FRO's own delivered stock — used when Through = Executive
-const froStockVariants = useMemo(() => {
-  if (through !== "Executive" || !executiveName) return [];
-  return getFROStockByExecutive(storeId, executiveName)
-    .map((item: any, index: number) => {
-      const master = allProducts.find((p) => p.id === item.productId);
-      return {
-        key: `${item.productId}-${item.packSize}-${item.batchNo}-${item.expiryDate}-${index}`,
-        productId: item.productId,
-        product: master,
-        name: item.productName,
-        size: item.packSize,
-        batchNo: item.batchNo,
-        expiryDate: item.expiryDate,
-        quantity: item.currentQty,   // ✅ this field DOES exist on FROStockEntry
-        sellingPrice: item.unitValue,
-        taxPercentage: Number(master?.taxPercentage ?? 0),
-      };
-    })
-    .filter((item: any) => item.name && item.quantity > 0);
-}, [through, executiveName, storeId]);
+  const froStockVariants = useMemo(() => {
+    if (through !== "Executive" || !executiveName) return [];
+    return getFROStockByExecutive(storeId, executiveName)
+      .map((item: any, index: number) => {
+        const master = allProducts.find((p) => p.id === item.productId);
+        return {
+          key: `${item.productId}-${item.packSize}-${item.batchNo}-${item.expiryDate}-${index}`,
+          productId: item.productId,
+          product: master,
+          name: item.productName,
+          size: item.packSize,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          quantity: item.currentQty, // ✅ this field DOES exist on FROStockEntry
+          sellingPrice: item.unitValue,
+          taxPercentage: Number(master?.taxPercentage ?? 0),
+        };
+      })
+      .filter((item: any) => item.name && item.quantity > 0);
+  }, [through, executiveName, storeId]);
 
-// Switch source based on sale type
-const activeStockVariants = through === "Executive" ? froStockVariants : storeStockVariants;
+  // Switch source based on sale type
+  const activeStockVariants =
+    through === "Executive" ? froStockVariants : storeStockVariants;
 
   const storeProductChoices = useMemo(() => {
-  const seen = new Map<string, { value: string; label: string }>();
-  activeStockVariants.forEach((item: { name: string; }) => {
-    const key = item.name.toLowerCase();
-    if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
-  });
-  return Array.from(seen.values());
-}, [activeStockVariants]);
+    const seen = new Map<string, { value: string; label: string }>();
+    activeStockVariants.forEach((item: { name: string }) => {
+      const key = item.name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, { value: item.name, label: item.name });
+    });
+    return Array.from(seen.values());
+  }, [activeStockVariants]);
 
   const selectedProductName =
-<<<<<<< HEAD
-    storeStockVariants.find((item) => item.productId === entry.productId)
+    activeStockVariants.find((item) => item.productId === entry.productId)
       ?.name || "";
 
   const selectedSizeVariants = useMemo(
     () =>
-      storeStockVariants.filter((item) => item.name === selectedProductName),
-    [storeStockVariants, selectedProductName],
+      activeStockVariants.filter((item) => item.name === selectedProductName),
+    [activeStockVariants, selectedProductName],
   );
-=======
-    activeStockVariants.find((item: { productId: string; }) => item.productId === entry.productId)?.name || "";
-
-  const selectedSizeVariants = useMemo(
-  () => activeStockVariants.filter((item: { name: any; }) => item.name === selectedProductName),
-  [activeStockVariants, selectedProductName],
-);
->>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
 
   const entryProduct = allProducts.find((p) => p.id === entry.productId);
 
@@ -354,16 +337,18 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
   }
 
   function selectProductName(productName: string) {
-  const first = activeStockVariants.find((item: { name: string; }) => item.name === productName);
-  setEntry((prev) => ({
-    ...prev,
-    productId: first?.productId || "",
-    pkgsize: "",
-    batchNo: "",
-    expiryDate: "",
-    sellingPrice: 0,
-  }));
-}
+    const first = activeStockVariants.find(
+      (item: { name: string }) => item.name === productName,
+    );
+    setEntry((prev) => ({
+      ...prev,
+      productId: first?.productId || "",
+      pkgsize: "",
+      batchNo: "",
+      expiryDate: "",
+      sellingPrice: 0,
+    }));
+  }
 
   function selectProductSize(size: string) {
     const variant = selectedSizeVariants.find((item) => item.size === size);
@@ -400,7 +385,9 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
       allProducts.find((p) => p.id === entry.productId);
     if (!selectedStock || !product) return;
     if (entry.quantity > selectedStock.quantity) {
-      window.alert(`Only ${selectedStock.quantity} available in ${through === "Executive" ? "FRO" : "store"} stock.`);
+      window.alert(
+        `Only ${selectedStock.quantity} available in ${through === "Executive" ? "FRO" : "store"} stock.`,
+      );
       return;
     }
 
@@ -505,13 +492,12 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
         batchNo: item.batchNo,
         qty: item.quantity,
       })),
-      saleDate,  
-      "Sale",    
+      saleDate,
+      "Sale",
     );
-    
 
-  setShowCreate(false);
-  resetForm();
+    setShowCreate(false);
+    resetForm();
   }
 
   const canCreate =
@@ -1660,113 +1646,55 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
                                         Account Name :{" "}
                                       </span>
                                       <span className="font-bold text-slate-800">
-                                        {PAYMENT_BANK.accountName}
+                                        {paymentBank.accountName}
                                       </span>
                                     </span>
                                     <span className="text-slate-300">|</span>
-
                                     <span className="whitespace-nowrap">
                                       <span className="text-slate-500">
                                         Account No :{" "}
                                       </span>
                                       <span className="font-semibold text-slate-800">
-                                        {PAYMENT_BANK.accountNo}
+                                        {paymentBank.accountNo}
                                       </span>
                                     </span>
                                     <span className="text-slate-300">|</span>
-
                                     <span className="whitespace-nowrap">
                                       <span className="text-slate-500">
                                         IFSC Code :{" "}
                                       </span>
                                       <span className="font-semibold text-slate-800">
-                                        {PAYMENT_BANK.ifsc}
+                                        {paymentBank.ifsc}
                                       </span>
                                     </span>
                                     <span className="text-slate-300">|</span>
-
                                     <span className="whitespace-nowrap">
                                       <span className="text-slate-500">
                                         Bank Name :{" "}
                                       </span>
                                       <span className="font-semibold text-slate-800">
-                                        {PAYMENT_BANK.bankName}
+                                        {paymentBank.bankName}
                                       </span>
                                     </span>
                                     <span className="text-slate-300">|</span>
-
                                     <span className="whitespace-nowrap">
                                       <span className="text-slate-500">
                                         Branch :{" "}
                                       </span>
                                       <span className="font-semibold text-slate-800">
-                                        {PAYMENT_BANK.branch}
+                                        {paymentBank.branch}
                                       </span>
                                     </span>
                                     <span className="text-slate-300">|</span>
-
-<<<<<<< HEAD
                                     <span className="whitespace-nowrap">
                                       <span className="text-slate-500">
                                         UPI ID :{" "}
                                       </span>
                                       <span className="font-semibold text-slate-800">
-                                        {PAYMENT_BANK.upiId}
+                                        {paymentBank.upiId}
                                       </span>
                                     </span>
                                   </div>
-=======
-                            <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
-                              <div className="text-[8.5px] leading-4 text-slate-600">
-                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Account Name : </span>
-                                    <span className="font-bold text-slate-800">{paymentBank.accountName}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Account No : </span>
-                                    <span className="font-semibold text-slate-800">{paymentBank.accountNo}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">IFSC Code : </span>
-                                    <span className="font-semibold text-slate-800">{paymentBank.ifsc}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Bank Name : </span>
-                                    <span className="font-semibold text-slate-800">{paymentBank.bankName}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">Branch : </span>
-                                    <span className="font-semibold text-slate-800">{paymentBank.branch}</span>
-                                  </span>
-                                  <span className="text-slate-300">|</span>
-
-                                  <span className="whitespace-nowrap">
-                                    <span className="text-slate-500">UPI ID : </span>
-                                    <span className="font-semibold text-slate-800">{paymentBank.upiId}</span>
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <div className="rounded-lg border border-slate-300 bg-white p-1.5">
-                                  <img
-                                    src={buildPaymentQrUrl(
-                                      payableTotal,
-                                      selectedSale.invoiceNo,
-                                    )}
-                                    alt={`UPI QR for ${formatCurrency(payableTotal)}`}
-                                    className="h-[70px] w-[70px] object-contain"
-                                  />
->>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
                                 </div>
 
                                 <div className="flex items-center gap-2">
@@ -1780,7 +1708,6 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
                                       className="h-[70px] w-[70px] object-contain"
                                     />
                                   </div>
-
                                   <div className="min-w-0">
                                     <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
                                       Scan QR to Pay
@@ -1873,12 +1800,15 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
                       required
                     />
 
-<<<<<<< HEAD
                     {!isFRO && (
                       <Select
                         label="Sale Type"
                         value={through}
-                        onChange={(value) => setThrough(value as SaleType)}
+                        onChange={(value) => {
+                          setThrough(value as SaleType);
+                          setEntry(emptyEntry());
+                          setAdded([]);
+                        }}
                         options={[
                           { value: "Direct", label: "Direct" },
                           { value: "Executive", label: "Executive" },
@@ -1894,21 +1824,6 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
                         readOnly
                       />
                     )}
-=======
-                    <Select
-                      label="Sale Type"
-                      value={through}
-                      onChange={(value) => {
-                        setThrough(value as SaleType);
-                        setEntry(emptyEntry());   
-                        setAdded([]);             
-                      }}
-                      options={[
-                        { value: "Direct", label: "Direct" },
-                        { value: "Executive", label: "Executive" },
-                      ]}
-                    />
->>>>>>> 12ce6ed3b32b2ed609d0d2afb1113c43bfe4cc8c
 
                     <Select
                       label="Farmer Name"
@@ -1959,8 +1874,8 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
                         value={executiveName}
                         onChange={(value) => {
                           setExecutiveName(value);
-                          setEntry(emptyEntry());   
-                          setAdded([]);           
+                          setEntry(emptyEntry());
+                          setAdded([]);
                         }}
                         placeholder="Select executive"
                         options={[
@@ -2000,7 +1915,7 @@ const activeStockVariants = through === "Executive" ? froStockVariants : storeSt
                         }
                         options={Array.from(
                           new Map<string, { value: string; label: string }>(
-                            selectedSizeVariants.map((item: { size: any; }) => [
+                            selectedSizeVariants.map((item: { size: any }) => [
                               item.size,
                               { value: item.size, label: item.size },
                             ]),
