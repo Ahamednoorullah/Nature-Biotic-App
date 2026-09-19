@@ -1,4 +1,4 @@
-/** @type {import('tailwindcss').Config} */
+/** @type {import('tailwinsdss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
@@ -6,7 +6,7 @@ export default {
       colors: {
         brand: {
           50: "#f0fdf4",
-          100: "#dcfce7",
+          100: "#sdfce7",
           200: "#bbf7d0",
           300: "#86efac",
           400: "#4ade80",

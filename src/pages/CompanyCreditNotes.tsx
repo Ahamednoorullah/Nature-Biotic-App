@@ -11,7 +11,7 @@ import {
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   stores,
-  addCompanyCreditNoteSyncRecords,
+  adsdompanyCreditNoteSyncRecords,
   getCompanyCreditNoteSyncRecords,
   type CompanyCreditNoteSyncRecord,
   getCompanyStoreSales,
@@ -87,7 +87,7 @@ const reasons = [
 ];
 const statuses: CreditNoteStatus[] = ["Approved", "Pending", "Rejected"];
 
-const seedCreditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
+const seesdreditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
   const d = new Date();
   d.setDate(d.getDate() - (i * 3 + 1));
 
@@ -157,10 +157,7 @@ export default function CompanyCreditNotes() {
         reason: row.reason,
         status: row.status,
         invoiceNo: row.invoiceNo || row.purchaseRef,
-        pkgsize:
-        (row as any).pkgsize ||
-        (row as any).packSize ||
-        "",
+        pkgsize: (row as any).pkgsize || (row as any).packSize || "",
         batchNo: (row as any).batchNo || "",
         expiryDate: (row as any).expiryDate || "",
         sellingPrice: row.unitPrice,
@@ -172,7 +169,7 @@ export default function CompanyCreditNotes() {
       };
     });
 
-    return [...createdNotes, ...seedCreditNotes];
+    return [...createdNotes, ...seesdreditNotes];
   });
 
   const [search, setSearch] = useState("");
@@ -182,7 +179,7 @@ export default function CompanyCreditNotes() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedCreditNote, setSelectedCreditNote] = useState<{
+  const [selectesdreditNote, setSelectesdreditNote] = useState<{
     header: CreditNote;
     rows: CreditNote[];
   } | null>(null);
@@ -413,7 +410,7 @@ export default function CompanyCreditNotes() {
         item.Date === row.Date,
     );
 
-    setSelectedCreditNote({
+    setSelectesdreditNote({
       header: row,
       rows: relatedRows.length > 0 ? relatedRows : [row],
     });
@@ -496,7 +493,7 @@ export default function CompanyCreditNotes() {
       }),
     );
 
-    addCompanyCreditNoteSyncRecords(syncRows);
+    adsdompanyCreditNoteSyncRecords(syncRows);
 
     // Show newly created rows immediately in Company Credit Notes.
     const companyRows: CreditNote[] = added.map((item, index) => ({
@@ -549,84 +546,84 @@ export default function CompanyCreditNotes() {
       <p className="text-xs font-semibold text-slate-700">{value}</p>
     </div>
   );
-  
+
   function numberToWords(num: number): string {
-  const ones = [
-    "",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
-  ];
+    const ones = [
+      "",
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven",
+      "Eight",
+      "Nine",
+      "Ten",
+      "Eleven",
+      "Twelve",
+      "Thirteen",
+      "Fourteen",
+      "Fifteen",
+      "Sixteen",
+      "Seventeen",
+      "Eighteen",
+      "Nineteen",
+    ];
 
-  const tens = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
+    const tens = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
 
-  function convert(n: number): string {
-    if (n < 20) return ones[n];
-    if (n < 100) {
-      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-    }
-    if (n < 1000) {
+    function convert(n: number): string {
+      if (n < 20) return ones[n];
+      if (n < 100) {
+        return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+      }
+      if (n < 1000) {
+        return (
+          ones[Math.floor(n / 100)] +
+          " Hundred" +
+          (n % 100 ? " " + convert(n % 100) : "")
+        );
+      }
+      if (n < 100000) {
+        return (
+          convert(Math.floor(n / 1000)) +
+          " Thousand" +
+          (n % 1000 ? " " + convert(n % 1000) : "")
+        );
+      }
+      if (n < 10000000) {
+        return (
+          convert(Math.floor(n / 100000)) +
+          " Lakh" +
+          (n % 100000 ? " " + convert(n % 100000) : "")
+        );
+      }
+
       return (
-        ones[Math.floor(n / 100)] +
-        " Hundred" +
-        (n % 100 ? " " + convert(n % 100) : "")
+        convert(Math.floor(n / 10000000)) +
+        " Crore" +
+        (n % 10000000 ? " " + convert(n % 10000000) : "")
       );
     }
-    if (n < 100000) {
-      return (
-        convert(Math.floor(n / 1000)) +
-        " Thousand" +
-        (n % 1000 ? " " + convert(n % 1000) : "")
-      );
-    }
-    if (n < 10000000) {
-      return (
-        convert(Math.floor(n / 100000)) +
-        " Lakh" +
-        (n % 100000 ? " " + convert(n % 100000) : "")
-      );
-    }
 
-    return (
-      convert(Math.floor(n / 10000000)) +
-      " Crore" +
-      (n % 10000000 ? " " + convert(n % 10000000) : "")
-    );
+    const rounded = Math.round(Number(num) || 0);
+
+    if (rounded === 0) return "Zero Rupees Only";
+
+    return `${convert(rounded)} Rupees Only`;
   }
-
-  const rounded = Math.round(Number(num) || 0);
-
-  if (rounded === 0) return "Zero Rupees Only";
-
-  return `${convert(rounded)} Rupees Only`;
-}
 
   const SummaryRow = ({ label, value, muted }: any) => (
     <div className="flex items-center justify-between">
@@ -964,7 +961,7 @@ export default function CompanyCreditNotes() {
         </Card>
       )}
 
-      {selectedCreditNote &&
+      {selectesdreditNote &&
         createPortal(
           <div className="credit-note-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
@@ -1050,24 +1047,24 @@ export default function CompanyCreditNotes() {
                     Credit Note
                   </p>
                   <h2 className="mt-1 text-2xl font-bold text-slate-800">
-                    {selectedCreditNote.header.creditNoteNo}
+                    {selectesdreditNote.header.creditNoteNo}
                   </h2>
                   <span
                     className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
-                      selectedCreditNote.header.status === "Approved"
+                      selectesdreditNote.header.status === "Approved"
                         ? "bg-emerald-50 text-emerald-700"
-                        : selectedCreditNote.header.status === "Rejected"
+                        : selectesdreditNote.header.status === "Rejected"
                           ? "bg-red-50 text-red-700"
                           : "bg-amber-50 text-amber-700"
                     }`}
                   >
-                    {selectedCreditNote.header.status || "Pending"}
+                    {selectesdreditNote.header.status || "Pending"}
                   </span>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setSelectedCreditNote(null)}
+                  onClick={() => setSelectesdreditNote(null)}
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
                 >
                   <Icon name="close" size={20} />
@@ -1122,15 +1119,15 @@ export default function CompanyCreditNotes() {
                         Billing Address
                       </p>
                       <p className="font-bold text-slate-900">
-                        {selectedCreditNote.header.party}
+                        {selectesdreditNote.header.party}
                       </p>
                       <p className="text-slate-600">
-                        {selectedCreditNote.header.storeLocation || "-"}
+                        {selectesdreditNote.header.storeLocation || "-"}
                       </p>
                       <p className="text-slate-600">
                         GSTIN:{" "}
                         {stores.find(
-                          (s) => s.id === selectedCreditNote.header.storeId,
+                          (s) => s.id === selectesdreditNote.header.storeId,
                         )?.gst || "-"}
                       </p>
                     </div>
@@ -1140,14 +1137,14 @@ export default function CompanyCreditNotes() {
                         Return Details
                       </p>
                       <p className="font-bold text-slate-900">
-                        {selectedCreditNote.header.party}
+                        {selectesdreditNote.header.party}
                       </p>
                       <p className="text-slate-600">
-                        {selectedCreditNote.header.storeLocation || "-"}
+                        {selectesdreditNote.header.storeLocation || "-"}
                       </p>
                       <p className="text-slate-600">
                         Place of Return:{" "}
-                        {selectedCreditNote.header.placeofreturn || "-"}
+                        {selectesdreditNote.header.placeofreturn || "-"}
                       </p>
                     </div>
 
@@ -1158,23 +1155,23 @@ export default function CompanyCreditNotes() {
                       <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
                         <span className="text-slate-500">CN No</span>
                         <span className="font-semibold">
-                          {selectedCreditNote.header.creditNoteNo}
+                          {selectesdreditNote.header.creditNoteNo}
                         </span>
                         <span className="text-slate-500">CN Date</span>
                         <span className="font-semibold">
-                          {formatDate(selectedCreditNote.header.Date)}
+                          {formatDate(selectesdreditNote.header.Date)}
                         </span>
                         <span className="text-slate-500">Invoice No</span>
                         <span className="font-semibold">
-                          {selectedCreditNote.header.invoiceNo || "-"}
+                          {selectesdreditNote.header.invoiceNo || "-"}
                         </span>
                         <span className="text-slate-500">Store Name</span>
                         <span className="font-semibold">
-                          {selectedCreditNote.header.party}
+                          {selectesdreditNote.header.party}
                         </span>
                         <span className="text-slate-500">Place of Supply</span>
                         <span className="font-semibold">
-                          {selectedCreditNote.header.storeLocation || "-"}
+                          {selectesdreditNote.header.storeLocation || "-"}
                         </span>
                       </div>
                     </div>
@@ -1299,7 +1296,7 @@ export default function CompanyCreditNotes() {
                       </thead>
 
                       <tbody>
-                        {selectedCreditNote.rows.map((row, index) => {
+                        {selectesdreditNote.rows.map((row, index) => {
                           const qty = Number(row.quantity || 0);
                           const price = Number(row.sellingPrice || 0);
                           const discountAmt = Number(row.discountAmount || 0);
@@ -1312,10 +1309,7 @@ export default function CompanyCreditNotes() {
                           const taxPct = Number(row.taxPercent || 0);
 
                           return (
-                            <tr
-                              key={row.id}
-                              
-                            >
+                            <tr key={row.id}>
                               <td className="border-r border-slate-300 p-2 text-center">
                                 {index + 1}
                               </td>
@@ -1385,74 +1379,127 @@ export default function CompanyCreditNotes() {
                       </tbody>
 
                       {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
-                        {(() => {
+                      {(() => {
                         const MIN_ROWS = 10;
-                        const fillerCount = Math.max(0, MIN_ROWS - selectedCreditNote?.rows.length);
+                        const fillerCount = Math.max(
+                          0,
+                          MIN_ROWS - selectesdreditNote?.rows.length,
+                        );
                         const columnCount = 18;
 
-                        return Array.from({ length: fillerCount }).map((_, i) => (
-                          <tr key={`filler-${i}`}>
-                            {Array.from({ length: columnCount }).map((_, colIdx) => (
-                              <td
-                                key={colIdx}
-                                className={`px-1 py-1.5 ${
-                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
-                                }`}
-                              >
-                                &nbsp;
-                              </td>
-                            ))}
-                          </tr>
-                        ));
+                        return Array.from({ length: fillerCount }).map(
+                          (_, i) => (
+                            <tr key={`filler-${i}`}>
+                              {Array.from({ length: columnCount }).map(
+                                (_, colIdx) => (
+                                  <td
+                                    key={colIdx}
+                                    className={`px-1 py-1.5 ${
+                                      colIdx < columnCount - 1
+                                        ? "border-r border-slate-300"
+                                        : ""
+                                    }`}
+                                  >
+                                    &nbsp;
+                                  </td>
+                                ),
+                              )}
+                            </tr>
+                          ),
+                        );
                       })()}
 
                       {/* ---- Bottom totals row ---- */}
                       <tfoot>
                         {(() => {
-                          const rows = selectedCreditNote?.rows ?? [];
+                          const rows = selectesdreditNote?.rows ?? [];
                           const totalQty = rows.reduce(
-                            (s, r) => s + Number(r.quantity || 0), 0,
+                            (s, r) => s + Number(r.quantity || 0),
+                            0,
                           );
                           const totalBeforeDiscount = rows.reduce((s, r) => {
                             const qty = Number(r.quantity || 0);
                             const price = Number(r.sellingPrice || 0);
                             const discountAmt = Number(r.discountAmount || 0);
-                            const taxable = Number(r.taxableAmount ?? r.amount ?? 0);
-                            const beforeDiscount = price > 0 ? price * qty : taxable + discountAmt;
+                            const taxable = Number(
+                              r.taxableAmount ?? r.amount ?? 0,
+                            );
+                            const beforeDiscount =
+                              price > 0 ? price * qty : taxable + discountAmt;
                             return s + beforeDiscount;
                           }, 0);
-                          const totalDiscountAmt = rows.reduce((s, r) => s + Number(r.discountAmount || 0), 0);
-                          const totalTaxable = rows.reduce((s, r) => s + Number(r.taxableAmount ?? r.amount ?? 0), 0);
-                          const totalCgst = rows.reduce((s, r) => s + Number(r.cgst || 0), 0);
-                          const totalSgst = rows.reduce((s, r) => s + Number(r.sgst || 0), 0);
-                          const totalIgst = rows.reduce((s, r) => s + Number(r.igst || 0), 0);
-                          const totalLine = rows.reduce((s, r) => s + Number(r.total || 0), 0);
+                          const totalDiscountAmt = rows.reduce(
+                            (s, r) => s + Number(r.discountAmount || 0),
+                            0,
+                          );
+                          const totalTaxable = rows.reduce(
+                            (s, r) =>
+                              s + Number(r.taxableAmount ?? r.amount ?? 0),
+                            0,
+                          );
+                          const totalCgst = rows.reduce(
+                            (s, r) => s + Number(r.cgst || 0),
+                            0,
+                          );
+                          const totalSgst = rows.reduce(
+                            (s, r) => s + Number(r.sgst || 0),
+                            0,
+                          );
+                          const totalIgst = rows.reduce(
+                            (s, r) => s + Number(r.igst || 0),
+                            0,
+                          );
+                          const totalLine = rows.reduce(
+                            (s, r) => s + Number(r.total || 0),
+                            0,
+                          );
 
                           return (
                             <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                            <td colSpan={5} className="border-r border-slate-300 p-2 text-center">Total</td>
-                            <td className="border-r border-slate-300 p-2 text-center">{totalQty}</td>
-                            <td className="border-r border-slate-300 p-2" />
-                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalBeforeDiscount)}</td>
-                            <td className="border-r border-slate-300 p-2" />
-                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalDiscountAmt)}</td>
-                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalTaxable)}</td>
-                            <td className="border-r border-slate-300 p-2" />
-                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalSgst)}</td>
-                            <td className="border-r border-slate-300 p-2" />
-                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalCgst)}</td>
-                            <td className="border-r border-slate-300 p-2" />
-                            <td className="border-r border-slate-300 p-2 text-right">{formatCurrency(totalIgst)}</td>
-                            <td className="p-2 text-right">{formatCurrency(totalLine)}</td>
-                          </tr>
+                              <td
+                                colSpan={5}
+                                className="border-r border-slate-300 p-2 text-center"
+                              >
+                                Total
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-center">
+                                {totalQty}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalBeforeDiscount)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalDiscountAmt)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalTaxable)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalSgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalCgst)}
+                              </td>
+                              <td className="border-r border-slate-300 p-2" />
+                              <td className="border-r border-slate-300 p-2 text-right">
+                                {formatCurrency(totalIgst)}
+                              </td>
+                              <td className="p-2 text-right">
+                                {formatCurrency(totalLine)}
+                              </td>
+                            </tr>
                           );
                         })()}
                       </tfoot>
                     </table>
                   </div>
 
-                                    {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                   <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
                     <div className="border-r border-slate-300 p-3">
                       <p className="text-[11px] font-bold uppercase text-slate-400">
                         Notes
@@ -1460,19 +1507,19 @@ export default function CompanyCreditNotes() {
 
                       {(() => {
                         const isLocked =
-                          selectedCreditNote.header.status === "Approved" ||
-                          selectedCreditNote.header.status === "Rejected";
+                          selectesdreditNote.header.status === "Approved" ||
+                          selectesdreditNote.header.status === "Rejected";
 
-                        const defaultNotes = `This credit note is generated against returned goods from ${selectedCreditNote.header.party}${
-                          selectedCreditNote.header.invoiceNo
-                            ? ` for original invoice ${selectedCreditNote.header.invoiceNo}.`
+                        const defaultNotes = `This credit note is generated against returned goods from ${selectesdreditNote.header.party}${
+                          selectesdreditNote.header.invoiceNo
+                            ? ` for original invoice ${selectesdreditNote.header.invoiceNo}.`
                             : "."
                         }`;
 
                         if (isLocked) {
                           return (
                             <p className="mt-1.5 whitespace-pre-line text-xs text-slate-500">
-                              {selectedCreditNote.header.notes || defaultNotes}
+                              {selectesdreditNote.header.notes || defaultNotes}
                             </p>
                           );
                         }
@@ -1481,16 +1528,19 @@ export default function CompanyCreditNotes() {
                           <>
                             <textarea
                               value={
-                                selectedCreditNote.header.notes ?? defaultNotes
+                                selectesdreditNote.header.notes ?? defaultNotes
                               }
                               onChange={(e) => {
                                 const newNotes = e.target.value;
 
-                                setSelectedCreditNote((prev) =>
+                                setSelectesdreditNote((prev) =>
                                   prev
                                     ? {
                                         ...prev,
-                                        header: { ...prev.header, notes: newNotes },
+                                        header: {
+                                          ...prev.header,
+                                          notes: newNotes,
+                                        },
                                         rows: prev.rows.map((r) => ({
                                           ...r,
                                           notes: newNotes,
@@ -1502,8 +1552,8 @@ export default function CompanyCreditNotes() {
                                 setCreditNotes((prevNotes) =>
                                   prevNotes.map((row) =>
                                     row.creditNoteNo ===
-                                      selectedCreditNote.header.creditNoteNo &&
-                                    row.Date === selectedCreditNote.header.Date
+                                      selectesdreditNote.header.creditNoteNo &&
+                                    row.Date === selectesdreditNote.header.Date
                                       ? { ...row, notes: newNotes }
                                       : row,
                                   ),
@@ -1511,21 +1561,22 @@ export default function CompanyCreditNotes() {
 
                                 // Persist to the synced Company Credit Note records
                                 // so the Store side also sees the updated notes.
-                                const allSynced = getCompanyCreditNoteSyncRecords();
+                                const allSynced =
+                                  getCompanyCreditNoteSyncRecords();
                                 const updatedSynced = allSynced.map((row) =>
                                   row.creditNoteNo ===
-                                  selectedCreditNote.header.creditNoteNo
+                                  selectesdreditNote.header.creditNoteNo
                                     ? { ...row, notes: newNotes }
                                     : row,
                                 );
-                                addCompanyCreditNoteSyncRecords(updatedSynced);
+                                adsdompanyCreditNoteSyncRecords(updatedSynced);
                               }}
                               rows={2}
                               className="credit-note-screen-only mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:outline-none focus:border-brand-500"
                             />
 
                             <p className="credit-note-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                              {selectedCreditNote.header.notes || defaultNotes}
+                              {selectesdreditNote.header.notes || defaultNotes}
                             </p>
                           </>
                         );
@@ -1533,7 +1584,7 @@ export default function CompanyCreditNotes() {
 
                       <p className="mt-1.5 text-xs text-slate-500">
                         Reason:{" "}
-                        {selectedCreditNote.rows
+                        {selectesdreditNote.rows
                           .map((row) => row.reason)
                           .filter(Boolean)
                           .join(", ") || "Product Return"}
@@ -1555,7 +1606,7 @@ export default function CompanyCreditNotes() {
               <div className="credit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
                 <Button
                   variant="secondary"
-                  onClick={() => setSelectedCreditNote(null)}
+                  onClick={() => setSelectesdreditNote(null)}
                 >
                   Close
                 </Button>
@@ -1963,7 +2014,6 @@ export default function CompanyCreditNotes() {
                             </tr>
                           ))}
                         </tbody>
-
                       </table>
                     </div>
                   )}
@@ -1998,7 +2048,6 @@ export default function CompanyCreditNotes() {
                         value={formatCurrency(totals.igst)}
                         muted
                       />
-
 
                       <div className="border-t border-slate-200 pt-2">
                         <SummaryRow

@@ -74,7 +74,7 @@ const applicationMethodOptions = [
   "Foliar Spray",
   "Drenching",
   "Fertigation",
-  "Broadcasting (Soil Application)",
+  "Broasdasting (Soil Application)",
 ];
 
 const safetyColorOptions = ["Green", "Red", "Orange", "White", "Blue"];
@@ -237,15 +237,15 @@ export default function ProductAddForm({
         ? prev.filter((item) => item !== method)
         : [...prev, method];
 
-      const hasBroadcasting = next.includes("Broadcasting (Soil Application)");
+      const hasBroasdasting = next.includes("Broasdasting (Soil Application)");
       const hasWaterApplication = next.some((item) =>
         ["Foliar Spray", "Drenching", "Fertigation"].includes(item),
       );
 
       setForm((current) => ({
         ...current,
-        fillerType: hasBroadcasting ? "NA" : hasWaterApplication ? "Water" : "",
-        filler: hasBroadcasting ? "" : current.filler,
+        fillerType: hasBroasdasting ? "NA" : hasWaterApplication ? "Water" : "",
+        filler: hasBroasdasting ? "" : current.filler,
       }));
 
       return next;

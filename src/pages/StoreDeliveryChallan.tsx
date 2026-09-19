@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { products as allProducts, addFROStock } from "@/lib/data";
+import {
+  getProductsByStore,
+  getStorePurchasesFromCompanySales,
+} from "@/lib/data";
 
 type Item = {
   productId: string;
@@ -12,19 +15,17 @@ type Item = {
   expiryDate: string;
   qty: string;
   unitValue: string;
+  taxPercent: number;
 };
 type Challan = {
   id: string;
-  dcNo: string;
+  sdNo: string;
   date: string;
   executive: string;
-  customerName: string;
-  address: string;
-  contactNo: string;
-  placeOfSupply: string;
-  cgstPercent: number;   // ✅ ADD
-  sgstPercent: number;   // ✅ ADD
-  igstPercent: number;   // ✅ ADD
+  status?: "pending" | "accepted";
+  storeId?: string;
+  acceptedAt?: string;
+  acceptedBy?: string;
   items: Item[];
 };
 
@@ -40,11 +41,13 @@ function emptyItems(): Item[] {
       expiryDate: "",
       qty: "",
       unitValue: "",
+      taxPercent: 0,
     },
   ];
 }
 
 const STORAGE_PREFIX = "nature-biotic-store-delivery-challans-v2";
+const FRO_PENDING_PREFIX = "nature-biotic-fro-pending-deliveries-v1";
 
 export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
@@ -58,13 +61,10 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     return [
       {
         id: "1",
-        dcNo: "DC-1001",
+        sdNo: "SD-1001",
         date: "2026-08-17",
         executive: "Ram Kumar",
-        customerName: "Murugan",
-        address: "Rajapalayam",
-        contactNo: "9876543210",
-        placeOfSupply: "Tamil Nadu",
+        status: "accepted",
         items: [
           {
             productId: "electra",
@@ -74,6 +74,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
             expiryDate: "2027-08-31",
             qty: "10",
             unitValue: "250",
+            taxPercent: 18,
           },
         ],
       },
@@ -82,25 +83,76 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState<Challan | null>(null);
-  const [dcNo, setDcNo] = useState("");
+  const [sdNo, setsdNo] = useState("");
   const [executive, setExecutive] = useState("");
   const [date, setDate] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [address, setAddress] = useState("");
-  const [contactNo, setContactNo] = useState("");
-  const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const [items, setItems] = useState<Item[]>(emptyItems());
-  const [cgstPercent, setCgstPercent] = useState(0);   // ✅ ADD
-  const [sgstPercent, setSgstPercent] = useState(0);   // ✅ ADD
-  const [igstPercent, setIgstPercent] = useState(0);   // ✅ ADD
+
+  const storeProducts = useMemo(() => {
+    const productsById = new Map<string, any>();
+
+    getProductsByStore(storeId).forEach((product: any) => {
+      productsById.set(String(product.id), product);
+    });
+
+    // Keep only products belonging to this store, while also picking up
+    // pack sizes that were actually received into the store.
+    const sizesByProduct = new Map<string, string[]>();
+    getStorePurchasesFromCompanySales(storeId).forEach((row: any) => {
+      const productId = String(row.productId || "");
+      if (!productId || !productsById.has(productId)) return;
+      const size = String(row.packSize ?? row.pkgsize ?? row.size ?? "").trim();
+      if (!size) return;
+      const existing = sizesByProduct.get(productId) ?? [];
+      if (!existing.includes(size)) existing.push(size);
+      sizesByProduct.set(productId, existing);
+    });
+
+    return Array.from(productsById.values())
+      .map((product: any) => {
+        const productId = String(product.id);
+        const variants = getStorePurchasesFromCompanySales(storeId)
+          .filter((row: any) => String(row.productId || "") === productId)
+          .map((row: any) => ({
+            size: String(
+              row.packSize ?? row.pkgsize ?? row.size ?? product.size ?? "",
+            ).trim(),
+            batchNo: String(row.batchNo ?? row.batchId ?? "").trim(),
+            expiryDate: String(
+              row.expiryDate ?? row.expDate ?? row.expiry ?? "",
+            ).trim(),
+            quantity: Number(row.quantity ?? row.qty ?? 0),
+            sellingPrice: Number(
+              row.sellingPrice ??
+                row.rate ??
+                row.price ??
+                product.sellingPrice ??
+                0,
+            ),
+          }))
+          .filter((row: any) => row.size && row.quantity > 0);
+
+        const sizes = Array.from(new Set(variants.map((row: any) => row.size)));
+
+        return {
+          id: productId,
+          name: String(product.name || ""),
+          sizes,
+          variants,
+          sellingPrice: Number(product.sellingPrice || 0),
+          taxPercentage: Number(
+            product.taxPercentage ?? product.taxPercent ?? 0,
+          ),
+        };
+      })
+      .filter((product) => product.name && product.variants.length > 0);
+  }, [storeId]);
 
   const canCreate =
-    !!dcNo.trim() &&
+    !!sdNo.trim() &&
     !!executive &&
     !!date &&
-    !!customerName.trim() &&
-    !!placeOfSupply.trim() &&
     items.every(
       (item) =>
         item.product &&
@@ -112,23 +164,23 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     );
 
   const totals = useMemo(() => {
-  const approxValue = items.reduce(
-    (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
-    0,
-  );
-  const cgstAmount = (approxValue * cgstPercent) / 100;
-  const sgstAmount = (approxValue * sgstPercent) / 100;
-  const igstAmount = (approxValue * igstPercent) / 100;
+    const approxValue = items.reduce(
+      (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+      0,
+    );
+    const taxAmount = items.reduce((sum, item) => {
+      const lineValue = Number(item.qty || 0) * Number(item.unitValue || 0);
+      const lineTax = (lineValue * Number(item.taxPercent || 0)) / 100;
+      return sum + lineTax;
+    }, 0);
 
-  return {
-    totalQty: items.reduce((sum, item) => sum + Number(item.qty || 0), 0),
-    approxValue,
-    cgstAmount,
-    sgstAmount,
-    igstAmount,
-    grandTotal: approxValue + cgstAmount + sgstAmount + igstAmount,
-  };
-}, [items, cgstPercent, sgstPercent, igstPercent]);
+    return {
+      totalQty: items.reduce((sum, item) => sum + Number(item.qty || 0), 0),
+      approxValue,
+      taxAmount,
+      grandTotal: approxValue + taxAmount,
+    };
+  }, [items]);
 
   function updateItem(i: number, key: keyof Item, value: string) {
     setItems((prev) =>
@@ -137,321 +189,303 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   }
 
   function resetForm() {
-  setDcNo("");
-  setExecutive("");
-  setDate("");
-  setCustomerName("");
-  setAddress("");
-  setContactNo("");
-  setPlaceOfSupply("");
-  setCgstPercent(0);   // ✅ ADD
-  setSgstPercent(0);   // ✅ ADD
-  setIgstPercent(0);   // ✅ ADD
-  setItems(emptyItems());
-}
+    setsdNo("");
+    setExecutive("");
+    setDate("");
+    setItems(emptyItems());
+  }
 
   function closeForm() {
     setShowAdd(false);
     resetForm();
   }
 
-  function createChallan() {
-  if (!canCreate) return;
+  function getNextSdNo() {
+    const maxNo = challans.reduce((max, challan) => {
+      const match = String(challan.sdNo || "").match(/SD-(\d+)/i);
+      return Math.max(max, match ? Number(match[1]) : 0);
+    }, 0);
 
-  const next: Challan = {
-    id: String(Date.now()),
-    dcNo: dcNo.trim(),
-    date,
-    executive,
-    customerName: customerName.trim(),
-    address: address.trim(),
-    contactNo: contactNo.trim(),
-    placeOfSupply: placeOfSupply.trim(),
-    cgstPercent,
-    sgstPercent,
-    igstPercent,
-    items,
-  };
-
-  addFROStock(
-  storeId,
-  executive,
-  items.map((item) => ({
-    productId: item.productId,
-    productName: item.product,
-    packSize: item.packSize,
-    batchNo: item.batchNo,
-    expiryDate: item.expiryDate,
-    unitValue: Number(item.unitValue || 0),
-    qty: Number(item.qty || 0),
-  })),
-  date, // ✅ ADD — challan's own date state
-);
-
-  const updated = [next, ...challans];
-  setChallans(updated);
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-  } catch {}
-  closeForm();
-}
-
-function numberToWords(num: number): string {
-  const ones = [
-    "",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
-  ];
-
-  const tens = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
-
-  function convert(n: number): string {
-    if (n < 20) return ones[n];
-    if (n < 100) {
-      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-    }
-    if (n < 1000) {
-      return (
-        ones[Math.floor(n / 100)] +
-        " Hundred" +
-        (n % 100 ? " " + convert(n % 100) : "")
-      );
-    }
-    if (n < 100000) {
-      return (
-        convert(Math.floor(n / 1000)) +
-        " Thousand" +
-        (n % 1000 ? " " + convert(n % 1000) : "")
-      );
-    }
-    if (n < 10000000) {
-      return (
-        convert(Math.floor(n / 100000)) +
-        " Lakh" +
-        (n % 100000 ? " " + convert(n % 100000) : "")
-      );
-    }
-
-    return (
-      convert(Math.floor(n / 10000000)) +
-      " Crore" +
-      (n % 10000000 ? " " + convert(n % 10000000) : "")
-    );
+    return `SD-${String(maxNo + 1).padStart(4, "0")}`;
   }
 
-  const rounded = Math.round(Number(num) || 0);
+  function openCreateForm() {
+    setsdNo(getNextSdNo());
+    setExecutive("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setItems(emptyItems());
+    setShowAdd(true);
+  }
 
-  if (rounded === 0) return "Zero Rupees Only";
+  function createChallan() {
+    if (!canCreate) return;
 
-  return `${convert(rounded)} Rupees Only`;
-}
+    const next: Challan = {
+      id: String(Date.now()),
+      sdNo: sdNo.trim(),
+      date,
+      executive,
+      storeId,
+      status: "pending",
+      items: items.map((item) => ({ ...item })),
+    };
+
+    const updated = [next, ...challans];
+    setChallans(updated);
+    try {
+      // Store copy
+      localStorage.setItem(storageKey, JSON.stringify(updated));
+
+      // Separate FRO inbox copy. This makes the pending delivery available
+      // to the selected FRO even when the FRO session resolves a different
+      // store/default id.
+      const pendingKey = `${FRO_PENDING_PREFIX}:${String(executive).trim().toLowerCase()}`;
+      const existingPending = JSON.parse(
+        localStorage.getItem(pendingKey) || "[]",
+      );
+      localStorage.setItem(
+        pendingKey,
+        JSON.stringify([next, ...existingPending]),
+      );
+
+      window.dispatchEvent(new Event("nature-biotic-delivery-challan-updated"));
+    } catch {}
+    closeForm();
+  }
+
+  function numberToWords(num: number): string {
+    const ones = [
+      "",
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven",
+      "Eight",
+      "Nine",
+      "Ten",
+      "Eleven",
+      "Twelve",
+      "Thirteen",
+      "Fourteen",
+      "Fifteen",
+      "Sixteen",
+      "Seventeen",
+      "Eighteen",
+      "Nineteen",
+    ];
+
+    const tens = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
+
+    function convert(n: number): string {
+      if (n < 20) return ones[n];
+      if (n < 100) {
+        return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+      }
+      if (n < 1000) {
+        return (
+          ones[Math.floor(n / 100)] +
+          " Hundred" +
+          (n % 100 ? " " + convert(n % 100) : "")
+        );
+      }
+      if (n < 100000) {
+        return (
+          convert(Math.floor(n / 1000)) +
+          " Thousand" +
+          (n % 1000 ? " " + convert(n % 1000) : "")
+        );
+      }
+      if (n < 10000000) {
+        return (
+          convert(Math.floor(n / 100000)) +
+          " Lakh" +
+          (n % 100000 ? " " + convert(n % 100000) : "")
+        );
+      }
+
+      return (
+        convert(Math.floor(n / 10000000)) +
+        " Crore" +
+        (n % 10000000 ? " " + convert(n % 10000000) : "")
+      );
+    }
+
+    const rounded = Math.round(Number(num) || 0);
+
+    if (rounded === 0) return "Zero Rupees Only";
+
+    return `${convert(rounded)} Rupees Only`;
+  }
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Delivery Challan
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-800">Stock Delivery</h1>
           <p className="mt-1 text-slate-500">
             Issue products from store stock to field executives.
           </p>
         </div>
-        <Button onClick={() => setShowAdd(true)}>
-          <Icon name="add" size={18} /> Create Challan
+        <Button onClick={openCreateForm}>
+          <Icon name="add" size={18} /> Create Stock Delivery
         </Button>
       </div>
 
       <Card className="overflow-hidden p-0">
-  <table className="w-full table-fixed border-collapse text-sm">
-    <thead>
-      {/* First Header Row */}
-      <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
-        <th rowSpan={2}className="w-[5%] border-r border-slate-200 px-2 py-2.5 text-center">
-          S.No
-        </th>
+        <table className="w-full table-fixed border-collapse text-sm">
+          <thead>
+            {/* First Header Row */}
+            <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
+              <th
+                rowSpan={2}
+                className="w-[5%] border-r border-slate-200 px-2 py-2.5 text-center"
+              >
+                S.No
+              </th>
 
-        <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2.5 text-center">
-          Date
-        </th>
+              <th
+                rowSpan={2}
+                className="w-[8%] border-r border-slate-200 px-2 py-2.5 text-center"
+              >
+                Date
+              </th>
 
-        <th rowSpan={2} className="w-[9%] border-r border-slate-200 px-2 py-2.5 text-center">
-          DC No
-        </th>
+              <th
+                rowSpan={2}
+                className="w-[9%] border-r border-slate-200 px-2 py-2.5 text-center"
+              >
+                SD No
+              </th>
 
-        <th rowSpan={2} className="w-[8%] border-r border-slate-200 px-2 py-2.5 text-center">
-          Executive
-        </th>
+              <th
+                rowSpan={2}
+                className="w-[8%] border-r border-slate-200 px-2 py-2.5 text-center"
+              >
+                Executive
+              </th>
 
-        <th rowSpan={2} className="w-[11%] border-r border-slate-200 px-2 py-2.5 text-center">
-          Farmer Details
-        </th>
+              <th
+                rowSpan={2}
+                className="w-[7%] border-r border-slate-200 px-2 py-2.5 text-center"
+              >
+                Products
+              </th>
 
-        <th rowSpan={2} className="w-[7%] border-r border-slate-200 px-2 py-2.5 text-center">
-          Products
-        </th>
+              <th
+                rowSpan={2}
+                className="w-[6%] border-r border-slate-200 px-2 py-2.5 text-center"
+              >
+                Qty
+              </th>
 
-        <th rowSpan={2} className="w-[6%] border-r border-slate-200 px-2 py-2.5 text-center">
-          Qty
-        </th>
+              {/* Without Tax */}
+              <th
+                rowSpan={2}
+                className="w-[9%] border-r border-slate-200 px-2 py-2.5 text-center font-semibold"
+              >
+                Without Tax
+              </th>
 
-        {/* Without Tax */}
-        <th
-          rowSpan={2}
-          className="w-[9%] border-r border-slate-200 px-2 py-2.5 text-center font-semibold"
-        >
-          Without Tax
-        </th>
+              {/* Tax */}
+              <th
+                rowSpan={2}
+                className="w-[10%] border-r border-slate-200 px-2 py-2.5 text-center font-semibold"
+              >
+                Tax
+              </th>
 
-        {/* Tax */}
-        <th
-          colSpan={3}
-          className="w-[18%] border-r border-slate-200 px-2 py-2.5 text-center font-semibold"
-        >
-          Tax
-        </th>
+              {/* Total */}
+              <th
+                rowSpan={2}
+                className="w-[10%] px-2 py-2.5 text-right font-semibold"
+              >
+                Total Value
+              </th>
+            </tr>
+          </thead>
 
-        {/* Total */}
-        <th
-          rowSpan={2}
-          className="w-[10%] px-2 py-2.5 text-right font-semibold"
-        >
-          Total Value
-        </th>
-      </tr>
+          <tbody className="divide-y divide-slate-100">
+            {challans.map((c, index) => {
+              const totalQty = c.items.reduce(
+                (s, x) => s + Number(x.qty || 0),
+                0,
+              );
+              const withoutTax = c.items.reduce(
+                (s, x) => s + Number(x.qty || 0) * Number(x.unitValue || 0),
+                0,
+              );
 
-      {/* Second Header Row — Tax */}
-      <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-        
-        <th className="border-r border-slate-100 px-2 py-2 text-center font-semibold">
-          SGST
-        </th>
+              const tax = c.items.reduce((sum, item) => {
+                const lineValue =
+                  Number(item.qty || 0) * Number(item.unitValue || 0);
+                return sum + (lineValue * Number(item.taxPercent || 0)) / 100;
+              }, 0);
+              const totalValue = withoutTax + tax;
 
-        <th className="border-r border-slate-100 px-2 py-2 text-center font-semibold">
-          CGST
-        </th>
+              return (
+                <tr
+                  key={c.id}
+                  onClick={() => setSelected(c)}
+                  className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                >
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    {index + 1}
+                  </td>
 
-        <th className="border-r border-slate-200 px-2 py-2 text-center font-semibold">
-          IGST
-        </th>
-      </tr>
-    </thead>
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    {formatDate(c.date)}
+                  </td>
 
-    <tbody className="divide-y divide-slate-100">
-      {challans.map((c, index) => {
-        const totalQty = c.items.reduce((s, x) => s + Number(x.qty || 0), 0);
-        const withoutTax = c.items.reduce(
-          (s, x) => s + Number(x.qty || 0) * Number(x.unitValue || 0),
-          0,
-        );
+                  <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold">
+                    {c.sdNo}
+                  </td>
 
-        // ✅ REPLACE hardcoded 0 with real calc:
-        const sgst = (withoutTax * (c.sgstPercent || 0)) / 100;
-        const cgst = (withoutTax * (c.cgstPercent || 0)) / 100;
-        const igst = (withoutTax * (c.igstPercent || 0)) / 100;
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    {c.executive}
+                  </td>
 
-        const totalValue = withoutTax + sgst + cgst + igst;
+                  <td className="border-r border-slate-100 px-2 py-3 text-center">
+                    {c.items.length}
+                  </td>
 
-        return (
-          <tr
-            key={c.id}
-            onClick={() => setSelected(c)}
-            className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
-          >
-            <td className="border-r border-slate-100 px-2 py-3 text-center">
-              {index + 1}
-            </td>
+                  <td className="border-r border-slate-100 px-2 py-3 text-center font-bold">
+                    {totalQty}
+                  </td>
 
-            <td className="border-r border-slate-100 px-2 py-3 text-center">
-              {formatDate(c.date)}
-            </td>
+                  {/* WITHOUT TAX */}
+                  <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold text-slate-700">
+                    {formatCurrency(withoutTax)}
+                  </td>
+                  {/* TAX */}
+                  <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
+                    {formatCurrency(tax)}
+                  </td>
 
-            <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold">
-              {c.dcNo}
-            </td>
-
-            <td className="border-r border-slate-100 px-2 py-3 text-center">
-              {c.executive}
-            </td>
-
-            {/* Farmer Details */}
-            <td className="border-r border-slate-100 px-2 py-3 text-center">
-              <p className="font-semibold text-slate-800">
-                {c.customerName}
-              </p>
-
-              <p className="mt-0.5 text-xs text-slate-500">
-                {c.address || "-"}
-              </p>
-            </td>
-
-            <td className="border-r border-slate-100 px-2 py-3 text-center">
-              {c.items.length}
-            </td>
-
-            <td className="border-r border-slate-100 px-2 py-3 text-center font-bold">
-              {totalQty}
-            </td>
-
-            {/* WITHOUT TAX */}
-            <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold text-slate-700">
-              {formatCurrency(withoutTax)}
-            </td>
-
-            {/* SGST */}
-            <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
-              {formatCurrency(sgst)}
-            </td>
-
-            {/* CGST */}
-            <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
-              {formatCurrency(cgst)}
-            </td>
-
-            {/* IGST */}
-            <td className="border-r border-slate-100 px-2 py-3 text-right text-slate-600">
-              {formatCurrency(igst)}
-            </td>
-
-            {/* TOTAL VALUE */}
-            <td className="px-2 py-3 text-right font-bold text-slate-800">
-              {formatCurrency(totalValue)}
-            </td>
-          </tr>
-        );
-      })}
-    </tbody>
-  </table>
-</Card>
-      {/* Create Challan — popup, same shell as Credit Note / Sales / Quotation */}
+                  {/* TOTAL VALUE */}
+                  <td className="px-2 py-3 text-right font-bold text-slate-800">
+                    {formatCurrency(totalValue)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
+      {/* Create Stock Delivery — popup, same shell as Credit Note / Sales / Quotation */}
       {showAdd &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
@@ -460,7 +494,7 @@ function numberToWords(num: number): string {
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">
-                    Create Delivery Challan
+                    Create Stock Delivery
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
                     Issue products from store stock to a field executive.
@@ -478,8 +512,19 @@ function numberToWords(num: number): string {
               {/* Scrollable body */}
               <div className="min-h-0 flex-1 overflow-y-auto p-6">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                  <Input label="D.C No" value={dcNo} onChange={setDcNo} placeholder="e.g. DC-1002" required />
-                  <Input label="D.C Date" type="date" value={date} onChange={setDate} required />
+                  <Input
+                    label="S.D No"
+                    value={sdNo}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                  <Input
+                    label="S.D Date"
+                    type="date"
+                    value={date}
+                    onChange={setDate}
+                    required
+                  />
                   <Select
                     label="Executive"
                     value={executive}
@@ -488,36 +533,6 @@ function numberToWords(num: number): string {
                     options={executives.map((x) => ({ value: x, label: x }))}
                     required
                   />
-
-                  <Select
-                    label="Place of Supply"
-                    value={placeOfSupply}
-                    onChange={(value) => {
-                      setPlaceOfSupply(value);
-                      if (value === "Tamil Nadu") {
-                        setCgstPercent(9);
-                        setSgstPercent(9);
-                        setIgstPercent(0);
-                      } else {
-                        setCgstPercent(0);
-                        setSgstPercent(0);
-                        setIgstPercent(18);
-                      }
-                    }}
-                    placeholder="Select Place of Supply"
-                    options={[
-                      { value: "Tamil Nadu", label: "Tamil Nadu" },
-                      { value: "Others", label: "Others" },
-                    ]}
-                    required
-                  />
-
-
-                  <Input label="Customer Name" value={customerName} onChange={setCustomerName} placeholder="Customer name" required />
-                  <Input label="Contact No" value={contactNo} onChange={setContactNo} placeholder="Contact number" />
-                  <div className="md:col-span-2">
-                    <Input label="Village" value={address} onChange={setAddress} placeholder="e.g. Rajapalayam" />
-                  </div>
                 </div>
 
                 <div className="mt-6">
@@ -538,7 +553,8 @@ function numberToWords(num: number): string {
                             expiryDate: "",
                             qty: "",
                             unitValue: "",
-                          },  
+                            taxPercent: 0,
+                          },
                         ])
                       }
                     >
@@ -551,82 +567,55 @@ function numberToWords(num: number): string {
                       <thead>
                         <tr className="bg-slate-100 text-xs uppercase text-slate-500">
                           <th className="w-[6%] px-2 py-3 text-center">S.No</th>
-                          <th className="w-[20%] px-2 py-3 text-left">Product Name</th>
-                          <th className="w-[10%] px-2 py-3 text-center">Pkg Size</th>
-                          <th className="w-[12%] px-2 py-3 text-center">Batch ID</th>
-                          <th className="w-[12%] px-2 py-3 text-center">Expiry Date</th>
-                          <th className="w-[9%] px-2 py-3 text-center">Quantity</th>
-                          <th className="w-[12%] px-2 py-3 text-right">Unit Value</th>
-                          <th className="w-[14%] px-2 py-3 text-right">Approx Sale Value</th>
+                          <th className="w-[20%] px-2 py-3 text-left">
+                            Product Name
+                          </th>
+                          <th className="w-[10%] px-2 py-3 text-center">
+                            Pkg Size
+                          </th>
+                          <th className="w-[12%] px-2 py-3 text-center">
+                            Batch ID
+                          </th>
+                          <th className="w-[12%] px-2 py-3 text-center">
+                            Expiry Date
+                          </th>
+                          <th className="w-[9%] px-2 py-3 text-center">
+                            Quantity
+                          </th>
+                          <th className="w-[12%] px-2 py-3 text-right">
+                            Unit Value
+                          </th>
+                          <th className="w-[14%] px-2 py-3 text-right">
+                            Approx Sale Value
+                          </th>
                           <th className="w-[5%] px-2 py-3"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {items.map((item, i) => {
-                          const approx = Number(item.qty || 0) * Number(item.unitValue || 0);
+                          const approx =
+                            Number(item.qty || 0) * Number(item.unitValue || 0);
                           return (
                             <tr key={i} className="border-t border-slate-100">
                               <td className="px-2 py-3 text-center">{i + 1}</td>
                               <td className="px-2 py-3">
-                              <Select
-                                value={item.productId}
-                                onChange={(value) => {
-                                  const selectedProduct = allProducts.find((p) => p.id === value);
-                                  updateItem(i, "productId", value);
-                                  if (selectedProduct) {
-                                    const source = selectedProduct as any;
-
-                                    updateItem(i, "product", selectedProduct.name);
-                                    updateItem(i, "packSize", selectedProduct.size || "");
-                                    updateItem(
-                                      i,
-                                      "batchNo",
-                                      String(
-                                        source.batchNo ??
-                                          source.batchId ??
-                                          source.batchID ??
-                                          "",
-                                      ),
-                                    );
-                                    updateItem(
-                                      i,
-                                      "expiryDate",
-                                      String(
-                                        source.expiryDate ??
-                                          source.expDate ??
-                                          source.expiry ??
-                                          "",
-                                      ),
-                                    );
-                                    updateItem(
-                                      i,
-                                      "unitValue",
-                                      String(selectedProduct.sellingPrice || 0),
-                                    );
+                                <Input
+                                  value={item.product}
+                                  onChange={(value) => {
+                                    updateItem(i, "product", value);
+                                    updateItem(i, "productId", "");
+                                    updateItem(i, "packSize", "");
+                                  }}
+                                  placeholder="Enter product"
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <Input
+                                  value={item.packSize}
+                                  onChange={(value) =>
+                                    updateItem(i, "packSize", value)
                                   }
-                                }}
-                                placeholder="Select Product"
-                                options={allProducts.map((p) => ({ value: p.id, label: `${p.name} (${p.size})` }))}
-                              />
-                            </td>
-                            <td className="px-2 py-3">
-                              <Select
-                                value={item.packSize}
-                                onChange={(v) => updateItem(i, "packSize", v)}
-                                placeholder="Select size"
-                                options={[
-                                  { value: "100ml", label: "100 ml" },
-                                  { value: "250ml", label: "250 ml" },
-                                  { value: "500ml", label: "500 ml" },
-                                  { value: "1l", label: "1 L" },
-                                  { value: "100g", label: "100 g" },
-                                  { value: "250g", label: "250 g" },
-                                  { value: "500g", label: "500 g" },
-                                  { value: "1kg", label: "1 Kg" },
-                                  { value: "5kg", label: "5 Kg" },
-                                  { value: "10kg", label: "10 Kg" },
-                                  { value: "25kg", label: "25 Kg" },
-                                  ]}
+                                  placeholder="Enter size"
                                 />
                               </td>
                               <td className="px-2 py-3">
@@ -640,21 +629,41 @@ function numberToWords(num: number): string {
                                 <Input
                                   type="date"
                                   value={item.expiryDate}
-                                  onChange={(v) => updateItem(i, "expiryDate", v)}
+                                  onChange={(v) =>
+                                    updateItem(i, "expiryDate", v)
+                                  }
                                 />
                               </td>
                               <td className="px-2 py-3">
-                                <Input type="number" value={item.qty} onChange={(v) => updateItem(i, "qty", v)} placeholder="Qty" />
+                                <Input
+                                  type="number"
+                                  value={item.qty}
+                                  onChange={(v) => updateItem(i, "qty", v)}
+                                  placeholder="Qty"
+                                />
                               </td>
                               <td className="px-2 py-3">
-                                <Input type="number" value={item.unitValue} onChange={(v) => updateItem(i, "unitValue", v)} placeholder="₹" />
+                                <Input
+                                  type="number"
+                                  value={item.unitValue}
+                                  onChange={(v) =>
+                                    updateItem(i, "unitValue", v)
+                                  }
+                                  placeholder="₹"
+                                />
                               </td>
-                              <td className="px-2 py-3 text-right font-bold">{formatCurrency(approx)}</td>
+                              <td className="px-2 py-3 text-right font-bold">
+                                {formatCurrency(approx)}
+                              </td>
                               <td className="px-2 py-3 text-center">
                                 <button
                                   type="button"
                                   disabled={items.length === 1}
-                                  onClick={() => setItems((p) => p.filter((_, idx) => idx !== i))}
+                                  onClick={() =>
+                                    setItems((p) =>
+                                      p.filter((_, idx) => idx !== i),
+                                    )
+                                  }
                                   className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                                 >
                                   <Icon name="delete" size={16} />
@@ -670,27 +679,29 @@ function numberToWords(num: number): string {
                   <div className="mt-4 ml-auto w-full max-w-md rounded-xl bg-slate-50 p-4 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-400">Total Quantity</span>
-                      <span className="font-bold text-slate-800">{totals.totalQty}</span>
+                      <span className="font-bold text-slate-800">
+                        {totals.totalQty}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-400">Without Tax</span>
-                      <span className="font-semibold text-slate-700">{formatCurrency(totals.approxValue)}</span>
+                      <span className="font-semibold text-slate-700">
+                        {formatCurrency(totals.approxValue)}
+                      </span>
                     </div>
-                    <div className="flex justify-between text-xs pl-3">
-                      <span className="text-slate-400">SGST</span>
-                      <span className="text-slate-600">{formatCurrency(totals.sgstAmount)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs pl-3">
-                      <span className="text-slate-400">CGST</span>
-                      <span className="text-slate-600">{formatCurrency(totals.cgstAmount)}</span>
-                    </div>
-                    <div className="flex justify-between text-xs pl-3">
-                      <span className="text-slate-400">IGST</span>
-                      <span className="text-slate-600">{formatCurrency(totals.igstAmount)}</span>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Tax</span>
+                      <span className="font-semibold text-slate-700">
+                        {formatCurrency(totals.taxAmount)}
+                      </span>
                     </div>
                     <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
-                      <span className="font-bold text-slate-800">Grand Total</span>
-                      <span className="font-bold text-brand-700">{formatCurrency(totals.grandTotal)}</span>
+                      <span className="font-bold text-slate-800">
+                        Grand Total
+                      </span>
+                      <span className="font-bold text-brand-700">
+                        {formatCurrency(totals.grandTotal)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -703,7 +714,7 @@ function numberToWords(num: number): string {
                 </Button>
                 <Button onClick={createChallan} disabled={!canCreate}>
                   <Icon name="save" size={18} />
-                  Create Challan
+                  Create Stock Delivery
                 </Button>
               </div>
             </div>
@@ -714,7 +725,7 @@ function numberToWords(num: number): string {
       {selected &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
-          <style>{`
+            <style>{`
   @media print {
 
     @page {
@@ -880,10 +891,10 @@ function numberToWords(num: number): string {
               <div className="delivery-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
-                    Delivery Challan
+                    Stock Delivery
                   </p>
                   <h2 className="mt-1 text-2xl font-bold text-slate-800">
-                    {selected.dcNo}
+                    {selected.sdNo}
                   </h2>
                 </div>
 
@@ -926,7 +937,7 @@ function numberToWords(num: number): string {
                     <div className="flex items-center justify-center px-4 py-3">
                       <div className="text-center">
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
-                          Delivery Challan
+                          Stock Delivery
                         </h3>
                         {/* <p className="mt-1 text-[10px] text-slate-500">
                           Store Stock Issue to Executive
@@ -935,22 +946,7 @@ function numberToWords(num: number): string {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
-                    <div className="border-r border-slate-300 px-3 py-2.5">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Farmer Details
-                      </p>
-                      <p className="font-bold text-slate-900">
-                        {selected.customerName}
-                      </p>
-                      <p className="text-slate-600">
-                        {selected.address || "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        Contact: {selected.contactNo || "-"}
-                      </p>
-                    </div>
-
+                  <div className="grid grid-cols-2 border-b border-slate-300 text-[10px] leading-5">
                     <div className="border-r border-slate-300 px-3 py-2.5">
                       <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                         Dispatch Details
@@ -961,32 +957,20 @@ function numberToWords(num: number): string {
                           {selected.executive}
                         </span>
                       </p>
-                      <p className="text-slate-600">
-                        Place of Supply:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selected.placeOfSupply}
-                        </span>
-                      </p>
                     </div>
 
                     <div className="px-3 py-2.5">
                       <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Challan Details
+                        Stock Delivery Details
                       </p>
                       <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
-                        <span className="text-slate-500">D.C No</span>
+                        <span className="text-slate-500">S.D No</span>
                         <span className="font-semibold text-slate-800">
-                          {selected.dcNo}
+                          {selected.sdNo}
                         </span>
-
                         <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
                           {formatDate(selected.date)}
-                        </span>
-
-                        <span className="text-slate-500">Executive</span>
-                        <span className="font-semibold text-slate-800">
-                          {selected.executive}
                         </span>
                       </div>
                     </div>
@@ -1061,29 +1045,37 @@ function numberToWords(num: number): string {
                           </tr>
                         ))}
                       </tbody>
-                      
+
                       {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
-                        {(() => {
+                      {(() => {
                         const MIN_ROWS = 10;
-                        const fillerCount = Math.max(0, MIN_ROWS - selected.items.length);
+                        const fillerCount = Math.max(
+                          0,
+                          MIN_ROWS - selected.items.length,
+                        );
                         const columnCount = 8;
 
-                        return Array.from({ length: fillerCount }).map((_, i) => (
-                          <tr key={`filler-${i}`}>
-                            {Array.from({ length: columnCount }).map((_, colIdx) => (
-                              <td
-                                key={colIdx}
-                                className={`px-1 py-1.5 ${
-                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
-                                }`}
-                              >
-                                &nbsp;
-                              </td>
-                            ))}
-                          </tr>
-                        ));
+                        return Array.from({ length: fillerCount }).map(
+                          (_, i) => (
+                            <tr key={`filler-${i}`}>
+                              {Array.from({ length: columnCount }).map(
+                                (_, colIdx) => (
+                                  <td
+                                    key={colIdx}
+                                    className={`px-1 py-1.5 ${
+                                      colIdx < columnCount - 1
+                                        ? "border-r border-slate-300"
+                                        : ""
+                                    }`}
+                                  >
+                                    &nbsp;
+                                  </td>
+                                ),
+                              )}
+                            </tr>
+                          ),
+                        );
                       })()}
-
 
                       {/* ---- Bottom totals row ---- */}
                       <tfoot>
@@ -1126,146 +1118,135 @@ function numberToWords(num: number): string {
                   </div>
 
                   {(() => {
-                  const withoutTax = selected.items.reduce(
-                    (sum: number, item: { qty: any; unitValue: any; }) =>
-                      sum + Number(item.qty || 0) * Number(item.unitValue || 0),
-                    0,
-                  );
-                  const sgst = (withoutTax * Number(selected.sgstPercent || 0)) / 100;
-                  const cgst = (withoutTax * Number(selected.cgstPercent || 0)) / 100;
-                  const igst = (withoutTax * Number(selected.igstPercent || 0)) / 100;
-                  const grandTotal = withoutTax + sgst + cgst + igst;
-                  const roundedTotal = Math.round(grandTotal);
-                  const roundOff = roundedTotal - grandTotal;
+                    const withoutTax = selected.items.reduce(
+                      (sum: number, item: { qty: any; unitValue: any }) =>
+                        sum +
+                        Number(item.qty || 0) * Number(item.unitValue || 0),
+                      0,
+                    );
+                    const tax = selected.items.reduce((sum, item) => {
+                      const lineValue =
+                        Number(item.qty || 0) * Number(item.unitValue || 0);
+                      return (
+                        sum + (lineValue * Number(item.taxPercent || 0)) / 100
+                      );
+                    }, 0);
+                    const grandTotal = withoutTax + tax;
+                    const roundedTotal = Math.round(grandTotal);
+                    const roundOff = roundedTotal - grandTotal;
 
-                  return (
-                    <>
-                      {/* ROW 1: Amount in Words (left) + Full breakdown / Round Off / Grand Total (right) */}
-                      <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
-                        <div className="flex flex-col justify-end flex items-left border-r border-slate-300 p-2.5">
-                          <p className="text-[10px] font-semibold text-slate-700">
-                            Amount in Words :{" "}
-                            <span className="font-bold text-slate-900">
-                              {numberToWords(roundedTotal)}
-                            </span>
-                          </p>
-                        </div>
-
-                        <div className="space-y-1 p-2.5 text-[11px]">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">Without Tax</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(withoutTax)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">SGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(sgst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">CGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(cgst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">IGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(igst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
-                            <span className="text-slate-500">Round Off</span>
-                            <span className="font-semibold text-slate-500">
-                              {formatCurrency(roundOff)}
-                            </span>
-                          </div>
-
-                          <div className="border-t border-slate-300 pt-1.5">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="font-bold text-slate-800">Grand Total</span>
-                              <span className="text-lg font-bold text-slate-900">
-                                {formatCurrency(roundedTotal)}
+                    return (
+                      <>
+                        {/* ROW 1: Amount in Words (left) + Full breakdown / Round Off / Grand Total (right) */}
+                        <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
+                          <div className="flex flex-col justify-end flex items-left border-r border-slate-300 p-2.5">
+                            <p className="text-[10px] font-semibold text-slate-700">
+                              Amount in Words :{" "}
+                              <span className="font-bold text-slate-900">
+                                {numberToWords(roundedTotal)}
                               </span>
+                            </p>
+                          </div>
+
+                          <div className="space-y-1 p-2.5 text-[11px]">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">
+                                Without Tax
+                              </span>
+                              <span className="font-semibold text-slate-700">
+                                {formatCurrency(withoutTax)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">Tax</span>
+                              <span className="font-semibold text-slate-700">
+                                {formatCurrency(tax)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
+                              <span className="text-slate-500">Round Off</span>
+                              <span className="font-semibold text-slate-500">
+                                {formatCurrency(roundOff)}
+                              </span>
+                            </div>
+
+                            <div className="border-t border-slate-300 pt-1.5">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-bold text-slate-800">
+                                  Grand Total
+                                </span>
+                                <span className="text-lg font-bold text-slate-900">
+                                  {formatCurrency(roundedTotal)}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
-
-                    {/* NOTES */}
-                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Notes
-                      </p>
-
-                      {(() => {
-                        const defaultNotes = `Purchase order raised by ${
-                          selected?.placeOfSupply ?? "this store"
-                        } to Nature Biotic.`;
-
-                        return (
-                          <>
-                            {/* Screen - Editable Notes */}
-                            <textarea
-                              value={purchaseOrderNotes}
-                              onChange={(e) => setPurchaseOrderNotes(e.target.value)}
-                              rows={2}
-                              placeholder="Enter notes..."
-                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                            />
-
-                            {/* Print - Show edited notes */}
-                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                              {purchaseOrderNotes || defaultNotes}
+                        {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                        <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                          {/* NOTES */}
+                          <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                              Notes
                             </p>
-                          </>
-                        );
-                      })()}
-                    </div>
 
-                    {/* AUTHORISED SIGNATORY */}
-                    <div className="flex items-end justify-center p-3">
-                      <div className="w-full text-center">
-                        <div className="border-b border-slate-300" />
-                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
-                          Authorised Signatory
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                    </>
-                  );
-                })()}
+                            {(() => {
+                              const defaultNotes = `Delivery challan issued by this store to ${selected?.executive ?? "the field executive"}.`;
+
+                              return (
+                                <>
+                                  {/* Screen - Editable Notes */}
+                                  <textarea
+                                    value={purchaseOrderNotes}
+                                    onChange={(e) =>
+                                      setPurchaseOrderNotes(e.target.value)
+                                    }
+                                    rows={2}
+                                    placeholder="Enter notes..."
+                                    className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                  />
+
+                                  {/* Print - Show edited notes */}
+                                  <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                    {purchaseOrderNotes || defaultNotes}
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </div>
+
+                          {/* AUTHORISED SIGNATORY */}
+                          <div className="flex items-end justify-center p-3">
+                            <div className="w-full text-center">
+                              <div className="border-b border-slate-300" />
+                              <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                                Authorised Signatory
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
               <div className="delivery-challan-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => setSelected(null)}
-                >
+                <Button variant="secondary" onClick={() => setSelected(null)}>
                   Close
                 </Button>
                 <Button onClick={() => window.print()}>
                   <Icon name="print" size={18} />
-                  Print Challan
+                  Print Stock Delivery
                 </Button>
               </div>
             </div>
           </div>,
           document.body,
         )}
-
-
     </div>
   );
 }

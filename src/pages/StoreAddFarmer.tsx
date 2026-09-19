@@ -104,10 +104,10 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   const [waterSource, setWaterSource] = useState("");
   const [crops, setCrops] = useState<CropDetail[]>([]);
 
-  const canAddCrop = cropType && cropLandSize;
+  const canAdsdrop = cropType && cropLandSize;
 
-  function addCrop() {
-    if (!canAddCrop) return;
+  function adsdrop() {
+    if (!canAdsdrop) return;
     setCrops((prev) => [
       ...prev,
       {
@@ -461,8 +461,8 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
             <div className="flex items-end translate-y-[-4px]">
               <Button
                 type="button"
-                onClick={addCrop}
-                disabled={!canAddCrop}
+                onClick={adsdrop}
+                disabled={!canAdsdrop}
                 className="w-full"
               >
                 <Icon name="add" size={25} /> Add Crop

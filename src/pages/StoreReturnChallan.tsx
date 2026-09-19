@@ -1,8 +1,8 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select, EmptyState } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { products as allProducts, reduceFROStock } from "@/lib/data"; 
+import { products as allProducts, reduceFROStock } from "@/lib/data";
 
 type ReturnItem = {
   product: string;
@@ -13,11 +13,9 @@ type ReturnItem = {
   issuedQty: string;
   returnedQty: string;
   unitValue: string;
-
 };
 
 type ReturnChallan = {
-
   productId: string;
   phone: string;
   village: string;
@@ -25,18 +23,45 @@ type ReturnChallan = {
   id: string;
   rcNo: string;
   date: string;
-  dcNo: string;
+  sdNo: string;
   executive: string;
   customerName: string;
   placeOfSupply: string;
-  cgstPercent: number;   
-  sgstPercent: number;   
-  igstPercent: number
+  cgstPercent: number;
+  sgstPercent: number;
+  igstPercent: number;
   items: ReturnItem[];
+};
+
+type FROReturnRequestItem = {
+  productId: string;
+  product: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  qty: number;
+  unitValue: number;
+};
+
+type FROReturnRequest = {
+  id: string;
+  rcNo: string;
+  date: string;
+  storeId: string;
+  froName: string;
+  reason: string;
+  status: "pending" | "accepted";
+  createdAt: string;
+  acceptedAt?: string;
+  acceptedBy?: string;
+  items: FROReturnRequestItem[];
 };
 
 const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 const STORAGE_PREFIX = "nature-biotic-store-return-challans-v2";
+const FRO_RETURN_PREFIX = "nature-biotic-fro-stock-return-requests-v1";
+const STORE_RETURN_RECEIVED_PREFIX =
+  "nature-biotic-store-stock-return-received-v1";
 
 function emptyItems(): ReturnItem[] {
   return [
@@ -62,11 +87,7 @@ function loadRows(storageKey: string): ReturnChallan[] {
   }
 }
 
-export default function StoreReturnChallan({
-  storeId,
-}: {
-  storeId: string;
-}) {
+export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
 
   const [rows, setRows] = useState<ReturnChallan[]>(() => {
@@ -80,7 +101,7 @@ export default function StoreReturnChallan({
         productId: "",
         rcNo: "RC-001",
         date: "2026-08-18",
-        dcNo: "DC-1001",
+        sdNo: "sd-1001",
         executive: "Ram Kumar",
         customerName: "Murugan",
         phone: "9876543210",
@@ -107,26 +128,192 @@ export default function StoreReturnChallan({
   });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [selectedChallan, setSelectedChallan] = useState<ReturnChallan | null>(null);
+  const [selectesdhallan, setSelectesdhallan] = useState<ReturnChallan | null>(
+    null,
+  );
+  const [froReturns, setFroReturns] = useState<FROReturnRequest[]>([]);
+  const [selectedFroReturn, setSelectedFroReturn] =
+    useState<FROReturnRequest | null>(null);
 
   const [rcNo, setRcNo] = useState("");
   const [date, setDate] = useState("");
-  const [dcNo, setDcNo] = useState("");
+  const [sdNo, setsdNo] = useState("");
   const [executive, setExecutive] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [village, setVillage] = useState("");
   const [phone, setPhone] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
-  const [cgstPercent, setCgstPercent] = useState(0);   // ✅ ADD
-  const [sgstPercent, setSgstPercent] = useState(0);   // ✅ ADD
-  const [igstPercent, setIgstPercent] = useState(0);   // ✅ ADD
+  const [cgstPercent, setCgstPercent] = useState(0); // ✅ ADD
+  const [sgstPercent, setSgstPercent] = useState(0); // ✅ ADD
+  const [igstPercent, setIgstPercent] = useState(0); // ✅ ADD
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const [items, setItems] = useState<ReturnItem[]>(emptyItems());
+
+  const loadFROReturns = () => {
+    try {
+      const found: FROReturnRequest[] = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith(`${FRO_RETURN_PREFIX}:`)) continue;
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+          if (Array.isArray(parsed)) {
+            found.push(
+              ...parsed.filter(
+                (item: FROReturnRequest) => item?.storeId === storeId,
+              ),
+            );
+          }
+        } catch {}
+      }
+
+      const unique = Array.from(
+        new Map(found.map((item) => [item.id, item])).values(),
+      ).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+      setFroReturns(unique);
+    } catch {
+      setFroReturns([]);
+    }
+  };
+
+  useEffect(() => {
+    loadFROReturns();
+    const refresh = () => loadFROReturns();
+    window.addEventListener("storage", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("nature-biotic-fro-stock-return-updated", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener(
+        "nature-biotic-fro-stock-return-updated",
+        refresh,
+      );
+    };
+  }, [storeId]);
+
+  const pendingFROReturns = useMemo(
+    () => froReturns.filter((item) => item.status === "pending"),
+    [froReturns],
+  );
+
+  function acceptFROReturn(request: FROReturnRequest) {
+    if (request.status === "accepted") return;
+
+    const acceptedAt = new Date().toISOString();
+    const acceptedBy = "Store";
+
+    // Remove the returned quantity from the FRO's hand stock only after
+    // Store accepts the return.
+    reduceFROStock(
+      storeId,
+      request.froName,
+      request.items.map((item) => ({
+        productId: item.productId,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        qty: Number(item.qty || 0),
+      })),
+      request.date,
+      "Return",
+    );
+
+    const accepted: FROReturnRequest = {
+      ...request,
+      status: "accepted",
+      acceptedAt,
+      acceptedBy,
+    };
+
+    const nextRequests = froReturns.map((item) =>
+      item.id === request.id ? accepted : item,
+    );
+    setFroReturns(nextRequests);
+
+    // Keep an explicit store-side return ledger. Store stock/inventory can
+    // consume this ledger without modifying the original FRO return request.
+    try {
+      const ledgerKey = `${STORE_RETURN_RECEIVED_PREFIX}:${storeId}`;
+      const ledger = JSON.parse(localStorage.getItem(ledgerKey) || "[]");
+      localStorage.setItem(
+        ledgerKey,
+        JSON.stringify([
+          {
+            ...accepted,
+            source: "FRO",
+            receivedBy: "Store",
+          },
+          ...ledger.filter((item: FROReturnRequest) => item.id !== request.id),
+        ]),
+      );
+
+      // Update the FRO request source so the same return cannot be accepted twice.
+      const froKey = String(request.froName || "")
+        .trim()
+        .toLowerCase();
+      if (froKey) {
+        const requestKey = `${FRO_RETURN_PREFIX}:${froKey}`;
+        const saved = JSON.parse(localStorage.getItem(requestKey) || "[]");
+        if (Array.isArray(saved)) {
+          localStorage.setItem(
+            requestKey,
+            JSON.stringify(
+              saved.map((item: FROReturnRequest) =>
+                item.id === request.id ? accepted : item,
+              ),
+            ),
+          );
+        }
+      }
+
+      window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
+      window.dispatchEvent(
+        new Event("nature-biotic-store-stock-return-updated"),
+      );
+    } catch {}
+
+    const storeRow: ReturnChallan = {
+      id: `fro-return-store-${request.id}`,
+      productId: request.items[0]?.productId || "",
+      rcNo: request.rcNo,
+      date: request.date,
+      sdNo: "",
+      executive: request.froName,
+      customerName: request.froName,
+      village: "",
+      phone: "",
+      farmer: request.froName,
+      placeOfSupply: "",
+      cgstPercent: 0,
+      sgstPercent: 0,
+      igstPercent: 0,
+      items: request.items.map((item) => ({
+        productId: item.productId,
+        product: item.product,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        issuedQty: String(item.qty),
+        returnedQty: String(item.qty),
+        unitValue: String(item.unitValue),
+      })),
+    };
+
+    // Show the accepted FRO return in the Store Return Challan list.
+    if (
+      !rows.some((row) => row.id === storeRow.id || row.rcNo === storeRow.rcNo)
+    ) {
+      persist([storeRow, ...rows]);
+    }
+
+    setSelectedFroReturn(null);
+  }
 
   const canCreate =
     !!rcNo.trim() &&
     !!date &&
-    !!dcNo.trim() &&
+    !!sdNo.trim() &&
     !!executive &&
     items.every(
       (item) =>
@@ -139,57 +326,55 @@ export default function StoreReturnChallan({
     );
 
   const totals = useMemo(() => {
-  const issuedQty = items.reduce((sum, item) => sum + Number(item.issuedQty || 0), 0);
-  const returnedQty = items.reduce((sum, item) => sum + Number(item.returnedQty || 0), 0);
-  const returnValue = items.reduce(
-    (sum, item) => sum + Number(item.returnedQty || 0) * Number(item.unitValue || 0),
-    0,
-  );
+    const issuedQty = items.reduce(
+      (sum, item) => sum + Number(item.issuedQty || 0),
+      0,
+    );
+    const returnedQty = items.reduce(
+      (sum, item) => sum + Number(item.returnedQty || 0),
+      0,
+    );
+    const returnValue = items.reduce(
+      (sum, item) =>
+        sum + Number(item.returnedQty || 0) * Number(item.unitValue || 0),
+      0,
+    );
 
-  const cgstAmount = (returnValue * cgstPercent) / 100;
-  const sgstAmount = (returnValue * sgstPercent) / 100;
-  const igstAmount = (returnValue * igstPercent) / 100;
+    const cgstAmount = (returnValue * cgstPercent) / 100;
+    const sgstAmount = (returnValue * sgstPercent) / 100;
+    const igstAmount = (returnValue * igstPercent) / 100;
 
-  return {
-    issuedQty,
-    returnedQty,
-    returnValue,
-    cgstAmount,
-    sgstAmount,
-    igstAmount,
-    grandTotal: returnValue + cgstAmount + sgstAmount + igstAmount,
-  };
-}, [items, cgstPercent, sgstPercent, igstPercent]);
+    return {
+      issuedQty,
+      returnedQty,
+      returnValue,
+      cgstAmount,
+      sgstAmount,
+      igstAmount,
+      grandTotal: returnValue + cgstAmount + sgstAmount + igstAmount,
+    };
+  }, [items, cgstPercent, sgstPercent, igstPercent]);
 
-
-
-
-  function updateItem(
-    index: number,
-    key: keyof ReturnItem,
-    value: string,
-  ) {
+  function updateItem(index: number, key: keyof ReturnItem, value: string) {
     setItems((prev) =>
-      prev.map((item, i) =>
-        i === index ? { ...item, [key]: value } : item,
-      ),
+      prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)),
     );
   }
 
   function resetForm() {
-  setRcNo("");
-  setDate("");
-  setDcNo("");
-  setExecutive("");
-  setCustomerName("");
-  setVillage("");
-  setPhone("");
-  setPlaceOfSupply("");
-  setCgstPercent(0);   // ✅ ADD
-  setSgstPercent(0);   // ✅ ADD
-  setIgstPercent(0);   // ✅ ADD
-  setItems(emptyItems());
-}
+    setRcNo("");
+    setDate("");
+    setsdNo("");
+    setExecutive("");
+    setCustomerName("");
+    setVillage("");
+    setPhone("");
+    setPlaceOfSupply("");
+    setCgstPercent(0); // ✅ ADD
+    setSgstPercent(0); // ✅ ADD
+    setIgstPercent(0); // ✅ ADD
+    setItems(emptyItems());
+  }
 
   function closeForm() {
     setShowAdd(false);
@@ -205,137 +390,184 @@ export default function StoreReturnChallan({
   }
 
   function createReturnChallan() {
-  if (!canCreate) return;
+    if (!canCreate) return;
 
-  const row: ReturnChallan = {
-    id: String(Date.now()),
-    rcNo: rcNo.trim(),
-    date,
-    dcNo: dcNo.trim(),
-    executive,
-    customerName: customerName.trim(),
-    village: village.trim(),
-    phone: phone.trim(),
-    placeOfSupply: placeOfSupply.trim(),
-    cgstPercent, // ✅ ADD
-    sgstPercent, // ✅ ADD
-    igstPercent, // ✅ ADD
-    items,
-    farmer: undefined,
-    productId: ""
-  };
+    const row: ReturnChallan = {
+      id: String(Date.now()),
+      rcNo: rcNo.trim(),
+      date,
+      sdNo: sdNo.trim(),
+      executive,
+      customerName: customerName.trim(),
+      village: village.trim(),
+      phone: phone.trim(),
+      placeOfSupply: placeOfSupply.trim(),
+      cgstPercent, // ✅ ADD
+      sgstPercent, // ✅ ADD
+      igstPercent, // ✅ ADD
+      items,
+      farmer: undefined,
+      productId: "",
+    };
 
-  reduceFROStock(
-  storeId,
-  executive,
-  items.map((item) => ({
-    productId: item.productId,
-    packSize: item.packSize,
-    batchNo: item.batchNo,
-    qty: Number(item.returnedQty || 0),
-  })),
-  date,      // ✅ ADD
-  "Return",  // ✅ ADD
-);
-
-  persist([row, ...rows]);
-  closeForm();
-}
-
-  function numberToWords(num: number): string {
-  const ones = [
-    "",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
-  ];
-
-  const tens = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
-
-  function convert(n: number): string {
-    if (n < 20) return ones[n];
-    if (n < 100) {
-      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-    }
-    if (n < 1000) {
-      return (
-        ones[Math.floor(n / 100)] +
-        " Hundred" +
-        (n % 100 ? " " + convert(n % 100) : "")
-      );
-    }
-    if (n < 100000) {
-      return (
-        convert(Math.floor(n / 1000)) +
-        " Thousand" +
-        (n % 1000 ? " " + convert(n % 1000) : "")
-      );
-    }
-    if (n < 10000000) {
-      return (
-        convert(Math.floor(n / 100000)) +
-        " Lakh" +
-        (n % 100000 ? " " + convert(n % 100000) : "")
-      );
-    }
-
-    return (
-      convert(Math.floor(n / 10000000)) +
-      " Crore" +
-      (n % 10000000 ? " " + convert(n % 10000000) : "")
+    reduceFROStock(
+      storeId,
+      executive,
+      items.map((item) => ({
+        productId: item.productId,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        qty: Number(item.returnedQty || 0),
+      })),
+      date, // ✅ ADD
+      "Return", // ✅ ADD
     );
+
+    persist([row, ...rows]);
+    closeForm();
   }
 
-  const rounded = Math.round(Number(num) || 0);
+  function numberToWords(num: number): string {
+    const ones = [
+      "",
+      "One",
+      "Two",
+      "Three",
+      "Four",
+      "Five",
+      "Six",
+      "Seven",
+      "Eight",
+      "Nine",
+      "Ten",
+      "Eleven",
+      "Twelve",
+      "Thirteen",
+      "Fourteen",
+      "Fifteen",
+      "Sixteen",
+      "Seventeen",
+      "Eighteen",
+      "Nineteen",
+    ];
 
-  if (rounded === 0) return "Zero Rupees Only";
+    const tens = [
+      "",
+      "",
+      "Twenty",
+      "Thirty",
+      "Forty",
+      "Fifty",
+      "Sixty",
+      "Seventy",
+      "Eighty",
+      "Ninety",
+    ];
 
-  return `${convert(rounded)} Rupees Only`;
-}
+    function convert(n: number): string {
+      if (n < 20) return ones[n];
+      if (n < 100) {
+        return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+      }
+      if (n < 1000) {
+        return (
+          ones[Math.floor(n / 100)] +
+          " Hundred" +
+          (n % 100 ? " " + convert(n % 100) : "")
+        );
+      }
+      if (n < 100000) {
+        return (
+          convert(Math.floor(n / 1000)) +
+          " Thousand" +
+          (n % 1000 ? " " + convert(n % 1000) : "")
+        );
+      }
+      if (n < 10000000) {
+        return (
+          convert(Math.floor(n / 100000)) +
+          " Lakh" +
+          (n % 100000 ? " " + convert(n % 100000) : "")
+        );
+      }
+
+      return (
+        convert(Math.floor(n / 10000000)) +
+        " Crore" +
+        (n % 10000000 ? " " + convert(n % 10000000) : "")
+      );
+    }
+
+    const rounded = Math.round(Number(num) || 0);
+
+    if (rounded === 0) return "Zero Rupees Only";
+
+    return `${convert(rounded)} Rupees Only`;
+  }
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Return Challan
-          </h1>
+          <h1 className="text-2xl font-bold text-slate-800">Return Challan</h1>
           <p className="mt-1 text-slate-500">
-            Record unsold products returned by executives against delivery challans.
+            Record unsold products returned by executives against delivery
+            challans.
           </p>
         </div>
-
-        <Button onClick={() => setShowAdd(true)}>
-          <Icon name="add" size={18} />
-          Create Return Challan
-        </Button>
       </div>
+
+      {pendingFROReturns.length > 0 && (
+        <Card className="mb-5 overflow-hidden border-orange-200 p-0">
+          <div className="flex items-center justify-between border-b border-orange-100 bg-orange-50/60 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-800">
+                FRO Stock Return — Pending
+              </h2>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Returns waiting for Store acceptance
+              </p>
+            </div>
+            <span className="rounded-full bg-orange-100 px-2 py-1 text-[10px] font-bold text-orange-700">
+              {pendingFROReturns.length} Pending
+            </span>
+          </div>
+
+          <div className="divide-y divide-slate-100">
+            {pendingFROReturns.map((request) => {
+              const qty = request.items.reduce(
+                (sum, item) => sum + Number(item.qty || 0),
+                0,
+              );
+              const value = request.items.reduce(
+                (sum, item) =>
+                  sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+                0,
+              );
+
+              return (
+                <button
+                  type="button"
+                  key={request.id}
+                  onClick={() => setSelectedFroReturn(request)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-orange-50/40"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">
+                      {String(request.rcNo || "").replace(/^RC/i, "SR")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {request.froName} • {formatDate(request.date)} • Qty {qty}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-bold text-slate-800">
+                    {formatCurrency(value)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {rows.length === 0 ? (
         <Card className="p-0">
@@ -347,225 +579,236 @@ export default function StoreReturnChallan({
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-        <table className="w-full table-fixed border-collapse text-sm">
-          <thead>
-            {/* MAIN HEADER */}
-            <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600 border-b border-slate-200">
-
-              <th
-                rowSpan={2}
-                className="w-[5%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                S.No
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[7%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Date
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[8%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                RC No
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[8%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                DC No
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[9%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Executive
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[11%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Farmer Details
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[7%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Products
-              </th>
-
-              <th
-                rowSpan={2}
-                className="w-[8%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Returned Qty
-              </th>
-
-              {/* WITHOUT TAX */}
-              <th
-                rowSpan={2}
-                className="w-[9%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Without Tax
-              </th>
-
-              {/* TAX */}
-              <th
-                colSpan={3}
-                className="w-[18%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
-              >
-                Tax
-              </th>
-
-              {/* TOTAL */}
-              <th
-                rowSpan={2}
-                className="w-[9%] px-1.5 py-2.5 text-right font-semibold"
-              >
-                Total
-              </th>
-            </tr>
-
-            {/* TAX SUB HEADINGS */}
-            <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
-
-              <th className="w-[6%] border-r border-slate-100 px-1.5 py-2 text-center font-semibold">
-                SGST
-              </th>
-
-              <th className="w-[6%] border-r border-slate-100 px-1.5 py-2 text-center font-semibold">
-                CGST
-              </th>
-
-              <th className="w-[6%] border-r border-slate-200 px-1.5 py-2 text-center font-semibold">
-                IGST
-              </th>
-
-            </tr>
-          </thead>
-
-          <tbody>
-            {rows.map((row, index) => {
-              const returnedQty = row.items.reduce(
-                (sum, item) =>
-                  sum + Number(item.returnedQty || 0),
-                0
-              );
-
-              const withoutTax = row.items.reduce(
-                (sum, item) =>
-                  sum +
-                  Number(item.returnedQty || 0) *
-                    Number(item.unitValue || 0),
-                0
-              );
-
-              // Tax values
-              const sgst = (withoutTax * (row.sgstPercent || 0)) / 100;
-              const cgst = (withoutTax * (row.cgstPercent || 0)) / 100;
-              const igst = (withoutTax * (row.igstPercent || 0)) / 100;
-
-              const total =
-                withoutTax +
-                sgst +
-                cgst +
-                igst;
-
-              return (
-                <tr
-                  key={row.id}
-                  onClick={() => setSelectedChallan(row)}
-                  className="cursor-pointer transition hover:bg-brand-50/40"
-                  title="Click to view return challan"
+          <table className="w-full table-fixed border-collapse text-sm">
+            <thead>
+              {/* MAIN HEADER */}
+              <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600 border-b border-slate-200">
+                <th
+                  rowSpan={2}
+                  className="w-[5%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
                 >
-                  {/* S.NO */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
-                    {index + 1}
-                  </td>
+                  S.No
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[7%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+                >
+                  Date
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[12%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+                >
+                  SR No
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[14%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+                >
+                  Executive
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[11%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+                >
+                  Returned Qty
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[13%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+                >
+                  Without Tax
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[13%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold"
+                >
+                  Tax
+                </th>
+                <th
+                  rowSpan={2}
+                  className="w-[13%] px-1.5 py-2.5 text-right font-semibold"
+                >
+                  Total
+                </th>{" "}
+              </tr>
+            </thead>
 
-                  {/* DATE */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center whitespace-nowrap">
-                    {formatDate(row.date)}
-                  </td>
+            <tbody>
+              {rows.map((row, index) => {
+                const returnedQty = row.items.reduce(
+                  (sum, item) => sum + Number(item.returnedQty || 0),
+                  0,
+                );
 
-                  {/* RC NO */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center font-semibold">
-                    {row.rcNo}
-                  </td>
+                const withoutTax = row.items.reduce(
+                  (sum, item) =>
+                    sum +
+                    Number(item.returnedQty || 0) * Number(item.unitValue || 0),
+                  0,
+                );
 
-                  {/* DC NO */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
-                    {row.dcNo}
-                  </td>
+                // Tax values
+                const sgst = (withoutTax * (row.sgstPercent || 0)) / 100;
+                const cgst = (withoutTax * (row.cgstPercent || 0)) / 100;
+                const igst = (withoutTax * (row.igstPercent || 0)) / 100;
 
-                  {/* EXECUTIVE */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
-                    {row.executive}
-                  </td>
+                const total = withoutTax + sgst + cgst + igst;
 
-                  {/* FARMER DETAILS */}
-                  <td className="border-r border-slate-200 px-2 py-3 text-center">
-                    <p className="font-semibold text-slate-800 truncate">
-                      {row.customerName || "-"}
-                    </p>
+                return (
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectesdhallan(row)}
+                    className="cursor-pointer transition hover:bg-brand-50/40"
+                    title="Click to view return challan"
+                  >
+                    {/* S.NO */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center">
+                      {index + 1}
+                    </td>
 
-                    <p className="mt-0.5 text-xs text-slate-500 truncate">
-                      {row.village || "-"}
-                    </p>
+                    {/* DATE */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center whitespace-nowrap">
+                      {formatDate(row.date)}
+                    </td>
 
-                    <p className="mt-0.5 text-xs text-slate-400 truncate">
-                      {row.phone || "-"}
-                    </p>
-                  </td>
+                    {/* SR NO */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center font-semibold">
+                      {String(row.rcNo || "").replace(/^RC/i, "SR")}
+                    </td>
 
-                  {/* PRODUCTS */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center">
-                    {row.items.length}
-                  </td>
+                    {/* EXECUTIVE */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center">
+                      {row.executive || "-"}
+                    </td>
 
-                  {/* RETURNED QTY */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-center font-bold">
-                    {returnedQty}
-                  </td>
+                    {/* RETURNED QTY */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center font-bold">
+                      {returnedQty}
+                    </td>
 
-                  {/* WITHOUT TAX */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-right font-semibold text-slate-700 whitespace-nowrap">
-                    {formatCurrency(withoutTax)}
-                  </td>
+                    {/* WITHOUT TAX */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-right font-semibold text-slate-700 whitespace-nowrap">
+                      {formatCurrency(withoutTax)}
+                    </td>
 
-                  {/* SGST */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
-                    {formatCurrency(sgst)}
-                  </td>
+                    {/* TAX */}
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
+                      {formatCurrency(sgst + cgst + igst)}
+                    </td>
 
-                  {/* CGST */}
-                  <td className="border-r border-slate-100 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
-                    {formatCurrency(cgst)}
-                  </td>
-
-                  {/* IGST */}
-                  <td className="border-r border-slate-200 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
-                    {formatCurrency(igst)}
-                  </td>
-
-                  {/* TOTAL */}
-                  <td className="px-1.5 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
-                    {formatCurrency(total)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Card>
+                    {/* TOTAL */}
+                    <td className="px-1.5 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
+                      {formatCurrency(total)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
       )}
+
+      {selectedFroReturn &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setSelectedFroReturn(null);
+            }}
+          >
+            <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-4 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-600">
+                    FRO Stock Return
+                  </p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-800">
+                    {selectedFroReturn.rcNo}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {selectedFroReturn.froName} •{" "}
+                    {formatDate(selectedFroReturn.date)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFroReturn(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                <div className="space-y-3">
+                  {selectedFroReturn.items.map((item, index) => (
+                    <div
+                      key={`${selectedFroReturn.id}-${index}`}
+                      className="rounded-xl border border-slate-200 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">
+                            {item.product}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Size: {item.packSize || "-"} • Batch:{" "}
+                            {item.batchNo || "-"}
+                          </p>
+                        </div>
+                        <p className="text-sm font-bold text-slate-800">
+                          Qty {item.qty}
+                        </p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <p className="text-slate-400">Expiry</p>
+                          <p className="mt-0.5 font-semibold text-slate-700">
+                            {item.expiryDate
+                              ? formatDate(item.expiryDate)
+                              : "-"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-400">Value</p>
+                          <p className="mt-0.5 font-semibold text-slate-700">
+                            {formatCurrency(
+                              Number(item.qty || 0) *
+                                Number(item.unitValue || 0),
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-xl bg-orange-50 p-3 text-xs text-orange-800">
+                  <span className="font-semibold">Reason:</span>{" "}
+                  {selectedFroReturn.reason}
+                </div>
+              </div>
+
+              <div className="flex gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => setSelectedFroReturn(null)}
+                >
+                  Close
+                </Button>
+                <Button
+                  className="w-full"
+                  onClick={() => acceptFROReturn(selectedFroReturn)}
+                >
+                  Accept Return
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {showAdd &&
         createPortal(
@@ -610,9 +853,9 @@ export default function StoreReturnChallan({
 
                   <Input
                     label="Against D.C No"
-                    value={dcNo}
-                    onChange={setDcNo}
-                    placeholder="e.g. DC-1001"
+                    value={sdNo}
+                    onChange={setsdNo}
+                    placeholder="e.g. sd-1001"
                     required
                   />
 
@@ -706,9 +949,7 @@ export default function StoreReturnChallan({
                     <table className="w-full table-fixed text-sm">
                       <thead>
                         <tr className="bg-slate-100 text-xs uppercase text-slate-500">
-                          <th className="w-[6%] px-2 py-3 text-center">
-                            S.No
-                          </th>
+                          <th className="w-[6%] px-2 py-3 text-center">S.No</th>
                           <th className="w-[18%] px-2 py-3 text-left">
                             Product Name
                           </th>
@@ -753,98 +994,111 @@ export default function StoreReturnChallan({
                               </td>
 
                               <td className="px-2 py-3">
-                            <Select
-                              value={item.productId}
-                              onChange={(value) => {
-                                const selectedProduct = allProducts.find((p) => p.id === value);
-                                updateItem(index, "productId", value);
-                                if (selectedProduct) {
-                                  const source = selectedProduct as any;
+                                <Select
+                                  value={item.productId}
+                                  onChange={(value) => {
+                                    const selectedProduct = allProducts.find(
+                                      (p) => p.id === value,
+                                    );
+                                    updateItem(index, "productId", value);
+                                    if (selectedProduct) {
+                                      const source = selectedProduct as any;
 
-                                  updateItem(index, "product", selectedProduct.name);
-                                  updateItem(index, "packSize", selectedProduct.size || "");
-                                  updateItem(
-                                    index,
-                                    "batchNo",
-                                    String(
-                                      source.batchNo ??
-                                        source.batchId ??
-                                        source.batchID ??
-                                        "",
-                                    ),
-                                  );
-                                  updateItem(
-                                    index,
-                                    "expiryDate",
-                                    String(
-                                      source.expiryDate ??
-                                        source.expDate ??
-                                        source.expiry ??
-                                        "",
-                                    ),
-                                  );
-                                  updateItem(
-                                    index,
-                                    "unitValue",
-                                    String(selectedProduct.sellingPrice || 0),
-                                  );
-                                }
-                              }}
-                              placeholder="Select Product"
-                              options={allProducts.map((p) => ({ value: p.id, label: `${p.name} (${p.size})` }))}
-                            />
-                          </td>
+                                      updateItem(
+                                        index,
+                                        "product",
+                                        selectedProduct.name,
+                                      );
+                                      updateItem(
+                                        index,
+                                        "packSize",
+                                        selectedProduct.size || "",
+                                      );
+                                      updateItem(
+                                        index,
+                                        "batchNo",
+                                        String(
+                                          source.batchNo ??
+                                            source.batchId ??
+                                            source.batchID ??
+                                            "",
+                                        ),
+                                      );
+                                      updateItem(
+                                        index,
+                                        "expiryDate",
+                                        String(
+                                          source.expiryDate ??
+                                            source.expDate ??
+                                            source.expiry ??
+                                            "",
+                                        ),
+                                      );
+                                      updateItem(
+                                        index,
+                                        "unitValue",
+                                        String(
+                                          selectedProduct.sellingPrice || 0,
+                                        ),
+                                      );
+                                    }
+                                  }}
+                                  placeholder="Select Product"
+                                  options={allProducts.map((p) => ({
+                                    value: p.id,
+                                    label: `${p.name} (${p.size})`,
+                                  }))}
+                                />
+                              </td>
 
-                          <td className="px-2 py-3">
-                            <Select
-                              value={item.packSize}
-                              onChange={(value) => updateItem(index, "packSize", value)}
-                              placeholder="Select size"
-                              options={[
-                                { value: "100ml", label: "100 ml" },
-                                { value: "250ml", label: "250 ml" },
-                                { value: "500ml", label: "500 ml" },
-                                { value: "1l", label: "1 L" },
-                                { value: "100g", label: "100 g" },
-                                { value: "250g", label: "250 g" },
-                                { value: "500g", label: "500 g" },
-                                { value: "1kg", label: "1 Kg" },
-                                { value: "5kg", label: "5 Kg" },
-                                { value: "10kg", label: "10 Kg" },
-                                { value: "25kg", label: "25 Kg" },
-                              ]}
-                            />
-                          </td>
-                          <td className="px-2 py-3">
-                            <Input
-                              value={item.batchNo}
-                              onChange={(value) =>
-                                updateItem(index, "batchNo", value)
-                              }
-                              placeholder="Batch ID"
-                            />
-                          </td>
+                              <td className="px-2 py-3">
+                                <Select
+                                  value={item.packSize}
+                                  onChange={(value) =>
+                                    updateItem(index, "packSize", value)
+                                  }
+                                  placeholder="Select size"
+                                  options={[
+                                    { value: "100ml", label: "100 ml" },
+                                    { value: "250ml", label: "250 ml" },
+                                    { value: "500ml", label: "500 ml" },
+                                    { value: "1l", label: "1 L" },
+                                    { value: "100g", label: "100 g" },
+                                    { value: "250g", label: "250 g" },
+                                    { value: "500g", label: "500 g" },
+                                    { value: "1kg", label: "1 Kg" },
+                                    { value: "5kg", label: "5 Kg" },
+                                    { value: "10kg", label: "10 Kg" },
+                                    { value: "25kg", label: "25 Kg" },
+                                  ]}
+                                />
+                              </td>
+                              <td className="px-2 py-3">
+                                <Input
+                                  value={item.batchNo}
+                                  onChange={(value) =>
+                                    updateItem(index, "batchNo", value)
+                                  }
+                                  placeholder="Batch ID"
+                                />
+                              </td>
 
-                          <td className="px-2 py-3">
-                            <Input
-                              type="date"
-                              value={item.expiryDate}
-                              onChange={(value) =>
-                                updateItem(index, "expiryDate", value)
-                              }
-                            />
-                          </td>
+                              <td className="px-2 py-3">
+                                <Input
+                                  type="date"
+                                  value={item.expiryDate}
+                                  onChange={(value) =>
+                                    updateItem(index, "expiryDate", value)
+                                  }
+                                />
+                              </td>
 
                               <td className="px-2 py-3">
                                 <Input
                                   type="number"
                                   value={item.issuedQty}
                                   onChange={(value) =>
-                                    updateItem(
-                                      index,
-                                      "issuedQty",
-                                      value,
-                                    )
+                                    updateItem(index, "issuedQty", value)
                                   }
                                   placeholder="Issued"
                                 />
@@ -855,11 +1109,7 @@ export default function StoreReturnChallan({
                                   type="number"
                                   value={item.returnedQty}
                                   onChange={(value) =>
-                                    updateItem(
-                                      index,
-                                      "returnedQty",
-                                      value,
-                                    )
+                                    updateItem(index, "returnedQty", value)
                                   }
                                   placeholder="Return"
                                 />
@@ -870,11 +1120,7 @@ export default function StoreReturnChallan({
                                   type="number"
                                   value={item.unitValue}
                                   onChange={(value) =>
-                                    updateItem(
-                                      index,
-                                      "unitValue",
-                                      value,
-                                    )
+                                    updateItem(index, "unitValue", value)
                                   }
                                   placeholder="₹"
                                 />
@@ -891,8 +1137,7 @@ export default function StoreReturnChallan({
                                   onClick={() =>
                                     setItems((prev) =>
                                       prev.filter(
-                                        (_, itemIndex) =>
-                                          itemIndex !== index,
+                                        (_, itemIndex) => itemIndex !== index,
                                       ),
                                     )
                                   }
@@ -912,51 +1157,61 @@ export default function StoreReturnChallan({
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <p className="text-xs text-slate-400">Issued Qty</p>
-                        <p className="mt-1 font-bold text-slate-800">{totals.issuedQty}</p>
+                        <p className="mt-1 font-bold text-slate-800">
+                          {totals.issuedQty}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-400">Returned Qty</p>
-                        <p className="mt-1 font-bold text-slate-800">{totals.returnedQty}</p>
+                        <p className="mt-1 font-bold text-slate-800">
+                          {totals.returnedQty}
+                        </p>
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-slate-400">Without Tax</p>
-                        <p className="mt-1 font-bold text-slate-700">{formatCurrency(totals.returnValue)}</p>
+                        <p className="mt-1 font-bold text-slate-700">
+                          {formatCurrency(totals.returnValue)}
+                        </p>
                       </div>
                     </div>
                     <div className="border-t border-slate-200 pt-2 space-y-1.5">
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-400">SGST</span>
-                        <span className="text-slate-600">{formatCurrency(totals.sgstAmount)}</span>
+                        <span className="text-slate-600">
+                          {formatCurrency(totals.sgstAmount)}
+                        </span>
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-400">CGST</span>
-                        <span className="text-slate-600">{formatCurrency(totals.cgstAmount)}</span>
+                        <span className="text-slate-600">
+                          {formatCurrency(totals.cgstAmount)}
+                        </span>
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-400">IGST</span>
-                        <span className="text-slate-600">{formatCurrency(totals.igstAmount)}</span>
+                        <span className="text-slate-600">
+                          {formatCurrency(totals.igstAmount)}
+                        </span>
                       </div>
                     </div>
                     <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
-                      <span className="font-bold text-slate-800">Grand Total</span>
-                      <span className="font-bold text-brand-700">{formatCurrency(totals.grandTotal)}</span>
+                      <span className="font-bold text-slate-800">
+                        Grand Total
+                      </span>
+                      <span className="font-bold text-brand-700">
+                        {formatCurrency(totals.grandTotal)}
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button
-                  variant="secondary"
-                  onClick={closeForm}
-                >
+                <Button variant="secondary" onClick={closeForm}>
                   Cancel
                 </Button>
 
-                <Button
-                  onClick={createReturnChallan}
-                  disabled={!canCreate}
-                >
+                <Button onClick={createReturnChallan} disabled={!canCreate}>
                   <Icon name="save" size={18} />
                   Create Return Challan
                 </Button>
@@ -966,7 +1221,7 @@ export default function StoreReturnChallan({
           document.body,
         )}
 
-      {selectedChallan &&
+      {selectesdhallan &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
             <style>{`
@@ -1138,13 +1393,13 @@ export default function StoreReturnChallan({
                     Return Challan
                   </p>
                   <h2 className="mt-1 text-2xl font-bold text-slate-800">
-                    {selectedChallan.rcNo}
+                    {selectesdhallan.rcNo}
                   </h2>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setSelectedChallan(null)}
+                  onClick={() => setSelectesdhallan(null)}
                   className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 >
                   <Icon name="close" size={20} />
@@ -1190,42 +1445,24 @@ export default function StoreReturnChallan({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
-                    <div className="border-r border-slate-300 px-3 py-2.5">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Farmer Details
-                      </p>
-                      <p className="font-bold text-slate-900">
-                        {selectedChallan.customerName || "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        {selectedChallan.village || "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        Contact: {selectedChallan.phone || "-"}
-                      </p>
-                    </div>
-
+                  <div className="grid grid-cols-2 border-b border-slate-300 text-[10px] leading-5">
                     <div className="border-r border-slate-300 px-3 py-2.5">
                       <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                         Return Details
                       </p>
                       <p className="text-slate-600">
-                        Against D.C:{" "}
+                        SR No:{" "}
                         <span className="font-semibold text-slate-800">
-                          {selectedChallan.dcNo}
+                          {String(selectesdhallan.rcNo || "").replace(
+                            /^RC/i,
+                            "SR",
+                          )}
                         </span>
                       </p>
                       <p className="text-slate-600">
                         Executive:{" "}
                         <span className="font-semibold text-slate-800">
-                          {selectedChallan.executive}
-                        </span>
-                      </p>
-                      <p className="text-slate-600">
-                        Place of Supply:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedChallan.placeOfSupply || "-"}
+                          {selectesdhallan.executive || "-"}
                         </span>
                       </p>
                     </div>
@@ -1235,19 +1472,9 @@ export default function StoreReturnChallan({
                         Challan Details
                       </p>
                       <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
-                        <span className="text-slate-500">R.C No</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedChallan.rcNo}
-                        </span>
-
                         <span className="text-slate-500">Date</span>
                         <span className="font-semibold text-slate-800">
-                          {formatDate(selectedChallan.date)}
-                        </span>
-
-                        <span className="text-slate-500">Against D.C</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedChallan.dcNo}
+                          {formatDate(selectesdhallan.date)}
                         </span>
                       </div>
                     </div>
@@ -1288,9 +1515,9 @@ export default function StoreReturnChallan({
                       </thead>
 
                       <tbody>
-                        {selectedChallan.items.map((item, index) => (
+                        {selectesdhallan.items.map((item, index) => (
                           <tr
-                            key={`${selectedChallan.id}-${index}`}
+                            key={`${selectesdhallan.id}-${index}`}
                             className="border-slate-300"
                           >
                             <td className="border-r border-slate-300 px-2 py-2 text-center">
@@ -1327,38 +1554,42 @@ export default function StoreReturnChallan({
                             </td>
                           </tr>
                         ))}
-                        
+
                         {/* Filler rows extend the column borders to the minimum table height. */}
                         {(() => {
                           const MIN_ROWS = 10;
                           const fillerCount = Math.max(
                             0,
-                            MIN_ROWS - selectedChallan.items.length,
+                            MIN_ROWS - selectesdhallan.items.length,
                           );
                           const columnCount = 9;
 
-                          return Array.from({ length: fillerCount }).map((_, i) => (
-                            <tr key={`filler-${i}`}>
-                              {Array.from({ length: columnCount }).map((_, colIdx) => (
-                                <td
-                                  key={colIdx}
-                                  className={`px-1 py-1.5 ${
-                                    colIdx < columnCount - 1
-                                      ? "border-r border-slate-300"
-                                      : ""
-                                  }`}
-                                >
-                                  &nbsp;
-                                </td>
-                              ))}
-                            </tr>
-                          ));
+                          return Array.from({ length: fillerCount }).map(
+                            (_, i) => (
+                              <tr key={`filler-${i}`}>
+                                {Array.from({ length: columnCount }).map(
+                                  (_, colIdx) => (
+                                    <td
+                                      key={colIdx}
+                                      className={`px-1 py-1.5 ${
+                                        colIdx < columnCount - 1
+                                          ? "border-r border-slate-300"
+                                          : ""
+                                      }`}
+                                    >
+                                      &nbsp;
+                                    </td>
+                                  ),
+                                )}
+                              </tr>
+                            ),
+                          );
                         })()}
                       </tbody>
 
                       <tfoot>
                         {(() => {
-                          const items = selectedChallan.items;
+                          const items = selectesdhallan.items;
                           const totalIssuedQty = items.reduce(
                             (sum, item) => sum + Number(item.issuedQty || 0),
                             0,
@@ -1401,132 +1632,132 @@ export default function StoreReturnChallan({
                   </div>
 
                   {(() => {
-                  const withoutTax = selectedChallan.items.reduce(
-                    (sum: number, item: ReturnItem) =>
-                      sum + Number(item.returnedQty || 0) * Number(item.unitValue || 0),
-                    0,
-                  );
-                  const sgst = (withoutTax * Number(selectedChallan.sgstPercent || 0)) / 100;
-                  const cgst = (withoutTax * Number(selectedChallan.cgstPercent || 0)) / 100;
-                  const igst = (withoutTax * Number(selectedChallan.igstPercent || 0)) / 100;
-                  const grandTotal = withoutTax + sgst + cgst + igst;
-                  const roundedTotal = Math.round(grandTotal);
-                  const roundOff = roundedTotal - grandTotal;
+                    const withoutTax = selectesdhallan.items.reduce(
+                      (sum: number, item: ReturnItem) =>
+                        sum +
+                        Number(item.returnedQty || 0) *
+                          Number(item.unitValue || 0),
+                      0,
+                    );
+                    const sgst =
+                      (withoutTax * Number(selectesdhallan.sgstPercent || 0)) /
+                      100;
+                    const cgst =
+                      (withoutTax * Number(selectesdhallan.cgstPercent || 0)) /
+                      100;
+                    const igst =
+                      (withoutTax * Number(selectesdhallan.igstPercent || 0)) /
+                      100;
+                    const taxAmount = sgst + cgst + igst;
+                    const grandTotal = withoutTax + taxAmount;
+                    const roundedTotal = Math.round(grandTotal);
+                    const roundOff = roundedTotal - grandTotal;
 
-                  return (
-                    <>
-                      {/* ROW 1: Amount in Words (left, bottom-aligned) + breakdown/Round Off/Grand Total (right) */}
-                      <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
-                        <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
-                          <p className="text-[10px] font-semibold text-slate-700">
-                            Amount in Words :{" "}
-                            <span className="font-bold text-slate-900">
-                              {numberToWords(roundedTotal)}
-                            </span>
-                          </p>
-                        </div>
-
-                        <div className="space-y-1 p-2.5 text-[11px]">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">Without Tax</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(withoutTax)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">SGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(sgst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">CGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(cgst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-slate-500">IGST</span>
-                            <span className="font-semibold text-slate-700">
-                              {formatCurrency(igst)}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
-                            <span className="text-slate-500">Round Off</span>
-                            <span className="font-semibold text-slate-500">
-                              {formatCurrency(roundOff)}
-                            </span>
-                          </div>
-
-                          <div className="border-t border-slate-300 pt-1.5">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="font-bold text-slate-800">Grand Total</span>
-                              <span className="text-lg font-bold text-slate-900">
-                                {formatCurrency(roundedTotal)}
+                    return (
+                      <>
+                        {/* ROW 1: Amount in Words (left, bottom-aligned) + breakdown/Round Off/Grand Total (right) */}
+                        <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
+                          <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
+                            <p className="text-[10px] font-semibold text-slate-700">
+                              Amount in Words :{" "}
+                              <span className="font-bold text-slate-900">
+                                {numberToWords(roundedTotal)}
                               </span>
+                            </p>
+                          </div>
+
+                          <div className="space-y-1 p-2.5 text-[11px]">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">
+                                Without Tax
+                              </span>
+                              <span className="font-semibold text-slate-700">
+                                {formatCurrency(withoutTax)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-slate-500">Tax</span>
+                              <span className="font-semibold text-slate-700">
+                                {formatCurrency(taxAmount)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
+                              <span className="text-slate-500">Round Off</span>
+                              <span className="font-semibold text-slate-500">
+                                {formatCurrency(roundOff)}
+                              </span>
+                            </div>
+
+                            <div className="border-t border-slate-300 pt-1.5">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-bold text-slate-800">
+                                  Grand Total
+                                </span>
+                                <span className="text-lg font-bold text-slate-900">
+                                  {formatCurrency(roundedTotal)}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
-
-                    {/* NOTES */}
-                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Notes
-                      </p>
-
-                      {(() => {
-                        const defaultNotes = `Purchase order raised by ${
-                          selectedChallan?.customerName ?? "this store"
-                        } to Nature Biotic.`;
-
-                        return (
-                          <>
-                            {/* Screen - Editable Notes */}
-                            <textarea
-                              value={purchaseOrderNotes}
-                              onChange={(e) => setPurchaseOrderNotes(e.target.value)}
-                              rows={2}
-                              placeholder="Enter notes..."
-                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                            />
-
-                            {/* Print - Show edited notes */}
-                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                              {purchaseOrderNotes || defaultNotes}
+                        {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
+                        <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
+                          {/* NOTES */}
+                          <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                              Notes
                             </p>
-                          </>
-                        );
-                      })()}
-                    </div>
 
-                    {/* AUTHORISED SIGNATORY */}
-                    <div className="flex items-end justify-center p-3">
-                      <div className="w-full text-center">
-                        <div className="border-b border-slate-300" />
-                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
-                          Authorised Signatory
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                    </>
-                  );
-                })()}
+                            {(() => {
+                              const defaultNotes = `Purchase order raised by ${
+                                selectesdhallan?.customerName ?? "this store"
+                              } to Nature Biotic.`;
+
+                              return (
+                                <>
+                                  {/* Screen - Editable Notes */}
+                                  <textarea
+                                    value={purchaseOrderNotes}
+                                    onChange={(e) =>
+                                      setPurchaseOrderNotes(e.target.value)
+                                    }
+                                    rows={2}
+                                    placeholder="Enter notes..."
+                                    className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                                  />
+
+                                  {/* Print - Show edited notes */}
+                                  <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                                    {purchaseOrderNotes || defaultNotes}
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </div>
+
+                          {/* AUTHORISED SIGNATORY */}
+                          <div className="flex items-end justify-center p-3">
+                            <div className="w-full text-center">
+                              <div className="border-b border-slate-300" />
+                              <p className="mt-1.5 text-xs font-semibold text-slate-500">
+                                Authorised Signatory
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
               <div className="return-challan-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 <Button
                   variant="secondary"
-                  onClick={() => setSelectedChallan(null)}
+                  onClick={() => setSelectesdhallan(null)}
                 >
                   Close
                 </Button>
@@ -1540,8 +1771,6 @@ export default function StoreReturnChallan({
           </div>,
           document.body,
         )}
-
-
     </div>
   );
 }

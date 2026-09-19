@@ -1,6 +1,11 @@
 import { useState, useMemo } from "react";
 import { useEffect } from "react";
-import { getStore, getFROTotalStockCount, getFROCurrentStock, products } from "@/lib/data";
+import {
+  getStore,
+  getFROTotalStockCount,
+  getFROCurrentStock,
+  products,
+} from "@/lib/data";
 import {
   Card,
   StatCard,
@@ -13,10 +18,10 @@ import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
 import { getStorePurchasesFromCompanySales } from "@/lib/data";
 import { getFROStockTxnsByExecutive } from "@/lib/data";
+import { useAuth } from "@/context/AuthContext";
 
 const getStockByExecutive = (storeId: string, executiveName: string) =>
   getFROCurrentStock(storeId, executiveName);
-
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -92,7 +97,12 @@ function getCalendarPeriodStart(filter: DateFilter): Date {
 }
 
 type ExecKey = "ram" | "ajith" | "periya";
-type ExecDetailType = "sales" | "collection" | "cash" | "outstanding" | "stocks";
+type ExecDetailType =
+  | "sales"
+  | "collection"
+  | "cash"
+  | "outstanding"
+  | "stocks";
 
 type DirectDetailType = "sales" | "collection" | "outstanding" | "stocks";
 
@@ -121,6 +131,20 @@ const execNames: Record<ExecKey, string> = {
   ajith: "Ajith Kumar",
   periya: "PeriyaSamy",
 };
+
+type FROHandover = {
+  id: string;
+  date: string;
+  amount: number;
+  method: string;
+  handedOverBy: string;
+  remarks?: string;
+  status?: "pending" | "accepted";
+  acceptedAt?: string;
+  acceptedBy?: string;
+};
+
+const FRO_HANDOVER_STORAGE_PREFIX = "nature-biotic-fro-handovers-v1";
 
 const execColors: Record<ExecKey, string> = {
   ram: "from-emerald-400 to-emerald-600",
@@ -824,11 +848,42 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  function loadPendingHandovers() {
+    try {
+      const raw = localStorage.getItem(
+        `${FRO_HANDOVER_STORAGE_PREFIX}:${storeId}`,
+      );
+      const all: FROHandover[] = raw ? JSON.parse(raw) : [];
+      setPendingHandovers(
+        all.filter((handover) => handover.status === "pending"),
+      );
+    } catch {
+      setPendingHandovers([]);
+    }
+  }
+
+  useEffect(() => {
+    loadPendingHandovers();
+
+    const refresh = () => loadPendingHandovers();
+    window.addEventListener("storage", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("nature-biotic-handover-updated", refresh);
+
+    return () => {
+      window.removeEventListener("storage", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("nature-biotic-handover-updated", refresh);
+    };
+  }, [storeId]);
   const store = getStore(storeId);
+  const { user } = useAuth();
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
+  const [pendingHandovers, setPendingHandovers] = useState<FROHandover[]>([]);
+  const [showPendingHandovers, setShowPendingHandovers] = useState(false);
   const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
-  const [directDetail, setDirectDetail] =
-    useState<DirectDetailSelection>(null);
+  const [directDetail, setDirectDetail] = useState<DirectDetailSelection>(null);
 
   const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
   const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
@@ -858,90 +913,137 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   }, [storeId, dateFilter]);
 
   const execStockData = useMemo(() => {
-  const startDate = getFilterStartDate(dateFilter);
-  const result: Record<
-    ExecKey,
-    {
-      deliveryRows: AggregatedStockRow[];
-      salesRows: AggregatedStockRow[];
-      returnRows: AggregatedStockRow[]; 
-      balanceRows: AggregatedStockRow[];
-      deliveryTotalQty: number;
-      deliveryTotalValue: number;
-      salesTotalQty: number;
-      salesTotalValue: number;
-      returnTotalQty: number;               
-      returnTotalValue: number;
-      balanceTotalQty: number;
-      balanceTotalValue: number;
-    }
-  > = {} as any;
-
-  function aggregate(txns: ReturnType<typeof getFROStockTxnsByExecutive>) {
-    const map = new Map<string, AggregatedStockRow>();
-    txns.forEach((t) => {
-      const k = `${t.productId}|${t.packSize}|${t.batchNo}`;
-      const existing = map.get(k);
-      if (existing) {
-        existing.qty += t.qty;
-      } else {
-        map.set(k, {
-          productId: t.productId,
-          productName: t.productName,
-          packSize: t.packSize,
-          batchNo: t.batchNo,
-          expiryDate: t.expiryDate,
-          unitValue: t.unitValue,
-          qty: t.qty,
-        });
+    const startDate = getFilterStartDate(dateFilter);
+    const result: Record<
+      ExecKey,
+      {
+        deliveryRows: AggregatedStockRow[];
+        salesRows: AggregatedStockRow[];
+        returnRows: AggregatedStockRow[];
+        balanceRows: AggregatedStockRow[];
+        deliveryTotalQty: number;
+        deliveryTotalValue: number;
+        salesTotalQty: number;
+        salesTotalValue: number;
+        returnTotalQty: number;
+        returnTotalValue: number;
+        balanceTotalQty: number;
+        balanceTotalValue: number;
       }
+    > = {} as any;
+
+    function aggregate(txns: ReturnType<typeof getFROStockTxnsByExecutive>) {
+      const map = new Map<string, AggregatedStockRow>();
+      txns.forEach((t) => {
+        const k = `${t.productId}|${t.packSize}|${t.batchNo}`;
+        const existing = map.get(k);
+        if (existing) {
+          existing.qty += t.qty;
+        } else {
+          map.set(k, {
+            productId: t.productId,
+            productName: t.productName,
+            packSize: t.packSize,
+            batchNo: t.batchNo,
+            expiryDate: t.expiryDate,
+            unitValue: t.unitValue,
+            qty: t.qty,
+          });
+        }
+      });
+      return Array.from(map.values());
+    }
+
+    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
+      const name = execNames[key];
+      const allTxns = getFROStockTxnsByExecutive(storeId, name);
+      const filteredTxns = allTxns.filter((t) => new Date(t.date) >= startDate);
+
+      // Delivery only (stock IN from store)
+      const deliveryTxns = filteredTxns.filter((t) => t.type === "Delivery");
+      const deliveryRows = aggregate(deliveryTxns).filter((r) => r.qty > 0);
+
+      // Sales only (FRO → Farmer)
+      const saleTxns = filteredTxns.filter((t) => t.type === "Sale");
+      const salesRows = aggregate(
+        saleTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
+      ).filter((r) => r.qty > 0);
+
+      // Returns only (FRO → store)
+      const returnTxns = filteredTxns.filter((t) => t.type === "Return");
+      const returnRows = aggregate(
+        returnTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
+      ).filter((r) => r.qty > 0);
+
+      // Balance = Delivery − Sale − Return (net of ALL txn types in period)
+      const balanceRows = aggregate(filteredTxns).filter((r) => r.qty > 0);
+
+      result[key] = {
+        deliveryRows,
+        salesRows,
+        returnRows,
+        balanceRows,
+        deliveryTotalQty: deliveryRows.reduce((s, r) => s + r.qty, 0),
+        deliveryTotalValue: deliveryRows.reduce(
+          (s, r) => s + r.qty * r.unitValue,
+          0,
+        ),
+        salesTotalQty: salesRows.reduce((s, r) => s + r.qty, 0),
+        salesTotalValue: salesRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
+        returnTotalQty: returnRows.reduce((s, r) => s + r.qty, 0),
+        returnTotalValue: returnRows.reduce(
+          (s, r) => s + r.qty * r.unitValue,
+          0,
+        ),
+        balanceTotalQty: balanceRows.reduce((s, r) => s + r.qty, 0),
+        balanceTotalValue: balanceRows.reduce(
+          (s, r) => s + r.qty * r.unitValue,
+          0,
+        ),
+      };
     });
-    return Array.from(map.values());
+
+    return result;
+  }, [storeId, dateFilter]);
+
+  const pendingByExecutive = useMemo(() => {
+    const map: Partial<Record<ExecKey, FROHandover[]>> = {};
+    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
+      map[key] = pendingHandovers.filter(
+        (handover) =>
+          handover.handedOverBy?.trim().toLowerCase() ===
+          execNames[key].trim().toLowerCase(),
+      );
+    });
+    return map;
+  }, [pendingHandovers]);
+
+  function acceptHandover(handoverId: string) {
+    try {
+      const storageKey = `${FRO_HANDOVER_STORAGE_PREFIX}:${storeId}`;
+      const raw = localStorage.getItem(storageKey);
+      const all: FROHandover[] = raw ? JSON.parse(raw) : [];
+
+      const next = all.map((handover) =>
+        handover.id === handoverId
+          ? {
+              ...handover,
+              status: "accepted" as const,
+              acceptedAt: new Date().toISOString(),
+              acceptedBy: user?.name || "Store Admin",
+            }
+          : handover,
+      );
+
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      setPendingHandovers(
+        next.filter((handover) => handover.status === "pending"),
+      );
+      window.dispatchEvent(new Event("nature-biotic-handover-updated"));
+    } catch {
+      // Keep the current UI state if localStorage is unavailable.
+    }
   }
-
-  (Object.keys(execNames) as ExecKey[]).forEach((key) => {
-    const name = execNames[key];
-    const allTxns = getFROStockTxnsByExecutive(storeId, name);
-    const filteredTxns = allTxns.filter((t) => new Date(t.date) >= startDate);
-
-    // Delivery only (stock IN from store)
-    const deliveryTxns = filteredTxns.filter((t) => t.type === "Delivery");
-    const deliveryRows = aggregate(deliveryTxns).filter((r) => r.qty > 0);
-
-    // Sales only (FRO → Farmer)
-    const saleTxns = filteredTxns.filter((t) => t.type === "Sale");
-    const salesRows = aggregate(
-      saleTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
-    ).filter((r) => r.qty > 0);
-
-    // Returns only (FRO → store)
-    const returnTxns = filteredTxns.filter((t) => t.type === "Return");
-    const returnRows = aggregate(
-      returnTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
-    ).filter((r) => r.qty > 0);
-
-    // Balance = Delivery − Sale − Return (net of ALL txn types in period)
-    const balanceRows = aggregate(filteredTxns).filter((r) => r.qty > 0);
-
-    result[key] = {
-      deliveryRows,
-      salesRows,
-      returnRows,
-      balanceRows,
-      deliveryTotalQty: deliveryRows.reduce((s, r) => s + r.qty, 0),
-      deliveryTotalValue: deliveryRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
-      salesTotalQty: salesRows.reduce((s, r) => s + r.qty, 0),
-      salesTotalValue: salesRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
-      returnTotalQty: returnRows.reduce((s, r) => s + r.qty, 0),
-      returnTotalValue: returnRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
-      balanceTotalQty: balanceRows.reduce((s, r) => s + r.qty, 0),
-      balanceTotalValue: balanceRows.reduce((s, r) => s + r.qty * r.unitValue, 0),
-    };
-  });
-
-  return result;
-}, [storeId, dateFilter]);
-
 
   if (!store) return <EmptyState icon="error" title="Store not found" />;
 
@@ -1073,8 +1175,8 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             type={directDetail}
             dateFilter={dateFilter}
             summary={directSales}
-            stockRows={stockPurchases.rows}      
-            stockTotalValue={stockPurchases.totalValue} 
+            stockRows={stockPurchases.rows}
+            stockTotalValue={stockPurchases.totalValue}
             storeName={store.name}
             onClose={() => setDirectDetail(null)}
           />,
@@ -1104,7 +1206,21 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                       <h3 className="font-bold text-slate-800 text-base leading-tight truncate">
                         {execNames[key]}
                       </h3>
-                      <p className="text-xs text-slate-400">Field Executive</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs text-slate-400">
+                          Field Executive
+                        </p>
+                        {(pendingByExecutive[key]?.length || 0) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowPendingHandovers(true)}
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 hover:bg-amber-100"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            Pending {pendingByExecutive[key]?.length}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1197,7 +1313,9 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     label="Stocks in Hand"
                     value={formatCurrency(execStockData[key].balanceTotalValue)}
                     color="text-indigo-600"
-                    onClick={() => setExecDetail({ execKey: key, type: "stocks" })}
+                    onClick={() =>
+                      setExecDetail({ execKey: key, type: "stocks" })
+                    }
                   />
                 </div>
               </Card>
@@ -1205,6 +1323,17 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
           })}
         </div>
       </div>
+
+      {showPendingHandovers &&
+        createPortal(
+          <PendingHandoverModal
+            handovers={pendingHandovers}
+            storeName={store.name}
+            onAccept={acceptHandover}
+            onClose={() => setShowPendingHandovers(false)}
+          />,
+          document.body,
+        )}
 
       {execDetail &&
         createPortal(
@@ -1215,8 +1344,112 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
           />,
           document.body,
         )}
+    </div>
+  );
+}
 
+function PendingHandoverModal({
+  handovers,
+  storeName,
+  onAccept,
+  onClose,
+}: {
+  handovers: FROHandover[];
+  storeName: string;
+  onAccept: (handoverId: string) => void;
+  onClose: () => void;
+}) {
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
+  function handleAccept(id: string) {
+    setAcceptingId(id);
+    onAccept(id);
+    setAcceptingId(null);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+              <Icon name="pending_actions" size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800">
+                Pending Cash Handover
+              </h3>
+              <p className="text-xs text-slate-500">{storeName}</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+          >
+            <Icon name="close" size={19} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          {handovers.length === 0 ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+              No pending handovers.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {handovers.map((handover) => (
+                <div
+                  key={handover.id}
+                  className="rounded-xl border border-amber-200 bg-amber-50/50 p-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-bold text-slate-800">
+                          {handover.handedOverBy}
+                        </p>
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                          Pending
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {handover.date} · {handover.method}
+                      </div>
+                      {handover.remarks && (
+                        <p className="mt-1 text-xs text-slate-500">
+                          {handover.remarks}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      <p className="text-lg font-extrabold text-slate-800">
+                        {formatCurrency(Number(handover.amount) || 0)}
+                      </p>
+                      <Button
+                        onClick={() => handleAccept(handover.id)}
+                        disabled={acceptingId === handover.id}
+                      >
+                        {acceptingId === handover.id
+                          ? "Accepting..."
+                          : "Accept"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1254,11 +1487,17 @@ function FROStockDetailModal({
           </button>
         </div>
         <div className="px-5 py-8 text-center">
-          <p className="text-sm font-medium text-slate-500">Total stock assigned</p>
-          <p className="mt-2 text-4xl font-extrabold text-purple-700">{stockCount}</p>
+          <p className="text-sm font-medium text-slate-500">
+            Total stock assigned
+          </p>
+          <p className="mt-2 text-4xl font-extrabold text-purple-700">
+            {stockCount}
+          </p>
         </div>
         <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
         </div>
       </div>
     </div>
@@ -1310,7 +1549,6 @@ function DirectSalesCard({
   );
 }
 
-
 function DirectSalesDetailModal({
   type,
   dateFilter,
@@ -1347,7 +1585,9 @@ function DirectSalesDetailModal({
                 <Icon name="inventory_2" size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800">Store Stock Purchases</h3>
+                <h3 className="font-bold text-slate-800">
+                  Store Stock Purchases
+                </h3>
                 <p className="text-xs text-slate-500">
                   {storeName} · {dateLabel[dateFilter]} · Purchased from Company
                 </p>
@@ -1392,7 +1632,10 @@ function DirectSalesDetailModal({
               <tbody className="divide-y divide-slate-100">
                 {stockRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                    <td
+                      colSpan={8}
+                      className="px-4 py-10 text-center text-slate-400"
+                    >
                       No stock purchases from Company in this period.
                     </td>
                   </tr>
@@ -1408,7 +1651,9 @@ function DirectSalesDetailModal({
                       <td className="px-4 py-3 font-semibold text-slate-700">
                         {row.invoiceNo}
                       </td>
-                      <td className="px-4 py-3 text-slate-700">{row.product}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {row.product}
+                      </td>
                       <td className="px-4 py-3 text-center text-slate-600">
                         {row.packSize}
                       </td>
@@ -1429,7 +1674,10 @@ function DirectSalesDetailModal({
               {stockRows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
-                    <td colSpan={7} className="px-4 py-3 text-right text-slate-600">
+                    <td
+                      colSpan={7}
+                      className="px-4 py-3 text-right text-slate-600"
+                    >
                       Total
                     </td>
                     <td className="px-4 py-3 text-right text-slate-900">
@@ -1483,8 +1731,14 @@ function DirectSalesDetailModal({
 
   const farmers = ["Murugan", "Selvam", "Kannan", "Raja"];
   const saleAmounts = splitAmount(summary.sales, [0.34, 0.28, 0.22, 0.16]);
-  const collectionAmounts = splitAmount(summary.collection, [0.36, 0.27, 0.21, 0.16]);
-  const outstandingAmounts = splitAmount(summary.outstanding, [0.38, 0.27, 0.2, 0.15]);
+  const collectionAmounts = splitAmount(
+    summary.collection,
+    [0.36, 0.27, 0.21, 0.16],
+  );
+  const outstandingAmounts = splitAmount(
+    summary.outstanding,
+    [0.38, 0.27, 0.2, 0.15],
+  );
 
   const displayDates =
     dateFilter === "today"
@@ -1569,9 +1823,16 @@ function DirectSalesDetailModal({
               {farmers.map((farmer, index) => {
                 if (type === "sales") {
                   return (
-                    <tr key={`direct-sale-${index}`} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
-                      <td className="px-4 py-3 text-slate-600">{displayDates[index]}</td>
+                    <tr
+                      key={`direct-sale-${index}`}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {displayDates[index]}
+                      </td>
                       <td className="px-4 py-3 font-semibold text-slate-700">
                         {`SAI-INV-${String(1201 + index).padStart(4, "0")}`}
                       </td>
@@ -1587,14 +1848,23 @@ function DirectSalesDetailModal({
                 if (type === "collection") {
                   const methods = ["Cash", "UPI", "Cash", "Bank"];
                   return (
-                    <tr key={`direct-collection-${index}`} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
-                      <td className="px-4 py-3 text-slate-600">{displayDates[index]}</td>
+                    <tr
+                      key={`direct-collection-${index}`}
+                      className="hover:bg-slate-50"
+                    >
+                      <td className="px-4 py-3 text-center text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {displayDates[index]}
+                      </td>
                       <td className="px-4 py-3 font-semibold text-slate-700">
                         {`SAI-RCP-${String(501 + index).padStart(4, "0")}`}
                       </td>
                       <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                      <td className="px-4 py-3 text-slate-600">{methods[index]}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {methods[index]}
+                      </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-800">
                         {formatCurrency(collectionAmounts[index])}
                       </td>
@@ -1602,16 +1872,30 @@ function DirectSalesDetailModal({
                   );
                 }
 
-                const ageing = ["0-30 Days", "0-30 Days", "31-60 Days", "61-90 Days"];
+                const ageing = [
+                  "0-30 Days",
+                  "0-30 Days",
+                  "31-60 Days",
+                  "61-90 Days",
+                ];
                 return (
-                  <tr key={`direct-outstanding-${index}`} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
-                    <td className="px-4 py-3 text-slate-600">{displayDates[index]}</td>
+                  <tr
+                    key={`direct-outstanding-${index}`}
+                    className="hover:bg-slate-50"
+                  >
+                    <td className="px-4 py-3 text-center text-slate-500">
+                      {index + 1}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {displayDates[index]}
+                    </td>
                     <td className="px-4 py-3 font-semibold text-slate-700">
                       {`SAI-INV-${String(1181 + index).padStart(4, "0")}`}
                     </td>
                     <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                    <td className="px-4 py-3 text-center text-slate-600">{ageing[index]}</td>
+                    <td className="px-4 py-3 text-center text-slate-600">
+                      {ageing[index]}
+                    </td>
                     <td className="px-4 py-3 text-right font-bold text-amber-700">
                       {formatCurrency(outstandingAmounts[index])}
                     </td>
@@ -1710,7 +1994,9 @@ function ExecutiveDetailModal({
   onClose: () => void;
 }) {
   const { execKey, type } = selection;
-  const [stockTab, setStockTab] = useState<"delivery" | "sales" | "return" | "balance">("balance");
+  const [stockTab, setStockTab] = useState<
+    "delivery" | "sales" | "return" | "balance"
+  >("balance");
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -1729,7 +2015,7 @@ function ExecutiveDetailModal({
   };
 
   // ---- STOCKS: Delivery / Sales / Balance tabs ----
-    if (type === "stocks") {
+  if (type === "stocks") {
     const activeRows =
       stockTab === "delivery"
         ? stockData.deliveryRows
@@ -1793,20 +2079,22 @@ function ExecutiveDetailModal({
 
           {/* Tab switcher */}
           <div className="flex gap-2 border-b border-slate-200 bg-white px-5 py-3">
-            {(["delivery", "sales", "return", "balance"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setStockTab(tab)}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition-base ${
-                  stockTab === tab
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {tabLabels[tab]}
-              </button>
-            ))}
+            {(["delivery", "sales", "return", "balance"] as const).map(
+              (tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setStockTab(tab)}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-base ${
+                    stockTab === tab
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {tabLabels[tab]}
+                </button>
+              ),
+            )}
           </div>
 
           <div className="border-b border-slate-200 bg-white px-5 py-4">
@@ -1848,8 +2136,12 @@ function ExecutiveDetailModal({
               <tbody className="divide-y divide-slate-100">
                 {activeRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
-                      No {tabLabels[stockTab].toLowerCase()} records in this period.
+                    <td
+                      colSpan={8}
+                      className="px-4 py-10 text-center text-slate-400"
+                    >
+                      No {tabLabels[stockTab].toLowerCase()} records in this
+                      period.
                     </td>
                   </tr>
                 ) : (
@@ -1890,7 +2182,10 @@ function ExecutiveDetailModal({
               {activeRows.length > 0 && (
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-bold">
-                    <td colSpan={5} className="px-4 py-3 text-right text-slate-600">
+                    <td
+                      colSpan={5}
+                      className="px-4 py-3 text-right text-slate-600"
+                    >
                       Total
                     </td>
                     <td className="px-4 py-3 text-right text-slate-900">
@@ -1915,8 +2210,6 @@ function ExecutiveDetailModal({
       </div>
     );
   }
-
-
 
   // ...rest of the function stays EXACTLY as it already is (sales/collection/cash/outstanding table) — no change needed below this point
 

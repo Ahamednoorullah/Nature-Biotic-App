@@ -291,7 +291,7 @@ export function saveCompanyCreditNoteSyncRecords(
   }
 }
 
-export function addCompanyCreditNoteSyncRecords(
+export function adsdompanyCreditNoteSyncRecords(
   rows: CompanyCreditNoteSyncRecord[],
 ) {
   const existing = getCompanyCreditNoteSyncRecords();
@@ -828,7 +828,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2022-03-15",
     profileColor: "emerald",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Ramesh",
@@ -867,7 +867,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2021-11-20",
     profileColor: "blue",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Selvam",
@@ -906,7 +906,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2023-01-08",
     profileColor: "red",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Karthikeyan",
@@ -945,7 +945,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2021-06-12",
     profileColor: "amber",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Arumugam",
@@ -984,7 +984,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2022-07-22",
     profileColor: "teal",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Palanisamy",
@@ -1023,7 +1023,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2023-04-03",
     profileColor: "blue",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Lakshmanan",
@@ -1062,7 +1062,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2022-01-18",
     profileColor: "emerald",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Sankaralingam",
@@ -1101,7 +1101,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2023-02-11",
     profileColor: "amber",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Thangapandi",
@@ -1140,7 +1140,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2023-09-05",
     profileColor: "red",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
   {
     name: "Velmurugan",
@@ -1179,7 +1179,7 @@ const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
     joinedDate: "2021-09-30",
     profileColor: "teal",
     cropType3: undefined,
-    cropType2: undefined
+    cropType2: undefined,
   },
 ];
 
@@ -1332,8 +1332,6 @@ function normalizeFarmer(farmer: Farmer): Farmer {
   );
   const firstCrop = crops[0];
 
-  
-
   return {
     ...farmer,
     landmark: farmer.landmark || farmer.taluk || "",
@@ -1434,7 +1432,6 @@ export function deleteFarmer(id: string): void {
   const rows = getStoredFarmers().filter((farmer) => farmer.id !== id);
   saveStoredFarmers(rows);
 }
-
 
 const productNames = products.map((p) => p.name);
 
@@ -1580,9 +1577,9 @@ export const staff: Staff[] = staffNames.map((name, i) => ({
 
 export const deliveryChallans: DeliveryChallan[] = [
   {
-    id: "dc1",
+    id: "sd1",
     storeId: "s1",
-    challanNo: "DC-2026-001",
+    challanNo: "sd-2026-001",
     date: "2026-08-14",
     executiveName: "Ram Kumar",
     issuedBy: "Store Manager",
@@ -1610,9 +1607,9 @@ export const deliveryChallans: DeliveryChallan[] = [
     ],
   },
   {
-    id: "dc2",
+    id: "sd2",
     storeId: "s1",
-    challanNo: "DC-2026-002",
+    challanNo: "sd-2026-002",
     date: "2026-08-14",
     executiveName: "Ajith Kumar",
     issuedBy: "Store Manager",
@@ -1640,9 +1637,9 @@ export const deliveryChallans: DeliveryChallan[] = [
     ],
   },
   {
-    id: "dc3",
+    id: "sd3",
     storeId: "s1",
-    challanNo: "DC-2026-003",
+    challanNo: "sd-2026-003",
     date: "2026-08-13",
     executiveName: "PeriyaSamy",
     issuedBy: "Store Manager",
@@ -1677,7 +1674,7 @@ export const executiveStockReturns: ExecutiveStockReturn[] = [
     storeId: "s1",
     returnNo: "RET-001",
     date: "2026-08-14",
-    challanNo: "DC-2026-001",
+    challanNo: "sd-2026-001",
     executiveName: "Ram Kumar",
     productName: "Electra",
     packSize: "500 ml",
@@ -1689,7 +1686,7 @@ export const executiveStockReturns: ExecutiveStockReturn[] = [
     storeId: "s1",
     returnNo: "RET-002",
     date: "2026-08-14",
-    challanNo: "DC-2026-002",
+    challanNo: "sd-2026-002",
     executiveName: "Ajith Kumar",
     productName: "Electra",
     packSize: "500 ml",
@@ -1701,7 +1698,7 @@ export const executiveStockReturns: ExecutiveStockReturn[] = [
     storeId: "s1",
     returnNo: "RET-003",
     date: "2026-08-13",
-    challanNo: "DC-2026-003",
+    challanNo: "sd-2026-003",
     executiveName: "PeriyaSamy",
     productName: "Alpha",
     packSize: "5 Kg",
@@ -1756,7 +1753,6 @@ export function getStockStatus(p: Product): StockStatus {
   if (p.stock < p.minStock) return "Low Stock";
   return "Healthy";
 }
-
 
 export const warehouseList = warehouses;
 
@@ -2069,11 +2065,19 @@ export function addFROStock(
 ) {
   const rows = getFROStock(storeId);
   const map = new Map(
-    rows.map((r) => [matchKey(r.executiveName, r.productId, r.packSize, r.batchNo), r]),
+    rows.map((r) => [
+      matchKey(r.executiveName, r.productId, r.packSize, r.batchNo),
+      r,
+    ]),
   );
 
   items.forEach((item) => {
-    const key = matchKey(executiveName, item.productId, item.packSize, item.batchNo);
+    const key = matchKey(
+      executiveName,
+      item.productId,
+      item.packSize,
+      item.batchNo,
+    );
     const existing = map.get(key);
     if (existing) {
       existing.currentQty += item.qty;
@@ -2091,7 +2095,7 @@ export function addFROStock(
         currentQty: item.qty,
         issuedQty: 0,
         returnedQty: 0,
-        currentStock: 0
+        currentStock: 0,
       });
     }
   });
@@ -2123,8 +2127,13 @@ export function addFROStock(
 export function reduceFROStock(
   storeId: string,
   executiveName: string,
-  items: { productId: string; packSize: string; batchNo: string; qty: number }[],
-  date?: string,           // ✅ NEW
+  items: {
+    productId: string;
+    packSize: string;
+    batchNo: string;
+    qty: number;
+  }[],
+  date?: string, // ✅ NEW
   txnType: "Return" | "Sale" = "Sale", // ✅ NEW
 ) {
   const rows = getFROStock(storeId);
@@ -2204,7 +2213,9 @@ export function getFROStockTxnsByExecutive(
   storeId: string,
   executiveName: string,
 ): FROStockTxn[] {
-  return getFROStockTxns(storeId).filter((t) => t.executiveName === executiveName);
+  return getFROStockTxns(storeId).filter(
+    (t) => t.executiveName === executiveName,
+  );
 }
 
 const DELIVERY_CHALLAN_PREFIX = "nature-biotic-store-delivery-challans-v2";
@@ -2229,23 +2240,23 @@ export function getFROCurrentStock(
       .filter((c: any) => c.executive === executiveName)
       .forEach((c: any) => {
         c.items.forEach((item: any) => {
-        const key = `${item.productId || item.product}-${item.packSize}-${item.batchNo}`;
-        const existing = map.get(key) || {
-          id: item.id ?? null,
-          unitValue: item.unitValue ?? 0,
-          currentQty: item.currentQty ?? 0,
-          productId: item.productId || "",
-          productName: item.product,
-          packSize: item.packSize,
-          batchNo: item.batchNo,
-          expiryDate: item.expiryDate || "",   // ✅ ADD
-          issuedQty: 0,
-          returnedQty: 0,
-          currentStock: 0,
-        };
-        existing.issuedQty += Number(item.qty || 0);
-        map.set(key, existing);
-      });
+          const key = `${item.productId || item.product}-${item.packSize}-${item.batchNo}`;
+          const existing = map.get(key) || {
+            id: item.id ?? null,
+            unitValue: item.unitValue ?? 0,
+            currentQty: item.currentQty ?? 0,
+            productId: item.productId || "",
+            productName: item.product,
+            packSize: item.packSize,
+            batchNo: item.batchNo,
+            expiryDate: item.expiryDate || "", // ✅ ADD
+            issuedQty: 0,
+            returnedQty: 0,
+            currentStock: 0,
+          };
+          existing.issuedQty += Number(item.qty || 0);
+          map.set(key, existing);
+        });
       });
   } catch {}
 
@@ -2269,7 +2280,7 @@ export function getFROCurrentStock(
             productName: item.product,
             packSize: item.packSize,
             batchNo: item.batchNo,
-            expiryDate: item.expiryDate || "",   // ✅ ADD
+            expiryDate: item.expiryDate || "", // ✅ ADD
             issuedQty: 0,
             returnedQty: 0,
             currentStock: 0,
@@ -2333,7 +2344,12 @@ function saveFROStock(storeId: string, rows: StoredFROStockRow[]) {
   } catch {}
 }
 // ✅ Correct implementation
-function matchKey(executiveName: string, productId: string, packSize: string, batchNo: string): string {
+function matchKey(
+  executiveName: string,
+  productId: string,
+  packSize: string,
+  batchNo: string,
+): string {
   return `${executiveName}|${productId}|${packSize}|${batchNo}`;
 }
 
@@ -2391,16 +2407,27 @@ function saveFROSalesRows(storeId: string, rows: FROSaleRecord[]) {
 
 export function addFROSale(storeId: string, row: Omit<FROSaleRecord, "id">) {
   const rows = getFROSales(storeId);
-  const next: FROSaleRecord = { ...row, id: `fro-sale-${Date.now()}-${Math.random()}` };
+  const next: FROSaleRecord = {
+    ...row,
+    id: `fro-sale-${Date.now()}-${Math.random()}`,
+  };
   saveFROSalesRows(storeId, [next, ...rows]);
   return next;
 }
 
-export function depositFROCash(storeId: string, executiveName: string, amount: number) {
+export function depositFROCash(
+  storeId: string,
+  executiveName: string,
+  amount: number,
+) {
   const rows = getFROSales(storeId);
   let remaining = amount;
   for (const row of rows) {
-    if (row.executiveName !== executiveName || row.collectionMode !== "CashInHand") continue;
+    if (
+      row.executiveName !== executiveName ||
+      row.collectionMode !== "CashInHand"
+    )
+      continue;
     if (remaining <= 0) break;
     const take = Math.min(remaining, row.collectedAmount);
     row.collectedAmount -= take;
@@ -2411,14 +2438,22 @@ export function depositFROCash(storeId: string, executiveName: string, amount: n
 }
 
 export function getFROSummary(storeId: string, executiveName: string) {
-  const sales = getFROSales(storeId).filter((s) => s.executiveName === executiveName);
+  const sales = getFROSales(storeId).filter(
+    (s) => s.executiveName === executiveName,
+  );
   const totalSales = sales.reduce((s, r) => s + r.amount, 0);
   const totalCollection = sales.reduce((s, r) => s + r.collectedAmount, 0);
   const cashInHand = sales
     .filter((r) => r.collectionMode === "CashInHand")
     .reduce((s, r) => s + r.collectedAmount, 0);
   const outstanding = sales.reduce((s, r) => s + r.outstandingAmount, 0);
-  return { totalSales, totalCollection, cashInHand, outstanding, saleRows: sales };
+  return {
+    totalSales,
+    totalCollection,
+    cashInHand,
+    outstanding,
+    saleRows: sales,
+  };
 }
 
 // ============================================================
@@ -2446,9 +2481,10 @@ function saveFarmerPurchasesRows(rows: FarmerPurchase[]) {
 
 export function addFarmerPurchaseRecord(row: Omit<FarmerPurchase, "id">) {
   const rows = getStoredFarmerPurchases();
-  const next: FarmerPurchase = { ...row, id: `fp-${Date.now()}-${Math.random()}` };
+  const next: FarmerPurchase = {
+    ...row,
+    id: `fp-${Date.now()}-${Math.random()}`,
+  };
   saveFarmerPurchasesRows([next, ...rows]);
   return next;
 }
-
-

@@ -13,7 +13,7 @@ import {
   stores,
   getProductMaster,
   productMasterUpdatedEvent,
-  getStoredFarmers,          
+  getStoredFarmers,
   storeFarmersUpdatedEvent,
   type Farmer,
   type Product,
@@ -81,7 +81,11 @@ const PAYMENT_BANK = {
   upiId: "sujiyaso22-1@okhdfcbank",
 };
 
-function buildPaymentQrUrl(amount: number, invoiceNo: string, bank: typeof PAYMENT_BANK) {
+function buildPaymentQrUrl(
+  amount: number,
+  invoiceNo: string,
+  bank: typeof PAYMENT_BANK,
+) {
   const payableAmount = Math.max(0, Math.round(amount));
   const upiPayload =
     `pa=${encodeURIComponent(bank.upiId)}` +
@@ -89,12 +93,11 @@ function buildPaymentQrUrl(amount: number, invoiceNo: string, bank: typeof PAYME
     `&am=${payableAmount.toFixed(2)}` +
     `&cu=INR` +
     `&tn=${encodeURIComponent(`Invoice ${invoiceNo}`)}`;
-    
+
   return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data=${encodeURIComponent(
     upiPayload,
   )}`;
 }
-
 
 function computeAdded(
   r: Omit<AddedRow, "key" | "discountAmount" | "taxAmount" | "rowTotal">,
@@ -405,39 +408,50 @@ export default function CompanySales() {
   }, []);
 
   useEffect(() => {
-  const loadCompanySettings = () => {
-    try {
-      const savedBank = localStorage.getItem("nature_biotic_admin_bank_details");
-      if (savedBank) {
-        const parsed = JSON.parse(savedBank);
-        setPaymentBank({
-          accountName: parsed.accountName || PAYMENT_BANK.accountName,
-          accountNo: parsed.accountNumber || PAYMENT_BANK.accountNo,
-          ifsc: parsed.ifscCode || PAYMENT_BANK.ifsc,
-          bankName: parsed.bankName || PAYMENT_BANK.bankName,
-          branch: parsed.location || PAYMENT_BANK.branch,
-          upiId: parsed.upiId || PAYMENT_BANK.upiId,
-        });
+    const loasdompanySettings = () => {
+      try {
+        const savedBank = localStorage.getItem(
+          "nature_biotic_admin_bank_details",
+        );
+        if (savedBank) {
+          const parsed = JSON.parse(savedBank);
+          setPaymentBank({
+            accountName: parsed.accountName || PAYMENT_BANK.accountName,
+            accountNo: parsed.accountNumber || PAYMENT_BANK.accountNo,
+            ifsc: parsed.ifscCode || PAYMENT_BANK.ifsc,
+            bankName: parsed.bankName || PAYMENT_BANK.bankName,
+            branch: parsed.location || PAYMENT_BANK.branch,
+            upiId: parsed.upiId || PAYMENT_BANK.upiId,
+          });
+        }
+
+        const savedAddress = localStorage.getItem(
+          "nature_biotic_company_address",
+        );
+        if (savedAddress) setInvoiceCompanyAddress(savedAddress);
+
+        const savesdompanyInfo = localStorage.getItem(
+          "nature_biotic_company_info",
+        );
+        if (savesdompanyInfo) {
+          setCompanyInfo((prev) => ({
+            ...prev,
+            ...JSON.parse(savesdompanyInfo),
+          }));
+        }
+      } catch {
+        // defaults stay as-is
       }
+    };
 
-      const savedAddress = localStorage.getItem("nature_biotic_company_address");
-      if (savedAddress) setInvoiceCompanyAddress(savedAddress);
+    loasdompanySettings();
+    window.addEventListener("focus", loasdompanySettings);
+    return () => window.removeEventListener("focus", loasdompanySettings);
+  }, []);
 
-      const savedCompanyInfo = localStorage.getItem("nature_biotic_company_info");
-      if (savedCompanyInfo) {
-        setCompanyInfo((prev) => ({ ...prev, ...JSON.parse(savedCompanyInfo) }));
-      }
-    } catch {
-      // defaults stay as-is
-    }
-  };
-
-  loadCompanySettings();
-  window.addEventListener("focus", loadCompanySettings);
-  return () => window.removeEventListener("focus", loadCompanySettings);
-}, []);
-
-  {/* Clear farmer/shipping selection when store changes (but not while editing) */}
+  {
+    /* Clear farmer/shipping selection when store changes (but not while editing) */
+  }
   useEffect(() => {
     if (editingInvoiceNo) return;
     setSelectedFarmer(null);
@@ -445,7 +459,6 @@ export default function CompanySales() {
     setShippingAddress("");
   }, [storeId, editingInvoiceNo]);
 
-  
   const filtered = useMemo(() => {
     const today = new Date();
     const normalize = (value: string) => new Date(`${value}T00:00:00`);
@@ -510,7 +523,6 @@ export default function CompanySales() {
       return matchesSearch && matchesStore && isWithinDateFilter(s.date);
     });
   }, [sales, search, storeFilter, dateFilter, customFrom, customTo]);
-
 
   const invoiceSummaryRows = useMemo(() => {
     const grouped = new Map<
@@ -813,7 +825,6 @@ export default function CompanySales() {
     setShippingQuery(header.shippingAddress?.split(",")[0] || "");
     setSelectedFarmer(null);
 
-
     const nextAdded: AddedRow[] = invoice.rows.map((row, index) => {
       const product = productMaster.find((p) => p.name === row.product);
       const taxType: TaxType =
@@ -881,28 +892,30 @@ export default function CompanySales() {
   }
 
   function buildFarmerAddress(f: Farmer) {
-  return [f.farmAddress, f.village, f.district, f.state, f.pincode]
-    .filter(Boolean)
-    .join(", ");
+    return [f.farmAddress, f.village, f.district, f.state, f.pincode]
+      .filter(Boolean)
+      .join(", ");
   }
 
   const storeFarmers = useMemo(() => {
-  if (!storeId) return [];
-  return farmers.filter((f) => f.storeId === storeId && f.status === "Active");
-}, [farmers, storeId]);
+    if (!storeId) return [];
+    return farmers.filter(
+      (f) => f.storeId === storeId && f.status === "Active",
+    );
+  }, [farmers, storeId]);
 
-const filteredFarmerOptions = useMemo(() => {
-  if (!shippingQuery.trim()) return storeFarmers;
-  const q = shippingQuery.toLowerCase();
-  return storeFarmers.filter((f) => f.name.toLowerCase().includes(q));
-}, [storeFarmers, shippingQuery]);
+  const filteredFarmerOptions = useMemo(() => {
+    if (!shippingQuery.trim()) return storeFarmers;
+    const q = shippingQuery.toLowerCase();
+    return storeFarmers.filter((f) => f.name.toLowerCase().includes(q));
+  }, [storeFarmers, shippingQuery]);
 
-function selectFarmer(farmer: Farmer) {
-  setSelectedFarmer(farmer);
-  setShippingQuery(farmer.name);
-  setShippingAddress(buildFarmerAddress(farmer));
-  setShowFarmerOptions(false);
-}
+  function selectFarmer(farmer: Farmer) {
+    setSelectedFarmer(farmer);
+    setShippingQuery(farmer.name);
+    setShippingAddress(buildFarmerAddress(farmer));
+    setShowFarmerOptions(false);
+  }
 
   function handleCreate() {
     if (!canCreate) return;
@@ -1167,12 +1180,9 @@ function selectFarmer(farmer: Farmer) {
                       ? (invoice.taxAmount / invoice.withoutTax) * 100
                       : 0;
 
-                  const sgstRate =
-                    invoice.sgst > 0 ? totalTaxRate / 2 : 0;
-                  const cgstRate =
-                    invoice.cgst > 0 ? totalTaxRate / 2 : 0;
-                  const igstRate =
-                    invoice.igst > 0 ? totalTaxRate : 0;
+                  const sgstRate = invoice.sgst > 0 ? totalTaxRate / 2 : 0;
+                  const cgstRate = invoice.cgst > 0 ? totalTaxRate / 2 : 0;
+                  const igstRate = invoice.igst > 0 ? totalTaxRate : 0;
 
                   return (
                     <tr
@@ -1243,14 +1253,14 @@ function selectFarmer(farmer: Farmer) {
       )}
 
       {selectedInvoice &&
-  (() => {
-    const invoiceStore = stores.find(
-      (s) => s.id === selectedInvoice.header.storeId,
-    );
+        (() => {
+          const invoiceStore = stores.find(
+            (s) => s.id === selectedInvoice.header.storeId,
+          );
 
-    return createPortal(
-    <div className="invoice-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <style>{`
+          return createPortal(
+            <div className="invoice-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+              <style>{`
               @media print {
                 @page {
                   size: A4 landscape;
@@ -1354,755 +1364,808 @@ function selectFarmer(farmer: Farmer) {
                 }
               }
             `}</style>
-            <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
-                    Invoice
-                  </p>
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">
-                    {selectedInvoice.header.invoiceNo}
-                  </h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {isPreviewMode ? (
-                      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-                        Preview
-                      </span>
-                    ) : invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
-                        Store Received · Locked
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
-                        Editable until Store Received
-                      </span>
-                    )}
+              <div className="invoice-print-area flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
+                      Invoice
+                    </p>
+                    <h2 className="mt-1 text-xl font-bold text-slate-800">
+                      {selectedInvoice.header.invoiceNo}
+                    </h2>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {isPreviewMode ? (
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                          Preview
+                        </span>
+                      ) : invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                          Store Received · Locked
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">
+                          Editable until Store Received
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={closeInvoiceView}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                  >
+                    <Icon name="close" size={20} />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={closeInvoiceView}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
-                >
-                  <Icon name="close" size={20} />
-                </button>
-              </div>
+                <div className="invoice-print-scroll min-h-0 flex-1 overflow-y-auto p-3">
+                  <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+                    <div className="invoice-print-header border-b border-slate-300">
+                      <div className="grid grid-cols-[1.2fr_.8fr]">
+                        <div className="border-r border-slate-300 p-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
+                              <img
+                                src="/logo_NB.webp"
+                                alt="Nature Biotic"
+                                className="max-h-14 max-w-full object-contain"
+                              />
+                            </div>
 
-              <div className="invoice-print-scroll min-h-0 flex-1 overflow-y-auto p-3">
-                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-                  <div className="invoice-print-header border-b border-slate-300">
-                    <div className="grid grid-cols-[1.2fr_.8fr]">
-                      <div className="border-r border-slate-300 p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
-                            <img
-                              src="/logo_NB.webp"
-                              alt="Nature Biotic"
-                              className="max-h-14 max-w-full object-contain"
-                            />
-                          </div>
-
-                          <div className="leading-tight">
-                            <h3 className="text-base font-extrabold tracking-wide text-slate-900">
-                              NATURE BIOTIC
-                            </h3>
-                            <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
-                              {invoiceCompanyAddress}
-                            </p>
-                            <p className="mt-1 text-[10px] text-slate-600">
-                              GSTIN: {companyInfo.gstNumber}
-                            </p>
-                            <p className="text-[10px] text-slate-600">
-                              Cell: 96008 44446
-                            </p>
+                            <div className="leading-tight">
+                              <h3 className="text-base font-extrabold tracking-wide text-slate-900">
+                                NATURE BIOTIC
+                              </h3>
+                              <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
+                                {invoiceCompanyAddress}
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-600">
+                                GSTIN: {companyInfo.gstNumber}
+                              </p>
+                              <p className="text-[10px] text-slate-600">
+                                Cell: 96008 44446
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center justify-center p-3">
-                        <div className="text-center">
-                          <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
-                            Tax Invoice
-                          </h2>
-                          {/*<p className="mt-1 text-[10px] text-slate-500">
+                        <div className="flex items-center justify-center p-3">
+                          <div className="text-center">
+                            <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
+                              Tax Invoice
+                            </h2>
+                            {/*<p className="mt-1 text-[10px] text-slate-500">
                             Nature Biotic to Store
                           </p> */}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 border-t border-slate-300 text-[9px] leading-4">
-                     <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Billing Address
-                      </p>
-                      <p className="font-bold text-slate-900">
-                        {selectedInvoice.header.storeName}
-                      </p>
-                      <p className="mt-1 text-slate-600">
-                        {invoiceStore?.address ||
-                          selectedInvoice.header.storeLocation ||
-                          "-"}
-                      </p>
-                      <p className="mt-1 text-slate-600">
-                        GSTIN: {invoiceStore?.gst || "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        Contact: {invoiceStore?.phone || "-"}
-                      </p>
-                    </div>
-
-                      <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Shipping Address
-                      </p>
-                      <p className="whitespace-pre-line text-slate-600">
-                        {selectedInvoice.header.shippingAddress ||
-                          invoiceStore?.address ||
-                          selectedInvoice.header.storeLocation ||
-                          "-"}
-                      </p>
-                    </div>
-
-                      <div className="p-3">
-                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                          Invoice Details
-                        </p>
-
-                        <div className="grid grid-cols-[92px_1fr] gap-y-1">
-                          <span className="text-slate-500">Invoice No</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedInvoice.header.invoiceNo}
-                          </span>
-
-                          <span className="text-slate-500">Date</span>
-                          <span className="font-semibold text-slate-800">
-                            {formatDate(selectedInvoice.header.date)}
-                          </span>
-
-                          <span className="text-slate-500">Store Code</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedStore?.code || "-"}
-                          </span>
-
-                           <span className="text-slate-500">
-                            Place of Supply
-                          </span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedInvoice.header.placeOfSupply || "-"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="w-full overflow-hidden">
-                    <table className="invoice-print-table w-full border-collapse text-[8.5px] xl:text-[9px]">
-                      <thead>
-                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            S.No
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Product
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            HSN Code
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            PKG Size
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Batch No
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Exp Date
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Qty
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Unit Price
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Before Discount
-                          </th>
-
-                          <th
-                            colSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Discount
-                          </th>
-
-                          <th
-                            rowSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Taxable (₹)
-                          </th>
-
-                          <th
-                            colSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            CGST
-                          </th>
-
-                          <th
-                            colSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            SGST (₹)
-                          </th>
-
-                          <th
-                            colSpan={2}
-                            className=" border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            IGST (₹)
-                          </th>
-
-                          <th rowSpan={2} className=" px-1 py-1.5 text-center">
-                            Line Total
-                          </th>
-                        </tr>
-
-                        <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Amt
-                          </th>
-
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Rate %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Amount
-                          </th>
-
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Rate %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Amount
-                          </th>
-
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Rate %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            Amount
-                          </th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {selectedInvoice.rows.map((row, index) => {
-                          const beforeDiscount =
-                            Number(row.quantity || 0) * Number(row.rate || 0);
-
-                          const discountAmount = Number(row.discount || 0);
-
-                          const discountPercent =
-                            beforeDiscount > 0
-                              ? (discountAmount / beforeDiscount) * 100
-                              : 0;
-
-                          const totalTaxRate =
-                            row.taxPercent ??
-                            (row.withoutTax > 0
-                              ? (Number(row.taxAmount || 0) /
-                                  Number(row.withoutTax || 1)) *
-                                100
-                              : 0);
-
-                          const cgstRate =
-                            Number(row.cgst || 0) > 0 ? totalTaxRate / 2 : 0;
-
-                          const sgstRate =
-                            Number(row.sgst || 0) > 0 ? totalTaxRate / 2 : 0;
-
-                          const igstRate =
-                            Number(row.igst || 0) > 0 ? totalTaxRate : 0;
-
-                          return (
-                            <tr
-                              key={row.id}
-                              >
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                {index + 1}
-                              </td>
-
-                              <td className="max-w-[78px] border-r border-slate-300 px-1 py-1.5 font-semibold leading-tight text-slate-800 whitespace-normal break-words">
-                                {row.product || "-"}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
-                                {row.hsn || "-"}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
-                                {row.pkgsize || row.packSize || "-"}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
-                                {row.batchNo || "-"}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
-                                {row.expiryDate
-                                  ? formatDate(row.expiryDate)
-                                  : "-"}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-center tabular-nums">
-                                {row.quantity}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {formatCurrency(row.rate)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold tabular-nums">
-                                {formatCurrency(beforeDiscount)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {discountPercent.toFixed(2)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {formatCurrency(discountAmount)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold tabular-nums">
-                                {formatCurrency(row.withoutTax)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {cgstRate.toFixed(2)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {formatCurrency(row.cgst)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {sgstRate.toFixed(2)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {formatCurrency(row.sgst)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {igstRate.toFixed(2)}
-                              </td>
-
-                              <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
-                                {formatCurrency(row.igst)}
-                              </td>
-
-                              <td className="px-1 py-1.5 text-right font-bold tabular-nums text-slate-900">
-                                {formatCurrency(row.total)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-
-                        {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
-                        {(() => {
-                        const MIN_ROWS = 10;
-                        const fillerCount = Math.max(0, MIN_ROWS - selectedInvoice.rows.length);
-                        const columnCount = 19;
-
-                        return Array.from({ length: fillerCount }).map((_, i) => (
-                          <tr key={`filler-${i}`}>
-                            {Array.from({ length: columnCount }).map((_, colIdx) => (
-                              <td
-                                key={colIdx}
-                                className={`px-1 py-1.5 ${
-                                  colIdx < columnCount - 1 ? "border-r border-slate-300" : ""
-                                }`}
-                              >
-                                &nbsp;
-                              </td>
-                            ))}
-                          </tr>
-                        ));
-                      })()}
-
-                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                          {/* ... existing Total row, unchanged */}
-                        </tr>
-
-
-                        <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                          <td
-                            colSpan={8}
-                            className="border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            Total
-                          </td>
-
-                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) =>
-                                  sum +
-                                  Number(row.quantity || 0) *
-                                    Number(row.rate || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-1 py-1.5" />
-
-                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.discount || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.withoutTax || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-1 py-1.5" />
-                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.cgst || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-1 py-1.5" />
-                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.sgst || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="border-r border-slate-300 px-1 py-1.5" />
-                          <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.igst || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-
-                          <td className="px-1 py-1.5 text-right">
-                            {formatCurrency(
-                              selectedInvoice.rows.reduce(
-                                (sum, row) => sum + Number(row.total || 0),
-                                0,
-                              ),
-                            )}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                    <div className="border-r border-slate-300 p-3">
-                      {(() => {
-                        const grandTotal = selectedInvoice.rows.reduce(
-                          (sum, row) => sum + Number(row.total || 0),
-                          0,
-                        );
-
-                        const roundedTotal = Math.round(grandTotal);
-
-                        return (
-                          <div className="flex h-full items-center">
-                            <p className="text-[12px] font-semibold text-slate-700">
-                              Amount in Words :{" "}
-                              <span className="font-bold text-slate-900">
-                                {numberToWords(roundedTotal)}
-                              </span>
-                            </p>
                           </div>
-                        );
-                      })()}
-                    </div>
+                        </div>
+                      </div>
 
-                    <div className="p-3 text-[10px]">
-                    {(() => {
-                      const totalBeforeDiscount = selectedInvoice.rows.reduce(
-                        (sum, row) =>
-                          sum + Number(row.quantity || 0) * Number(row.rate || 0),
-                        0,
-                      );
+                      <div className="grid grid-cols-3 border-t border-slate-300 text-[9px] leading-4">
+                        <div className="border-r border-slate-300 p-3">
+                          <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                            Billing Address
+                          </p>
+                          <p className="font-bold text-slate-900">
+                            {selectedInvoice.header.storeName}
+                          </p>
+                          <p className="mt-1 text-slate-600">
+                            {invoiceStore?.address ||
+                              selectedInvoice.header.storeLocation ||
+                              "-"}
+                          </p>
+                          <p className="mt-1 text-slate-600">
+                            GSTIN: {invoiceStore?.gst || "-"}
+                          </p>
+                          <p className="text-slate-600">
+                            Contact: {invoiceStore?.phone || "-"}
+                          </p>
+                        </div>
 
-                      const discount = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.discount || 0),
-                        0,
-                      );
+                        <div className="border-r border-slate-300 p-3">
+                          <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                            Shipping Address
+                          </p>
+                          <p className="whitespace-pre-line text-slate-600">
+                            {selectedInvoice.header.shippingAddress ||
+                              invoiceStore?.address ||
+                              selectedInvoice.header.storeLocation ||
+                              "-"}
+                          </p>
+                        </div>
 
-                      const taxableTotal = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.withoutTax || 0),
-                        0,
-                      );
+                        <div className="p-3">
+                          <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
+                            Invoice Details
+                          </p>
 
-                      const cgst = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.cgst || 0),
-                        0,
-                      );
+                          <div className="grid grid-cols-[92px_1fr] gap-y-1">
+                            <span className="text-slate-500">Invoice No</span>
+                            <span className="font-semibold text-slate-800">
+                              {selectedInvoice.header.invoiceNo}
+                            </span>
 
-                      const sgst = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.sgst || 0),
-                        0,
-                      );
+                            <span className="text-slate-500">Date</span>
+                            <span className="font-semibold text-slate-800">
+                              {formatDate(selectedInvoice.header.date)}
+                            </span>
 
-                      const igst = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.igst || 0),
-                        0,
-                      );
+                            <span className="text-slate-500">Store Code</span>
+                            <span className="font-semibold text-slate-800">
+                              {selectedStore?.code || "-"}
+                            </span>
 
-                      const exactTotal = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.total || 0),
-                        0,
-                      );
-
-                      const roundedTotal = Math.round(exactTotal);
-                      const roundOff = roundedTotal - exactTotal;
-
-                      return (
-                        <div className="space-y-1.5">
-                          <SummaryRow label="Round Off" value={formatCurrency(roundOff)} />
-
-                          <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
-                            <span className="font-bold text-slate-900">Total</span>
-                            <span className="text-base font-extrabold text-slate-900">
-                              {formatCurrency(roundedTotal)}
+                            <span className="text-slate-500">
+                              Place of Supply
+                            </span>
+                            <span className="font-semibold text-slate-800">
+                              {selectedInvoice.header.placeOfSupply || "-"}
                             </span>
                           </div>
                         </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-                
-                {/* Row 2: Notes (left) + Authorised Signatory (right) */}
-                <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
-                  <div className="border-r border-slate-300 min-w-0 p-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Notes
-                    </p>
-                    {isPreviewMode || invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
-                      <p className="mt-1 whitespace-pre-line text-[11px] leading-4 text-slate-500">
-                        {selectedInvoice.header.notes ||
-                          "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
-                      </p>
-                    ) : (
-                      <>
-                        <textarea
-                          value={
-                            selectedInvoice.header.notes ??
-                            "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."
-                          }
-                          onChange={(e) => {
-                            const newNotes = e.target.value;
+                      </div>
+                    </div>
 
-                            setSelectedInvoice((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    header: { ...prev.header, notes: newNotes },
-                                    rows: prev.rows.map((r) => ({
-                                      ...r,
-                                      notes: newNotes,
-                                    })),
-                                  }
-                                : prev,
+                    <div className="w-full overflow-hidden">
+                      <table className="invoice-print-table w-full border-collapse text-[8.5px] xl:text-[9px]">
+                        <thead>
+                          <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              S.No
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Product
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              HSN Code
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              PKG Size
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Batch No
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Exp Date
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Qty
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Unit Price
+                            </th>
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Before Discount
+                            </th>
+
+                            <th
+                              colSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Discount
+                            </th>
+
+                            <th
+                              rowSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Taxable (₹)
+                            </th>
+
+                            <th
+                              colSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              CGST
+                            </th>
+
+                            <th
+                              colSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              SGST (₹)
+                            </th>
+
+                            <th
+                              colSpan={2}
+                              className=" border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              IGST (₹)
+                            </th>
+
+                            <th
+                              rowSpan={2}
+                              className=" px-1 py-1.5 text-center"
+                            >
+                              Line Total
+                            </th>
+                          </tr>
+
+                          <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amt
+                            </th>
+
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Rate %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amount
+                            </th>
+
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Rate %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amount
+                            </th>
+
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Rate %
+                            </th>
+                            <th className="border-r border-slate-300 px-1 py-1 text-center">
+                              Amount
+                            </th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {selectedInvoice.rows.map((row, index) => {
+                            const beforeDiscount =
+                              Number(row.quantity || 0) * Number(row.rate || 0);
+
+                            const discountAmount = Number(row.discount || 0);
+
+                            const discountPercent =
+                              beforeDiscount > 0
+                                ? (discountAmount / beforeDiscount) * 100
+                                : 0;
+
+                            const totalTaxRate =
+                              row.taxPercent ??
+                              (row.withoutTax > 0
+                                ? (Number(row.taxAmount || 0) /
+                                    Number(row.withoutTax || 1)) *
+                                  100
+                                : 0);
+
+                            const cgstRate =
+                              Number(row.cgst || 0) > 0 ? totalTaxRate / 2 : 0;
+
+                            const sgstRate =
+                              Number(row.sgst || 0) > 0 ? totalTaxRate / 2 : 0;
+
+                            const igstRate =
+                              Number(row.igst || 0) > 0 ? totalTaxRate : 0;
+
+                            return (
+                              <tr key={row.id}>
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center">
+                                  {index + 1}
+                                </td>
+
+                                <td className="max-w-[78px] border-r border-slate-300 px-1 py-1.5 font-semibold leading-tight text-slate-800 whitespace-normal break-words">
+                                  {row.product || "-"}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                  {row.hsn || "-"}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                  {row.pkgsize || row.packSize || "-"}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                  {row.batchNo || "-"}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center whitespace-nowrap">
+                                  {row.expiryDate
+                                    ? formatDate(row.expiryDate)
+                                    : "-"}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-center tabular-nums">
+                                  {row.quantity}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {formatCurrency(row.rate)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold tabular-nums">
+                                  {formatCurrency(beforeDiscount)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {discountPercent.toFixed(2)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {formatCurrency(discountAmount)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold tabular-nums">
+                                  {formatCurrency(row.withoutTax)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {cgstRate.toFixed(2)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {formatCurrency(row.cgst)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {sgstRate.toFixed(2)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {formatCurrency(row.sgst)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {igstRate.toFixed(2)}
+                                </td>
+
+                                <td className="border-r border-slate-300 px-1 py-1.5 text-right tabular-nums whitespace-nowrap">
+                                  {formatCurrency(row.igst)}
+                                </td>
+
+                                <td className="px-1 py-1.5 text-right font-bold tabular-nums text-slate-900">
+                                  {formatCurrency(row.total)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+
+                          {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
+                          {(() => {
+                            const MIN_ROWS = 10;
+                            const fillerCount = Math.max(
+                              0,
+                              MIN_ROWS - selectedInvoice.rows.length,
+                            );
+                            const columnCount = 19;
+
+                            return Array.from({ length: fillerCount }).map(
+                              (_, i) => (
+                                <tr key={`filler-${i}`}>
+                                  {Array.from({ length: columnCount }).map(
+                                    (_, colIdx) => (
+                                      <td
+                                        key={colIdx}
+                                        className={`px-1 py-1.5 ${
+                                          colIdx < columnCount - 1
+                                            ? "border-r border-slate-300"
+                                            : ""
+                                        }`}
+                                      >
+                                        &nbsp;
+                                      </td>
+                                    ),
+                                  )}
+                                </tr>
+                              ),
+                            );
+                          })()}
+
+                          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                            {/* ... existing Total row, unchanged */}
+                          </tr>
+
+                          <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
+                            <td
+                              colSpan={8}
+                              className="border-r border-slate-300 px-1 py-1.5 text-center"
+                            >
+                              Total
+                            </td>
+
+                            <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) =>
+                                    sum +
+                                    Number(row.quantity || 0) *
+                                      Number(row.rate || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-1 py-1.5" />
+
+                            <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) => sum + Number(row.discount || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) =>
+                                    sum + Number(row.withoutTax || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-1 py-1.5" />
+                            <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) => sum + Number(row.cgst || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-1 py-1.5" />
+                            <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) => sum + Number(row.sgst || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+
+                            <td className="border-r border-slate-300 px-1 py-1.5" />
+                            <td className="border-r border-slate-300 px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) => sum + Number(row.igst || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+
+                            <td className="px-1 py-1.5 text-right">
+                              {formatCurrency(
+                                selectedInvoice.rows.reduce(
+                                  (sum, row) => sum + Number(row.total || 0),
+                                  0,
+                                ),
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                      <div className="border-r border-slate-300 p-3">
+                        {(() => {
+                          const grandTotal = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.total || 0),
+                            0,
+                          );
+
+                          const roundedTotal = Math.round(grandTotal);
+
+                          return (
+                            <div className="flex h-full items-center">
+                              <p className="text-[12px] font-semibold text-slate-700">
+                                Amount in Words :{" "}
+                                <span className="font-bold text-slate-900">
+                                  {numberToWords(roundedTotal)}
+                                </span>
+                              </p>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="p-3 text-[10px]">
+                        {(() => {
+                          const totalBeforeDiscount =
+                            selectedInvoice.rows.reduce(
+                              (sum, row) =>
+                                sum +
+                                Number(row.quantity || 0) *
+                                  Number(row.rate || 0),
+                              0,
                             );
 
-                            setSales((prevSales) => {
-                              const updatedSales = prevSales.map((row) =>
-                                row.invoiceNo === selectedInvoice.header.invoiceNo &&
-                                row.storeId === selectedInvoice.header.storeId &&
-                                row.date === selectedInvoice.header.date
-                                  ? { ...row, notes: newNotes }
-                                  : row,
-                              );
+                          const discount = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.discount || 0),
+                            0,
+                          );
 
-                              saveCompanyStoreSales(updatedSales);
+                          const taxableTotal = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.withoutTax || 0),
+                            0,
+                          );
 
-                              return updatedSales;
-                            });
-                          }}
-                          rows={2}
-                          className="invoice-screen-only mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] leading-4 text-slate-600 focus:outline-none focus:border-brand-500"
-                        />
+                          const cgst = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.cgst || 0),
+                            0,
+                          );
 
-                        {/* Print-only version, since the textarea is hidden on print */}
-                        <p className="invoice-print-only mt-1 hidden whitespace-pre-line text-[11px] leading-4 text-slate-500">
-                          {selectedInvoice.header.notes ||
-                            "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
+                          const sgst = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.sgst || 0),
+                            0,
+                          );
+
+                          const igst = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.igst || 0),
+                            0,
+                          );
+
+                          const exactTotal = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.total || 0),
+                            0,
+                          );
+
+                          const roundedTotal = Math.round(exactTotal);
+                          const roundOff = roundedTotal - exactTotal;
+
+                          return (
+                            <div className="space-y-1.5">
+                              <SummaryRow
+                                label="Round Off"
+                                value={formatCurrency(roundOff)}
+                              />
+
+                              <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
+                                <span className="font-bold text-slate-900">
+                                  Total
+                                </span>
+                                <span className="text-base font-extrabold text-slate-900">
+                                  {formatCurrency(roundedTotal)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Row 2: Notes (left) + Authorised Signatory (right) */}
+                    <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
+                      <div className="border-r border-slate-300 min-w-0 p-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Notes
                         </p>
-                      </>
-                    )}
-                    {(() => {
-                      const exactTotal = selectedInvoice.rows.reduce(
-                        (sum, row) => sum + Number(row.total || 0),
-                        0,
-                      );
-                      const payableTotal = Math.round(exactTotal);
+                        {isPreviewMode ||
+                        invoiceIsLocked(selectedInvoice.header.invoiceNo) ? (
+                          <p className="mt-1 whitespace-pre-line text-[11px] leading-4 text-slate-500">
+                            {selectedInvoice.header.notes ||
+                              "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
+                          </p>
+                        ) : (
+                          <>
+                            <textarea
+                              value={
+                                selectedInvoice.header.notes ??
+                                "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."
+                              }
+                              onChange={(e) => {
+                                const newNotes = e.target.value;
 
-                      return (
-                        <div className="mt-1.5">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment Details</p>
+                                setSelectedInvoice((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        header: {
+                                          ...prev.header,
+                                          notes: newNotes,
+                                        },
+                                        rows: prev.rows.map((r) => ({
+                                          ...r,
+                                          notes: newNotes,
+                                        })),
+                                      }
+                                    : prev,
+                                );
 
-                          <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
-                            <div className="text-[8.5px] leading-4 text-slate-600">
-                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                                <span className="whitespace-nowrap">
-                                  <span className="text-slate-500">Account Name : </span>
-                                  <span className="font-bold text-slate-800">{paymentBank.accountName}</span>
-                                </span>
-                                <span className="text-slate-300">|</span>
+                                setSales((prevSales) => {
+                                  const updatedSales = prevSales.map((row) =>
+                                    row.invoiceNo ===
+                                      selectedInvoice.header.invoiceNo &&
+                                    row.storeId ===
+                                      selectedInvoice.header.storeId &&
+                                    row.date === selectedInvoice.header.date
+                                      ? { ...row, notes: newNotes }
+                                      : row,
+                                  );
 
-                                <span className="whitespace-nowrap">
-                                  <span className="text-slate-500">Account No : </span>
-                                  <span className="font-semibold text-slate-800">{paymentBank.accountNo}</span>
-                                </span>
-                                <span className="text-slate-300">|</span>
+                                  saveCompanyStoreSales(updatedSales);
 
-                                <span className="whitespace-nowrap">
-                                  <span className="text-slate-500">IFSC Code : </span>
-                                  <span className="font-semibold text-slate-800">{paymentBank.ifsc}</span>
-                                </span>
-                                <span className="text-slate-300">|</span>
+                                  return updatedSales;
+                                });
+                              }}
+                              rows={2}
+                              className="invoice-screen-only mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] leading-4 text-slate-600 focus:outline-none focus:border-brand-500"
+                            />
 
-                                <span className="whitespace-nowrap">
-                                  <span className="text-slate-500">Bank Name : </span>
-                                  <span className="font-semibold text-slate-800">{paymentBank.bankName}</span>
-                                </span>
-                                <span className="text-slate-300">|</span>
+                            {/* Print-only version, since the textarea is hidden on print */}
+                            <p className="invoice-print-only mt-1 hidden whitespace-pre-line text-[11px] leading-4 text-slate-500">
+                              {selectedInvoice.header.notes ||
+                                "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."}
+                            </p>
+                          </>
+                        )}
+                        {(() => {
+                          const exactTotal = selectedInvoice.rows.reduce(
+                            (sum, row) => sum + Number(row.total || 0),
+                            0,
+                          );
+                          const payableTotal = Math.round(exactTotal);
 
-                                <span className="whitespace-nowrap">
-                                  <span className="text-slate-500">Branch : </span>
-                                  <span className="font-semibold text-slate-800">{paymentBank.branch}</span>
-                                </span>
-                                <span className="text-slate-300">|</span>
+                          return (
+                            <div className="mt-1.5">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Payment Details
+                              </p>
 
-                                <span className="whitespace-nowrap">
-                                  <span className="text-slate-500">UPI ID : </span>
-                                  <span className="font-semibold text-slate-800">{paymentBank.upiId}</span>
-                                </span>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+                                <div className="text-[8.5px] leading-4 text-slate-600">
+                                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Account Name :{" "}
+                                      </span>
+                                      <span className="font-bold text-slate-800">
+                                        {paymentBank.accountName}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Account No :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {paymentBank.accountNo}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        IFSC Code :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {paymentBank.ifsc}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Bank Name :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {paymentBank.bankName}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        Branch :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {paymentBank.branch}
+                                      </span>
+                                    </span>
+                                    <span className="text-slate-300">|</span>
+
+                                    <span className="whitespace-nowrap">
+                                      <span className="text-slate-500">
+                                        UPI ID :{" "}
+                                      </span>
+                                      <span className="font-semibold text-slate-800">
+                                        {paymentBank.upiId}
+                                      </span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <div className="rounded-lg border border-slate-300 bg-white p-1.5">
+                                    <img
+                                      src={buildPaymentQrUrl(
+                                        payableTotal,
+                                        selectedInvoice.invoiceNo,
+                                        paymentBank,
+                                      )}
+                                      alt={`UPI QR for ${formatCurrency(payableTotal)}`}
+                                      className="h-[70px] w-[70px] object-contain"
+                                    />
+                                  </div>
+
+                                  <div className="min-w-0">
+                                    <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
+                                      Scan QR to Pay
+                                    </p>
+                                    <p className="mt-0.5 text-xs font-extrabold text-slate-900">
+                                      {formatCurrency(payableTotal)}
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
                             </div>
+                          );
+                        })()}
+                      </div>
 
-                            <div className="flex items-center gap-2">
-                              <div className="rounded-lg border border-slate-300 bg-white p-1.5">
-                                <img
-                                  src={buildPaymentQrUrl(payableTotal, selectedInvoice.invoiceNo, paymentBank)}
-                                  alt={`UPI QR for ${formatCurrency(payableTotal)}`}
-                                  className="h-[70px] w-[70px] object-contain"
-                                />
-                              </div>
-
-                              <div className="min-w-0">
-                                <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
-                                  Scan QR to Pay
-                                </p>
-                                <p className="mt-0.5 text-xs font-extrabold text-slate-900">
-                                  {formatCurrency(payableTotal)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="p-2 text-center flex flex-col justify-end">
-                    <div className="h-12 border-b border-slate-300" />
-                    <p className="mt-2 text-xs font-semibold text-slate-500">
-                      Authorised Signatory
-                    </p>
+                      <div className="p-2 text-center flex flex-col justify-end">
+                        <div className="h-12 border-b border-slate-300" />
+                        <p className="mt-2 text-xs font-semibold text-slate-500">
+                          Authorised Signatory
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
+                <div className="invoice-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
+                  <Button variant="secondary" onClick={closeInvoiceView}>
+                    Close
+                  </Button>
+
+                  {!isPreviewMode &&
+                    !invoiceIsLocked(selectedInvoice.header.invoiceNo) && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => openEditInvoice(selectedInvoice)}
+                      >
+                        <Icon name="edit" size={18} />
+                        Edit Invoice
+                      </Button>
+                    )}
+
+                  <Button onClick={() => window.print()}>
+                    <Icon name="print" size={18} />
+                    Print Invoice
+                  </Button>
+                </div>
               </div>
-            </div>
+            </div>,
+            document.body,
+          );
+        })()}
 
-              <div className="invoice-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
-                <Button variant="secondary" onClick={closeInvoiceView}>
-                  Close
-                </Button>
-
-                {!isPreviewMode &&
-                  !invoiceIsLocked(selectedInvoice.header.invoiceNo) && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => openEditInvoice(selectedInvoice)}
-                    >
-                      <Icon name="edit" size={18} />
-                      Edit Invoice
-                    </Button>
-                  )}
-
-                <Button onClick={() => window.print()}>
-                  <Icon name="print" size={18} />
-                  Print Invoice
-                </Button>
-                            </div>
-            </div>
-          </div>,
-          document.body,
-        );
-      })()}
-
-      
       {/* Create Store Sale — same popup shell as Credit Note (portal + fixed header/footer + scroll body) */}
       {showCreate &&
         createPortal(
@@ -2165,45 +2228,53 @@ function selectFarmer(farmer: Farmer) {
                     <div
                       className="relative"
                       onBlur={() => {
-                        window.setTimeout(() => setShowFarmerOptions(false), 150);
+                        window.setTimeout(
+                          () => setShowFarmerOptions(false),
+                          150,
+                        );
                       }}
                     >
-                    <Input
-                      label="Shipping Address (Farmer)"
-                      value={shippingQuery}
-                      onChange={(v) => {
-                        setShippingQuery(v);
-                        setSelectedFarmer(null);
-                        setShowFarmerOptions(true);
-                      }}
-                      placeholder={storeId ? "Type farmer name..." : "Select store first"}
-                      readOnly={!storeId}
-                    />
+                      <Input
+                        label="Shipping Address (Farmer)"
+                        value={shippingQuery}
+                        onChange={(v) => {
+                          setShippingQuery(v);
+                          setSelectedFarmer(null);
+                          setShowFarmerOptions(true);
+                        }}
+                        placeholder={
+                          storeId ? "Type farmer name..." : "Select store first"
+                        }
+                        readOnly={!storeId}
+                      />
 
-                    {showFarmerOptions && filteredFarmerOptions.length > 0 && (
-                      <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-                        {filteredFarmerOptions.map((f) => (
-                          <button
-                            type="button"
-                            key={f.id}
-                            onClick={() => selectFarmer(f)}
-                            className="block w-full text-left px-3 py-2 text-sm hover:bg-brand-50"
-                          >
-                            <p className="font-semibold text-slate-800">{f.name}</p>
-                            <p className="text-xs text-slate-500 truncate">
-                              {buildFarmerAddress(f)}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                      {showFarmerOptions &&
+                        filteredFarmerOptions.length > 0 && (
+                          <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                            {filteredFarmerOptions.map((f) => (
+                              <button
+                                type="button"
+                                key={f.id}
+                                onClick={() => selectFarmer(f)}
+                                className="block w-full text-left px-3 py-2 text-sm hover:bg-brand-50"
+                              >
+                                <p className="font-semibold text-slate-800">
+                                  {f.name}
+                                </p>
+                                <p className="text-xs text-slate-500 truncate">
+                                  {buildFarmerAddress(f)}
+                                </p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
-                    {selectedFarmer && (
-                      <p className="mt-1 text-xs text-slate-500 truncate">
-                        {buildFarmerAddress(selectedFarmer)}
-                      </p>
-                    )}
-                  </div>
+                      {selectedFarmer && (
+                        <p className="mt-1 text-xs text-slate-500 truncate">
+                          {buildFarmerAddress(selectedFarmer)}
+                        </p>
+                      )}
+                    </div>
                     <Select
                       label="Place of Supply"
                       value={placeOfSupply}

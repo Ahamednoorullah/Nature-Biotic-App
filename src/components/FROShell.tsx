@@ -122,7 +122,6 @@ function FROMobileShell({
 
   const isSalesActive =
     active === "sales" ||
-    active === "farmers" ||
     active === "quotation" ||
     active === "sales-invoice" ||
     active === "sales-return" ||
@@ -293,7 +292,7 @@ function FROMobileShell({
               onClick={() => go("sales")}
             />
             <MobileNavButton
-              active={active === "attendance"}
+              active={active === "attendance" || active === "farmers"}
               icon="event_available"
               label="Visits"
               onClick={() => go("attendance")}

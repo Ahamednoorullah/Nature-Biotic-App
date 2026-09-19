@@ -26,24 +26,31 @@ type Handover = {
   method: string;
   handedOverBy: string;
   remarks?: string;
+  status?: "pending" | "accepted";
+  acceptedAt?: string;
+  acceptedBy?: string;
 };
 
 const RECEIPT_STORAGE_PREFIX = "nature-biotic-store-receipts-v3";
 const HANDOVER_STORAGE_PREFIX = "nature-biotic-fro-handovers-v1";
-
 const handoverMethods = ["Cash", "Bank Transfer", "UPI", "Cheque"];
+
+type PaymentDateFilter = "today" | "monthly" | "custom";
 
 export default function FROPayment({ storeId }: { storeId: string }) {
   const { user } = useAuth();
   const { goStorePage } = useNav();
-  const isFRO = user?.role === "fro";
-
   const receiptStorageKey = `${RECEIPT_STORAGE_PREFIX}:${storeId}`;
   const handoverStorageKey = `${HANDOVER_STORAGE_PREFIX}:${storeId}`;
 
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [showHandover, setShowHandover] = useState(false);
+  const [showHandoverDetails, setShowHandoverDetails] = useState(false);
+  const [dateFilter, setDateFilter] = useState<PaymentDateFilter>("today");
+  const [customDate, setCustomDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
 
   const [handoverDate, setHandoverDate] = useState(
     new Date().toISOString().split("T")[0],
@@ -51,6 +58,105 @@ export default function FROPayment({ storeId }: { storeId: string }) {
   const [handoverAmount, setHandoverAmount] = useState("");
   const [handoverMethod, setHandoverMethod] = useState("Cash");
   const [handoverRemarks, setHandoverRemarks] = useState("");
+
+  const froReceipts = useMemo(() => {
+    const froName = user?.name?.trim().toLowerCase();
+    if (!froName) return [];
+    return receipts.filter(
+      (receipt) => receipt.receivedBy?.trim().toLowerCase() === froName,
+    );
+  }, [receipts, user?.name]);
+
+  const isSameDay = (value: string, selectedDate: string) => {
+    const d = new Date(value);
+    const target = new Date(selectedDate);
+    return (
+      d.getFullYear() === target.getFullYear() &&
+      d.getMonth() === target.getMonth() &&
+      d.getDate() === target.getDate()
+    );
+  };
+
+  const isInSelectedPeriod = (value: string) => {
+    const d = new Date(value);
+    const now = new Date();
+
+    if (dateFilter === "today")
+      return isSameDay(value, now.toISOString().split("T")[0]);
+
+    if (dateFilter === "monthly") {
+      return (
+        d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+      );
+    }
+
+    return isSameDay(value, customDate);
+  };
+
+  const filteredFroReceipts = useMemo(
+    () => froReceipts.filter((receipt) => isInSelectedPeriod(receipt.date)),
+    [froReceipts, dateFilter, customDate],
+  );
+
+  // Old records without a status are treated as accepted so existing data keeps working.
+  const acceptedHandovers = useMemo(
+    () =>
+      handovers.filter(
+        (handover) => !handover.status || handover.status === "accepted",
+      ),
+    [handovers],
+  );
+
+  const filteredAcceptedHandovers = useMemo(
+    () =>
+      acceptedHandovers.filter((handover) => isInSelectedPeriod(handover.date)),
+    [acceptedHandovers, dateFilter, customDate],
+  );
+
+  const collectedAmount = useMemo(
+    () =>
+      filteredFroReceipts.reduce(
+        (sum, receipt) => sum + (Number(receipt.amount) || 0),
+        0,
+      ),
+    [filteredFroReceipts],
+  );
+
+  const handedOverAmount = useMemo(
+    () =>
+      filteredAcceptedHandovers.reduce(
+        (sum, handover) => sum + (Number(handover.amount) || 0),
+        0,
+      ),
+    [filteredAcceptedHandovers],
+  );
+
+  const allCollectedAmount = useMemo(
+    () =>
+      froReceipts.reduce(
+        (sum, receipt) => sum + (Number(receipt.amount) || 0),
+        0,
+      ),
+    [froReceipts],
+  );
+
+  const allHandedOverAmount = useMemo(
+    () =>
+      acceptedHandovers.reduce(
+        (sum, handover) => sum + (Number(handover.amount) || 0),
+        0,
+      ),
+    [acceptedHandovers],
+  );
+
+  const currentCashInHand = Math.max(
+    allCollectedAmount - allHandedOverAmount,
+    0,
+  );
+  const balanceAmount = Math.max(collectedAmount - handedOverAmount, 0);
+  const requestedAmount = Number(handoverAmount) || 0;
+  const canCreateHandover =
+    requestedAmount > 0 && requestedAmount <= currentCashInHand && !!user?.name;
 
   function loadPaymentData() {
     try {
@@ -72,51 +178,14 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     const refresh = () => loadPaymentData();
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
+    window.addEventListener("nature-biotic-handover-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("nature-biotic-handover-updated", refresh);
     };
   }, [receiptStorageKey, handoverStorageKey]);
-
-  const froReceipts = useMemo(() => {
-    if (!isFRO || !user?.name) return [];
-
-    const froName = user.name.trim().toLowerCase();
-
-    return receipts.filter(
-      (receipt) =>
-        String(receipt.receivedBy || "")
-          .trim()
-          .toLowerCase() === froName,
-    );
-  }, [receipts, isFRO, user?.name]);
-
-  const collectedAmount = useMemo(
-    () =>
-      froReceipts.reduce(
-        (total, receipt) => total + Number(receipt.amount || 0),
-        0,
-      ),
-    [froReceipts],
-  );
-
-  const handedOverAmount = useMemo(
-    () =>
-      handovers.reduce(
-        (total, handover) => total + Number(handover.amount || 0),
-        0,
-      ),
-    [handovers],
-  );
-
-  const balanceAmount = Math.max(collectedAmount - handedOverAmount, 0);
-
-  const canCreateHandover =
-    Number(handoverAmount) > 0 &&
-    Number(handoverAmount) <= balanceAmount &&
-    !!handoverDate &&
-    !!handoverMethod;
 
   function resetHandoverForm() {
     setHandoverDate(new Date().toISOString().split("T")[0]);
@@ -131,374 +200,389 @@ export default function FROPayment({ storeId }: { storeId: string }) {
   }
 
   function handleCreateHandover() {
-    const amount = Number(handoverAmount) || 0;
-
     if (!canCreateHandover || !user?.name) return;
 
     const newHandover: Handover = {
-      id: `handover-${Date.now()}`,
+      id: `fro-ho-${Date.now()}`,
       date: handoverDate,
-      amount,
+      amount: requestedAmount,
       method: handoverMethod,
       handedOverBy: user.name,
-      remarks: handoverRemarks.trim(),
+      remarks: handoverRemarks.trim() || undefined,
+      status: "pending",
     };
 
-    setHandovers((prev) => {
-      const next = [newHandover, ...prev];
-
-      try {
-        localStorage.setItem(handoverStorageKey, JSON.stringify(next));
-      } catch {}
-
-      return next;
-    });
-
+    const nextHandovers = [...handovers, newHandover];
+    setHandovers(nextHandovers);
+    localStorage.setItem(handoverStorageKey, JSON.stringify(nextHandovers));
     closeHandoverForm();
+    setShowHandoverDetails(true);
+    window.dispatchEvent(new Event("nature-biotic-handover-updated"));
   }
 
   return (
     <>
-      <div className="px-3 pt-2 pb-24 sm:px-4 sm:pt-3 max-w-md mx-auto">
-        <div className="mb-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => goStorePage("sales")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-600 shadow-sm"
-            aria-label="Back to Sales"
-          >
-            <Icon name="arrow_back" size={21} />
-          </button>
+      <div className="mx-auto min-h-screen w-full max-w-md px-0 pb-24 pt-3">
+        <div className="mb-5 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => goStorePage("sales")}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-white text-slate-600 shadow-sm"
+              aria-label="Back to Sales"
+            >
+              <Icon name="arrow_back" size={21} />
+            </button>
 
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
-              SALES
-            </p>
-            <h1 className="text-xl font-extrabold text-slate-800">Payment</h1>
-            <p className="text-[11px] text-slate-400">
-              Manage collected amount and store handover
-            </p>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
+                SALES
+              </p>
+              <h1 className="mt-1 text-xl font-extrabold text-slate-800">
+                Payment
+              </h1>
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <PaymentDateFilter
+              value={dateFilter}
+              customDate={customDate}
+              onChange={setDateFilter}
+              onCustomDateChange={setCustomDate}
+            />
           </div>
         </div>
 
-        {/* Summary */}
+        {/* Only these two boxes are shown on this page. */}
         <div className="grid grid-cols-2 gap-3">
           <SummaryCard
-            label="Collected"
-            value={formatCurrency(collectedAmount)}
+            label="Cash in Hand"
+            value={formatCurrency(balanceAmount)}
             icon="payments"
             tone="bg-emerald-50 text-emerald-700"
           />
-          <SummaryCard
-            label="Handed Over"
-            value={formatCurrency(handedOverAmount)}
-            icon="account_balance"
-            tone="bg-blue-50 text-blue-700"
-          />
-          <SummaryCard
-            label="FRO Balance"
-            value={formatCurrency(balanceAmount)}
-            icon="account_balance_wallet"
-            tone="bg-amber-50 text-amber-700"
-          />
-          <SummaryCard
-            label="Receipts"
-            value={String(froReceipts.length)}
-            icon="receipt_long"
-            tone="bg-purple-50 text-purple-700"
-          />
-        </div>
 
-        {/* Handover */}
-        <Card className="mt-4 rounded-[22px] border border-slate-100 bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-extrabold text-slate-800">
-                Store Handover
-              </p>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Record the amount given to the store
-              </p>
-            </div>
-
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-              <Icon name="account_balance_wallet" size={21} />
-            </span>
-          </div>
-
-          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-4">
-            <p className="text-[11px] font-semibold text-slate-400">
-              Amount currently with FRO
-            </p>
-            <p className="mt-1 text-2xl font-extrabold text-slate-800">
-              {formatCurrency(balanceAmount)}
-            </p>
-          </div>
-
-          <Button
+          <button
             type="button"
-            onClick={() => setShowHandover(true)}
-            disabled={balanceAmount <= 0}
-            className="mt-3 w-full"
+            onClick={() => setShowHandoverDetails(true)}
+            className="text-left"
           >
-            <Icon name="add" size={18} />
-            Record Store Handover
-          </Button>
-        </Card>
-
-        {/* Receipt collections */}
-        <div className="mt-5">
-          <div className="mb-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
-              RECEIPTS
-            </p>
-            <h2 className="mt-1 text-base font-extrabold text-slate-800">
-              Collected from Farmers
-            </h2>
-          </div>
-
-          {froReceipts.length === 0 ? (
-            <Card className="rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
-              <Icon
-                name="receipt_long"
-                size={30}
-                className="mx-auto text-slate-300"
-              />
-              <p className="mt-2 text-sm font-bold text-slate-700">
-                No receipts yet
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Amounts from receipts created by this FRO will appear here.
-              </p>
-            </Card>
-          ) : (
-            <div className="space-y-2.5">
-              {froReceipts.map((receipt) => (
-                <Card
-                  key={receipt.id}
-                  className="rounded-2xl border border-slate-100 bg-white p-3.5 shadow-[0_6px_22px_rgba(15,23,42,0.05)]"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-                      <Icon name="receipt" size={20} />
-                    </span>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-slate-800">
-                            {receipt.farmerName}
-                          </p>
-                          <p className="mt-0.5 text-[10px] text-slate-400">
-                            {receipt.receiptNo} · {formatDate(receipt.date)}
-                          </p>
-                        </div>
-
-                        <p className="shrink-0 text-sm font-extrabold text-slate-800">
-                          {formatCurrency(receipt.amount)}
-                        </p>
-                      </div>
-
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
-                          Collected
-                        </span>
-                        <span className="text-[10px] font-semibold text-slate-400">
-                          {receipt.method}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
+            <SummaryCard
+              label="Handover Amount"
+              value={formatCurrency(handedOverAmount)}
+              icon="account_balance"
+              tone="bg-blue-50 text-blue-700"
+              clickable
+            />
+          </button>
         </div>
 
-        {/* Handover history */}
-        <div className="mt-5">
-          <div className="mb-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
-              HANDOVER HISTORY
-            </p>
-            <h2 className="mt-1 text-base font-extrabold text-slate-800">
-              Store Payments
-            </h2>
-          </div>
-
-          {handovers.length === 0 ? (
-            <Card className="rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-[0_6px_22px_rgba(15,23,42,0.05)]">
-              <Icon
-                name="account_balance"
-                size={30}
-                className="mx-auto text-slate-300"
-              />
-              <p className="mt-2 text-sm font-bold text-slate-700">
-                No handover recorded
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Store handover entries will appear here.
-              </p>
-            </Card>
-          ) : (
-            <div className="space-y-2.5">
-              {handovers.map((handover) => (
-                <Card
-                  key={handover.id}
-                  className="rounded-2xl border border-slate-100 bg-white p-3.5 shadow-[0_6px_22px_rgba(15,23,42,0.05)]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-bold text-slate-800">
-                        Store Handover
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-slate-400">
-                        {formatDate(handover.date)} · {handover.method}
-                      </p>
-                      <p className="mt-1 text-[10px] text-slate-400">
-                        By {handover.handedOverBy}
-                      </p>
-                    </div>
-
-                    <p className="text-sm font-extrabold text-blue-700">
-                      {formatCurrency(handover.amount)}
+        {/* Handover details / create */}
+        {showHandoverDetails &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) {
+                  setShowHandoverDetails(false);
+                }
+              }}
+            >
+              <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
+                      STORE HANDOVER
                     </p>
+                    <h2 className="mt-1 text-lg font-extrabold text-slate-800">
+                      Handover Details
+                    </h2>
                   </div>
 
-                  {handover.remarks && (
-                    <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-                      {handover.remarks}
-                    </p>
-                  )}
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Create Store Handover */}
-      {showHandover &&
-        createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[94vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              {/* Header */}
-              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-5">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
-                    PAYMENT
-                  </p>
-                  <h2 className="mt-1 text-lg font-bold text-slate-800">
-                    Record Store Handover
-                  </h2>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Enter the amount you handed over to the store.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closeHandoverForm}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                  aria-label="Close handover form"
-                >
-                  <Icon name="close" size={20} />
-                </button>
-              </div>
-
-              {/* Scrollable form body */}
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Input
-                    label="Handover Date"
-                    type="date"
-                    value={handoverDate}
-                    onChange={setHandoverDate}
-                    required
-                  />
-
-                  <Input
-                    label="Handover Amount"
-                    type="number"
-                    value={handoverAmount}
-                    onChange={(value) => {
-                      const amount = Number(value) || 0;
-                      setHandoverAmount(
-                        String(Math.min(amount, balanceAmount)),
-                      );
-                    }}
-                    placeholder="Enter amount"
-                    required
-                  />
-
-                  <Select
-                    label="Payment Method"
-                    value={handoverMethod}
-                    onChange={setHandoverMethod}
-                    options={handoverMethods.map((method) => ({
-                      value: method,
-                      label: method,
-                    }))}
-                    required
-                  />
-
-                  <Input
-                    label="Handed Over By"
-                    value={user?.name || ""}
-                    onChange={() => {}}
-                    readOnly
-                  />
-
-                  <div className="sm:col-span-2">
-                    <Input
-                      label="Remarks"
-                      value={handoverRemarks}
-                      onChange={setHandoverRemarks}
-                      placeholder="Optional notes"
+                  <div className="flex items-center gap-2">
+                    <PaymentDateFilter
+                      value={dateFilter}
+                      customDate={customDate}
+                      onChange={setDateFilter}
+                      onCustomDateChange={setCustomDate}
+                      compact
                     />
-                  </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowHandoverDetails(false);
+                        resetHandoverForm();
+                        setShowHandover(true);
+                      }}
+                      disabled={balanceAmount <= 0}
+                      aria-label="Create Store Handover"
+                      title="Create Store Handover"
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Icon name="add" size={20} />
+                    </button>
 
-                  <div className="sm:col-span-2 rounded-xl bg-emerald-50 px-4 py-3">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                      <span className="text-xs font-semibold text-emerald-700">
-                        Balance after handover
-                      </span>
-                      <span className="text-base font-extrabold text-emerald-800">
-                        {formatCurrency(
-                          Math.max(
-                            balanceAmount - (Number(handoverAmount) || 0),
-                            0,
-                          ),
-                        )}
-                      </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowHandoverDetails(false)}
+                      aria-label="Close"
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+                    >
+                      <Icon name="close" size={20} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                  {handovers.filter((handover) =>
+                    isInSelectedPeriod(handover.date),
+                  ).length === 0 ? (
+                    <div className="py-10 text-center">
+                      <Icon
+                        name="account_balance"
+                        size={32}
+                        className="mx-auto text-slate-300"
+                      />
+                      <p className="mt-2 text-sm font-bold text-slate-700">
+                        No handover yet
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Tap + to create a handover request.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {handovers
+                        .filter((handover) => isInSelectedPeriod(handover.date))
+                        .map((handover) => (
+                          <div
+                            key={handover.id}
+                            className="rounded-xl border border-slate-100 bg-slate-50 p-3.5"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-slate-800">
+                                  {formatCurrency(handover.amount)}
+                                </p>
+                                <p className="mt-1 text-[10px] text-slate-500">
+                                  {formatDate(handover.date)} ·{" "}
+                                  {handover.method}
+                                </p>
+                                <p className="mt-1 text-[10px] text-slate-500">
+                                  By {handover.handedOverBy}
+                                </p>
+                              </div>
+
+                              <span
+                                className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                                  handover.status === "accepted"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {handover.status === "accepted"
+                                  ? "Accepted"
+                                  : "Pending Store"}
+                              </span>
+                            </div>
+
+                            {handover.remarks && (
+                              <p className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] text-slate-500">
+                                {handover.remarks}
+                              </p>
+                            )}
+
+                            {handover.status === "accepted" &&
+                              handover.acceptedAt && (
+                                <p className="mt-2 text-[10px] font-medium text-emerald-600">
+                                  Accepted {formatDate(handover.acceptedAt)}
+                                  {handover.acceptedBy
+                                    ? ` by ${handover.acceptedBy}`
+                                    : ""}
+                                </p>
+                              )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="shrink-0 border-t border-slate-100 bg-slate-50 px-4 py-3">
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => setShowHandoverDetails(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )}
+
+        {/* Create handover */}
+        {showHandover &&
+          createPortal(
+            <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4">
+              <div className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
+                      STORE HANDOVER
+                    </p>
+                    <h2 className="mt-1 text-lg font-extrabold text-slate-800">
+                      Create Handover
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeHandoverForm}
+                    aria-label="Close"
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+                  >
+                    <Icon name="close" size={20} />
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Input
+                      label="Handover Date"
+                      type="date"
+                      value={handoverDate}
+                      onChange={setHandoverDate}
+                      required
+                    />
+                    <Input
+                      label="Handover Amount"
+                      type="number"
+                      value={handoverAmount}
+                      onChange={(value) => {
+                        const n = Number(value) || 0;
+                        setHandoverAmount(String(Math.min(n, balanceAmount)));
+                      }}
+                      placeholder="Enter amount"
+                      required
+                    />
+                    <Select
+                      label="Payment Method"
+                      value={handoverMethod}
+                      onChange={setHandoverMethod}
+                      options={handoverMethods.map((method) => ({
+                        value: method,
+                        label: method,
+                      }))}
+                      required
+                    />
+                    <Input
+                      label="Handed Over By"
+                      value={user?.name || ""}
+                      onChange={() => {}}
+                      readOnly
+                    />
+                    <div className="sm:col-span-2">
+                      <Input
+                        label="Remarks"
+                        value={handoverRemarks}
+                        onChange={setHandoverRemarks}
+                        placeholder="Optional"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 rounded-xl bg-emerald-50 px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold text-emerald-700">
+                          Cash in Hand after request
+                        </span>
+                        <span className="text-base font-extrabold text-emerald-800">
+                          {formatCurrency(
+                            Math.max(
+                              currentCashInHand - (Number(handoverAmount) || 0),
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[10px] text-emerald-600">
+                        Handover amount will be added after the Store accepts
+                        it.
+                      </p>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Fixed footer */}
-              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-5 sm:py-4">
-                <Button
-                  variant="secondary"
-                  onClick={closeHandoverForm}
-                  className="w-full sm:w-auto"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleCreateHandover}
-                  disabled={!canCreateHandover}
-                  className="w-full sm:w-auto"
-                >
-                  <Icon name="save" size={18} />
-                  Save Handover
-                </Button>
+                <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
+                  <Button
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    onClick={closeHandoverForm}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="w-full sm:w-auto"
+                    onClick={handleCreateHandover}
+                    disabled={!canCreateHandover}
+                  >
+                    <Icon name="save" size={18} /> Create Handover
+                  </Button>
+                </div>
               </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+            </div>,
+            document.body,
+          )}
+      </div>
     </>
+  );
+}
+
+function PaymentDateFilter({
+  value,
+  customDate,
+  onChange,
+  onCustomDateChange,
+  compact = false,
+}: {
+  value: PaymentDateFilter;
+  customDate: string;
+  onChange: (value: PaymentDateFilter) => void;
+  onCustomDateChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`flex items-center ${compact ? "shrink-0" : "shrink-0"}`}>
+      <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as PaymentDateFilter)}
+          className={`rounded-lg border-0 bg-slate-50 font-semibold text-slate-600 outline-none focus:ring-0 ${
+            compact
+              ? "px-2 py-2 text-[10px]"
+              : "w-[118px] shrink-0 px-2.5 py-2 text-[11px] sm:w-[128px] sm:text-xs"
+          }`}
+          aria-label="Payment date filter"
+        >
+          <option value="today">Today</option>
+          <option value="monthly">Monthly</option>
+          <option value="custom">Custom Date</option>
+        </select>
+
+        {value === "custom" && (
+          <input
+            type="date"
+            value={customDate}
+            onChange={(e) => onCustomDateChange(e.target.value)}
+            className={`min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600 outline-none focus:border-brand-300 ${
+              compact
+                ? "w-[112px] text-[10px]"
+                : "w-[118px] text-[10px] sm:w-[132px] sm:text-xs"
+            }`}
+            aria-label="Custom payment date"
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -507,14 +591,20 @@ function SummaryCard({
   value,
   icon,
   tone,
+  clickable,
 }: {
   label: string;
   value: string;
   icon: string;
   tone: string;
+  clickable?: boolean;
 }) {
   return (
-    <Card className="min-h-[108px] rounded-[20px] border border-slate-100 bg-white p-3.5 shadow-[0_7px_24px_rgba(15,23,42,0.05)]">
+    <Card
+      className={`min-h-[108px] rounded-[20px] border border-slate-100 bg-white p-3.5 shadow-[0_7px_24px_rgba(15,23,42,0.05)] ${
+        clickable ? "transition hover:-translate-y-0.5 hover:shadow-md" : ""
+      }`}
+    >
       <div className="flex items-center justify-between">
         <span
           className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}

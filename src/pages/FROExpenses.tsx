@@ -12,6 +12,9 @@ type CashReceived = {
   receivedFrom: string;
   remarks?: string;
   status?: "pending" | "accepted";
+  requestedFor?: string;
+  acceptedBy?: string;
+  acceptedAt?: string;
   settlementId?: string;
 };
 type Expense = {
@@ -95,18 +98,17 @@ export default function FROExpenses({ storeId = "default" }: Props) {
   const [received, setReceived] = useState<CashReceived[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [refunds, setRefunds] = useState<CashRefund[]>([]);
-  const [form, setForm] = useState<"received" | "expense" | "refund" | null>(
-    null,
-  );
+  const [form, setForm] = useState<"expense" | "refund" | null>(null);
   const settlementKey = `${SETTLEMENT_PREFIX}:${storeId}`;
   const completedSettlementKey = `${SETTLEMENT_PREFIX}-completed:${storeId}`;
   const [activeSettlementId, setActiveSettlementId] = useState<string>(() => {
     return localStorage.getItem(settlementKey) || `settlement-${Date.now()}`;
   });
-  const [showHistory, setShowHistory] = useState(false);
   const [showAllList, setShowAllList] = useState<
     "expenses" | "received" | "refund" | null
   >(null);
+  const [showPendingCash, setShowPendingCash] = useState(false);
+  const [showRefunds, setShowRefunds] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
 
   const [amount, setAmount] = useState("");
@@ -157,23 +159,44 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     const refresh = () => load();
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
+    window.addEventListener("nature-biotic-cash-received-updated", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener(
+        "nature-biotic-cash-received-updated",
+        refresh,
+      );
     };
   }, [receivedKey, expenseKey, refundKey, settlementKey]);
+
+  const currentFROName = (user?.name ?? "").trim();
+  const currentFROKey = currentFROName.toLowerCase();
 
   // Only the current/open settlement is shown in the four summary cards.
   // All older settlements remain in History.
   const activeReceived = useMemo(
     () =>
       received.filter(
-        (x) => x.status === "accepted" && x.settlementId === activeSettlementId,
+        (x) =>
+          x.status === "accepted" &&
+          x.settlementId === activeSettlementId &&
+          (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey,
       ),
-    [received, activeSettlementId],
+    [received, activeSettlementId, currentFROKey],
   );
 
-  const acceptedReceived = activeReceived;
+  // Cash is created by Store for this FRO. It becomes part of the
+  // settlement only after the FRO accepts it.
+  const pendingCashRequests = useMemo(
+    () =>
+      received.filter(
+        (x) =>
+          x.status !== "accepted" &&
+          (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey,
+      ),
+    [received, currentFROKey],
+  );
 
   const totalReceived = useMemo(
     () => activeReceived.reduce((s, x) => s + Number(x.amount || 0), 0),
@@ -240,23 +263,22 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     }
   }, [received, totalReceived, balance, activeSettlementId]);
 
-  const saveReceived = () => {
-    const value = Number(amount);
-    if (value <= 0) return;
-    const item: CashReceived = {
-      id: id("received"),
-      date: new Date().toISOString(),
-      amount: value,
-      method,
-      receivedFrom: "Store",
-      remarks: remarks.trim(),
-      status: "pending",
-      settlementId: activeSettlementId,
-    };
-    const next = [item, ...received];
+  const acceptCash = (requestId: string) => {
+    const next = received.map((x) =>
+      x.id === requestId
+        ? {
+            ...x,
+            status: "accepted" as const,
+            acceptedBy: currentFROName,
+            acceptedAt: new Date().toISOString(),
+            settlementId: activeSettlementId,
+          }
+        : x,
+    );
+
     setReceived(next);
     localStorage.setItem(receivedKey, JSON.stringify(next));
-    reset();
+    window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
   };
 
   const saveExpense = () => {
@@ -305,84 +327,103 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     setForm(null);
   };
 
-  const save =
-    form === "received"
-      ? saveReceived
-      : form === "expense"
-        ? saveExpense
-        : saveRefund;
+  const save = form === "expense" ? saveExpense : saveRefund;
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
-          Expenses
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Manage FRO cash, expenses and store refunds.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+            Expenses
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Manage FRO cash, expenses and store refunds.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setForm("expense")}
+          disabled={balance <= 0}
+          aria-label="Add Expense"
+          title="Add Expense"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <Icon name="add" size={21} />
+        </button>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <button
+          type="button"
+          onClick={() => {
+            setHistorySearch("");
+            setShowAllList("expenses");
+          }}
+          className="text-left"
+        >
+          <Summary
+            title="Total Expenses"
+            value={totalExpenses}
+            icon="receipt_long"
+            tone="bg-red-50 text-red-700"
+            clickable
+          />
+        </button>
+
         <Summary
-          title="Total Expenses"
-          value={totalExpenses}
-          icon="receipt_long"
-          tone="bg-red-50 text-red-700"
-        />
-        <Summary
-          title="Cash Received"
+          title="Amount Received"
           value={totalReceived}
           icon="payments"
           tone="bg-blue-50 text-blue-700"
         />
+
         <Summary
-          title="Balance"
+          title="Amount Balance"
           value={balance}
           icon="account_balance_wallet"
           tone="bg-green-50 text-green-700"
         />
-        <Summary
-          title="Cash Refund"
-          value={totalRefund}
-          icon="undo"
-          tone="bg-orange-50 text-orange-700"
-        />
-      </div>
-      <div className="flex justify-end">
-        <Button
-          variant="secondary"
-          className="w-full sm:w-auto"
-          onClick={() => setShowHistory(true)}
+
+        <button
+          type="button"
+          onClick={() => setShowRefunds(true)}
+          className="text-left"
         >
-          <Icon name="history" size={18} /> Settlement History
-        </Button>
+          <Summary
+            title="Amount Refund"
+            value={totalRefund}
+            icon="undo"
+            tone="bg-orange-50 text-orange-700"
+            clickable
+          />
+        </button>
       </div>
-      <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Button
-            variant="secondary"
-            className="h-11 justify-start gap-2"
-            onClick={() => setForm("received")}
-          >
-            <Icon name="payments" size={18} /> Cash Received
-          </Button>
-          <Button
-            className="h-11 justify-start gap-2"
-            onClick={() => setForm("expense")}
-            disabled={balance <= 0}
-          >
-            <Icon name="add" size={18} /> Add Expense
-          </Button>
-          <Button
-            variant="secondary"
-            className="h-11 justify-start gap-2"
-            onClick={() => setForm("refund")}
-            disabled={balance <= 0}
-          >
-            <Icon name="undo" size={18} /> Cash Refund
-          </Button>
-        </div>
-      </Card>
+      {pendingCashRequests.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowPendingCash(true)}
+          className="w-full text-left"
+        >
+          <Card className="overflow-hidden border-amber-200 transition hover:shadow-md">
+            <div className="flex items-center gap-3 bg-amber-50 px-4 py-4">
+              <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <Icon name="pending_actions" size={22} />
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  {pendingCashRequests.length}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-slate-900">Cash Received</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {pendingCashRequests.length} pending cash request
+                  {pendingCashRequests.length === 1 ? "" : "s"} from Store
+                </p>
+              </div>
+              <Icon name="chevron_right" size={20} />
+            </div>
+          </Card>
+        </button>
+      )}
       <Card className="overflow-hidden">
         <div className="border-b px-4 py-4 sm:px-5">
           <h2 className="font-semibold">Cash Summary</h2>
@@ -421,7 +462,11 @@ export default function FROExpenses({ storeId = "default" }: Props) {
           }));
 
         const receivedHistoryItems = [...received]
-          .filter((x) => x.status === "accepted")
+          .filter(
+            (x) =>
+              x.status === "accepted" &&
+              (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey,
+          )
           .sort((a, b) => String(b.date).localeCompare(String(a.date)))
           .map((x) => ({
             id: x.id,
@@ -469,40 +514,123 @@ export default function FROExpenses({ storeId = "default" }: Props) {
 
         return (
           <>
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-              <List
-                title="Recent Expenses"
-                empty="No expenses added yet."
-                items={expenseHistoryItems.slice(0, 5)}
-                totalCount={expenseHistoryItems.length}
-                onAll={() => {
-                  setHistorySearch("");
-                  setShowAllList("expenses");
-                }}
-              />
-
-              <List
-                title="Cash Received History"
-                empty="No cash received entries yet."
-                items={receivedHistoryItems.slice(0, 5)}
-                totalCount={receivedHistoryItems.length}
-                onAll={() => {
-                  setHistorySearch("");
-                  setShowAllList("received");
-                }}
-              />
-            </div>
-
             <List
               title="Cash Refund History"
               empty="No cash refunds yet."
               items={refundHistoryItems.slice(0, 5)}
               totalCount={refundHistoryItems.length}
-              onAll={() => {
-                setHistorySearch("");
-                setShowAllList("refund");
-              }}
+              onAll={() => setShowRefunds(true)}
             />
+
+            {showPendingCash && (
+              <Modal
+                title="Pending Cash Received"
+                onClose={() => setShowPendingCash(false)}
+                onSave={() => setShowPendingCash(false)}
+                saveLabel="Close"
+              >
+                <div className="space-y-3">
+                  {pendingCashRequests.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-amber-200 bg-amber-50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-lg font-bold text-slate-900">
+                            {formatCurrency(item.amount)}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            From {item.receivedFrom} • {item.method} •{" "}
+                            {formatExpenseDate(item.date)}
+                          </p>
+                          {item.remarks && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {item.remarks}
+                            </p>
+                          )}
+                        </div>
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                          Pending
+                        </span>
+                      </div>
+
+                      <Button
+                        className="mt-4 w-full"
+                        onClick={() => {
+                          acceptCash(item.id);
+                          setShowPendingCash(false);
+                        }}
+                      >
+                        <Icon name="check" size={17} /> Accept Cash
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </Modal>
+            )}
+
+            {showRefunds && (
+              <Modal
+                title="Cash Refunds"
+                onClose={() => setShowRefunds(false)}
+                onSave={() => setShowRefunds(false)}
+                saveLabel="Close"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">
+                        Refund History
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        All refunds created by you.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRefunds(false);
+                        setForm("refund");
+                      }}
+                      disabled={balance <= 0}
+                      aria-label="Create Cash Refund"
+                      title="Create Cash Refund"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Icon name="add" size={19} />
+                    </button>
+                  </div>
+
+                  {refundHistoryItems.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-slate-500">
+                      No cash refunds yet.
+                    </div>
+                  ) : (
+                    <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+                      {refundHistoryItems.map((x) => (
+                        <div
+                          key={x.id}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-800">
+                              Refund to Store
+                            </p>
+                            <p className="truncate text-xs text-slate-500">
+                              {x.sub} • {formatExpenseDate(x.date)}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-sm font-bold text-orange-600">
+                            {formatCurrency(x.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Modal>
+            )}
 
             {showAllList && (
               <Modal
@@ -553,188 +681,12 @@ export default function FROExpenses({ storeId = "default" }: Props) {
           </>
         );
       })()}{" "}
-      {showHistory && (
-        <Modal
-          title="Settlement History"
-          onClose={() => setShowHistory(false)}
-          onSave={() => setShowHistory(false)}
-          saveLabel="Close"
-        >
-          <div className="space-y-4">
-            {(() => {
-              const currentFRO = (user?.name ?? "").trim().toLowerCase();
-
-              const historyReceived = received.filter(
-                (x) => !!x.settlementId && x.status === "accepted",
-              );
-              const historyExpenses = expenses.filter(
-                (x) =>
-                  !!x.settlementId &&
-                  (x.enteredBy ?? "").trim().toLowerCase() === currentFRO,
-              );
-              const historyRefunds = refunds.filter((x) => !!x.settlementId);
-
-              const allSettlementIds = Array.from(
-                new Set([
-                  ...historyReceived.map((x) => x.settlementId!),
-                  ...historyExpenses.map((x) => x.settlementId!),
-                  ...historyRefunds.map((x) => x.settlementId!),
-                ]),
-              ).filter((sid) => sid !== activeSettlementId);
-
-              if (!allSettlementIds.length) {
-                return (
-                  <div className="py-8 text-center text-sm text-slate-500">
-                    No previous settlements yet.
-                  </div>
-                );
-              }
-
-              return allSettlementIds.map((sid) => {
-                const settlementReceived = historyReceived.filter(
-                  (x) => x.settlementId === sid,
-                );
-                const settlementExpenses = historyExpenses.filter(
-                  (x) => x.settlementId === sid,
-                );
-                const settlementRefunds = historyRefunds.filter(
-                  (x) => x.settlementId === sid,
-                );
-
-                const r = settlementReceived.reduce(
-                  (s, x) => s + Number(x.amount || 0),
-                  0,
-                );
-                const e = settlementExpenses.reduce(
-                  (s, x) => s + Number(x.amount || 0),
-                  0,
-                );
-                const f = settlementRefunds.reduce(
-                  (s, x) => s + Number(x.amount || 0),
-                  0,
-                );
-                const settled = Math.max(r - e - f, 0) === 0 && r > 0;
-
-                return (
-                  <div
-                    key={sid}
-                    className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">
-                          Settlement {String(sid).replace(/^settlement-/, "#")}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Received {formatCurrency(r)} • Expenses{" "}
-                          {formatCurrency(e)} • Refund {formatCurrency(f)}
-                        </p>
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          settled
-                            ? "bg-green-100 text-green-700"
-                            : "bg-amber-100 text-amber-700"
-                        }`}
-                      >
-                        {settled ? "Settled" : "Open"}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      {settlementReceived.map((x) => (
-                        <HistoryRow
-                          key={`r-${x.id}`}
-                          type="Cash Received"
-                          date={x.date}
-                          amount={x.amount}
-                          method={x.method}
-                          tone="text-blue-600"
-                        />
-                      ))}
-                      {settlementExpenses.map((x) => (
-                        <HistoryRow
-                          key={`e-${x.id}`}
-                          type={
-                            x.expenseNo ? `Expense ${x.expenseNo}` : "Expense"
-                          }
-                          date={x.date}
-                          amount={x.amount}
-                          method={`${x.category} • ${x.method}`}
-                          tone="text-red-600"
-                        />
-                      ))}
-                      {settlementRefunds.map((x) => (
-                        <HistoryRow
-                          key={`f-${x.id}`}
-                          type="Cash Refund"
-                          date={x.date}
-                          amount={x.amount}
-                          method={x.method}
-                          tone="text-orange-600"
-                        />
-                      ))}
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between border-t pt-3">
-                      <span className="text-sm font-semibold text-slate-600">
-                        Final Balance
-                      </span>
-                      <span className="font-bold text-green-700">
-                        {formatCurrency(Math.max(r - e - f, 0))}
-                      </span>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </Modal>
-      )}
       {form && (
         <Modal
-          title={
-            form === "received"
-              ? "Cash Received"
-              : form === "expense"
-                ? "Add Expense"
-                : "Cash Refund"
-          }
+          title={form === "expense" ? "Add Expense" : "Cash Refund"}
           onClose={reset}
           onSave={save}
         >
-          {form === "received" && (
-            <>
-              <Input
-                label="Amount Received"
-                type="number"
-                value={amount}
-                onChange={setAmount}
-                placeholder="Enter amount"
-                required
-              />
-              <Select
-                label="Payment Method"
-                value={method}
-                onChange={setMethod}
-                options={paymentMethods.map((x) => ({ value: x, label: x }))}
-                required
-              />
-              <Input
-                label="Received From"
-                value="Store"
-                onChange={() => {}}
-                readOnly
-              />
-              <Input
-                label="Remarks"
-                value={remarks}
-                onChange={setRemarks}
-                placeholder="Optional"
-              />
-            </>
-          )}
-
           {form === "expense" && (
             <>
               <div className="mb-4 rounded-lg bg-green-50 px-3 py-3 text-sm">
@@ -829,14 +781,20 @@ function Summary({
   value,
   icon,
   tone,
+  clickable,
 }: {
   title: string;
   value: number;
   icon: string;
   tone: string;
+  clickable?: boolean;
 }) {
   return (
-    <Card className="p-3 sm:p-4">
+    <Card
+      className={`p-3 sm:p-4 ${
+        clickable ? "transition hover:-translate-y-0.5 hover:shadow-md" : ""
+      }`}
+    >
       <div className={`w-fit rounded-lg p-2 ${tone}`}>
         <Icon name={icon} size={19} />
       </div>
