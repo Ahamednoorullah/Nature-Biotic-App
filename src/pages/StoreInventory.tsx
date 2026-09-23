@@ -1,10 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { productCategories } from "@/lib/data";
+import {
+  getBillsByStore,
+  getProductsByStore,
+  getStorePurchasesFromCompanySales,
+  productCategories,
+  type CompanyStoreSaleRecord,
+} from "@/lib/data";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-
-type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 // type StockRow = {
 //   id: string;
@@ -90,451 +94,153 @@ function getStockWarnings(pack: PackSizeStock) {
   };
 }
 
-// const stockData: Record<DateFilter, StockRow[]> = {
-//   today: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 125,
-//       stockValue: 56250,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//   ],
-//   weekly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 105,
-//       stockValue: 47250,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 65,
-//       stockValue: 24700,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 24,
-//       stockValue: 13440,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 180,
-//       stockValue: 198000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 18,
-//       stockValue: 12240,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 60,
-//       stockValue: 31200,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 8,
-//       stockValue: 4160,
-//       lastUpdated: "31 Jul 2026",
-//     },
-//   ],
-//   monthly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 120,
-//       stockValue: 54000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "28 Jul 2026",
-//     },
-//   ],
-//   quarterly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 120,
-//       stockValue: 54000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "20 Jul 2026",
-//     },
-//   ],
-//   yearly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 120,
-//       stockValue: 54000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "15 Jul 2026",
-//     },
-//   ],
-// };
+function buildInventoryRows(
+  storeId: string,
+  purchases: CompanyStoreSaleRecord[],
+): StockRow[] {
+  const products = getProductsByStore(storeId);
+  const bills = getBillsByStore(storeId);
 
-const stockData: Record<DateFilter, StockRow[]> = {
-  today: [
+  const productTypeByName = new Map(
+    products.map((product) => [
+      product.name.trim().toLowerCase(),
+      product.productCategory || "Product",
+    ]),
+  );
+
+  // Keep the latest sale date for each product. The current Bill model does
+  // not contain batch/pack information, so sales are used only for the
+  // product-level "Last Sale" warning.
+  const lastSaleByProduct = new Map<string, string>();
+
+  bills.forEach((bill) => {
+    bill.items.forEach((item) => {
+      const key = item.name.trim().toLowerCase();
+      const existing = lastSaleByProduct.get(key);
+      if (!existing || bill.billDate > existing) {
+        lastSaleByProduct.set(key, bill.billDate);
+      }
+    });
+  });
+
+  // One inventory row is created for each Product + Pack Size + Batch.
+  // Quantity comes only from the store purchase records, so products that
+  // were never purchased by this store do not appear here.
+  const grouped = new Map<
+    string,
     {
-      id: "p1",
-      productType: "Pesticide",
-      productName: "Electra",
-      packSizes: [
-        {
-          packSize: "100 ml",
-          batchNo: "ELE020826",
-          expiryDate: "DEC 2026",
-          lastSaleDate: "2026-08-05",
-          availableStock: 125,
-          stockInHand: 10,
-          stockValue: 60000,
-        },
-        {
-          packSize: "100 ml",
-          batchNo: "ELE030826",
-          expiryDate: "JAN 2027",
-          lastSaleDate: "2026-06-20",
-          availableStock: 145,
-          stockInHand: 15,
-          stockValue: 60000,
-        },
-        {
-          packSize: "250 ml",
-          batchNo: "ELE010826",
-          expiryDate: "Aug 2026",
-          lastSaleDate: "2026-08-02",
-          availableStock: 85,
-          stockInHand: 12,
-          stockValue: 25000,
-        },
-        {
-          packSize: "500 ml",
-          batchNo: "ELE020826",
-          expiryDate: "Jul 2028",
-          lastSaleDate: "2026-05-25",
+      id: string;
+      productType: string;
+      productName: string;
+      packSize: string;
+      batchNo: string;
+      expiryDate: string;
+      quantity: number;
+      stockValue: number;
+      unitPrice: number;
+      lastSaleDate: string;
+    }
+  >();
 
-          availableStock: 50,
-          stockInHand: 5,
-          stockValue: 10000,
-        },
-        {
-          packSize: "1 L",
-          batchNo: "ELE020826",
-          expiryDate: "Jul 2028",
-          lastSaleDate: "2026-07-30",
-          availableStock: 3,
-          stockInHand: 1,
-          stockValue: 20000,
-        },
-      ],
-    },
-    {
-      id: "p2",
-      productType: "Pesticide",
-      productName: "Astra",
-      packSizes: [
-        {
-          packSize: "100 ml",
-          batchNo: "AST010826",
-          expiryDate: "Sep 2028",
-          lastSaleDate: "2026-07-25",
+  purchases.forEach((purchase) => {
+    const productName = String(purchase.product || "").trim();
+    if (!productName) return;
 
-          availableStock: 40,
-          stockInHand: 5,
-          stockValue: 18000,
-        },
-        {
-          packSize: "250 ml",
-          batchNo: "AST010826",
-          expiryDate: "Sep 2028",
-          lastSaleDate: "2026-08-03",
-          availableStock: 30,
-          stockInHand: 4,
-          stockValue: 22000,
-        },
-        {
-          packSize: "500 ml",
-          batchNo: "AST010826",
-          expiryDate: "Aug 2028",
-          lastSaleDate: "2026-06-10",
-          availableStock: 2,
-          stockInHand: 3,
-          stockValue: 26000,
-        },
-        {
-          packSize: "1 L",
-          batchNo: "AST020826",
-          expiryDate: "Aug 2028",
-          lastSaleDate: "2026-08-01",
-          availableStock: 10,
-          stockInHand: 2,
-          stockValue: 30000,
-        },
-        {
-          packSize: "1 L",
-          batchNo: "AST030826",
-          expiryDate: "DEC 2026",
-          lastSaleDate: "2026-06-28",
-          availableStock: 19,
-          stockInHand: 2,
-          stockValue: 30000,
-        },
-      ],
-    },
-  ],
+    const packSize = String(purchase.packSize || purchase.pkgsize || "").trim();
 
-  weekly: [],
-  monthly: [],
-  quarterly: [],
-  yearly: [],
-};
+    const batchNo = String(purchase.batchNo || "").trim();
+    const expiryDate = String(purchase.expiryDate || "").trim();
 
+    const quantity = Math.max(0, Number(purchase.quantity || 0));
+    if (quantity <= 0) return;
 
+    const unitPrice = Number(
+      purchase.unitPrice ?? purchase.rate ?? purchase.price ?? 0,
+    );
+
+    const key = [
+      productName.toLowerCase(),
+      packSize.toLowerCase(),
+      batchNo.toLowerCase(),
+    ].join("::");
+
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.quantity += quantity;
+      existing.stockValue += quantity * unitPrice;
+
+      if ((!existing.expiryDate || existing.expiryDate === "-") && expiryDate) {
+        existing.expiryDate = expiryDate;
+      }
+
+      if ((!existing.batchNo || existing.batchNo === "-") && batchNo) {
+        existing.batchNo = batchNo;
+      }
+
+      if (unitPrice > 0) {
+        existing.unitPrice =
+          existing.quantity > 0
+            ? Math.round(existing.stockValue / existing.quantity)
+            : unitPrice;
+      }
+    } else {
+      grouped.set(key, {
+        id: `${purchase.id}-${productName}-${packSize}-${batchNo}`,
+        productType:
+          productTypeByName.get(productName.toLowerCase()) || "Product",
+        productName,
+        packSize: packSize || "-",
+        batchNo: batchNo || "-",
+        expiryDate: expiryDate || "-",
+        quantity,
+        stockValue: quantity * unitPrice,
+        unitPrice,
+        lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
+      });
+    }
+  });
+
+  const productMap = new Map<string, StockRow>();
+
+  Array.from(grouped.values())
+    .sort((a, b) => {
+      const productCompare = a.productName.localeCompare(b.productName);
+      if (productCompare !== 0) return productCompare;
+
+      const packCompare = a.packSize.localeCompare(b.packSize);
+      if (packCompare !== 0) return packCompare;
+
+      return a.batchNo.localeCompare(b.batchNo);
+    })
+    .forEach((item) => {
+      const productKey = item.productName.toLowerCase();
+
+      if (!productMap.has(productKey)) {
+        productMap.set(productKey, {
+          id: `inventory-${productKey}`,
+          productType: item.productType,
+          productName: item.productName,
+          packSizes: [],
+        });
+      }
+
+      productMap.get(productKey)!.packSizes.push({
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        lastSaleDate: item.lastSaleDate,
+        availableStock: item.quantity,
+        // Purchased stock starts in the store. Hand Stock is increased later
+        // by the FRO stock/hand-over flow.
+        stockInHand: 0,
+        stockValue: Math.round(item.stockValue),
+        unitPrice: item.unitPrice > 0 ? Math.round(item.unitPrice) : undefined,
+      });
+    });
+
+  return Array.from(productMap.values());
+}
 
 type WarningPopupType =
   | "low-stock"
@@ -562,11 +268,34 @@ type WarningDetailRow = {
 export default function StoreInventory({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [warningPopup, setWarningPopup] = useState<WarningPopupType | null>(null);
+  const [warningPopup, setWarningPopup] = useState<WarningPopupType | null>(
+    null,
+  );
+  const [purchases, setPurchases] = useState<CompanyStoreSaleRecord[]>(() =>
+    getStorePurchasesFromCompanySales(storeId),
+  );
 
-  // Inventory is a current stock snapshot. Keep the same data/logic that
-  // previously lived on the Store Dashboard.
-  const rows = useMemo(() => stockData.today, [storeId]);
+  useEffect(() => {
+    const refresh = () => {
+      setPurchases(getStorePurchasesFromCompanySales(storeId));
+    };
+
+    refresh();
+
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("focus", refresh);
+
+    return () => {
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [storeId]);
+
+  // Inventory is now built only from the purchases made by this store.
+  const rows = useMemo(
+    () => buildInventoryRows(storeId, purchases),
+    [storeId, purchases],
+  );
 
   const filteredRows = useMemo(
     () =>
@@ -610,7 +339,6 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
       ),
     [filteredRows],
   );
-
 
   const warningDetails = useMemo<WarningDetailRow[]>(() => {
     if (!warningPopup) return [];
@@ -1164,7 +892,10 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
               </div>
 
               <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button variant="secondary" onClick={() => setWarningPopup(null)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => setWarningPopup(null)}
+                >
                   Close
                 </Button>
               </div>
@@ -1175,4 +906,3 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
     </div>
   );
 }
- 
