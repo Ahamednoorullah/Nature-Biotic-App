@@ -9,6 +9,7 @@ import {
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import { useNav } from "@/context/NavContext";
 
 type ProductRow = {
   id: string;
@@ -39,6 +40,7 @@ type Row = {
   products: ProductRow[];
   executiveName?: string;
   createdByStaffId?: string;
+  through?: string;
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -49,6 +51,7 @@ type Row = {
 
 export default function StoreQuotation({ storeId }: { storeId: string }) {
   const { user } = useAuth();
+  const { goStorePage } = useNav();
   const isFRO = user?.role === "fro";
 
   const quotationStorageKey = `nature-biotic-quotations-${storeId}`;
@@ -595,6 +598,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       roundOff: Math.round(grandTotal) - grandTotal,
       amount: grandTotal,
       status: "Open",
+      through: isFRO ? "Executive" : "Direct",
       executiveName: isFRO ? user?.name : undefined,
       createdByStaffId: isFRO ? (user?.staffId ?? user?.id) : undefined,
     };
@@ -611,6 +615,17 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     resetForm();
     setShow(false);
+  }
+
+  function getThroughLabel(row: Row): string {
+    if (row.through === "Direct") return "Direct";
+    if (row.through === "Executive") {
+      return row.executiveName || "Executive";
+    }
+
+    // Backward compatibility for older quotations created before `through`
+    // was stored explicitly.
+    return row.executiveName || "Direct";
   }
 
   function taxRateLabel(
@@ -708,268 +723,1250 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     return `${convert(rounded)} Rupees Only`;
   }
 
+  if (isFRO && selectedQuotation) {
+    const quotation = selectedQuotation;
+
+    return (
+      <div className="min-h-full bg-slate-50">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedQuotation(null)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Back to quotations"
+            >
+              <Icon name="arrow_back" size={19} />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold text-slate-800">Quotation</h1>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {quotation.quotationNo} · {formatDate(quotation.date)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2.5">
+            <Card className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Farmer Details
+              </p>
+              <p className="mt-1.5 text-sm font-extrabold text-slate-800">
+                {quotation.farmer || "-"}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">{quotation.village || "-"}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{quotation.phone || "-"}</p>
+            </Card>
+
+            <Card className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Farm Details
+              </p>
+              <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div>
+                  <span className="text-slate-400">Crop</span>
+                  <p className="font-semibold text-slate-700">{quotation.crop || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Acre</span>
+                  <p className="font-semibold text-slate-700">{quotation.acre || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-400">Place</span>
+                  <p className="font-semibold text-slate-700">{quotation.placeOfSupply || "-"}</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Products</p>
+                <p className="mt-0.5 text-xs text-slate-500">{quotation.products?.length || 0} item(s)</p>
+              </div>
+              <p className="text-sm font-extrabold text-brand-700">{formatCurrency(quotation.amount)}</p>
+            </div>
+            <div className="w-full overflow-hidden">
+              <table className="w-full table-fixed border-collapse text-[11px] sm:text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-[9px] uppercase tracking-wide text-slate-500">
+                    <th className="w-[12%] px-2 py-2.5 text-center font-semibold">S.No</th>
+                    <th className="w-[50%] px-2 py-2.5 text-left font-semibold">Product</th>
+                    <th className="w-[15%] px-1 py-2.5 text-center font-semibold">Qty</th>
+                    <th className="w-[23%] px-2 py-2.5 text-right font-semibold">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(quotation.products || []).map((item, index) => {
+                    const withoutTax = Number(item.qty || 0) * Number(item.rate || 0);
+                    const tax = (withoutTax * Number(item.taxPercent || 0)) / 100;
+                    return (
+                      <tr key={item.id}>
+                        <td className="px-2 py-3 text-center text-slate-500">{index + 1}</td>
+                        <td className="min-w-0 px-2 py-3">
+                          <p className="break-words font-semibold leading-4 text-slate-800">{item.productName || item.product || "-"}</p>
+                          <p className="mt-0.5 break-words text-[10px] text-slate-500">{item.pkgsize || "-"}</p>
+                        </td>
+                        <td className="px-1 py-3 text-center font-medium text-slate-700">{item.qty ?? "-"}</td>
+                        <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">{formatCurrency(withoutTax + tax)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Quotation Summary</p>
+            <div className="mt-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Without Tax</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.withoutTax)}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-500">SGST</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.sgst)}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-500">CGST</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.cgst)}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-500">IGST</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.igst)}</span></div>
+              <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2"><span className="font-bold text-slate-800">Grand Total</span><span className="text-base font-extrabold text-brand-700">{formatCurrency(quotation.amount)}</span></div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  const quotationFormView = (
+    <div
+      className={
+        isFRO
+          ? "min-h-full w-full bg-slate-50"
+          : "fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+      }
+    >
+      <div
+        className={
+          isFRO
+            ? "flex min-h-full w-full flex-col bg-white"
+            : "flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        }
+      >
+        {/* MODAL HEADER */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="flex min-w-0 items-center gap-2">
+            {isFRO && (
+              <button
+                type="button"
+                onClick={closeQuotation}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                aria-label="Back to quotations"
+              >
+                <Icon name="arrow_back" size={19} />
+              </button>
+            )}
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">
+                Create Quotation
+              </h2>
+
+              <p className="mt-0.5 text-sm text-slate-500">
+                Create a quotation for farmer
+              </p>
+            </div>
+          </div>
+
+          {!isFRO && (
+            <button
+              type="button"
+              onClick={closeQuotation}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* MODAL BODY */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="space-y-6 p-6">
+            {/* FARMER DETAILS */}
+            <div>
+              <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                Farmer Details
+              </h3>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <Select
+                  label="Farmer"
+                  value={farmerId}
+                  onChange={applyFarmerDetails}
+                  placeholder="Select registered farmer"
+                  options={registeredFarmers.map((item) => ({
+                    value: item.id,
+                    label: `${item.name} - ${item.phone}`,
+                  }))}
+                />
+
+                <Input
+                  label="Mobile Number"
+                  type="tel"
+                  value={phone}
+                  onChange={() => {}}
+                  readOnly
+                />
+
+                <Input
+                  label="Village"
+                  value={village}
+                  onChange={() => {}}
+                  readOnly
+                />
+
+                <Input label="Crop" value={crop} onChange={() => {}} readOnly />
+
+                <Select
+                  label="Place of Supply"
+                  value={placeOfSupply}
+                  onChange={(value) => {
+                    setPlaceOfSupply(value);
+                    applyTaxForSupply(value);
+                  }}
+                  placeholder="Select Place of Supply"
+                  options={[
+                    {
+                      value: "Tamil Nadu",
+                      label: "Tamil Nadu",
+                    },
+                    {
+                      value: "Others",
+                      label: "Others",
+                    },
+                  ]}
+                />
+
+                <Input
+                  label="Acre"
+                  type="number"
+                  value={acre}
+                  onChange={() => {}}
+                  readOnly
+                />
+              </div>
+            </div>
+
+            {/* PRODUCTS */}
+            <div>
+              <div className="mb-3">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                  Add Product
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Select products available in this store stock
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(220px,1.4fr)_180px_100px_140px_100px_150px] md:items-end">
+                  <Select
+                    label="Product"
+                    value={draftProduct.product}
+                    onChange={(value) => {
+                      setDraftProduct((current) => ({
+                        ...current,
+                        product: value,
+                        productName: value,
+                        pkgsize: "",
+                        rate: "",
+                        taxPercent: 0,
+                        sgstPercent: 0,
+                        cgstPercent: 0,
+                        igstPercent: 0,
+                      }));
+                    }}
+                    placeholder={
+                      productNameOptions.length
+                        ? "Select product"
+                        : "No stock products"
+                    }
+                    options={productNameOptions}
+                  />
+
+                  <Select
+                    label="PKG Size"
+                    value={draftProduct.pkgsize}
+                    onChange={(value) => {
+                      const variant = storeProducts.find(
+                        (item) =>
+                          item.name === draftProduct.product &&
+                          item.size === value,
+                      );
+
+                      if (!variant) {
+                        setDraftProduct((current) => ({
+                          ...current,
+                          pkgsize: value,
+                        }));
+                        return;
+                      }
+
+                      const split = getTaxSplit(
+                        placeOfSupply,
+                        Number(variant.taxPercentage || 0),
+                      );
+
+                      setDraftProduct((current) => ({
+                        ...current,
+                        pkgsize: variant.size,
+                        rate: String(variant.sellingPrice || 0),
+                        taxPercent: Number(variant.taxPercentage || 0),
+                        ...split,
+                      }));
+                    }}
+                    placeholder={
+                      draftProduct.product
+                        ? "Select size"
+                        : "Select product first"
+                    }
+                    options={sizeOptions}
+                  />
+
+                  <Input
+                    label="Qty"
+                    type="number"
+                    value={draftProduct.qty}
+                    onChange={(value) =>
+                      setDraftProduct((current) => ({
+                        ...current,
+                        qty: value,
+                      }))
+                    }
+                  />
+
+                  <Input
+                    label="Price"
+                    value={draftProduct.rate}
+                    onChange={() => {}}
+                    placeholder="Auto"
+                    readOnly
+                  />
+
+                  <Input
+                    label="GST %"
+                    value={
+                      draftProduct.taxPercent
+                        ? draftProduct.taxPercent.toFixed(2)
+                        : "0.00"
+                    }
+                    onChange={() => {}}
+                    readOnly
+                  />
+
+                  <Button onClick={addProduct} className="h-10">
+                    <Icon name="add" size={17} />
+                    Add Product
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                      Added Products
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {products.length} item(s) added
+                    </p>
+                  </div>
+                </div>
+
+                <div className="quotation-mobile-products md:hidden space-y-2.5">
+                  {products.length === 0 ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                      No products added yet.
+                    </div>
+                  ) : (
+                    products.map((item, index) => {
+                      const withoutTax =
+                        Number(item.qty || 0) * Number(item.rate || 0);
+                      const tax =
+                        (withoutTax * Number(item.taxPercent || 0)) / 100;
+                      const total = withoutTax + tax;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                Product {index + 1}
+                              </p>
+                              <p className="mt-0.5 truncate text-sm font-extrabold text-slate-800">
+                                {item.productName || item.product}
+                              </p>
+                              <p className="mt-0.5 text-xs text-slate-500">
+                                {item.pkgsize || "-"}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeProduct(item.id)}
+                              className="shrink-0 rounded-lg p-2 text-red-400 hover:bg-red-50 hover:text-red-600"
+                              aria-label={`Remove ${item.productName || item.product}`}
+                            >
+                              <Icon name="delete" size={18} />
+                            </button>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div className="rounded-lg bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] text-slate-400">Qty</p>
+                              <Input
+                                type="number"
+                                value={item.qty}
+                                onChange={(value) =>
+                                  updateAddedProduct(item.id, "qty", value)
+                                }
+                              />
+                            </div>
+                            <div className="rounded-lg bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] text-slate-400">
+                                Price
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-slate-700">
+                                {formatCurrency(Number(item.rate || 0))}
+                              </p>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 px-3 py-2">
+                              <p className="text-[10px] text-slate-400">GST</p>
+                              <p className="mt-1 text-sm font-semibold text-slate-700">
+                                {Number(item.taxPercent || 0).toFixed(2)}%
+                              </p>
+                            </div>
+                            <div className="rounded-lg bg-brand-50 px-3 py-2">
+                              <p className="text-[10px] text-brand-600">
+                                Total
+                              </p>
+                              <p className="mt-1 text-sm font-extrabold text-brand-700">
+                                {formatCurrency(total)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+                            <span className="text-slate-400">Without Tax</span>
+                            <span className="font-semibold text-slate-600">
+                              {formatCurrency(withoutTax)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-400">Tax</span>
+                            <span className="font-semibold text-slate-600">
+                              {formatCurrency(tax)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="quotation-desktop-products hidden md:block overflow-hidden rounded-xl border border-slate-200">
+                  <table className="w-full table-fixed border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <th className="w-[5%] px-2 py-3 text-center">S.No</th>
+                        <th className="w-[20%] px-3 py-3 text-left">Product</th>
+                        <th className="w-[11%] px-2 py-3 text-center">
+                          PKG Size
+                        </th>
+                        <th className="w-[9%] px-2 py-3 text-center">Qty</th>
+                        <th className="w-[12%] px-2 py-3 text-right">Price</th>
+                        <th className="w-[9%] px-2 py-3 text-center">GST %</th>
+                        <th className="w-[12%] px-2 py-3 text-right">
+                          Without Tax
+                        </th>
+                        <th className="w-[12%] px-2 py-3 text-right">Tax</th>
+                        <th className="w-[12%] px-2 py-3 text-right">Total</th>
+                        <th className="w-[5%] px-2 py-3 text-center"></th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {products.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-4 py-10 text-center text-sm text-slate-400"
+                          >
+                            No products added yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        products.map((item, index) => {
+                          const withoutTax =
+                            Number(item.qty || 0) * Number(item.rate || 0);
+                          const tax =
+                            (withoutTax * Number(item.taxPercent || 0)) / 100;
+                          const total = withoutTax + tax;
+
+                          return (
+                            <tr
+                              key={item.id}
+                              className="border-t border-slate-100"
+                            >
+                              <td className="px-2 py-3 text-center">
+                                {index + 1}
+                              </td>
+                              <td className="px-3 py-3 font-semibold text-slate-800">
+                                {item.productName}
+                              </td>
+                              <td className="px-2 py-3 text-center text-slate-600">
+                                {item.pkgsize}
+                              </td>
+                              <td className="px-2 py-3">
+                                <Input
+                                  type="number"
+                                  value={item.qty}
+                                  onChange={(value) =>
+                                    updateAddedProduct(item.id, "qty", value)
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-3 text-right">
+                                {formatCurrency(Number(item.rate || 0))}
+                              </td>
+                              <td className="px-2 py-3 text-center">
+                                {Number(item.taxPercent || 0).toFixed(2)}
+                              </td>
+                              <td className="px-2 py-3 text-right">
+                                {formatCurrency(withoutTax)}
+                              </td>
+                              <td className="px-2 py-3 text-right">
+                                {formatCurrency(tax)}
+                              </td>
+                              <td className="px-2 py-3 text-right font-bold text-slate-800">
+                                {formatCurrency(total)}
+                              </td>
+                              <td className="px-2 py-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeProduct(item.id)}
+                                  className="text-red-400 hover:text-red-600"
+                                >
+                                  <Icon name="delete" size={17} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+              <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                  Remarks
+                </h3>
+
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Enter any additional remarks..."
+                  rows={7}
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+
+              <div>
+                <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">
+                  Quotation Summary
+                </h3>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Subtotal</span>
+                      <span className="font-semibold text-slate-800">
+                        {formatCurrency(subtotal)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Total Tax</span>
+                      <span className="font-semibold text-slate-800">
+                        {formatCurrency(cgstAmount + sgstAmount + igstAmount)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 border-t border-slate-200 pt-3 pl-8">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400">SGST</span>
+                        <span className="text-xs font-medium text-slate-600">
+                          {formatCurrency(sgstAmount)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400">CGST</span>
+                        <span className="text-xs font-medium text-slate-600">
+                          {formatCurrency(cgstAmount)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-400">IGST</span>
+                        <span className="text-xs font-medium text-slate-600">
+                          {formatCurrency(igstAmount)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-300 pt-4">
+                      <span className="font-bold text-slate-800">
+                        Grand Total
+                      </span>
+                      <span className="text-lg font-bold text-emerald-700">
+                        {formatCurrency(grandTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+          <button
+            type="button"
+            onClick={closeQuotation}
+            className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+
+          <Button onClick={save} disabled={!canSave}>
+            Save Quotation
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // FRO quotation details are opened as an in-page view (not a popup).
+
+  // FRO quotation details are opened as an in-page view (not a popup).
+  if (isFRO && selectedQuotation) {
+    const quotation = selectedQuotation;
+
+    return (
+      <div className="min-h-full bg-slate-50">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedQuotation(null)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Back to quotations"
+            >
+              <Icon name="arrow_back" size={19} />
+            </button>
+
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold text-slate-800">Quotation</h1>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {quotation.quotationNo} · {formatDate(quotation.date)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Farmer + farm details */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <Card className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Farmer Details
+              </p>
+              <p className="mt-1.5 text-sm font-extrabold text-slate-800">
+                {quotation.farmer || "-"}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {quotation.village || "-"}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {quotation.phone || "-"}
+              </p>
+            </Card>
+
+            <Card className="min-w-0 p-3 sm:p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Farm Details
+              </p>
+              <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <div>
+                  <span className="text-slate-400">Crop</span>
+                  <p className="font-semibold text-slate-700">
+                    {quotation.crop || "-"}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-slate-400">Acre</span>
+                  <p className="font-semibold text-slate-700">
+                    {quotation.acre || "-"}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-400">Place</span>
+                  <p className="font-semibold text-slate-700">
+                    {quotation.placeOfSupply || "-"}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Products - no horizontal scroll */}
+          <Card className="overflow-hidden p-0">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Products
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {quotation.products?.length || 0} item(s)
+                </p>
+              </div>
+              <p className="text-sm font-extrabold text-brand-700">
+                {formatCurrency(quotation.amount)}
+              </p>
+            </div>
+
+            <div className="w-full overflow-hidden">
+              <table className="w-full table-fixed border-collapse text-[11px] sm:text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-[9px] uppercase tracking-wide text-slate-500">
+                    <th className="w-[12%] px-2 py-2.5 text-center font-semibold">
+                      S.No
+                    </th>
+                    <th className="w-[50%] px-2 py-2.5 text-left font-semibold">
+                      Product
+                    </th>
+                    <th className="w-[15%] px-1 py-2.5 text-center font-semibold">
+                      Qty
+                    </th>
+                    <th className="w-[23%] px-2 py-2.5 text-right font-semibold">
+                      Value
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {(quotation.products || []).map((item, index) => {
+                    const withoutTax =
+                      Number(item.qty || 0) * Number(item.rate || 0);
+                    const tax =
+                      (withoutTax * Number(item.taxPercent || 0)) / 100;
+
+                    return (
+                      <tr key={item.id}>
+                        <td className="px-2 py-3 text-center text-slate-500">
+                          {index + 1}
+                        </td>
+                        <td className="min-w-0 px-2 py-3">
+                          <p className="break-words font-semibold leading-4 text-slate-800">
+                            {item.productName || item.product || "-"}
+                          </p>
+                          <p className="mt-0.5 break-words text-[10px] text-slate-500">
+                            {item.pkgsize || "-"}
+                          </p>
+                        </td>
+                        <td className="px-1 py-3 text-center font-medium text-slate-700">
+                          {item.qty ?? "-"}
+                        </td>
+                        <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                          {formatCurrency(withoutTax + tax)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {(!quotation.products || quotation.products.length === 0) && (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-4 py-8 text-center text-xs text-slate-400"
+                      >
+                        No products found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Summary */}
+          <Card className="p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Quotation Summary
+            </p>
+
+            <div className="mt-3 space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">Without Tax</span>
+                <span className="font-semibold text-slate-700">
+                  {formatCurrency(quotation.withoutTax)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">SGST</span>
+                <span className="font-semibold text-slate-700">
+                  {formatCurrency(quotation.sgst)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">CGST</span>
+                <span className="font-semibold text-slate-700">
+                  {formatCurrency(quotation.cgst)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-slate-500">IGST</span>
+                <span className="font-semibold text-slate-700">
+                  {formatCurrency(quotation.igst)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2">
+                <span className="font-bold text-slate-800">Grand Total</span>
+                <span className="text-base font-extrabold text-brand-700">
+                  {formatCurrency(quotation.amount)}
+                </span>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // FRO create quotation stays inside the existing page shell so the default app header is untouched.
+  if (isFRO && show) {
+    return quotationFormView;
+  }
+
   return (
     <div>
       {/* PAGE HEADER */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Quotation</h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {isFRO && (
+            <button
+              type="button"
+              onClick={() => goStorePage("sales")}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Back"
+            >
+              <Icon name="arrow_back" size={19} />
+            </button>
+          )}
 
-          <p className="mt-1 text-slate-500">
-            Create and manage farmer quotations.
-          </p>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-slate-800">Quotation</h1>
+            {!isFRO && (
+              <p className="mt-1 text-slate-500">
+                Create and manage farmer quotations.
+              </p>
+            )}
+          </div>
         </div>
 
-        <Button onClick={openQuotation}>
-          <Icon name="add" size={18} />
-          New Quotation
-        </Button>
+        {isFRO ? (
+          <button
+            type="button"
+            onClick={() => setShow(true)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm transition hover:bg-brand-700"
+            aria-label="New Quotation"
+            title="New Quotation"
+          >
+            <Icon name="add" size={19} />
+          </button>
+        ) : (
+          <Button onClick={openQuotation}>
+            <Icon name="add" size={18} />
+            New Quotation
+          </Button>
+        )}
       </div>
 
       {/* QUOTATION TABLE / MOBILE LIST */}
-      <Card className="overflow-hidden p-0">
-        {/* Desktop */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1050px] table-fixed border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                <th
-                  rowSpan={2}
-                  className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-                >
-                  S.No
-                </th>
-                <th
-                  rowSpan={2}
-                  className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-                >
-                  Date
-                </th>
-                <th
-                  rowSpan={2}
-                  className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-                >
-                  Quotation No
-                </th>
-                <th
-                  rowSpan={2}
-                  className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-                >
-                  Farmer Details
-                </th>
-                <th
-                  rowSpan={2}
-                  className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
-                >
-                  Without Tax
-                </th>
-                <th
-                  colSpan={2}
-                  className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
-                >
-                  SGST
-                </th>
-                <th
-                  colSpan={2}
-                  className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
-                >
-                  CGST
-                </th>
-                <th
-                  colSpan={2}
-                  className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
-                >
-                  IGST
-                </th>
-                <th
-                  rowSpan={2}
-                  className="w-[11%] px-2 py-2 text-right font-semibold"
-                >
-                  Total
-                </th>
-              </tr>
-              <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
-                <th className="border-r border-slate-200 px-1 py-2 text-center">
-                  %
-                </th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">
-                  Amt
-                </th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">
-                  %
-                </th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">
-                  Amt
-                </th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">
-                  %
-                </th>
-                <th className="border-r border-slate-200 px-1 py-2 text-center">
-                  Amt
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={12}
-                    className="px-4 py-12 text-center text-sm text-slate-400"
-                  >
-                    No quotations found.
-                  </td>
+      {isFRO ? (
+        <Card className="overflow-hidden p-0">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-[11px] sm:text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-[9px] sm:text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="w-[11%] border-r border-slate-200 px-1 py-2.5 text-center font-semibold">
+                    S.No
+                  </th>
+                  <th className="w-[18%] border-r border-slate-200 px-1 py-2.5 text-center font-semibold">
+                    Date
+                  </th>
+                  <th className="w-[49%] border-r border-slate-200 px-2 py-2.5 text-left font-semibold">
+                    Farmer
+                  </th>
+                  <th className="w-[22%] px-1.5 py-2.5 text-right font-semibold">
+                    Value
+                  </th>
                 </tr>
-              ) : (
-                visibleRows.map((r, index) => (
-                  <tr
-                    key={r.id}
-                    onClick={() => setSelectedQuotation(r)}
-                    className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
-                    title="Click to view quotation"
-                  >
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      {index + 1}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">
-                      {formatDate(r.date)}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
-                      {r.quotationNo}
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-center">
-                      <p className="font-semibold text-slate-800">{r.farmer}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {r.village || "-"}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {r.phone || "-"}
-                      </p>
-                    </td>
-                    <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
-                      {formatCurrency(r.withoutTax)}
-                    </td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
-                      {taxRateLabel(r.products, "sgstPercent")}
-                    </td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
-                      {formatCurrency(r.sgst)}
-                    </td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
-                      {taxRateLabel(r.products, "cgstPercent")}
-                    </td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
-                      {formatCurrency(r.cgst)}
-                    </td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
-                      {taxRateLabel(r.products, "igstPercent")}
-                    </td>
-                    <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
-                      {formatCurrency(r.igst)}
-                    </td>
-                    <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                      {formatCurrency(r.amount)}
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {visibleRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-3 py-10 text-center text-xs text-slate-400"
+                    >
+                      No quotations found.
                     </td>
                   </tr>
+                ) : (
+                  visibleRows.map((r, index) => (
+                    <tr
+                      key={r.id}
+                      onClick={() => setSelectedQuotation(r)}
+                      className="cursor-pointer transition hover:bg-brand-50/40"
+                    >
+                      <td className="border-r border-slate-100 px-1 py-2.5 text-center font-medium text-slate-500">
+                        {index + 1}
+                      </td>
+                      <td className="border-r border-slate-100 px-1 py-2.5 text-center whitespace-nowrap text-slate-600">
+                        {formatDate(r.date)}
+                      </td>
+                      <td className="border-r border-slate-100 px-2 py-2.5 text-left min-w-0">
+                        <p className="font-semibold text-slate-800 break-words leading-4">
+                          {r.farmer || "-"}
+                        </p>
+                        <p className="mt-0.5 text-[9px] sm:text-xs text-slate-500 break-words leading-3.5">
+                          {r.village || "-"}
+                        </p>
+                        <p className="mt-0.5 text-[9px] sm:text-xs text-slate-400 break-all leading-3.5">
+                          {r.phone || "-"}
+                        </p>
+                      </td>
+                      <td className="px-1.5 py-2.5 text-right font-bold tabular-nums text-brand-700 whitespace-nowrap">
+                        {formatCurrency(r.amount)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : (
+        <>
+          {/* QUOTATION TABLE / MOBILE LIST */}
+          <Card className="overflow-hidden p-0">
+            {/* Desktop */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[1050px] table-fixed border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                    <th
+                      rowSpan={2}
+                      className="w-[4%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                    >
+                      S.No
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[8%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                    >
+                      Date
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                    >
+                      Quotation No
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[15%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                    >
+                      Farmer Details
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[9%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                    >
+                      Through
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[10%] border-r border-slate-200 px-2 py-2 text-center font-semibold"
+                    >
+                      Without Tax
+                    </th>
+                    <th
+                      colSpan={2}
+                      className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                    >
+                      SGST
+                    </th>
+                    <th
+                      colSpan={2}
+                      className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                    >
+                      CGST
+                    </th>
+                    <th
+                      colSpan={2}
+                      className="w-[12%] border-r border-slate-200 px-1 py-2 text-center font-semibold"
+                    >
+                      IGST
+                    </th>
+                    <th
+                      rowSpan={2}
+                      className="w-[11%] px-2 py-2 text-right font-semibold"
+                    >
+                      Total
+                    </th>
+                  </tr>
+                  <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                    <th className="border-r border-slate-200 px-1 py-2 text-center">
+                      %
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-2 text-center">
+                      Amt
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-2 text-center">
+                      %
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-2 text-center">
+                      Amt
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-2 text-center">
+                      %
+                    </th>
+                    <th className="border-r border-slate-200 px-1 py-2 text-center">
+                      Amt
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={13}
+                        className="px-4 py-12 text-center text-sm text-slate-400"
+                      >
+                        No quotations found.
+                      </td>
+                    </tr>
+                  ) : (
+                    visibleRows.map((r, index) => (
+                      <tr
+                        key={r.id}
+                        onClick={() => setSelectedQuotation(r)}
+                        className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                        title="Click to view quotation"
+                      >
+                        <td className="border-r border-slate-100 px-2 py-3 text-center">
+                          {index + 1}
+                        </td>
+                        <td className="border-r border-slate-100 px-2 py-3 text-center whitespace-nowrap">
+                          {formatDate(r.date)}
+                        </td>
+                        <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-800">
+                          {r.quotationNo}
+                        </td>
+                        <td className="border-r border-slate-100 px-2 py-3 text-center">
+                          <p className="font-semibold text-slate-800">
+                            {r.farmer}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {r.village || "-"}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {r.phone || "-"}
+                          </p>
+                        </td>
+                        <td className="border-r border-slate-100 px-2 py-3 text-center font-semibold text-slate-700">
+                          {getThroughLabel(r)}
+                        </td>
+                        <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
+                          {formatCurrency(r.withoutTax)}
+                        </td>
+                        <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                          {taxRateLabel(r.products, "sgstPercent")}
+                        </td>
+                        <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
+                          {formatCurrency(r.sgst)}
+                        </td>
+                        <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                          {taxRateLabel(r.products, "cgstPercent")}
+                        </td>
+                        <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
+                          {formatCurrency(r.cgst)}
+                        </td>
+                        <td className="border-r border-slate-100 px-1 py-3 text-center tabular-nums text-slate-600">
+                          {taxRateLabel(r.products, "igstPercent")}
+                        </td>
+                        <td className="border-r border-slate-100 px-1 py-3 text-right tabular-nums text-slate-600">
+                          {formatCurrency(r.igst)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                          {formatCurrency(r.amount)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile */}
+            <div className="divide-y divide-slate-100 md:hidden">
+              {visibleRows.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm text-slate-400">
+                  No quotations found.
+                </div>
+              ) : (
+                visibleRows.map((r, index) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setSelectedQuotation(r)}
+                    className="block w-full p-4 text-left transition active:bg-brand-50/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          #{index + 1} · {formatDate(r.date)}
+                        </p>
+                        <p className="mt-1 truncate text-sm font-extrabold text-slate-800">
+                          {r.quotationNo}
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-base font-extrabold text-brand-700">
+                        {formatCurrency(r.amount)}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 rounded-xl bg-slate-50 p-3">
+                      <p className="text-sm font-bold text-slate-800">
+                        {r.farmer}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {r.village || "-"} · {r.phone || "-"}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg border border-slate-100 px-3 py-2">
+                        <p className="text-slate-400">Through</p>
+                        <p className="mt-0.5 font-semibold text-slate-700">
+                          {getThroughLabel(r)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-100 px-3 py-2">
+                        <p className="text-slate-400">Without Tax</p>
+                        <p className="mt-0.5 font-semibold text-slate-700">
+                          {formatCurrency(r.withoutTax)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-slate-100 px-3 py-2">
+                        <p className="text-slate-400">Total Tax</p>
+                        <p className="mt-0.5 font-semibold text-slate-700">
+                          {formatCurrency(r.sgst + r.cgst + r.igst)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                      <span>
+                        SGST {taxRateLabel(r.products, "sgstPercent")}% · CGST{" "}
+                        {taxRateLabel(r.products, "cgstPercent")}% · IGST{" "}
+                        {taxRateLabel(r.products, "igstPercent")}%
+                      </span>
+                      <Icon name="chevron_right" size={17} />
+                    </div>
+                  </button>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile */}
-        <div className="divide-y divide-slate-100 md:hidden">
-          {visibleRows.length === 0 ? (
-            <div className="px-4 py-12 text-center text-sm text-slate-400">
-              No quotations found.
             </div>
-          ) : (
-            visibleRows.map((r, index) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => setSelectedQuotation(r)}
-                className="block w-full p-4 text-left transition active:bg-brand-50/40"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                      #{index + 1} · {formatDate(r.date)}
-                    </p>
-                    <p className="mt-1 truncate text-sm font-extrabold text-slate-800">
-                      {r.quotationNo}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-base font-extrabold text-brand-700">
-                    {formatCurrency(r.amount)}
-                  </p>
-                </div>
-
-                <div className="mt-3 rounded-xl bg-slate-50 p-3">
-                  <p className="text-sm font-bold text-slate-800">{r.farmer}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {r.village || "-"} · {r.phone || "-"}
-                  </p>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg border border-slate-100 px-3 py-2">
-                    <p className="text-slate-400">Without Tax</p>
-                    <p className="mt-0.5 font-semibold text-slate-700">
-                      {formatCurrency(r.withoutTax)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-100 px-3 py-2">
-                    <p className="text-slate-400">Total Tax</p>
-                    <p className="mt-0.5 font-semibold text-slate-700">
-                      {formatCurrency(r.sgst + r.cgst + r.igst)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                  <span>
-                    SGST {taxRateLabel(r.products, "sgstPercent")}% · CGST{" "}
-                    {taxRateLabel(r.products, "cgstPercent")}% · IGST{" "}
-                    {taxRateLabel(r.products, "igstPercent")}%
-                  </span>
-                  <Icon name="chevron_right" size={17} />
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      </Card>
+          </Card>
+        </>
+      )}
 
       {/* =========================
           NEW QUOTATION POPUP
          ========================= */}
       {show &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div
+            className={
+              isFRO
+                ? "fixed inset-x-0 top-[60px] bottom-[60px] z-[10000] flex min-h-0 w-full flex-col bg-white"
+                : "fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]"
+            }
+          >
+            <div
+              className={
+                isFRO
+                  ? "w-full overflow-y-auto bg-white"
+                  : "flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+              }
+            >
               {/* MODAL HEADER */}
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800">
-                    Create Quotation
-                  </h2>
+              <div className="flex min-h-[68px] items-center justify-between border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+                <div className="flex min-w-0 items-center gap-2">
+                  {isFRO && (
+                    <button
+                      type="button"
+                      onClick={closeQuotation}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                      aria-label="Back to quotations"
+                    >
+                      <Icon name="arrow_back" size={19} />
+                    </button>
+                  )}
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800">
+                      Create Quotation
+                    </h2>
 
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    Create a quotation for farmer
-                  </p>
+                    <p className="mt-0.5 text-sm text-slate-500">
+                      Create a quotation for farmer
+                    </p>
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={closeQuotation}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                >
-                  ×
-                </button>
+                {!isFRO && (
+                  <button
+                    type="button"
+                    onClick={closeQuotation}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
 
               {/* MODAL BODY */}
-              <div className="flex-1 overflow-y-auto">
+              <div className={isFRO ? "overflow-visible" : "flex-1 overflow-y-auto"}>
                 <div className="space-y-6 p-6">
                   {/* FARMER DETAILS */}
                   <div>
@@ -1490,7 +2487,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               </div>
 
               {/* MODAL FOOTER */}
-              <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+              <div className={isFRO ? "sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(15,23,42,0.06)] sm:px-6" : "flex items-center justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4"}>
                 <button
                   type="button"
                   onClick={closeQuotation}
@@ -1508,7 +2505,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
           document.body,
         )}
 
-      {selectedQuotation &&
+      {!isFRO && selectedQuotation &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 backdrop-blur-[2px]">
             <style>{`
@@ -1604,9 +2601,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <h2 className="mt-1 text-2xl font-bold text-slate-800">
                     {selectedQuotation.quotationNo}
                   </h2>
-                  <span className="mt-2 inline-block rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-                    {selectedQuotation.status}
-                  </span>
                 </div>
 
                 <button
@@ -1650,9 +2644,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-bold text-brand-700">
                           {selectedQuotation.quotationNo}
                         </span>
-                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
-                          {selectedQuotation.status}
-                        </span>
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
                           {formatDate(selectedQuotation.date)}
                         </span>
@@ -1660,43 +2651,41 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
                         Farmer Details
                       </p>
-                      <p className="mt-1 text-sm font-extrabold text-slate-900">
+                      <p className="mt-1.5 truncate text-xs font-extrabold text-slate-900">
                         {selectedQuotation.farmer}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="truncate text-[11px] text-slate-500">
                         {selectedQuotation.village || "-"}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="truncate text-[11px] text-slate-500">
                         {selectedQuotation.phone || "-"}
                       </p>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
                         Farm Details
                       </p>
-                      <div className="mt-1.5 grid grid-cols-2 gap-2 text-xs">
+                      <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10px]">
                         <div>
                           <span className="text-slate-400">Crop</span>
-                          <p className="font-semibold text-slate-700">
+                          <p className="truncate font-semibold text-slate-700">
                             {selectedQuotation.crop || "-"}
                           </p>
                         </div>
                         <div>
                           <span className="text-slate-400">Acre</span>
-                          <p className="font-semibold text-slate-700">
+                          <p className="truncate font-semibold text-slate-700">
                             {selectedQuotation.acre || "-"}
                           </p>
                         </div>
                         <div className="col-span-2">
-                          <span className="text-slate-400">
-                            Place of Supply
-                          </span>
-                          <p className="font-semibold text-slate-700">
+                          <span className="text-slate-400">Place</span>
+                          <p className="truncate font-semibold text-slate-700">
                             {selectedQuotation.placeOfSupply || "-"}
                           </p>
                         </div>
@@ -1704,70 +2693,66 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                          Products
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {selectedQuotation.products?.length || 0} item(s)
-                        </p>
-                      </div>
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                        Products
+                      </p>
                       <span className="text-sm font-extrabold text-brand-700">
                         {formatCurrency(selectedQuotation.amount)}
                       </span>
                     </div>
-                    <div className="mt-3 space-y-2">
-                      {(selectedQuotation.products || []).map((item, index) => {
-                        const withoutTax =
-                          Number(item.qty || 0) * Number(item.rate || 0);
-                        const tax =
-                          (withoutTax * Number(item.taxPercent || 0)) / 100;
-                        return (
-                          <div
-                            key={item.id}
-                            className="rounded-lg bg-slate-50 p-3"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-[10px] text-slate-400">
-                                  #{index + 1}
-                                </p>
-                                <p className="text-sm font-bold text-slate-800">
-                                  {item.productName || item.product}
-                                </p>
-                                <p className="text-[11px] text-slate-500">
-                                  {item.pkgsize || "-"} · Qty {item.qty}
-                                </p>
-                              </div>
-                              <p className="shrink-0 text-sm font-extrabold text-slate-800">
-                                {formatCurrency(withoutTax + tax)}
-                              </p>
-                            </div>
-                            <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-                              <div>
-                                <span className="text-slate-400">Rate</span>
-                                <p className="font-semibold text-slate-600">
-                                  {formatCurrency(Number(item.rate || 0))}
-                                </p>
-                              </div>
-                              <div>
-                                <span className="text-slate-400">GST</span>
-                                <p className="font-semibold text-slate-600">
-                                  {Number(item.taxPercent || 0).toFixed(2)}%
-                                </p>
-                              </div>
-                              <div>
-                                <span className="text-slate-400">Tax</span>
-                                <p className="font-semibold text-slate-600">
-                                  {formatCurrency(tax)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="overflow-x-auto">
+                      <table className="w-full table-fixed border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-[9px] uppercase tracking-wide text-slate-400">
+                            <th className="w-[12%] px-2 py-2 text-center font-bold">
+                              S.No
+                            </th>
+                            <th className="w-[50%] px-2 py-2 text-left font-bold">
+                              Product
+                            </th>
+                            <th className="w-[16%] px-2 py-2 text-center font-bold">
+                              Qty
+                            </th>
+                            <th className="w-[22%] px-2 py-2 text-right font-bold">
+                              Value
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(selectedQuotation.products || []).map(
+                            (item, index) => {
+                              const withoutTax =
+                                Number(item.qty || 0) * Number(item.rate || 0);
+                              const tax =
+                                (withoutTax * Number(item.taxPercent || 0)) /
+                                100;
+                              return (
+                                <tr key={item.id}>
+                                  <td className="px-2 py-2.5 text-center text-slate-500">
+                                    {index + 1}
+                                  </td>
+                                  <td className="px-2 py-2.5 text-left">
+                                    <p className="truncate font-semibold text-slate-800">
+                                      {item.productName || item.product || "-"}
+                                    </p>
+                                    <p className="truncate text-[10px] text-slate-500">
+                                      {item.pkgsize || "-"}
+                                    </p>
+                                  </td>
+                                  <td className="px-2 py-2.5 text-center font-medium text-slate-700">
+                                    {item.qty ?? "-"}
+                                  </td>
+                                  <td className="px-2 py-2.5 text-right font-bold tabular-nums text-slate-800 whitespace-nowrap">
+                                    {formatCurrency(withoutTax + tax)}
+                                  </td>
+                                </tr>
+                              );
+                            },
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 
@@ -1916,10 +2901,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                           {formatDate(selectedQuotation.date)}
                         </span>
 
-                        <span className="text-slate-500">Status</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedQuotation.status}
-                        </span>
                       </div>
                     </div>
                   </div>

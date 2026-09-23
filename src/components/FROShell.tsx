@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { getStore } from "@/lib/data";
+import { getStore, staff } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon } from "@/components/ui";
@@ -119,6 +119,30 @@ function FROMobileShell({
   children: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [accountView, setAccountView] = useState<"profile" | "store" | "settings" | null>(null);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      return localStorage.getItem("nature-biotic-fro-theme") === "dark";
+    } catch {
+      return false;
+    }
+  });
+
+  const currentStaff =
+    staff.find(
+      (item) =>
+        String(item.id) === String((user as any).staffId ?? (user as any).id) ||
+        item.name.trim().toLowerCase() === user.name.trim().toLowerCase(),
+    ) ?? null;
+
+  const setTheme = (next: boolean) => {
+    setDarkMode(next);
+    try {
+      localStorage.setItem("nature-biotic-fro-theme", next ? "dark" : "light");
+    } catch {}
+  };
 
   const isSalesActive =
     active === "sales" ||
@@ -159,9 +183,9 @@ function FROMobileShell({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex justify-center">
-      <div className="w-full min-h-screen bg-slate-50 relative overflow-x-hidden pb-20 sm:max-w-[520px] sm:shadow-[0_0_40px_rgba(15,23,42,0.08)]">
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100">
+    <div className={`h-[100dvh] flex justify-center overflow-hidden ${darkMode ? "bg-slate-950 text-slate-100" : "bg-slate-50"}`}>
+      <div className={`w-full h-[100dvh] relative overflow-hidden flex flex-col sm:max-w-[520px] sm:shadow-[0_0_40px_rgba(15,23,42,0.08)] ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+        <header className={`shrink-0 z-30 backdrop-blur-md border-b ${darkMode ? "bg-slate-900/95 border-slate-800" : "bg-white/95 border-slate-100"}`}>
           <div className="h-[68px] px-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0 overflow-hidden">
               <img
@@ -183,6 +207,8 @@ function FROMobileShell({
               </p>
             </div>
             <button
+              type="button"
+              onClick={() => setNotificationsOpen(true)}
               className="relative p-2 rounded-xl text-slate-500"
               aria-label="Notifications"
             >
@@ -191,19 +217,327 @@ function FROMobileShell({
             </button>
             <button
               type="button"
+              onClick={() => setProfileOpen(true)}
               className="w-9 h-9 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-sm"
-              aria-label="Open menu"
+              aria-label="Open account menu"
             >
               {user.name.charAt(0)}
             </button>
           </div>
         </header>
 
-        <main className="min-h-[calc(100vh-68px)] px-3 py-3 sm:px-4 sm:py-4 pb-24">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 pb-24">
           <div key={active} className="animate-fade-in">
             {children}
           </div>
         </main>
+
+        {profileOpen && (
+          <div className="fixed inset-0 z-50">
+            <button
+              type="button"
+              aria-label="Close account menu"
+              className="absolute inset-0 bg-slate-900/35 backdrop-blur-[2px]"
+              onClick={() => setProfileOpen(false)}
+            />
+            <div className="absolute left-0 right-0 bottom-0 mx-auto w-full sm:max-w-[520px] rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)]">
+              <div className="px-5 pt-4 pb-3 border-b border-slate-100">
+                <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-lg">
+                    {user.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-extrabold text-slate-800 truncate">{user.name}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">FRO</p>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {store?.name ?? "Store"} · {store?.location?.split(",")[0] ?? ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setProfileOpen(false)}
+                    className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"
+                    aria-label="Close"
+                  >
+                    <Icon name="close" size={21} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setAccountView("profile");
+                  }}
+                  className="w-full flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                    <Icon name="person" size={20} />
+                  </span>
+                  <span className="flex-1">
+                    <span className="block text-sm font-bold text-slate-800">My Profile</span>
+                    <span className="block text-[11px] text-slate-400">View your FRO profile</span>
+                  </span>
+                  <Icon name="chevron_right" size={18} className="text-slate-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setAccountView("store");
+                  }}
+                  className="w-full flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                    <Icon name="store" size={20} />
+                  </span>
+                  <span className="flex-1">
+                    <span className="block text-sm font-bold text-slate-800">My Store</span>
+                    <span className="block text-[11px] text-slate-400">
+                      {store?.name ?? "Store"} · {store?.location?.split(",")[0] ?? ""}
+                    </span>
+                  </span>
+                  <Icon name="chevron_right" size={18} className="text-slate-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setAccountView("settings");
+                  }}
+                  className="w-full flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                    <Icon name="settings" size={20} />
+                  </span>
+                  <span className="flex-1">
+                    <span className="block text-sm font-bold text-slate-800">Settings</span>
+                    <span className="block text-[11px] text-slate-400">App preferences</span>
+                  </span>
+                  <Icon name="chevron_right" size={18} className="text-slate-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    onSignOut();
+                  }}
+                  className="w-full flex items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-left"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                    <Icon name="logout" size={20} />
+                  </span>
+                  <span className="flex-1 text-sm font-bold text-red-600">Sign Out</span>
+                  <Icon name="chevron_right" size={18} className="text-red-300" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {accountView && (
+          <div className="fixed inset-0 z-[60]">
+            <button
+              type="button"
+              aria-label="Close account details"
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
+              onClick={() => setAccountView(null)}
+            />
+            <div className="absolute left-0 right-0 bottom-0 mx-auto w-full sm:max-w-[520px] rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)] max-h-[82vh] overflow-y-auto">
+              <div className="sticky top-0 z-10 bg-white px-5 pt-4 pb-3 border-b border-slate-100">
+                <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200" />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAccountView(null)}
+                    className="p-2 -ml-2 rounded-xl text-slate-500 hover:bg-slate-100"
+                    aria-label="Back"
+                  >
+                    <Icon name="arrow_back" size={21} />
+                  </button>
+                  <h2 className="text-lg font-extrabold text-slate-800">
+                    {accountView === "profile"
+                      ? "My Profile"
+                      : accountView === "store"
+                        ? "My Store"
+                        : "Settings"}
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setAccountView(null)}
+                    className="ml-auto p-2 rounded-xl text-slate-400 hover:bg-slate-100"
+                    aria-label="Close"
+                  >
+                    <Icon name="close" size={21} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4">
+                {accountView === "profile" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 rounded-2xl bg-brand-50 p-4">
+                      <div className="w-12 h-12 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-lg">
+                        {user.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-slate-800 truncate">
+                          {currentStaff?.name || user.name}
+                        </p>
+                        <p className="text-xs font-semibold text-brand-700">
+                          {currentStaff?.designation || "FRO"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {[
+                      ["Name", currentStaff?.name || user.name],
+                      ["Role", currentStaff?.designation || "FRO"],
+                      ["Mobile", currentStaff?.phone || (user as any).phone || (user as any).mobile || "-"],
+                      ["Alternative Mobile", currentStaff?.alternativePhone || "-"],
+                      ["Email", currentStaff?.email || (user as any).email || "-"],
+                      ["Joined Date", currentStaff?.joinedDate || "-"],
+                      ["Address", currentStaff?.address || "-"],
+                      ["Status", currentStaff?.status || "-"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          {label}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-800 break-words">
+                          {String(value || "-")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {accountView === "store" && (
+                  <div className="space-y-3">
+                    {[
+                      ["Store Name", store?.name],
+                      ["Owner", store?.owner],
+                      ["Manager", store?.manager],
+                      ["Location", store?.location],
+                      ["Address", store?.address],
+                      ["Phone", store?.phone],
+                      ["GST", store?.gst],
+                      ["Status", store?.status],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          {label}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-800 break-words">
+                          {String(value || "-")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {accountView === "settings" && (
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <div className="flex items-center gap-3">
+                      <span className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                        <Icon name={darkMode ? "dark_mode" : "light_mode"} size={21} />
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-slate-800">Theme</p>
+                        <p className="text-[11px] text-slate-400">
+                          Choose light or dark mode
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTheme(!darkMode)}
+                        className={`relative h-7 w-12 rounded-full transition ${
+                          darkMode ? "bg-brand-600" : "bg-slate-300"
+                        }`}
+                        aria-label="Toggle theme"
+                      >
+                        <span
+                          className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+                            darkMode ? "left-6" : "left-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="mt-3 flex justify-between text-xs font-semibold text-slate-500">
+                      <span>Light</span>
+                      <span>{darkMode ? "Dark" : "Light"} selected</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {notificationsOpen && (
+          <div className="fixed inset-0 z-[60]">
+            <button
+              type="button"
+              aria-label="Close notifications"
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
+              onClick={() => setNotificationsOpen(false)}
+            />
+            <div className="absolute left-0 right-0 top-0 mx-auto w-full sm:max-w-[520px] rounded-b-[28px] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.2)]">
+              <div className="px-5 pt-5 pb-3 border-b border-slate-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
+                      FRO
+                    </p>
+                    <h2 className="text-lg font-extrabold text-slate-800">
+                      Notifications
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNotificationsOpen(false)}
+                    className="p-2 rounded-xl text-slate-400 hover:bg-slate-100"
+                    aria-label="Close"
+                  >
+                    <Icon name="close" size={21} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-2">
+                <div className="flex gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-3">
+                  <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shrink-0">
+                    <Icon name="payments" size={19} />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">Cash Handover</p>
+                    <p className="text-[11px] text-slate-500">
+                      Check pending cash handover updates.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                  <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shrink-0">
+                    <Icon name="inventory_2" size={19} />
+                  </span>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">Stock Update</p>
+                    <p className="text-[11px] text-slate-500">
+                      Check your latest stock and handover updates.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {moreOpen && (
           <div className="fixed inset-0 z-50">

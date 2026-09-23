@@ -11,6 +11,7 @@ import {
   type Farmer,
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
+import { useAuth } from "@/context/AuthContext";
 import {
   Card,
   Badge,
@@ -56,6 +57,8 @@ export default function StoreFarmerProfile({
   farmerId: string;
 }) {
   const { goStorePage } = useNav();
+  const { user } = useAuth();
+  const isFro = user?.role === "fro";
   const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
   const [, setRefresh] = useState(0);
@@ -78,9 +81,131 @@ export default function StoreFarmerProfile({
     );
   }
 
-  const purchases = getPurchasesByFarmer(farmerId);
-  const payments = getPaymentsByFarmer(farmerId);
+  // Keep the existing Farmer Profile UI/format exactly as-is.
+  // Only connect its data to the live Store Sales Invoice + Receipt records.
+  const readStoreRows = <T,>(key: string): T[] => {
+    try {
+      const raw = localStorage.getItem(`${key}:${_storeId}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const farmerNameKey = String(farmer.name || "")
+    .trim()
+    .toLowerCase();
+  const farmerPhoneKey = String(farmer.phone || "").replace(/\D/g, "");
+
+  const liveInvoices = readStoreRows<any>(
+    "nature-biotic-store-sales-invoices-v2",
+  ).filter((invoice: any) => {
+    const idMatch =
+      String(invoice.farmerId || "").trim() === String(farmerId).trim();
+
+    const nameMatch =
+      String(invoice.partyName || "")
+        .trim()
+        .toLowerCase() === farmerNameKey;
+
+    const phoneMatch =
+      farmerPhoneKey &&
+      String(invoice.farmerPhone || "").replace(/\D/g, "") === farmerPhoneKey;
+
+    return idMatch || nameMatch || phoneMatch;
+  });
+
+  const liveReceipts = readStoreRows<any>(
+    "nature-biotic-store-receipts-v3",
+  ).filter((receipt: any) => {
+    const idMatch =
+      String(receipt.farmerId || "").trim() === String(farmerId).trim();
+
+    const nameMatch =
+      String(receipt.farmerName || "")
+        .trim()
+        .toLowerCase() === farmerNameKey;
+
+    return idMatch || nameMatch;
+  });
+
+  const oldPurchases = getPurchasesByFarmer(farmerId);
+  const oldPayments = getPaymentsByFarmer(farmerId);
+
+  // Convert live invoice rows into the same purchase shape the existing UI expects.
+  const purchases =
+    liveInvoices.length > 0
+      ? liveInvoices.flatMap((invoice: any) => {
+          const products = Array.isArray(invoice.products)
+            ? invoice.products
+            : [];
+
+          if (products.length === 0) {
+            return [
+              {
+                id: invoice.id,
+                invoiceNo: invoice.invoiceNo,
+                date: invoice.date,
+                product: "Invoice",
+                quantity: 0,
+                amount: Number(invoice.amount || 0),
+                paymentStatus: liveReceipts.some(
+                  (receipt: any) =>
+                    String(receipt.invoiceNo || "") ===
+                    String(invoice.invoiceNo || ""),
+                )
+                  ? "Paid"
+                  : "Pending",
+              },
+            ];
+          }
+
+          return products.map((item: any, index: number) => ({
+            id: `${invoice.id}-${index}`,
+            invoiceNo: invoice.invoiceNo,
+            date: invoice.date,
+            product: `${item.product?.name || item.productName || item.product || "Product"}${
+              item.packSize || item.pkgsize
+                ? ` - ${item.packSize || item.pkgsize}`
+                : ""
+            }`,
+            quantity: Number(item.quantity ?? item.qty ?? 0),
+            amount: Number(
+              item.rowTotal ??
+                item.total ??
+                item.withoutTax ??
+                item.sellingPrice ??
+                0,
+            ),
+            paymentStatus: liveReceipts.some(
+              (receipt: any) =>
+                String(receipt.invoiceNo || "") ===
+                String(invoice.invoiceNo || ""),
+            )
+              ? "Paid"
+              : "Pending",
+          }));
+        })
+      : oldPurchases;
+
+  // Existing Invoice tab expects the same purchase-row format, so keep the old UI
+  // untouched and feed it the real invoice-derived rows.
   const invoices = purchases;
+
+  // Existing Payment Receipt tab keeps its old table UI and receives live receipts.
+  const payments: ReturnType<typeof getPaymentsByFarmer> =
+    liveReceipts.length > 0
+      ? (liveReceipts.map((receipt: any) => ({
+          id: receipt.id,
+          farmerId,
+          receiptNo: receipt.receiptNo,
+          date: receipt.date,
+          method: receipt.method,
+          note: receipt.remarks || "",
+          amount: Number(receipt.amount || 0),
+        })) as ReturnType<typeof getPaymentsByFarmer>)
+      : oldPayments;
 
   return (
     <div>
@@ -147,18 +272,37 @@ export default function StoreFarmerProfile({
       </Card>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
+      <div
+        className={
+          isFro
+            ? "grid grid-cols-4 gap-2 mb-5"
+            : "flex gap-2 mb-5 overflow-x-auto pb-1"
+        }
+      >
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-base ${
+            title={isFro ? t.label : undefined}
+            aria-label={isFro ? t.label : undefined}
+            className={`flex items-center justify-center ${
+              isFro
+                ? "w-full h-11 rounded-xl px-2"
+                : "gap-2 px-4 py-2.5 rounded-xl whitespace-nowrap"
+            } text-sm font-semibold transition-base ${
               tab === t.key
                 ? "bg-brand-600 text-white shadow-sm"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <Icon name={t.icon} size={18} fill={tab === t.key} /> {t.label}
+            <Icon name={t.icon} size={17} fill={tab === t.key} />
+            {isFro ? (
+              <span className="text-[8px] font-bold leading-none">
+                {t.key === "product-history" ? "History" : t.label}
+              </span>
+            ) : (
+              t.label
+            )}
           </button>
         ))}
       </div>
@@ -170,12 +314,13 @@ export default function StoreFarmerProfile({
             farmer={farmer}
             purchases={purchases}
             payments={payments}
+            isFro={isFro}
           />
         )}
         {tab === "purchases" && <PurchasesTab purchases={purchases} />}
         {tab === "invoices" && <InvoicesTab invoices={invoices} />}
         {tab === "product-history" && (
-          <ProductHistoryTab purchases={purchases} />
+          <ProductHistoryTab purchases={purchases} isFro={isFro} />
         )}
         {tab === "payments" && <PaymentsTab payments={payments} />}
         {tab === "documents" && <DocumentsTab />}
@@ -197,10 +342,12 @@ function OverviewTab({
   farmer,
   purchases,
   payments,
+  isFro = false,
 }: {
   farmer: ReturnType<typeof getFarmerById>;
   purchases: ReturnType<typeof getPurchasesByFarmer>;
   payments: ReturnType<typeof getPaymentsByFarmer>;
+  isFro?: boolean;
 }) {
   if (!farmer) return null;
   const totalSpent = purchases.reduce((s, p) => s + p.amount, 0);
@@ -248,29 +395,51 @@ function OverviewTab({
   return (
     <div className="grid lg:grid-cols-3 gap-5">
       {/* Stats */}
-      <div className="lg:col-span-1 space-y-4">
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">
+      <div
+        className={
+          isFro
+            ? "lg:col-span-1 grid grid-cols-3 gap-2"
+            : "lg:col-span-1 space-y-4"
+        }
+      >
+        <Card className={isFro ? "p-3 min-w-0" : "p-5"}>
+          <p className="text-[10px] sm:text-sm text-slate-500 font-medium leading-tight">
             Total Purchase Value
           </p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">
+          <p
+            className={
+              isFro
+                ? "text-sm sm:text-base font-bold text-slate-800 mt-1 truncate"
+                : "text-2xl font-bold text-slate-800 mt-1"
+            }
+          >
             {formatCurrency(totalSpent)}
           </p>
         </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">
+        <Card className={isFro ? "p-3 min-w-0" : "p-5"}>
+          <p className="text-[10px] sm:text-sm text-slate-500 font-medium leading-tight">
             Total Payments Made
           </p>
-          <p className="text-2xl font-bold text-brand-600 mt-1">
+          <p
+            className={
+              isFro
+                ? "text-sm sm:text-base font-bold text-brand-600 mt-1 truncate"
+                : "text-2xl font-bold text-brand-600 mt-1"
+            }
+          >
             {formatCurrency(totalPaid)}
           </p>
         </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">
+        <Card className={isFro ? "p-3 min-w-0" : "p-5"}>
+          <p className="text-[10px] sm:text-sm text-slate-500 font-medium leading-tight">
             Outstanding Balance
           </p>
           <p
-            className={`text-2xl font-bold mt-1 ${farmer.outstanding > 0 ? "text-amber-600" : "text-brand-600"}`}
+            className={
+              isFro
+                ? `text-sm sm:text-base font-bold mt-1 truncate ${farmer.outstanding > 0 ? "text-amber-600" : "text-brand-600"}`
+                : `text-2xl font-bold mt-1 ${farmer.outstanding > 0 ? "text-amber-600" : "text-brand-600"}`
+            }
           >
             {farmer.outstanding > 0
               ? formatCurrency(farmer.outstanding)
@@ -457,8 +626,8 @@ function PaymentsTab({
   }
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[600px]">
+      <div className="w-full overflow-hidden">
+        <table className="w-full table-fixed text-[10px]">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <th className="text-left font-semibold px-5 py-3.5">
@@ -523,8 +692,10 @@ function getPeriodStartDate(period: PeriodFilter): Date {
 
 function ProductHistoryTab({
   purchases,
+  isFro = false,
 }: {
   purchases: ReturnType<typeof getPurchasesByFarmer>;
+  isFro?: boolean;
 }) {
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
   const [period, setPeriod] = useState<PeriodFilter>("3-months");
@@ -599,19 +770,25 @@ function ProductHistoryTab({
   return (
     <Card className="overflow-hidden">
       {/* Filter bar */}
-      <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <p className="text-xs text-slate-500 font-medium">
+      <div className="px-3 py-3 border-b border-slate-100 bg-slate-50">
+        <p className="mb-2 text-[10px] text-slate-500 font-medium">
           Showing products supplied — {periodLabel.toLowerCase()}
         </p>
-        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <div className="w-full sm:w-44">
+        <div
+          className={
+            isFro
+              ? "grid grid-cols-2 gap-2 w-full"
+              : "flex flex-col sm:flex-row gap-3 w-full sm:w-auto"
+          }
+        >
+          <div className={isFro ? "min-w-0 w-full" : "w-full sm:w-44"}>
             <Select
               value={period}
               onChange={(v) => setPeriod(v as PeriodFilter)}
               options={periodOptions}
             />
           </div>
-          <div className="w-full sm:w-56">
+          <div className={isFro ? "min-w-0 w-full" : "w-full sm:w-56"}>
             <Select
               value={selectedProduct}
               onChange={setSelectedProduct}
@@ -635,22 +812,60 @@ function ProductHistoryTab({
           }
         />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[600px]">
+        <div className={isFro ? "w-full overflow-hidden" : "overflow-x-auto"}>
+          <table
+            className={
+              isFro
+                ? "w-full table-fixed text-[10px]"
+                : "w-full text-sm min-w-[600px]"
+            }
+          >
             <thead>
-              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                <th className="text-left font-semibold px-5 py-3.5">Product</th>
-                <th className="text-right font-semibold px-5 py-3.5">
-                  Total Quantity
+              <tr className="bg-slate-50 text-slate-500 text-[9px] uppercase tracking-wide">
+                <th
+                  className={
+                    isFro
+                      ? "w-[31%] text-left font-semibold px-2 py-2"
+                      : "text-left font-semibold px-5 py-3.5"
+                  }
+                >
+                  Product
                 </th>
-                <th className="text-center font-semibold px-5 py-3.5">
-                  No. of Times
+                <th
+                  className={
+                    isFro
+                      ? "w-[18%] text-right font-semibold px-1 py-2"
+                      : "text-right font-semibold px-5 py-3.5"
+                  }
+                >
+                  Total Qty
                 </th>
-                <th className="text-left font-semibold px-5 py-3.5">
-                  Last Given On
+                <th
+                  className={
+                    isFro
+                      ? "w-[16%] text-center font-semibold px-1 py-2"
+                      : "text-center font-semibold px-5 py-3.5"
+                  }
+                >
+                  Times
                 </th>
-                <th className="text-right font-semibold px-5 py-3.5">
-                  Total Value
+                <th
+                  className={
+                    isFro
+                      ? "w-[19%] text-left font-semibold px-1 py-2"
+                      : "text-left font-semibold px-5 py-3.5"
+                  }
+                >
+                  Last Date
+                </th>
+                <th
+                  className={
+                    isFro
+                      ? "w-[16%] text-right font-semibold px-1 py-2"
+                      : "text-right font-semibold px-5 py-3.5"
+                  }
+                >
+                  Value
                 </th>
               </tr>
             </thead>
@@ -660,19 +875,49 @@ function ProductHistoryTab({
                   key={row.product}
                   className="hover:bg-slate-50/50 transition-base"
                 >
-                  <td className="px-5 py-3.5 font-semibold text-slate-700">
+                  <td
+                    className={
+                      isFro
+                        ? "px-2 py-2 font-semibold text-slate-700 break-words leading-tight"
+                        : "px-5 py-3.5 font-semibold text-slate-700"
+                    }
+                  >
                     {row.product}
                   </td>
-                  <td className="px-5 py-3.5 text-right text-slate-600">
+                  <td
+                    className={
+                      isFro
+                        ? "px-1 py-2 text-right text-slate-600"
+                        : "px-5 py-3.5 text-right text-slate-600"
+                    }
+                  >
                     {row.totalQuantity}
                   </td>
-                  <td className="px-5 py-3.5 text-center">
+                  <td
+                    className={
+                      isFro
+                        ? "px-1 py-2 text-center"
+                        : "px-5 py-3.5 text-center"
+                    }
+                  >
                     <Badge color="blue">{row.transactions}</Badge>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-600">
+                  <td
+                    className={
+                      isFro
+                        ? "px-1 py-2 text-slate-600 whitespace-nowrap"
+                        : "px-5 py-3.5 text-slate-600"
+                    }
+                  >
                     {formatDate(row.lastDate)}
                   </td>
-                  <td className="px-5 py-3.5 text-right font-bold text-slate-800">
+                  <td
+                    className={
+                      isFro
+                        ? "px-1 py-2 text-right font-bold text-slate-800 whitespace-nowrap"
+                        : "px-5 py-3.5 text-right font-bold text-slate-800"
+                    }
+                  >
                     {formatCurrency(row.totalAmount)}
                   </td>
                 </tr>

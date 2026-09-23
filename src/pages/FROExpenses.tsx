@@ -110,6 +110,9 @@ export default function FROExpenses({ storeId = "default" }: Props) {
   const [showPendingCash, setShowPendingCash] = useState(false);
   const [showRefunds, setShowRefunds] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
+  const [activePage, setActivePage] = useState<
+    "expenses" | "refunds" | "expenseForm" | "refundForm" | null
+  >(null);
 
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("Cash");
@@ -329,451 +332,202 @@ export default function FROExpenses({ storeId = "default" }: Props) {
 
   const save = form === "expense" ? saveExpense : saveRefund;
 
+  const currentFRO = (user?.name ?? "").trim().toLowerCase();
+
+  const expenseHistoryItems = [...expenses]
+    .filter((x) => (x.enteredBy ?? "").trim().toLowerCase() === currentFRO)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .map((x) => ({
+      id: x.id,
+      title: x.expenseNo ? `${x.expenseNo} • ${x.description}` : x.description,
+      sub: `${x.category} • ${x.method}`,
+      amount: x.amount,
+      date: x.date,
+      cls: "text-red-600",
+    }));
+
+  const refundHistoryItems = [...refunds]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .map((x) => ({
+      id: x.id,
+      title: "Refund to Store",
+      sub: `${x.method}${x.remarks ? ` • ${x.remarks}` : ""}`,
+      amount: x.amount,
+      date: x.date,
+      cls: "text-orange-600",
+    }));
+
+  const filteredExpenseHistory = expenseHistoryItems.filter((x) => {
+    const q = historySearch.trim().toLowerCase();
+    return (
+      !q ||
+      x.title.toLowerCase().includes(q) ||
+      x.sub.toLowerCase().includes(q) ||
+      formatExpenseDate(x.date).toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
-            Expenses
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Manage FRO cash, expenses and store refunds.
-          </p>
-        </div>
+      {!activePage && (
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Expenses</h1>
+              <p className="mt-1 text-sm text-slate-500">Manage FRO cash, expenses and store refunds.</p>
+            </div>
+            <button type="button"
+              onClick={() => { setForm("expense"); setActivePage("expenseForm"); }}
+              disabled={balance <= 0} aria-label="Add Expense" title="Add Expense"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40">
+              <Icon name="add" size={21} />
+            </button>
+          </div>
 
-        <button
-          type="button"
-          onClick={() => setForm("expense")}
-          disabled={balance <= 0}
-          aria-label="Add Expense"
-          title="Add Expense"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Icon name="add" size={21} />
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <button
-          type="button"
-          onClick={() => {
-            setHistorySearch("");
-            setShowAllList("expenses");
-          }}
-          className="text-left"
-        >
-          <Summary
-            title="Total Expenses"
-            value={totalExpenses}
-            icon="receipt_long"
-            tone="bg-red-50 text-red-700"
-            clickable
-          />
-        </button>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <button type="button" onClick={() => { setHistorySearch(""); setActivePage("expenses"); }} className="text-left">
+              <Summary title="Total Expenses" value={totalExpenses} icon="receipt_long" tone="bg-red-50 text-red-700" clickable />
+            </button>
+            <Summary title="Amount Received" value={totalReceived} icon="payments" tone="bg-blue-50 text-blue-700" />
+            <Summary title="Amount Balance" value={balance} icon="account_balance_wallet" tone="bg-green-50 text-green-700" />
+            <button type="button" onClick={() => setActivePage("refunds")} className="text-left">
+              <Summary title="Amount Refund" value={totalRefund} icon="undo" tone="bg-orange-50 text-orange-700" clickable />
+            </button>
+          </div>
 
-        <Summary
-          title="Amount Received"
-          value={totalReceived}
-          icon="payments"
-          tone="bg-blue-50 text-blue-700"
-        />
+          {pendingCashRequests.length > 0 && (
+            <button type="button" onClick={() => setShowPendingCash(true)} className="w-full text-left">
+              <Card className="overflow-hidden border-amber-200 transition hover:shadow-md">
+                <div className="flex items-center gap-3 bg-amber-50 px-4 py-4">
+                  <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                    <Icon name="pending_actions" size={22} />
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">{pendingCashRequests.length}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="font-semibold text-slate-900">Cash Received</h2>
+                    <p className="mt-0.5 text-xs text-slate-500">{pendingCashRequests.length} pending cash request{pendingCashRequests.length === 1 ? "" : "s"} from Store</p>
+                  </div>
+                  <Icon name="chevron_right" size={20} />
+                </div>
+              </Card>
+            </button>
+          )}
 
-        <Summary
-          title="Amount Balance"
-          value={balance}
-          icon="account_balance_wallet"
-          tone="bg-green-50 text-green-700"
-        />
-
-        <button
-          type="button"
-          onClick={() => setShowRefunds(true)}
-          className="text-left"
-        >
-          <Summary
-            title="Amount Refund"
-            value={totalRefund}
-            icon="undo"
-            tone="bg-orange-50 text-orange-700"
-            clickable
-          />
-        </button>
-      </div>
-      {pendingCashRequests.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowPendingCash(true)}
-          className="w-full text-left"
-        >
-          <Card className="overflow-hidden border-amber-200 transition hover:shadow-md">
-            <div className="flex items-center gap-3 bg-amber-50 px-4 py-4">
-              <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                <Icon name="pending_actions" size={22} />
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                  {pendingCashRequests.length}
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <h2 className="font-semibold text-slate-900">Cash Received</h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {pendingCashRequests.length} pending cash request
-                  {pendingCashRequests.length === 1 ? "" : "s"} from Store
-                </p>
-              </div>
-              <Icon name="chevron_right" size={20} />
+          <Card className="overflow-hidden">
+            <div className="border-b px-4 py-4 sm:px-5"><h2 className="font-semibold">Cash Summary</h2></div>
+            <div className="grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+              <Row label="Cash Received" value={totalReceived} />
+              <Row label="Less: Total Expenses" value={totalExpenses} negative />
+              <Row label="Less: Cash Refund" value={totalRefund} negative />
+            </div>
+            <div className="flex flex-col gap-1 border-t bg-slate-50 px-4 py-4 sm:flex-row sm:justify-between">
+              <span className="font-semibold text-slate-700">Available Balance</span>
+              <span className="text-lg font-bold text-green-700">{formatCurrency(balance)}</span>
             </div>
           </Card>
-        </button>
+
+          <List title="Cash Refund History" empty="No cash refunds yet." items={refundHistoryItems.slice(0, 5)} totalCount={refundHistoryItems.length} onAll={() => setActivePage("refunds")} />
+        </>
       )}
-      <Card className="overflow-hidden">
-        <div className="border-b px-4 py-4 sm:px-5">
-          <h2 className="font-semibold">Cash Summary</h2>
-        </div>
-        <div className="grid grid-cols-1 divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <Row label="Cash Received" value={totalReceived} />
-          <Row label="Less: Total Expenses" value={totalExpenses} negative />
-          <Row label="Less: Cash Refund" value={totalRefund} negative />
-        </div>
-        <div className="flex flex-col gap-1 border-t bg-slate-50 px-4 py-4 sm:flex-row sm:justify-between">
-          <span className="font-semibold text-slate-700">
-            Available Balance
-          </span>
-          <span className="text-lg font-bold text-green-700">
-            {formatCurrency(balance)}
-          </span>
-        </div>
-      </Card>
-      {(() => {
-        const currentFRO = (user?.name ?? "").trim().toLowerCase();
 
-        const expenseHistoryItems = [...expenses]
-          .filter(
-            (x) => (x.enteredBy ?? "").trim().toLowerCase() === currentFRO,
-          )
-          .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-          .map((x) => ({
-            id: x.id,
-            title: x.expenseNo
-              ? `${x.expenseNo} • ${x.description}`
-              : x.description,
-            sub: `${x.category} • ${x.method}`,
-            amount: x.amount,
-            date: x.date,
-            cls: "text-red-600",
-          }));
-
-        const receivedHistoryItems = [...received]
-          .filter(
-            (x) =>
-              x.status === "accepted" &&
-              (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey,
-          )
-          .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-          .map((x) => ({
-            id: x.id,
-            title: `Received from ${x.receivedFrom}`,
-            sub: x.method,
-            amount: x.amount,
-            date: x.date,
-            cls: "text-blue-600",
-          }));
-
-        const refundHistoryItems = [...refunds]
-          .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-          .map((x) => ({
-            id: x.id,
-            title: "Refund to Store",
-            sub: `${x.method}${x.remarks ? ` • ${x.remarks}` : ""}`,
-            amount: x.amount,
-            date: x.date,
-            cls: "text-orange-600",
-          }));
-
-        const selectedItems =
-          showAllList === "expenses"
-            ? expenseHistoryItems
-            : showAllList === "received"
-              ? receivedHistoryItems
-              : refundHistoryItems;
-
-        const filteredHistoryItems = selectedItems.filter((x) => {
-          const q = historySearch.trim().toLowerCase();
-          return (
-            !q ||
-            x.title.toLowerCase().includes(q) ||
-            x.sub.toLowerCase().includes(q) ||
-            formatExpenseDate(x.date).toLowerCase().includes(q)
-          );
-        });
-
-        const selectedTitle =
-          showAllList === "expenses"
-            ? "All Expenses"
-            : showAllList === "received"
-              ? "All Cash Received"
-              : "All Cash Refunds";
-
-        return (
-          <>
-            <List
-              title="Cash Refund History"
-              empty="No cash refunds yet."
-              items={refundHistoryItems.slice(0, 5)}
-              totalCount={refundHistoryItems.length}
-              onAll={() => setShowRefunds(true)}
-            />
-
-            {showPendingCash && (
-              <Modal
-                title="Pending Cash Received"
-                onClose={() => setShowPendingCash(false)}
-                onSave={() => setShowPendingCash(false)}
-                saveLabel="Close"
-              >
-                <div className="space-y-3">
-                  {pendingCashRequests.map((item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-xl border border-amber-200 bg-amber-50 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-lg font-bold text-slate-900">
-                            {formatCurrency(item.amount)}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            From {item.receivedFrom} • {item.method} •{" "}
-                            {formatExpenseDate(item.date)}
-                          </p>
-                          {item.remarks && (
-                            <p className="mt-1 text-xs text-slate-500">
-                              {item.remarks}
-                            </p>
-                          )}
-                        </div>
-                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">
-                          Pending
-                        </span>
-                      </div>
-
-                      <Button
-                        className="mt-4 w-full"
-                        onClick={() => {
-                          acceptCash(item.id);
-                          setShowPendingCash(false);
-                        }}
-                      >
-                        <Icon name="check" size={17} /> Accept Cash
-                      </Button>
-                    </div>
-                  ))}
+      {activePage === "expenses" && (
+        <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <PageHeader title="Total Expenses" subtitle="Expense History" onBack={() => { setActivePage(null); setHistorySearch(""); }} />
+          <div className="space-y-3 p-4 sm:p-5">
+            <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Search by name, description, method or date..."
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500" />
+            {filteredExpenseHistory.length === 0 ? (
+              <div className="py-10 text-center text-sm text-slate-500">No matching entries found.</div>
+            ) : (
+              <div className="space-y-2">{filteredExpenseHistory.map((x) => (
+                <div key={x.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4">
+                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{x.title}</p>
+                    <p className="truncate text-xs text-slate-500">{x.sub} • {formatExpenseDate(x.date)}</p></div>
+                  <span className={`shrink-0 text-sm font-bold ${x.cls}`}>{formatCurrency(x.amount)}</span>
                 </div>
-              </Modal>
+              ))}</div>
             )}
+          </div>
+        </div>
+      )}
 
-            {showRefunds && (
-              <Modal
-                title="Cash Refunds"
-                onClose={() => setShowRefunds(false)}
-                onSave={() => setShowRefunds(false)}
-                saveLabel="Close"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        Refund History
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        All refunds created by you.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowRefunds(false);
-                        setForm("refund");
-                      }}
-                      disabled={balance <= 0}
-                      aria-label="Create Cash Refund"
-                      title="Create Cash Refund"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Icon name="add" size={19} />
-                    </button>
-                  </div>
+      {activePage === "expenseForm" && (
+        <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <PageHeader title="Add Expense" onBack={() => { reset(); setActivePage("expenses"); }} />
+          <div className="space-y-4 p-4 sm:p-5">
+            <div className="rounded-lg bg-green-50 px-3 py-3 text-sm">Available Balance: <b className="text-green-700">{formatCurrency(balance)}</b></div>
+            <Select label="Expense Category" value={category} onChange={setCategory} options={expenseCategories.map((x) => ({ value: x, label: x }))} required />
+            <Input label="Description" value={description} onChange={setDescription} placeholder="Enter expense description" required />
+            <Input label="Amount" type="number" value={amount} onChange={setAmount} placeholder="Enter amount" required />
+            <Select label="Payment Method" value={method} onChange={setMethod} options={paymentMethods.map((x) => ({ value: x, label: x }))} required />
+            {Number(amount) > balance && <p className="text-sm text-red-600">Expense cannot be greater than the available balance.</p>}
+          </div>
+          <div className="flex justify-end gap-2 border-t bg-slate-50 px-4 py-3">
+            <Button variant="secondary" onClick={() => { reset(); setActivePage("expenses"); }}>Back</Button>
+            <Button onClick={() => { saveExpense(); setActivePage(null); }}>Save Expense</Button>
+          </div>
+        </div>
+      )}
 
-                  {refundHistoryItems.length === 0 ? (
-                    <div className="py-8 text-center text-sm text-slate-500">
-                      No cash refunds yet.
-                    </div>
-                  ) : (
-                    <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
-                      {refundHistoryItems.map((x) => (
-                        <div
-                          key={x.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-800">
-                              Refund to Store
-                            </p>
-                            <p className="truncate text-xs text-slate-500">
-                              {x.sub} • {formatExpenseDate(x.date)}
-                            </p>
-                          </div>
-                          <span className="shrink-0 text-sm font-bold text-orange-600">
-                            {formatCurrency(x.amount)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+      {activePage === "refunds" && (
+        <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
+            <PageHeader title="Amount Refund" subtitle="Refund History" onBack={() => setActivePage(null)} />
+            <button type="button" onClick={() => { setForm("refund"); setActivePage("refundForm"); }} disabled={balance <= 0}
+              aria-label="Create Cash Refund" title="Create Cash Refund"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-40">
+              <Icon name="add" size={21} />
+            </button>
+          </div>
+          <div className="space-y-2 p-4 sm:p-5">
+            {refundHistoryItems.length === 0 ? <div className="py-8 text-center text-sm text-slate-500">No cash refunds yet.</div> :
+              refundHistoryItems.map((x) => (
+                <div key={x.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4">
+                  <div className="min-w-0"><p className="text-sm font-semibold text-slate-800">Refund to Store</p><p className="truncate text-xs text-slate-500">{x.sub} • {formatExpenseDate(x.date)}</p></div>
+                  <span className="shrink-0 text-sm font-bold text-orange-600">{formatCurrency(x.amount)}</span>
                 </div>
-              </Modal>
-            )}
+              ))}
+          </div>
+        </div>
+      )}
 
-            {showAllList && (
-              <Modal
-                title={selectedTitle}
-                onClose={() => setShowAllList(null)}
-                onSave={() => setShowAllList(null)}
-                saveLabel="Close"
-              >
-                <div className="space-y-3">
-                  <input
-                    value={historySearch}
-                    onChange={(e) => setHistorySearch(e.target.value)}
-                    placeholder="Search by name, description, method or date..."
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500"
-                  />
-
-                  <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
-                    {filteredHistoryItems.length === 0 ? (
-                      <div className="py-10 text-center text-sm text-slate-500">
-                        No matching entries found.
-                      </div>
-                    ) : (
-                      filteredHistoryItems.map((x) => (
-                        <div
-                          key={x.id}
-                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-800">
-                              {x.title}
-                            </p>
-                            <p className="truncate text-xs text-slate-500">
-                              {x.sub} • {formatExpenseDate(x.date)}
-                            </p>
-                          </div>
-                          <span
-                            className={`shrink-0 text-sm font-bold ${x.cls}`}
-                          >
-                            {formatCurrency(x.amount)}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </Modal>
-            )}
-          </>
-        );
-      })()}{" "}
-      {form && (
-        <Modal
-          title={form === "expense" ? "Add Expense" : "Cash Refund"}
-          onClose={reset}
-          onSave={save}
-        >
-          {form === "expense" && (
-            <>
-              <div className="mb-4 rounded-lg bg-green-50 px-3 py-3 text-sm">
-                Available Balance:{" "}
-                <b className="text-green-700">{formatCurrency(balance)}</b>
-              </div>
-              <Select
-                label="Expense Category"
-                value={category}
-                onChange={setCategory}
-                options={expenseCategories.map((x) => ({ value: x, label: x }))}
-                required
-              />
-              <Input
-                label="Description"
-                value={description}
-                onChange={setDescription}
-                placeholder="Enter expense description"
-                required
-              />
-              <Input
-                label="Amount"
-                type="number"
-                value={amount}
-                onChange={setAmount}
-                placeholder="Enter amount"
-                required
-              />
-              <Select
-                label="Payment Method"
-                value={method}
-                onChange={setMethod}
-                options={paymentMethods.map((x) => ({ value: x, label: x }))}
-                required
-              />
-              {Number(amount) > balance && (
-                <p className="text-sm text-red-600">
-                  Expense cannot be greater than the available balance.
-                </p>
-              )}
-            </>
-          )}
-
-          {form === "refund" && (
-            <>
-              <div className="mb-4 rounded-lg bg-green-50 px-3 py-3 text-sm">
-                Available Balance:{" "}
-                <b className="text-green-700">{formatCurrency(balance)}</b>
-              </div>
-              <Input
-                label="Refund Amount"
-                type="number"
-                value={amount}
-                onChange={setAmount}
-                placeholder="Enter amount"
-                required
-              />
-              <Select
-                label="Payment Method"
-                value={method}
-                onChange={setMethod}
-                options={paymentMethods.map((x) => ({ value: x, label: x }))}
-                required
-              />
-              <Input
-                label="Refund To"
-                value="Store"
-                onChange={() => {}}
-                readOnly
-              />
-              <Input
-                label="Remarks"
-                value={remarks}
-                onChange={setRemarks}
-                placeholder="Optional"
-              />
-              {Number(amount) > balance && (
-                <p className="text-sm text-red-600">
-                  Refund cannot be greater than the available balance.
-                </p>
-              )}
-            </>
-          )}
-        </Modal>
+      {activePage === "refundForm" && (
+        <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+          <PageHeader title="Cash Refund" onBack={() => { reset(); setActivePage("refunds"); }} />
+          <div className="space-y-4 p-4 sm:p-5">
+            <div className="rounded-lg bg-green-50 px-3 py-3 text-sm">Available Balance: <b className="text-green-700">{formatCurrency(balance)}</b></div>
+            <Input label="Refund Amount" type="number" value={amount} onChange={setAmount} placeholder="Enter amount" required />
+            <Select label="Payment Method" value={method} onChange={setMethod} options={paymentMethods.map((x) => ({ value: x, label: x }))} required />
+            <Input label="Refund To" value="Store" onChange={() => {}} readOnly />
+            <Input label="Remarks" value={remarks} onChange={setRemarks} placeholder="Optional" />
+            {Number(amount) > balance && <p className="text-sm text-red-600">Refund cannot be greater than the available balance.</p>}
+          </div>
+          <div className="flex justify-end gap-2 border-t bg-slate-50 px-4 py-3">
+            <Button variant="secondary" onClick={() => { reset(); setActivePage("refunds"); }}>Back</Button>
+            <Button onClick={() => { saveRefund(); setActivePage(null); }}>Save Refund</Button>
+          </div>
+        </div>
       )}
     </div>
   );
+}
+
+function PageHeader({ title, subtitle, onBack }: { title: string; subtitle?: string; onBack: () => void }) {
+  return (
+    <div className="flex items-center gap-3 border-b px-4 py-4 sm:px-5">
+      <button type="button" onClick={onBack}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+        aria-label="Back">
+        <Icon name="arrow_back" size={21} />
+      </button>
+      <div className="min-w-0">
+        <h2 className="font-semibold text-slate-900">{title}</h2>
+        {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+      </div>
+    </div>
+  );
+
 }
 
 function Summary({
