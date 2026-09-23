@@ -67,6 +67,18 @@ export default function FROStock() {
   const [challans, setChallans] = useState<DeliveryChallan[]>([]);
   const [returnRequests, setReturnRequests] = useState<ReturnRequest[]>([]);
   const [selected, setSelected] = useState<DeliveryChallan | null>(null);
+  const [activeStockView, setActiveStockView] = useState<
+    | null
+    | "total"
+    | "received"
+    | "returned"
+    | "hand"
+    | "pending"
+    | "received-detail"
+    | "total-detail"
+    | "return-detail"
+    | "return-form"
+  >(null);
   const [showReceivedDetails, setShowReceivedDetails] = useState(false);
   const [showHandStockDetails, setShowHandStockDetails] = useState(false);
   const [showTotalStockDetails, setShowTotalStockDetails] = useState(false);
@@ -348,7 +360,7 @@ export default function FROStock() {
     } catch {}
 
     setShowReturnForm(false);
-    setShowReturnedDetails(true);
+    setActiveStockView("returned");
     resetReturnForm();
   }
 
@@ -556,6 +568,582 @@ export default function FROStock() {
     },
   ];
 
+  const closeStockView = () => {
+    setActiveStockView(null);
+    setSelected(null);
+    setSelectedTotalProduct(null);
+    setSelectedReturn(null);
+    setShowReturnForm(false);
+    resetReturnForm();
+  };
+
+  const stockViewHeader = (
+    title: string,
+    subtitle?: string,
+    tone: string = "text-brand-600",
+  ) => (
+    <div className="mb-4 flex items-center gap-3">
+      <button
+        type="button"
+        onClick={closeStockView}
+        aria-label="Back"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm active:scale-95"
+      >
+        <Icon name="arrow_back" size={20} />
+      </button>
+      <div className="min-w-0">
+        <p className={`text-[10px] font-bold uppercase tracking-wider ${tone}`}>
+          FRO STOCK
+        </p>
+        <h1 className="truncate text-xl font-bold text-slate-800">{title}</h1>
+        {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+      </div>
+    </div>
+  );
+
+  if (activeStockView) {
+    if (activeStockView === "received-detail" && selected) {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+          {stockViewHeader(`SD No : ${selected.sdNo}`, formatDate(selected.date), "text-blue-600")}
+          <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
+              <div>
+                <p className="text-slate-400">Date</p>
+                <p className="mt-1 font-semibold text-slate-800">{formatDate(selected.date)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400">Status</p>
+                <p className="mt-1 font-semibold text-slate-800">
+                  {selected.status === "accepted" ? "Accepted" : "Pending"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+              <div className="grid grid-cols-[28px_1fr_48px_78px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <span>S.No</span>
+                <span>Product-Size</span>
+                <span className="text-right">Qty</span>
+                <span className="text-right">Value</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {selected.items.map((item, index) => {
+                  const qty = Number(item.qty || 0);
+                  const value = qty * Number(item.unitValue || 0);
+                  return (
+                    <div
+                      key={`${selected.id}-${index}`}
+                      className="grid grid-cols-[28px_1fr_48px_78px] items-center gap-2 px-2.5 py-3"
+                    >
+                      <span className="text-[11px] text-slate-400">{index + 1}</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-slate-800">{item.product}</p>
+                        <p className="mt-0.5 truncate text-[10px] text-slate-500">{item.packSize || "-"}</p>
+                      </div>
+                      <span className="text-right text-xs font-bold text-slate-800">{qty}</span>
+                      <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(value)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-3">
+                <span className="text-xs font-semibold text-slate-600">Total</span>
+                <span className="text-sm font-bold text-slate-900">
+                  {formatCurrency(
+                    selected.items.reduce(
+                      (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+                      0,
+                    ),
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStockView === "total-detail" && selectedTotalProduct) {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+          {stockViewHeader(
+            selectedTotalProduct.split("|")[0],
+            selectedTotalProduct.split("|")[1] || "-",
+            "text-emerald-600",
+          )}
+          <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <span>S.No</span>
+                <span>Date</span>
+                <span className="text-right">Qty</span>
+                <span className="text-right">Value</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {selectedTotalProductRows.length === 0 ? (
+                  <div className="px-3 py-10 text-center text-xs text-slate-500">
+                    No stock movement for this filter.
+                  </div>
+                ) : (
+                  selectedTotalProductRows.map((item, index) => (
+                    <div
+                      key={`${item.id}-${index}`}
+                      className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3"
+                    >
+                      <span className="text-[11px] text-slate-400">{index + 1}</span>
+                      <span className="text-xs font-medium text-slate-700">{formatDate(item.date)}</span>
+                      <span className="text-right text-xs font-bold text-slate-800">{item.qty}</span>
+                      <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(item.value)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStockView === "return-detail" && selectedReturn) {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+          {stockViewHeader(selectedReturn.rcNo, formatDate(selectedReturn.date), "text-amber-600")}
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-slate-400">Date</p>
+                  <p className="mt-1 font-semibold text-slate-800">{formatDate(selectedReturn.date)}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Status</p>
+                  <p className="mt-1 font-semibold capitalize text-slate-800">{selectedReturn.status}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-slate-400">Reason</p>
+                  <p className="mt-1 font-semibold text-slate-800">{selectedReturn.reason}</p>
+                </div>
+              </div>
+            </div>
+            {selectedReturn.items.map((item, index) => (
+              <div key={index} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-800">{item.product}</p>
+                    <p className="mt-1 text-xs text-slate-500">{item.packSize || "-"}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-bold text-slate-800">
+                    {formatCurrency(Number(item.qty || 0) * Number(item.unitValue || 0))}
+                  </p>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-slate-400">Qty</p><p className="mt-0.5 font-semibold">{item.qty}</p></div>
+                  <div><p className="text-slate-400">Batch</p><p className="mt-0.5 font-semibold truncate">{item.batchNo || "-"}</p></div>
+                  <div><p className="text-slate-400">Expiry</p><p className="mt-0.5 font-semibold">{item.expiryDate ? formatDate(item.expiryDate) : "-"}</p></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStockView === "return-form") {
+      const selectedReturnStock = returnStockOptions.find(
+        (item) =>
+          `${item.product}|${item.packSize}|${item.batchNo}` === returnProductId,
+      );
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+          {stockViewHeader("Return Stock", "Send stock return request to the Store", "text-amber-600")}
+          <div className="space-y-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Stock Return No</label>
+              <input
+                value={nextStockReturnNo}
+                readOnly
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Product / Size / Batch</label>
+              <select
+                value={returnProductId}
+                onChange={(e) => setReturnProductId(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
+              >
+                <option value="">Select stock</option>
+                {returnStockOptions.map((item) => {
+                  const value = `${item.product}|${item.packSize}|${item.batchNo}`;
+                  return (
+                    <option key={value} value={value}>
+                      {item.product} • {item.packSize} • {item.batchNo || "-"} • Available {item.qty}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Return Quantity</label>
+              <input
+                type="number"
+                min="1"
+                value={returnQty}
+                onChange={(e) => setReturnQty(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
+                placeholder="Enter quantity"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Reason</label>
+              <input
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
+                placeholder="e.g. Unsold stock"
+              />
+            </div>
+            <div className="flex gap-3 border-t border-slate-200 pt-3">
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => {
+                  resetReturnForm();
+                  setActiveStockView("returned");
+                }}
+              >
+                Close
+              </Button>
+              <Button
+                className="w-full"
+                disabled={
+                  !returnProductId ||
+                  Number(returnQty || 0) <= 0 ||
+                  Number(returnQty || 0) > (selectedReturnStock?.qty || 0)
+                }
+                onClick={() => {
+                  createReturnRequest();
+                  setActiveStockView("returned");
+                }}
+              >
+                Send Return
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStockView === "pending") {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+          {stockViewHeader("Pending Stock Received", "Stock waiting for your acceptance", "text-orange-600")}
+          <div className="space-y-3">
+            {pendingChallans.length === 0 ? (
+              <Card className="p-8 text-center text-sm text-slate-500">
+                No pending stock deliveries.
+              </Card>
+            ) : (
+              pendingChallans.map((challan) => {
+                const qty = challan.items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+                const value = challan.items.reduce(
+                  (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+                  0,
+                );
+                return (
+                  <Card key={challan.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">SD No : {challan.sdNo}</p>
+                        <p className="mt-1 text-xs text-slate-500">{formatDate(challan.date)} • Qty {qty}</p>
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">{formatCurrency(value)}</p>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {challan.items.map((item, index) => (
+                        <div key={`${challan.id}-${index}`} className="rounded-xl bg-slate-50 p-3">
+                          <p className="text-sm font-semibold text-slate-800">{item.product}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {item.packSize || "-"} • Qty {item.qty || 0} • Batch {item.batchNo || "-"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <Button className="mt-4 w-full" onClick={() => acceptChallan(challan)}>
+                      Accept Stock
+                    </Button>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeStockView === "hand") {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+          {stockViewHeader("Hand Stock", "Current stock in your hand", "text-purple-600")}
+          <Card className="overflow-hidden p-0">
+            {handStockRows.length === 0 ? (
+              <div className="px-4 py-12 text-center text-sm text-slate-500">No hand stock available.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_54px_82px] items-center gap-2 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <span>Product-Size</span><span className="text-right">Qty</span><span className="text-right">Value</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {handStockRows.map((row) => (
+                    <div key={`${row.product}|${row.packSize}`} className="grid grid-cols-[1fr_54px_82px] items-center gap-2 px-3 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-slate-800">{row.product}</p>
+                        <p className="mt-0.5 truncate text-[10px] text-slate-500">{row.packSize || "-"}</p>
+                      </div>
+                      <span className="text-right text-xs font-bold text-slate-800">{row.qty}</span>
+                      <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(row.value)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-3">
+                  <span className="text-xs font-semibold text-slate-600">Total</span>
+                  <span className="text-sm font-bold text-slate-900">{handStockQty}</span>
+                </div>
+              </>
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    if (activeStockView === "returned") {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={closeStockView}
+                aria-label="Back"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm active:scale-95"
+              >
+                <Icon name="arrow_back" size={20} />
+              </button>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
+                  FRO STOCK
+                </p>
+                <h1 className="truncate text-xl font-bold text-slate-800">Stock Returned</h1>
+                <p className="mt-0.5 text-xs text-slate-500">Return history</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Return Stock"
+              onClick={() => {
+                resetReturnForm();
+                setActiveStockView("return-form");
+              }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm active:scale-95"
+            >
+              <Icon name="add" size={19} />
+            </button>
+          </div>
+          <div className="mb-3 flex items-center justify-end gap-1">
+            {(["today", "monthly", "custom"] as const).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setReturnedFilter(filter)}
+                className={`rounded-md px-2.5 py-1.5 text-[10px] font-semibold ${
+                  returnedFilter === filter ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {filter === "today" ? "Today" : filter === "monthly" ? "Monthly" : "Custom"}
+              </button>
+            ))}
+            {returnedFilter === "custom" && (
+              <input
+                type="date"
+                value={returnesdustomDate}
+                onChange={(e) => setReturnesdustomDate(e.target.value)}
+                className="w-[112px] rounded-md border border-slate-200 px-1.5 py-1.5 text-[10px]"
+              />
+            )}
+          </div>
+          <Card className="overflow-hidden p-0">
+            {filteredReturnedRequests.length === 0 ? (
+              <div className="px-4 py-10 text-center text-sm text-slate-500">No stock return details yet.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <span>Date</span><span>SR No</span><span className="text-right">Value</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {filteredReturnedRequests
+                    .slice()
+                    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+                    .map((request) => {
+                      const value = request.items.reduce(
+                        (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+                        0,
+                      );
+                      return (
+                        <button
+                          type="button"
+                          key={request.id}
+                          onClick={() => {
+                            setSelectedReturn(request);
+                            setActiveStockView("return-detail");
+                          }}
+                          className="grid w-full grid-cols-[1fr_1fr_auto] items-center gap-2 px-3 py-3 text-left active:bg-slate-50"
+                        >
+                          <span className="text-xs font-medium text-slate-700">{formatDate(request.date)}</span>
+                          <span className="truncate text-xs font-semibold text-slate-800">{request.rcNo}</span>
+                          <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(value)}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </>
+            )}
+          </Card>
+        </div>
+      );
+    }
+
+    if (activeStockView === "total") {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+          {stockViewHeader("Total Stock", "Product wise stock", "text-emerald-600")}
+          <div className="mb-3 flex w-full overflow-hidden rounded-lg bg-slate-100 p-1">
+            {[
+              ["today", "Today"],
+              ["monthly", "Monthly"],
+              ["custom", "Custom"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTotalStockFilter(value as "today" | "monthly" | "custom")}
+                className={`flex-1 rounded-md px-2 py-2 text-[11px] font-semibold ${
+                  totalStockFilter === value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {totalStockFilter === "custom" && (
+            <input
+              type="date"
+              value={totalStockCustomDate}
+              onChange={(e) => setTotalStockCustomDate(e.target.value)}
+              className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none"
+            />
+          )}
+          <Card className="overflow-hidden p-0">
+            <div className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <span>S.No</span><span>Product-Size</span><span className="text-right">Qty</span><span className="text-right">Value</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {totalStockProductRows.length === 0 ? (
+                <div className="px-3 py-10 text-center text-xs text-slate-500">No total stock available.</div>
+              ) : (
+                totalStockProductRows.map((row, index) => (
+                  <button
+                    type="button"
+                    key={`${row.product}|${row.packSize}`}
+                    onClick={() => {
+                      setSelectedTotalProduct(`${row.product}|${row.packSize}`);
+                      setActiveStockView("total-detail");
+                    }}
+                    className="grid w-full grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3 text-left active:bg-slate-50"
+                  >
+                    <span className="text-[11px] text-slate-400">{index + 1}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold text-slate-800">{row.product}</span>
+                      <span className="mt-0.5 block truncate text-[10px] text-slate-500">{row.packSize || "-"}</span>
+                    </span>
+                    <span className="text-right text-xs font-bold text-slate-800">{row.qty}</span>
+                    <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(row.value)}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    if (activeStockView === "received") {
+      return (
+        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+          {stockViewHeader("Stock Received", "Delivery challan details", "text-blue-600")}
+          <div className="mb-3 flex items-center justify-end gap-1">
+            {(["today", "monthly", "custom"] as const).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setReceivedFilter(filter)}
+                className={`rounded-md px-2.5 py-1.5 text-[10px] font-semibold ${
+                  receivedFilter === filter ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                {filter === "today" ? "Today" : filter === "monthly" ? "Monthly" : "Custom"}
+              </button>
+            ))}
+            {receivedFilter === "custom" && (
+              <input
+                type="date"
+                value={receivesdustomDate}
+                onChange={(e) => setReceivesdustomDate(e.target.value)}
+                className="w-[112px] rounded-md border border-slate-200 px-1.5 py-1.5 text-[10px]"
+              />
+            )}
+          </div>
+          <Card className="overflow-hidden p-0">
+            {filteredReceivedItems.length === 0 ? (
+              <div className="px-4 py-10 text-center text-sm text-slate-500">No stock received for this filter.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <span>Date</span><span>SD No</span><span className="text-right">Value</span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {Array.from(new Map(filteredReceivedItems.map((item) => [item.sdNo, item])).keys()).map((sdNo) => {
+                    const challan = myChallans.find((c) => c.sdNo === sdNo);
+                    if (!challan) return null;
+                    const challanValue = challan.items.reduce(
+                      (sum, item) => sum + Number(item.qty || 0) * Number(item.unitValue || 0),
+                      0,
+                    );
+                    return (
+                      <button
+                        type="button"
+                        key={challan.id}
+                        onClick={() => {
+                          setSelected(challan);
+                          setActiveStockView("received-detail");
+                        }}
+                        className="grid w-full grid-cols-[1fr_1fr_auto] items-center gap-2 px-3 py-3 text-left active:bg-slate-50"
+                      >
+                        <span className="text-xs font-medium text-slate-700">{formatDate(challan.date)}</span>
+                        <span className="truncate text-xs font-semibold text-slate-800">{challan.sdNo}</span>
+                        <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(challanValue)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </Card>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
       <div className="grid grid-cols-2 gap-3">
@@ -564,13 +1152,13 @@ export default function FROStock() {
             key={card.label}
             onClick={
               card.label === "Total Stock"
-                ? () => setShowTotalStockDetails(true)
+                ? () => setActiveStockView("total")
                 : card.label === "Stock Received"
-                  ? () => setShowReceivedDetails(true)
+                  ? () => setActiveStockView("received")
                   : card.label === "Stock Returned"
-                    ? () => setShowReturnedDetails(true)
+                    ? () => setActiveStockView("returned")
                     : card.label === "Hand Stock"
-                      ? () => setShowHandStockDetails(true)
+                      ? () => setActiveStockView("hand")
                       : undefined
             }
             className={`flex h-[128px] min-h-[128px] flex-col items-start justify-between rounded-[22px] border border-slate-100 bg-white p-4 text-left shadow-[0_8px_28px_rgba(15,23,42,0.06)] ${
@@ -596,7 +1184,7 @@ export default function FROStock() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShowPendingDetails(true);
+                      setActiveStockView("pending");
                     }}
                     className="flex items-center gap-1 rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-600 ring-1 ring-orange-200 active:scale-95"
                   >
@@ -609,7 +1197,7 @@ export default function FROStock() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowReturnedDetails(true);
+                    setActiveStockView("returned");
                   }}
                   className="flex items-center gap-1 rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold text-orange-600 ring-1 ring-orange-200 active:scale-95"
                 >
@@ -1020,7 +1608,7 @@ export default function FROStock() {
                     resetReturnForm();
                   }}
                 >
-                  Cancel
+                  Close
                 </Button>
                 <Button
                   className="w-full"

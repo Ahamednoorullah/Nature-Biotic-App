@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts, getStore, type Product } from "@/lib/data";
@@ -132,6 +133,7 @@ function dateDisplay(value: string) {
 
 export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   const { user } = useAuth();
+  const { goStorePage } = useNav();
   const isFRO = user?.role === "fro";
   const froName = user?.name?.trim() || "";
   const storageKey = `${STORAGE_KEY}:${storeId}`;
@@ -527,25 +529,61 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     throw new Error("Function not implemented.");
   }
 
+
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
-            Sales Return
-          </h1>
-          <p className="mt-1 text-slate-500">
-            Direct and executive sales return records.
-          </p>
+      {isFRO ? (
+        !showCreate && !selectedReturn ? (
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => goStorePage("sales")}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                aria-label="Back"
+              >
+                <Icon name="arrow_back" size={20} />
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-slate-800">Sales Return</h1>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Direct and executive sales return records.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetForm();
+                setShowCreate(true);
+                setSelectedReturn(null);
+              }}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white shadow-sm hover:bg-brand-700"
+              aria-label="Create Sales Return"
+            >
+              <Icon name="add" size={20} />
+            </button>
+          </div>
+        ) : null
+      ) : (
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-800">
+              Sales Return
+            </h1>
+            <p className="mt-1 text-slate-500">
+              Direct and executive sales return records.
+            </p>
+          </div>
+          <Button onClick={() => setShowCreate(true)}>
+            <Icon name="add" size={18} />
+            Create Sales Return
+          </Button>
         </div>
+      )}
 
-        <Button onClick={() => setShowCreate(true)}>
-          <Icon name="add" size={18} />
-          Create Sales Return
-        </Button>
-      </div>
-
-      <Card className="overflow-hidden p-0">
+      <Card className={`${isFRO ? "hidden" : "block"} overflow-hidden p-0`}>
         <table className="hidden w-full table-fixed border-collapse text-sm md:table">
           <thead>
             <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
@@ -659,7 +697,9 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                         : "bg-blue-50 text-blue-700"
                     }`}
                   >
-                    {row.through}
+                    {row.through === "Executive"
+                      ? row.executiveName || "Executive"
+                      : row.through}
                   </span>
                 </td>
                 <td className="truncate border-r border-slate-100 px-2 py-3 text-center">
@@ -701,95 +741,115 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
         </table>
       </Card>
 
-      {/* Mobile list */}
-      <div className="space-y-3 md:hidden">
-        {visibleRows.length === 0 ? (
-          <Card className="p-6 text-center text-sm text-slate-500">
-            No sales returns found.
-          </Card>
-        ) : (
-          visibleRows.map((row, index) => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => setSelectedReturn(row)}
-              className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm"
-            >
+      {/* FRO list: same compact table pattern as Quotation / Sales Invoice */}
+      {isFRO ? (
+        <Card className="overflow-hidden p-0">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-[9px] uppercase tracking-wider text-slate-500">
+                  <th className="w-[12%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold">S.No</th>
+                  <th className="w-[20%] border-r border-slate-200 px-1.5 py-2.5 text-center font-semibold">Date</th>
+                  <th className="w-[48%] border-r border-slate-200 px-2 py-2.5 text-left font-semibold">Farmer Details</th>
+                  <th className="w-[20%] px-2 py-2.5 text-right font-semibold">Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {visibleRows.length === 0 ? (
+                  <tr><td colSpan={4} className="px-3 py-10 text-center text-xs text-slate-400">No sales returns found.</td></tr>
+                ) : visibleRows.map((row, index) => (
+                  <tr key={row.id} onClick={() => setSelectedReturn(row)} className="cursor-pointer transition hover:bg-brand-50/40">
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center font-medium text-slate-500">{index + 1}</td>
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center align-top whitespace-nowrap text-slate-600">
+                      {dateDisplay(row.date)}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-left align-top">
+                      <p className="truncate font-semibold text-slate-800">{row.partyName || "-"}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-slate-500">{row.farmerVillage || "-"}</p>
+                      <p className="mt-0.5 truncate text-[9px] text-slate-400">{row.farmerPhone || "-"}</p>
+                    </td>
+                    <td className="px-2 py-3 text-right align-top font-bold tabular-nums text-emerald-700">{formatCurrency(row.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : (
+        <div className="space-y-3 md:hidden">
+          {visibleRows.length === 0 ? <Card className="p-6 text-center text-sm text-slate-500">No sales returns found.</Card> : visibleRows.map((row, index) => (
+            <button key={row.id} type="button" onClick={() => setSelectedReturn(row)} className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Return #{index + 1}
-                  </p>
-                  <p className="mt-1 text-base font-bold text-slate-800">
-                    {row.returnNo}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {dateDisplay(row.date)}
-                  </p>
-                </div>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    row.through === "Direct"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-blue-50 text-blue-700"
-                  }`}
-                >
-                  {row.through === "Executive"
-                    ? row.executiveName || "Executive"
-                    : "Direct"}
-                </span>
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Return #{index + 1}</p><p className="mt-1 text-base font-bold text-slate-800">{row.returnNo}</p><p className="mt-1 text-xs text-slate-500">{dateDisplay(row.date)}</p></div>
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{row.invoiceNo}</span>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
-                <div>
-                  <p className="text-[11px] text-slate-400">Farmer</p>
-                  <p className="mt-0.5 truncate text-sm font-semibold text-slate-700">
-                    {row.partyName}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[11px] text-slate-400">Total</p>
-                  <p className="mt-0.5 text-sm font-bold text-slate-800">
-                    {formatCurrency(row.total)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] text-slate-400">Without Tax</p>
-                  <p className="mt-0.5 text-sm text-slate-700">
-                    {formatCurrency(row.withoutTax)}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[11px] text-slate-400">Tax</p>
-                  <p className="mt-0.5 text-sm text-slate-700">
-                    {formatCurrency(row.sgst + row.cgst + row.igst)}
-                  </p>
-                </div>
+              <div className="mt-4 grid grid-cols-2 gap-2.5 border-t border-slate-100 pt-3">
+                <div className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] text-slate-400">Farmer</p><p className="mt-1 truncate text-sm font-semibold text-slate-700">{row.partyName || "-"}</p></div>
+                <div className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] text-slate-400">Farm</p><p className="mt-1 truncate text-sm font-semibold text-slate-700">{row.farmerCrop || "-"}</p></div>
+                <div className="rounded-xl bg-slate-50 p-3"><p className="text-[11px] text-slate-400">Without Tax</p><p className="mt-1 text-sm font-semibold text-slate-700">{formatCurrency(row.withoutTax)}</p></div>
+                <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[11px] text-emerald-600">Total</p><p className="mt-1 text-sm font-bold text-emerald-700">{formatCurrency(row.total)}</p></div>
               </div>
             </button>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {showCreate &&
         createPortal(
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">
-                    Create Sales Return
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Create a direct or executive sales return.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeForm}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
-                >
-                  <Icon name="close" size={20} />
-                </button>
+          <div
+            className={`fixed z-[10000] ${
+              isFRO
+                ? "inset-x-0 bottom-0 top-14 flex overflow-hidden bg-white"
+                : "inset-0 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+            }`}
+          >
+            <div
+              className={`flex flex-col overflow-hidden border-slate-200 bg-white ${
+                isFRO
+                  ? "h-full w-full border-0"
+                  : "max-h-[92vh] w-[94vw] max-w-7xl rounded-2xl border shadow-2xl"
+              }`}
+            >
+              <div className={`flex items-center gap-3 border-b border-slate-200 px-4 py-4 sm:px-6 ${isFRO ? "" : "justify-between"}`}>
+                {isFRO ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={closeForm}
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                      aria-label="Back"
+                    >
+                      <Icon name="arrow_back" size={20} />
+                    </button>
+                    <div className="min-w-0">
+                      <h2 className="text-xl font-bold text-slate-800">
+                        Create Sales Return
+                      </h2>
+                      <p className="mt-0.5 text-sm text-slate-500">
+                        Create a direct or executive sales return.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-800">
+                        Create Sales Return
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Create a direct or executive sales return.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeForm}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                      aria-label="Close"
+                    >
+                      <Icon name="close" size={20} />
+                    </button>
+                  </>
+                )}
               </div>
 
               <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-6">
@@ -1190,7 +1250,13 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
       {selectedReturn &&
         createPortal(
-          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+          <div
+            className={`fixed z-[10020] ${
+              isFRO
+                ? "inset-x-0 bottom-0 top-14 flex overflow-hidden bg-white"
+                : "inset-0 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+            }`}
+          >
             <style>{`
               @media print {
                 @page { size: A4 landscape; margin: 6mm; }
@@ -1222,201 +1288,80 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
             {/* FRO mobile-friendly view: use a compact card layout like the quotation view.
                 The formal invoice/print layout below remains unchanged for Store Admin. */}
             {isFRO && (
-              <div className="flex max-h-[94vh] w-[calc(100vw-1rem)] max-w-[520px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:w-[520px]">
-                <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-brand-700">
-                      Sales Return
-                    </p>
-                    <h2 className="mt-1 text-lg font-bold text-slate-800">
-                      {selectedReturn.returnNo}
-                    </h2>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Against Invoice: {selectedReturn.invoiceNo}
-                    </p>
-                  </div>
+              <div
+                className={`flex flex-col overflow-hidden bg-white ${
+                  isFRO
+                    ? "h-full w-full"
+                    : "max-h-[94vh] w-[calc(100vw-1rem)] max-w-[560px] rounded-2xl shadow-2xl sm:w-[560px]"
+                }`}
+              >
+                <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
                   <button
                     type="button"
                     onClick={() => setSelectedReturn(null)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    aria-label="Back"
                   >
-                    <Icon name="close" size={19} />
+                    <Icon name="arrow_back" size={19} />
                   </button>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-brand-700">
+                      Sales Return
+                    </p>
+                    <h2 className="mt-0.5 truncate text-lg font-bold text-slate-800">
+                      {selectedReturn.returnNo}
+                    </h2>
+                    <p className="mt-0.5 text-[10px] text-slate-400">
+                      {dateDisplay(selectedReturn.date)}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-3">
                   <div className="space-y-3">
                     <section className="rounded-xl border border-slate-200 p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            Farmer
-                          </p>
-                          <p className="mt-1 text-sm font-bold text-slate-800">
-                            {selectedReturn.partyName}
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {selectedReturn.farmerVillage || "-"}
-                          </p>
-                          <p className="text-[11px] text-slate-500">
-                            {selectedReturn.farmerPhone || "-"}
-                          </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Farmer Details</p>
+                          <p className="mt-1.5 truncate text-xs font-bold text-slate-800">{selectedReturn.partyName || "-"}</p>
+                          <p className="mt-0.5 truncate text-[10px] text-slate-500">{selectedReturn.farmerVillage || "-"}</p>
+                          <p className="truncate text-[10px] text-slate-500">{selectedReturn.farmerPhone || "-"}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            Return Date
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-slate-700">
-                            {dateDisplay(selectedReturn.date)}
-                          </p>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border border-slate-200 p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                        Original Invoice
-                      </p>
-                      <div className="mt-2 grid grid-cols-2 gap-3">
-                        <div>
-                          <p className="text-[10px] text-slate-400">
-                            Invoice No
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-slate-800">
-                            {selectedReturn.invoiceNo}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-slate-400">Through</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-800">
-                            {selectedReturn.executiveName ||
-                              selectedReturn.through}
-                          </p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-[10px] text-slate-400">
-                            Place of Supply
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-slate-800">
-                            {selectedReturn.placeOfSupply || "Tamil Nadu"}
-                          </p>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="rounded-xl border border-slate-200 p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            Products
-                          </p>
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            {selectedReturn.items.length} item
-                            {selectedReturn.items.length === 1 ? "" : "s"}
-                          </p>
-                        </div>
-                        <p className="text-sm font-extrabold text-emerald-700">
-                          {formatCurrency(selectedReturn.total)}
-                        </p>
-                      </div>
-
-                      <div className="mt-3 space-y-2">
-                        {selectedReturn.items.map((item, index) => (
-                          <div
-                            key={item.key}
-                            className="rounded-xl bg-slate-50 p-3"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-[10px] font-semibold text-slate-400">
-                                  #{index + 1}
-                                </p>
-                                <p className="mt-0.5 truncate text-sm font-bold text-slate-800">
-                                  {item.product?.name || "-"}
-                                </p>
-                                <p className="mt-0.5 text-[11px] text-slate-500">
-                                  {item.packSize || "-"} · Qty {item.quantity}
-                                </p>
-                              </div>
-                              <p className="shrink-0 text-sm font-extrabold text-slate-800">
-                                {formatCurrency(item.total)}
-                              </p>
-                            </div>
-
-                            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                              <Info
-                                label="Batch No"
-                                value={item.batchNo || "-"}
-                              />
-                              <Info
-                                label="Expiry"
-                                value={item.expiryDate || "-"}
-                              />
-                              <Info
-                                label="Price"
-                                value={formatCurrency(item.price)}
-                              />
-                              <Info
-                                label="Discount"
-                                value={`${item.discountPercent.toFixed(2)}%`}
-                              />
-                              <Info
-                                label="Taxable"
-                                value={formatCurrency(item.withoutTax)}
-                              />
-                              <Info
-                                label="Tax"
-                                value={formatCurrency(
-                                  item.sgst + item.cgst + item.igst,
-                                )}
-                              />
-                            </div>
-
-                            <div className="mt-2 flex items-start justify-between gap-2 border-t border-slate-200 pt-2">
-                              <span className="text-[11px] font-semibold text-slate-500">
-                                Reason
-                              </span>
-                              <span className="text-right text-[11px] font-semibold text-slate-700">
-                                {item.reason || "-"}
-                              </span>
-                            </div>
+                        <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
+                          <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Farm Details</p>
+                          <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10px]">
+                            <div><span className="text-slate-400">Crop</span><p className="truncate font-semibold text-slate-700">{selectedReturn.farmerCrop || "-"}</p></div>
+                            <div><span className="text-slate-400">Acre</span><p className="truncate font-semibold text-slate-700">{selectedReturn.farmerAcre || "-"}</p></div>
+                            <div className="col-span-2"><span className="text-slate-400">Place</span><p className="truncate font-semibold text-slate-700">{selectedReturn.placeOfSupply || "Tamil Nadu"}</p></div>
                           </div>
-                        ))}
+                        </div>
                       </div>
                     </section>
 
-                    <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                        Return Summary
-                      </p>
-                      <div className="mt-3 space-y-1">
-                        <Summary
-                          label="Without Tax"
-                          value={selectedReturn.withoutTax}
-                        />
-                        <Summary label="SGST" value={selectedReturn.sgst} />
-                        <Summary label="CGST" value={selectedReturn.cgst} />
-                        <Summary label="IGST" value={selectedReturn.igst} />
-                        <div className="mt-2 border-t border-slate-200 pt-2">
-                          <Summary
-                            label="Grand Total"
-                            value={selectedReturn.total}
-                            bold
-                          />
-                        </div>
+                    <section className="overflow-hidden rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2.5">
+                        <div><p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Products</p><p className="mt-0.5 text-[10px] text-slate-500">{selectedReturn.items.length} item{selectedReturn.items.length === 1 ? "" : "s"}</p></div>
+                        <p className="text-sm font-extrabold text-emerald-700">{formatCurrency(selectedReturn.total)}</p>
+                      </div>
+                      <table className="w-full table-fixed border-collapse text-xs">
+                        <thead><tr className="bg-slate-50 text-[9px] uppercase tracking-wide text-slate-400"><th className="w-[12%] px-2 py-2 text-center font-bold">S.No</th><th className="w-[52%] px-2 py-2 text-left font-bold">Product</th><th className="w-[14%] px-2 py-2 text-center font-bold">Qty</th><th className="w-[22%] px-2 py-2 text-right font-bold">Value</th></tr></thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedReturn.items.map((item,index)=>(<tr key={item.key}><td className="px-2 py-2.5 text-center text-slate-500">{index+1}</td><td className="px-2 py-2.5"><p className="truncate font-semibold text-slate-800">{item.product?.name || "-"}</p><p className="truncate text-[10px] text-slate-500">{item.packSize || "-"}</p></td><td className="px-2 py-2.5 text-center font-medium text-slate-700">{item.quantity}</td><td className="px-2 py-2.5 text-right font-bold tabular-nums text-slate-800 whitespace-nowrap">{formatCurrency(item.total)}</td></tr>))}
+                        </tbody>
+                      </table>
+                    </section>
+
+                    <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Return Summary</p>
+                      <div className="mt-2 space-y-1">
+                        <Summary label="Without Tax" value={selectedReturn.withoutTax} />
+                        <Summary label="Tax" value={selectedReturn.sgst + selectedReturn.cgst + selectedReturn.igst} />
+                        <div className="mt-2 border-t border-slate-200 pt-2"><Summary label="Grand Total" value={selectedReturn.total} bold /></div>
                       </div>
                     </section>
                   </div>
                 </div>
-
-                <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setSelectedReturn(null)}
-                  >
-                    Close
-                  </Button>
-                </div>
+                <div className="border-t border-slate-200 bg-white p-3"><button type="button" onClick={() => setSelectedReturn(null)} className="w-full rounded-lg border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Back</button></div>
               </div>
             )}
 

@@ -97,6 +97,136 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
     setDeleteTarget(null);
   }
 
+  if (isFRO) {
+    return (
+      <div className="mx-auto w-full max-w-md pb-24">
+        {/* FRO header */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => goStorePage("attendance")}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+              aria-label="Back"
+            >
+              <Icon name="arrow_back" size={21} />
+            </button>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-800">
+              Farmers
+            </h1>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => goStorePage("add-farmer")}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm hover:bg-brand-700"
+            aria-label="Add Farmer"
+            title="Add Farmer"
+          >
+            <Icon name="add" size={22} />
+          </button>
+        </div>
+
+        {/* FRO toolbar: one line */}
+        <Card className="mb-4 p-2.5">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <Input
+                value={search}
+                onChange={setSearch}
+                placeholder="Search farmer..."
+                icon="search"
+              />
+            </div>
+
+            <div className="w-[118px] shrink-0">
+              <Select
+                value={cropFilter}
+                onChange={setCropFilter}
+                placeholder="Crops"
+                options={cropTypes.map((c) => ({ value: c, label: c }))}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={exporting}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+              aria-label="Export farmers"
+              title={exporting ? "Exporting..." : "Export"}
+            >
+              <Icon name="download" size={19} />
+            </button>
+          </div>
+        </Card>
+
+        {/* FRO farmer table */}
+        {filtered.length === 0 ? (
+          <Card className="p-0">
+            <EmptyState
+              icon="groups"
+              title="No farmers found"
+              description="No farmers are assigned to this FRO."
+              action={
+                <Button onClick={() => goStorePage("add-farmer")}>
+                  <Icon name="add" size={19} /> Add Farmer
+                </Button>
+              }
+            />
+          </Card>
+        ) : (
+          <Card className="overflow-hidden p-0">
+            <div className="w-full overflow-hidden">
+              <table className="w-full table-fixed border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                    <th className="w-[14%] border-b border-r border-slate-200 px-2 py-3 text-center font-semibold">
+                      S.No
+                    </th>
+                    <th className="w-[56%] border-b border-r border-slate-200 px-3 py-3 text-left font-semibold">
+                      Farmer Details
+                    </th>
+                    <th className="w-[30%] border-b border-slate-200 px-2 py-3 text-center font-semibold">
+                      Mobile No
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.map((f, index) => (
+                    <tr
+                      key={f.id}
+                      onClick={() => goFarmerProfile(f.id)}
+                      className="cursor-pointer hover:bg-slate-50 active:bg-slate-100"
+                    >
+                      <td className="border-r border-slate-200 px-2 py-3 text-center font-medium text-slate-500">
+                        {index + 1}
+                      </td>
+
+                      <td className="border-r border-slate-200 px-3 py-3">
+                        <p className="font-semibold leading-tight text-slate-800">
+                          {f.name}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-slate-500">
+                          {f.village || "-"}
+                        </p>
+                      </td>
+
+                      <td className="px-2 py-3 text-center text-[11px] font-medium text-slate-600">
+                        {f.phone || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Header */}

@@ -4,6 +4,7 @@ import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getFarmersByStore, getStore } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
+import { useNav } from "@/context/NavContext";
 
 type StoredSaleInvoice = {
   id: string;
@@ -94,6 +95,7 @@ function loadRows(storageKey: string): RefundRow[] {
 
 export default function StoreRefund({ storeId }: { storeId: string }) {
   const { user } = useAuth();
+  const { goStorePage } = useNav();
   const isFRO = user?.role === "fro";
   const farmers = getFarmersByStore(storeId);
   const currentStore = getStore(storeId);
@@ -254,40 +256,130 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
-            Refund
-          </h1>
-          <p className="mt-1 text-slate-500">
-            Refunds issued against store sales and farmer transactions.
-          </p>
+      {(!isFRO || (!showCreate && !selectedRefund)) && (
+        <div
+          className={
+            isFRO
+              ? "mb-5 flex items-center justify-between gap-3"
+              : "mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"
+          }
+        >
+          <div>
+            <div className="flex items-center gap-2">
+              {isFRO && (
+                <button
+                  type="button"
+                  onClick={() => goStorePage("sales")}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+                  aria-label="Back to Sales"
+                >
+                  <Icon name="arrow_back" size={21} />
+                </button>
+              )}
+              <h1 className="text-2xl font-bold tracking-tight text-slate-800">
+                Refund
+              </h1>
+            </div>
+            {!isFRO && (
+              <p className="mt-1 text-slate-500">
+                Refunds issued against store sales and farmer transactions.
+              </p>
+            )}
+          </div>
+
+          {isFRO ? (
+            <button
+              type="button"
+              onClick={() => setShowCreate(true)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm hover:bg-brand-800"
+              aria-label="Create Refund"
+              title="Create Refund"
+            >
+              <Icon name="add" size={21} />
+            </button>
+          ) : (
+            <Button onClick={() => setShowCreate(true)}>
+              <Icon name="add" size={18} />
+              Create Refund
+            </Button>
+          )}
         </div>
+      )}
 
-        <Button onClick={() => setShowCreate(true)}>
-          <Icon name="add" size={18} />
-          Create Refund
-        </Button>
-      </div>
+      {(!isFRO || (!showCreate && !selectedRefund)) && (
+        <Card className="mb-5 p-4">
+          <div className="max-w-md">
+            <Input
+              value={search}
+              onChange={setSearch}
+              placeholder="Search by refund no, farmer, reference..."
+              icon="search"
+            />
+          </div>
+        </Card>
+      )}
 
-      <Card className="mb-5 p-4">
-        <div className="max-w-md">
-          <Input
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by refund no, farmer, reference..."
-            icon="search"
-          />
-        </div>
-      </Card>
-
-      {filtered.length === 0 ? (
+      {(!isFRO || (!showCreate && !selectedRefund)) && (filtered.length === 0 ? (
         <Card className="p-0">
           <EmptyState
             icon="sync"
             title="No refunds found"
             description="Create a refund or adjust your search."
           />
+        </Card>
+      ) : isFRO ? (
+        <Card className="overflow-hidden p-0">
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-collapse text-sm">
+              <thead>
+                <tr className="border-b-2 border-slate-200 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
+                  <th className="w-[10%] border-r border-slate-200 px-1.5 py-3 text-center font-semibold">
+                    S.No
+                  </th>
+                  <th className="w-[18%] border-r border-slate-200 px-1.5 py-3 text-center font-semibold">
+                    Date
+                  </th>
+                  <th className="w-[48%] border-r border-slate-200 px-2 py-3 text-left font-semibold">
+                    Farmer Details
+                  </th>
+                  <th className="w-[24%] px-2 py-3 text-right font-semibold">
+                    Value
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((row, index) => (
+                  <tr
+                    key={row.id}
+                    onClick={() => setSelectedRefund(row)}
+                    title="Click to view refund details"
+                    className="cursor-pointer border-b border-slate-100 transition hover:bg-brand-50/40"
+                  >
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center font-semibold text-slate-600">
+                      {index + 1}
+                    </td>
+                    <td className="border-r border-slate-100 px-1.5 py-3 text-center whitespace-nowrap text-slate-500">
+                      {formatDate(row.date)}
+                    </td>
+                    <td className="border-r border-slate-100 px-2 py-3 text-left">
+                      <p className="truncate text-xs font-semibold text-slate-800">
+                        {row.farmerName || "-"}
+                      </p>
+                      <p className="truncate text-[10px] text-slate-500">
+                        {row.village || "-"}
+                      </p>
+                      <p className="truncate text-[10px] text-slate-400">
+                        {row.phone || "-"}
+                      </p>
+                    </td>
+                    <td className="px-2 py-3 text-right font-bold tabular-nums text-brand-700 whitespace-nowrap">
+                      {formatCurrency(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
@@ -425,9 +517,9 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
             ))}
           </div>
         </Card>
-      )}
+      ))}
 
-      {showCreate &&
+      {!isFRO && showCreate &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <div className="flex max-h-[92vh] w-[94vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -599,7 +691,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
           document.body,
         )}
 
-      {selectedRefund &&
+      {!isFRO && selectedRefund &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <style>{`
@@ -969,6 +1061,163 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
           </div>,
           document.body,
         )}
+
+      {isFRO && showCreate && (
+        <div className="min-h-[calc(100vh-180px)] bg-white">
+          <div className="flex items-center gap-3 border-b border-slate-200 px-1 py-4">
+            <button
+              type="button"
+              onClick={closeForm}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Back"
+            >
+              <Icon name="arrow_back" size={21} />
+            </button>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">Create Refund</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Select a completed sales invoice, then refund the required amount to the farmer.
+              </p>
+            </div>
+          </div>
+
+          <div className="max-h-[calc(100vh-290px)] overflow-y-auto py-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <Input label="Date" type="date" value={date} onChange={setDate} required />
+              <Input label="Refund No" value={refundNo} onChange={setRefundNo} placeholder="e.g. REF-102" required />
+              <Select
+                label="Invoice Number"
+                value={referenceNo}
+                onChange={(value) => {
+                  setReferenceNo(value);
+                  const invoice = saleInvoices.find((item) => item.invoiceNo === value);
+                  setInvoiceAmount(invoice ? Number(invoice.amount || 0) : 0);
+                  setAmount(0);
+                }}
+                placeholder="Select sales invoice"
+                options={invoiceOptions}
+                required
+              />
+              <Input label="Farmer Name" value={selectedInvoice?.partyName || ""} onChange={() => {}} placeholder="Auto-filled from invoice" readOnly />
+              <Input
+                label="Mobile Number"
+                value={selectedInvoice?.farmerPhone || selectedFarmer?.phone || ""}
+                onChange={() => {}}
+                placeholder="Auto-filled from invoice"
+                readOnly
+              />
+              <Input
+                label="Village"
+                value={selectedInvoice?.farmerVillage || selectedFarmer?.village || ""}
+                onChange={() => {}}
+                placeholder="Auto-filled from invoice"
+                readOnly
+              />
+              <Input label="Invoice Amount" type="number" value={String(invoiceAmount)} onChange={() => {}} placeholder="Auto-filled from invoice" readOnly />
+              <Select
+                label="Reason"
+                value={reason}
+                onChange={setReason}
+                placeholder="Select reason"
+                options={reasons.map((item) => ({ value: item, label: item }))}
+                required
+              />
+              <Select
+                label="Payment Method"
+                value={paymentMethod}
+                onChange={setPaymentMethod}
+                placeholder="Select method"
+                options={methods.map((item) => ({ value: item, label: item }))}
+                required
+              />
+              <Input
+                label="Refund Amount"
+                type="number"
+                value={String(amount)}
+                onChange={(value) => {
+                  const next = Number(value) || 0;
+                  setAmount(Math.min(next, invoiceAmount || next));
+                }}
+                placeholder="Enter refund amount"
+                required
+              />
+              <Input
+                label="Balance Value"
+                value={formatCurrency(Math.max(invoiceAmount - amount, 0))}
+                onChange={() => {}}
+                readOnly
+              />
+              <div className="md:col-span-2">
+                <Input label="Remarks" value={remarks} onChange={setRemarks} placeholder="Optional remarks" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 border-t border-slate-200 bg-white py-4">
+            <Button variant="secondary" onClick={closeForm}>Cancel</Button>
+            <Button onClick={createRefund} disabled={!canCreate}>
+              <Icon name="save" size={17} />
+              Create Refund
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isFRO && selectedRefund && !showCreate && (
+        <div className="min-h-[calc(100vh-180px)] bg-white">
+          <div className="flex items-center gap-3 border-b border-slate-200 px-1 py-4">
+            <button
+              type="button"
+              onClick={() => setSelectedRefund(null)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Back"
+            >
+              <Icon name="arrow_back" size={21} />
+            </button>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-brand-700">Refund</p>
+              <h2 className="text-xl font-bold text-slate-800">{selectedRefund.refundNo}</h2>
+              <p className="text-xs text-slate-500">{formatDate(selectedRefund.date)}</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 py-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Farmer Details</p>
+                <p className="mt-1 text-sm font-extrabold text-slate-900">{selectedRefund.farmerName}</p>
+                <p className="mt-1 text-xs text-slate-500">{selectedRefund.village || "-"}</p>
+                <p className="text-xs text-slate-500">{selectedRefund.phone || "-"}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Refund Details</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <DetailField label="Invoice No" value={selectedRefund.referenceNo} />
+                  <DetailField label="Refund Date" value={formatDate(selectedRefund.date)} />
+                  <DetailField label="Reason" value={selectedRefund.reason} />
+                  <DetailField label="Payment Method" value={selectedRefund.paymentMethod} />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Refund Summary</p>
+              <div className="mt-3 space-y-3 text-sm">
+                <div className="flex justify-between"><span className="text-slate-500">Invoice Amount</span><span className="font-semibold">{formatCurrency(selectedRefund.invoiceAmount || 0)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Refund Amount</span><span className="font-bold text-brand-700">{formatCurrency(selectedRefund.amount)}</span></div>
+                <div className="flex justify-between border-t border-slate-200 pt-3"><span className="font-bold text-slate-900">Balance Value</span><span className="font-bold text-slate-900">{formatCurrency(Math.max((selectedRefund.invoiceAmount || 0) - selectedRefund.amount, 0))}</span></div>
+              </div>
+            </div>
+
+            {selectedRefund.remarks && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Remarks</p>
+                <p className="mt-1 text-sm text-slate-600">{selectedRefund.remarks}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
