@@ -912,6 +912,29 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     };
   }, [storeId, dateFilter]);
 
+    const execReceivedData = useMemo(() => {
+    const startDate = getCalendarPeriodStart(dateFilter);
+    const result: Record<ExecKey, { qty: number; value: number }> = {} as any;
+
+    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
+      const name = execNames[key];
+      const allTxns = getFROStockTxnsByExecutive(storeId, name);
+      const deliveryTxns = allTxns.filter(
+        (t) => t.type === "Delivery" && new Date(t.date) >= startDate,
+      );
+
+      result[key] = {
+        qty: deliveryTxns.reduce((sum, t) => sum + t.qty, 0),
+        value: deliveryTxns.reduce(
+          (sum, t) => sum + t.qty * t.unitValue,
+          0,
+        ),
+      };
+    });
+
+    return result;
+  }, [storeId, dateFilter]);
+
   const execStockData = useMemo(() => {
     const startDate = getFilterStartDate(dateFilter);
     const result: Record<
@@ -1289,15 +1312,21 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     }
                   />
                   <ExecField
+                    icon="local_shipping"
+                    label="Total Received"
+                    value={String(execReceivedData[key].qty)}
+                    color="text-teal-600"
+                  />
+                  <ExecField
                     icon="groups"
                     label="Farmers"
                     value={String(e.farmers)}
                   />
-                  <ExecField
+                  {/* <ExecField
                     icon="agriculture"
                     label="Farms"
                     value={String(e.farms)}
-                  />
+                  /> */}
                   {/* <ExecField
                     icon="spa"
                     label="Crops"
@@ -1313,9 +1342,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     label="Stocks in Hand"
                     value={formatCurrency(execStockData[key].balanceTotalValue)}
                     color="text-indigo-600"
-                    onClick={() =>
-                      setExecDetail({ execKey: key, type: "stocks" })
-                    }
+                    onClick={() => setExecDetail({ execKey: key, type: "stocks" })}
                   />
                 </div>
               </Card>
@@ -1994,9 +2021,6 @@ function ExecutiveDetailModal({
   onClose: () => void;
 }) {
   const { execKey, type } = selection;
-  const [stockTab, setStockTab] = useState<
-    "delivery" | "sales" | "return" | "balance"
-  >("balance");
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -2014,41 +2038,10 @@ function ExecutiveDetailModal({
     stocks: "inventory_2",
   };
 
-  // ---- STOCKS: Delivery / Sales / Balance tabs ----
-  if (type === "stocks") {
-    const activeRows =
-      stockTab === "delivery"
-        ? stockData.deliveryRows
-        : stockTab === "sales"
-          ? stockData.salesRows
-          : stockTab === "return"
-            ? stockData.returnRows
-            : stockData.balanceRows;
-
-    const activeQty =
-      stockTab === "delivery"
-        ? stockData.deliveryTotalQty
-        : stockTab === "sales"
-          ? stockData.salesTotalQty
-          : stockTab === "return"
-            ? stockData.returnTotalQty
-            : stockData.balanceTotalQty;
-
-    const activeValue =
-      stockTab === "delivery"
-        ? stockData.deliveryTotalValue
-        : stockTab === "sales"
-          ? stockData.salesTotalValue
-          : stockTab === "return"
-            ? stockData.returnTotalValue
-            : stockData.balanceTotalValue;
-
-    const tabLabels: Record<typeof stockTab, string> = {
-      delivery: "Stock Received",
-      sales: "Stock Sales",
-      return: "Sales Return",
-      balance: "Hand Stock",
-    };
+    if (type === "stocks") {
+    const activeRows = stockData.balanceRows;
+    const activeQty = stockData.balanceTotalQty;
+    const activeValue = stockData.balanceTotalValue;
 
     return (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
@@ -2060,10 +2053,10 @@ function ExecutiveDetailModal({
               </div>
               <div>
                 <h3 className="font-bold text-slate-800">
-                  {execNames[execKey]} — {titles[type]}
+                  {execNames[execKey]} — Hand Stock
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Products delivered, sold and remaining with this executive
+                  Current stock balance with this executive
                 </p>
               </div>
             </div>
@@ -2077,25 +2070,7 @@ function ExecutiveDetailModal({
             </button>
           </div>
 
-          {/* Tab switcher */}
-          <div className="flex gap-2 border-b border-slate-200 bg-white px-5 py-3">
-            {(["delivery", "sales", "return", "balance"] as const).map(
-              (tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setStockTab(tab)}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition-base ${
-                    stockTab === tab
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  {tabLabels[tab]}
-                </button>
-              ),
-            )}
-          </div>
+          
 
           <div className="border-b border-slate-200 bg-white px-5 py-4">
             <div className="flex flex-wrap gap-3">
@@ -2107,6 +2082,7 @@ function ExecutiveDetailModal({
                   {activeQty}
                 </span>
               </div>
+
               <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Total Value
@@ -2115,6 +2091,8 @@ function ExecutiveDetailModal({
                   {formatCurrency(activeValue)}
                 </span>
               </div>
+
+              
             </div>
           </div>
 
@@ -2140,8 +2118,7 @@ function ExecutiveDetailModal({
                       colSpan={8}
                       className="px-4 py-10 text-center text-slate-400"
                     >
-                      No {tabLabels[stockTab].toLowerCase()} records in this
-                      period.
+                      No stock records in this period.
                     </td>
                   </tr>
                 ) : (

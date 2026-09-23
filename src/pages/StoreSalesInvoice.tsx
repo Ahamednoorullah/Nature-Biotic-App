@@ -198,10 +198,12 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       (row) => row.executiveName?.trim().toLowerCase() === normalizedFroName,
     );
   }, [rows, isFRO, froName]);
-  const storePurchaseRows = useMemo(
+   const storePurchaseRows = useMemo(
     () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
     [storeId],
   );
+
+  console.log("DEBUG storePurchaseRows:", storePurchaseRows);
 
   const storeStockVariants = useMemo(() => {
     return storePurchaseRows
@@ -247,8 +249,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }, [storePurchaseRows]);
 
   // FRO's own delivered stock — used when Through = Executive
-  const froStockVariants = useMemo(() => {
+    const froStockVariants = useMemo(() => {
     if (through !== "Executive" || !executiveName) return [];
+    console.log("DEBUG froStock RAW:", executiveName, getFROStockByExecutive(storeId, executiveName));
     return getFROStockByExecutive(storeId, executiveName)
       .map((item: any, index: number) => {
         const master = allProducts.find((p) => p.id === item.productId);

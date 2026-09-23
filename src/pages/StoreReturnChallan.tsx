@@ -508,7 +508,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     <div>
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Return Challan</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Stock Return</h1>
           <p className="mt-1 text-slate-500">
             Record unsold products returned by executives against delivery
             challans.
@@ -1390,7 +1390,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
               <div className="return-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
-                    Return Challan
+                    Stock Return
                   </p>
                   <h2 className="mt-1 text-2xl font-bold text-slate-800">
                     {selectesdhallan.rcNo}
@@ -1436,7 +1436,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
                     <div className="flex items-center justify-center px-4 py-3">
                       <div className="text-center">
                         <h3 className="text-2xl font-extrabold uppercase text-slate-900">
-                          Return Challan
+                          Stock Return
                         </h3>
                         {/* <p className="mt-1 text-[10px] text-slate-500">
                           Executive Unsold Stock Return
