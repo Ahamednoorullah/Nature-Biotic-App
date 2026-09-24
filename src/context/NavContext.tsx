@@ -39,7 +39,9 @@ export type StorePage =
   | "inventory-detail"
   | "add-stock"
   | "stock-adjustment"
-  | "low-stock";
+  | "low-stock"
+  | "closing-stock"
+  | "physical-stock";
 
 export type Route =
   | { view: "company"; page: CompanyPage }

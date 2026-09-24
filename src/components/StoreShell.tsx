@@ -56,6 +56,16 @@ const navItems: NavItem[] = [
         label: "Stock Return",
         icon: "assignment_return",
       },
+      {
+        key: "closing-stock",
+        label: "Closing Stock",
+        icon: "calendar_month",
+      },
+      {
+        key: "physical-stock",
+        label: "Physical Stock",
+        icon: "fact_check",
+      },
     ],
   },
   {

@@ -52,6 +52,8 @@ import StorePurchaseOrder from "@/pages/StorePurchaseOrder";
 import StoreSalesReturn from "@/pages/StoreSalesReturn";
 import StoreCreditNotes from "@/pages/StoreCreditNotes";
 import StoreAttendance from "@/pages/StoreAttendance";
+import ClosingStock from "@/pages/ClosingStock";
+import PhysicalStockEntry from "@/pages/PhysicalStockEntry";
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -231,6 +233,10 @@ function AppContent() {
         <StoreStockAdjustment storeId={route.storeId} />
       )}
       {route.page === "low-stock" && <StoreLowStock storeId={route.storeId} />}
+      {route.page === "closing-stock" && <ClosingStock storeId={route.storeId} />}
+      {route.page === "physical-stock" && (
+      <PhysicalStockEntry storeId={route.storeId} />
+)}
     </>
   );
 
