@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getProductsByStore,
   getStorePurchasesFromCompanySales,
+  getAcceptedStoreDeliveryQty,
 } from "@/lib/data";
 
 type Item = {
@@ -88,66 +89,256 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const [date, setDate] = useState("");
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const [items, setItems] = useState<Item[]>(emptyItems());
+  const [froFilter, setFroFilter] = useState("all");
 
-  const storeProducts = useMemo(() => {
-    const productsById = new Map<string, any>();
+  const [inventoryVersion, setInventoryVersion] = useState(0);
 
-    getProductsByStore(storeId).forEach((product: any) => {
-      productsById.set(String(product.id), product);
-    });
+  function isChallanAccepted(challan: Challan): boolean {
+    if (challan.status === "accepted") return true;
 
-    // Keep only products belonging to this store, while also picking up
-    // pack sizes that were actually received into the store.
-    const sizesByProduct = new Map<string, string[]>();
-    getStorePurchasesFromCompanySales(storeId).forEach((row: any) => {
-      const productId = String(row.productId || "");
-      if (!productId || !productsById.has(productId)) return;
-      const size = String(row.packSize ?? row.pkgsize ?? row.size ?? "").trim();
-      if (!size) return;
-      const existing = sizesByProduct.get(productId) ?? [];
-      if (!existing.includes(size)) existing.push(size);
-      sizesByProduct.set(productId, existing);
-    });
+    // A delivery becomes visible in this table only after the FRO has
+    // accepted the complete delivery and it is recorded in the accepted
+    // delivery ledger.
+    try {
+      return challan.items.every((item) => {
+        const acceptedQty = getAcceptedStoreDeliveryQty(
+          storeId,
+          item.productId,
+          item.packSize,
+          item.batchNo,
+        );
+        return acceptedQty >= Number(item.qty || 0);
+      });
+    } catch {
+      return false;
+    }
+  }
 
-    return Array.from(productsById.values())
-      .map((product: any) => {
-        const productId = String(product.id);
-        const variants = getStorePurchasesFromCompanySales(storeId)
-          .filter((row: any) => String(row.productId || "") === productId)
-          .map((row: any) => ({
-            size: String(
-              row.packSize ?? row.pkgsize ?? row.size ?? product.size ?? "",
-            ).trim(),
-            batchNo: String(row.batchNo ?? row.batchId ?? "").trim(),
-            expiryDate: String(
-              row.expiryDate ?? row.expDate ?? row.expiry ?? "",
-            ).trim(),
-            quantity: Number(row.quantity ?? row.qty ?? 0),
-            sellingPrice: Number(
-              row.sellingPrice ??
-                row.rate ??
-                row.price ??
-                product.sellingPrice ??
-                0,
-            ),
-          }))
-          .filter((row: any) => row.size && row.quantity > 0);
+  const pendingChallans = useMemo(
+    () => challans.filter((challan) => !isChallanAccepted(challan)),
+    [challans, storeId, inventoryVersion],
+  );
 
-        const sizes = Array.from(new Set(variants.map((row: any) => row.size)));
+  const acceptedChallans = useMemo(
+    () => challans.filter((challan) => isChallanAccepted(challan)),
+    [challans, storeId, inventoryVersion],
+  );
 
-        return {
-          id: productId,
-          name: String(product.name || ""),
-          sizes,
-          variants,
-          sellingPrice: Number(product.sellingPrice || 0),
-          taxPercentage: Number(
-            product.taxPercentage ?? product.taxPercent ?? 0,
-          ),
-        };
-      })
-      .filter((product) => product.name && product.variants.length > 0);
+  const froFilterOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(
+        acceptedChallans
+          .map((challan) => String(challan.executive || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    return names.map((name) => ({ value: name, label: name }));
+  }, [acceptedChallans]);
+
+  const visibleChallans = useMemo(() => {
+    if (froFilter === "all") return acceptedChallans;
+    return acceptedChallans.filter(
+      (challan) => challan.executive === froFilter,
+    );
+  }, [acceptedChallans, froFilter]);
+
+  useEffect(() => {
+    const refresh = () => setInventoryVersion((v) => v + 1);
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("fro-accepted-deliveries-updated", refresh);
+    window.addEventListener("nature-biotic-delivery-challan-updated", refresh);
+    return () => {
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener("fro-accepted-deliveries-updated", refresh);
+      window.removeEventListener(
+        "nature-biotic-delivery-challan-updated",
+        refresh,
+      );
+    };
   }, [storeId]);
+
+  // Only stock that actually exists in this store's purchase records is shown.
+  // Batch / expiry / price are read from those purchase records and are not
+  // manually entered by the user.
+  const storeProducts = useMemo(() => {
+    const products = getProductsByStore(storeId);
+    const purchases = getStorePurchasesFromCompanySales(storeId);
+    const productByName = new Map(
+      products.map((product: any) => [
+        String(product.name).trim().toLowerCase(),
+        product,
+      ]),
+    );
+    const groups = new Map<string, any>();
+
+    purchases.forEach((purchase: any) => {
+      const productName = String(purchase.product ?? "").trim();
+      if (!productName) return;
+
+      const product =
+        (purchase.productId
+          ? products.find(
+              (p: any) => String(p.id) === String(purchase.productId),
+            )
+          : undefined) ?? productByName.get(productName.toLowerCase());
+      if (!product) return;
+
+      const productId = String(product.id);
+      const packSize = String(
+        purchase.packSize ??
+          purchase.pkgsize ??
+          purchase.size ??
+          product.size ??
+          "",
+      ).trim();
+      if (!packSize) return;
+
+      const batchNo =
+        String(purchase.batchNo ?? purchase.batchId ?? "").trim() || "-";
+      const expiryDate =
+        String(
+          purchase.expiryDate ?? purchase.expDate ?? purchase.expiry ?? "",
+        ).trim() || "-";
+      const purchasedQty = Math.max(
+        0,
+        Number(purchase.quantity ?? purchase.qty ?? 0),
+      );
+      if (purchasedQty <= 0) return;
+
+      const unitValue = Number(
+        purchase.unitPrice ??
+          purchase.rate ??
+          purchase.price ??
+          product.sellingPrice ??
+          0,
+      );
+      const key = [
+        productId,
+        packSize.toLowerCase(),
+        batchNo.toLowerCase(),
+        expiryDate,
+      ].join("::");
+      const existing = groups.get(key);
+      if (existing) {
+        existing.quantity += purchasedQty;
+        existing.unitValue = existing.unitValue || unitValue;
+      } else {
+        groups.set(key, {
+          productId,
+          productName: String(product.name || productName),
+          productType: String(
+            product.productType ?? product.productCategory ?? "-",
+          ),
+          packSize,
+          batchNo,
+          expiryDate,
+          quantity: purchasedQty,
+          unitValue,
+          taxPercent: Number(
+            purchase.taxPercent ??
+              product.taxPercentage ??
+              product.taxPercent ??
+              0,
+          ),
+        });
+      }
+    });
+
+    const byProduct = new Map<string, any>();
+    groups.forEach((variant) => {
+      const acceptedQty = getAcceptedStoreDeliveryQty(
+        storeId,
+        variant.productId,
+        variant.packSize,
+        variant.batchNo,
+      );
+      const availableQty = Math.max(0, variant.quantity - acceptedQty);
+      if (availableQty <= 0) return;
+
+      const product = byProduct.get(variant.productId) ?? {
+        id: variant.productId,
+        name: variant.productName,
+        productType: variant.productType,
+        variants: [],
+      };
+      product.variants.push({
+        ...variant,
+        availableQty,
+      });
+      byProduct.set(variant.productId, product);
+    });
+
+    return Array.from(byProduct.values());
+  }, [storeId, inventoryVersion]);
+
+  function getProductVariants(productId: string) {
+    return storeProducts.find((p: any) => p.id === productId)?.variants ?? [];
+  }
+
+  function applyVariant(i: number, variant: any) {
+    if (!variant) return;
+    setItems((prev) =>
+      prev.map((item, index) =>
+        index === i
+          ? {
+              ...item,
+              productId: variant.productId,
+              product: variant.productName,
+              packSize: variant.packSize,
+              batchNo: variant.batchNo,
+              expiryDate: variant.expiryDate,
+              unitValue: String(variant.unitValue || 0),
+              taxPercent: Number(variant.taxPercent || 0),
+              qty:
+                item.qty && Number(item.qty) <= variant.availableQty
+                  ? item.qty
+                  : "",
+            }
+          : item,
+      ),
+    );
+  }
+
+  function selectProduct(i: number, productId: string) {
+    const product = storeProducts.find((p: any) => p.id === productId);
+    const firstVariant = product?.variants?.[0];
+    if (firstVariant) applyVariant(i, firstVariant);
+    else {
+      setItems((prev) =>
+        prev.map((item, index) =>
+          index === i
+            ? {
+                ...item,
+                productId,
+                product: product?.name || "",
+                packSize: "",
+                batchNo: "",
+                expiryDate: "",
+                qty: "",
+                unitValue: "",
+                taxPercent: 0,
+              }
+            : item,
+        ),
+      );
+    }
+  }
+
+  function selectPackSize(i: number, packSize: string) {
+    const item = items[i];
+    const variant = getProductVariants(item.productId).find(
+      (v: any) => v.packSize === packSize,
+    );
+    if (variant) applyVariant(i, variant);
+  }
+
+  function selectBatch(i: number, batchNo: string) {
+    const item = items[i];
+    const variant = getProductVariants(item.productId).find(
+      (v: any) => v.packSize === item.packSize && v.batchNo === batchNo,
+    );
+    if (variant) applyVariant(i, variant);
+  }
 
   const canCreate =
     !!sdNo.trim() &&
@@ -419,7 +610,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
           </thead>
 
           <tbody className="divide-y divide-slate-100">
-            {challans.map((c, index) => {
+            {visibleChallans.map((c, index) => {
               const totalQty = c.items.reduce(
                 (s, x) => s + Number(x.qty || 0),
                 0,
@@ -599,56 +790,90 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                             <tr key={i} className="border-t border-slate-100">
                               <td className="px-2 py-3 text-center">{i + 1}</td>
                               <td className="px-2 py-3">
-                                <Input
-                                  value={item.product}
-                                  onChange={(value) => {
-                                    updateItem(i, "product", value);
-                                    updateItem(i, "productId", "");
-                                    updateItem(i, "packSize", "");
-                                  }}
-                                  placeholder="Enter product"
+                                <Select
+                                  value={item.productId}
+                                  onChange={(value) => selectProduct(i, value)}
+                                  placeholder="Select product"
+                                  options={storeProducts.map(
+                                    (product: any) => ({
+                                      value: product.id,
+                                      label: product.name,
+                                    }),
+                                  )}
                                 />
                               </td>
                               <td className="px-2 py-3">
-                                <Input
+                                <Select
                                   value={item.packSize}
-                                  onChange={(value) =>
-                                    updateItem(i, "packSize", value)
-                                  }
-                                  placeholder="Enter size"
+                                  onChange={(value) => selectPackSize(i, value)}
+                                  placeholder="Select size"
+                                  options={Array.from(
+                                    new Set<string>(
+                                      getProductVariants(item.productId)
+                                        .map((v: any) =>
+                                          String(v.packSize ?? ""),
+                                        )
+                                        .filter((size: string) =>
+                                          Boolean(size),
+                                        ),
+                                    ),
+                                  ).map((size: string) => ({
+                                    value: size,
+                                    label: size,
+                                  }))}
                                 />
                               </td>
                               <td className="px-2 py-3">
-                                <Input
+                                <Select
                                   value={item.batchNo}
-                                  onChange={(v) => updateItem(i, "batchNo", v)}
-                                  placeholder="Batch ID"
+                                  onChange={(value) => selectBatch(i, value)}
+                                  placeholder="Select batch"
+                                  options={getProductVariants(item.productId)
+                                    .filter(
+                                      (v: any) =>
+                                        String(v.packSize ?? "") ===
+                                        item.packSize,
+                                    )
+                                    .map((v: any) => {
+                                      const batch = String(v.batchNo ?? "");
+                                      return { value: batch, label: batch };
+                                    })}
                                 />
                               </td>
                               <td className="px-2 py-3">
                                 <Input
-                                  type="date"
                                   value={item.expiryDate}
-                                  onChange={(v) =>
-                                    updateItem(i, "expiryDate", v)
-                                  }
+                                  onChange={() => {}}
+                                  readOnly
+                                  placeholder="Auto"
                                 />
                               </td>
                               <td className="px-2 py-3">
                                 <Input
                                   type="number"
                                   value={item.qty}
-                                  onChange={(v) => updateItem(i, "qty", v)}
+                                  onChange={(v) => {
+                                    const maxQty =
+                                      getProductVariants(item.productId).find(
+                                        (variant: any) =>
+                                          variant.packSize === item.packSize &&
+                                          variant.batchNo === item.batchNo,
+                                      )?.availableQty ?? 0;
+                                    const nextQty = Math.max(0, Number(v || 0));
+                                    updateItem(
+                                      i,
+                                      "qty",
+                                      String(Math.min(nextQty, maxQty)),
+                                    );
+                                  }}
                                   placeholder="Qty"
                                 />
                               </td>
                               <td className="px-2 py-3">
                                 <Input
-                                  type="number"
                                   value={item.unitValue}
-                                  onChange={(v) =>
-                                    updateItem(i, "unitValue", v)
-                                  }
+                                  onChange={() => {}}
+                                  readOnly
                                   placeholder="₹"
                                 />
                               </td>
