@@ -25,7 +25,7 @@ export function Logo({
         width: logoWidth,
         height: logoHeight,
         objectFit: "contain",
-        backgrounsdolor: "white",
+        backgroundColor: "white",
       }}
     />
   );

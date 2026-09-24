@@ -1177,9 +1177,9 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             color="purple"
           />
           <DirectSalesCard
-            label="Farms"
-            value={String(directSales.farms)}
-            icon="agriculture"
+            label="Total Received"
+            value={formatCurrency(stockPurchases.totalValue)}
+            icon="local_shipping"
             color="brand"
           />
           <DirectSalesCard
