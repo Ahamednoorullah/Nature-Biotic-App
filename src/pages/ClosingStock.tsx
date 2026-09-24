@@ -172,20 +172,40 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
     });
   }, [storeId]);
 
-  return (
+    return (
     <div>
+    <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .closing-stock-print, .closing-stock-print * { visibility: visible !important; }
+          .closing-stock-print {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 700px !important;
+            box-shadow: none !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 12px !important;
+            max-height: none !important;
+            height: auto !important;
+          }
+          .closing-stock-print-hide { display: none !important; }
+          .closing-stock-print-total-value {
+            font-size: 20px !important;
+          }
+        }
+    `}</style>
+
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Closing Stock</h1>
-          <p className="mt-1 text-slate-500">
-            Month-end stock balance, calculated automatically from stock
-            received, delivered, returned and direct sales.
-          </p>
-        </div>
-        <Button variant="secondary" onClick={() => window.print()}>
-          <Icon name="print" size={18} />
-          Print
-        </Button>
+        <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-800">Closing Stock</h1>
+        <p className="mt-1 text-slate-500">
+          Month-end stock balance, calculated automatically from stock
+          received, delivered, returned and direct sales.
+        </p>
+      </div>
       </div>
 
       <Card className="overflow-hidden p-0">
@@ -239,7 +259,7 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
       {selectedRow &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex h-[76vh] w-[92vw] max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                        <div className="closing-stock-print flex h-[76vh] w-[92vw] max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
                 <div>
                   <h3 className="font-bold text-slate-800">
@@ -249,7 +269,7 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                     As of {selectedRow.isoDate}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 closing-stock-print-hide">
                   <Button variant="secondary" onClick={() => window.print()}>
                     <Icon name="print" size={16} /> Print
                   </Button>
@@ -273,11 +293,11 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                       {selectedRow.qty}
                     </span>
                   </div>
-                  <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Total Value
                     </span>
-                    <span className="text-lg font-extrabold text-indigo-700">
+                    <span className="closing-stock-print-total-value text-lg font-extrabold text-indigo-700">
                       {formatCurrency(selectedRow.value)}
                     </span>
                   </div>
@@ -289,7 +309,7 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                   <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                       <th className="w-[8%] px-4 py-3 text-center">S.No</th>
-                      <th className="w-[42%] px-4 py-3 text-left">Product</th>
+                      <th className="w-[35%] px-4 py-3 text-left">Product</th>
                       <th className="w-[20%] px-4 py-3 text-center">
                         Pack Size
                       </th>
@@ -308,7 +328,7 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                         </td>
                       </tr>
                     ) : (
-                      selectedRow.breakdown.map((item, index) => (
+                        selectedRow.breakdown.map((item, index) => (
                         <tr key={item.key} className="hover:bg-slate-50">
                           <td className="px-4 py-3 text-center text-slate-500">
                             {index + 1}
@@ -322,7 +342,7 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                           <td className="px-4 py-3 text-right font-bold text-slate-800">
                             {item.qty}
                           </td>
-                          <td className="px-4 py-3 text-right font-bold text-slate-800">
+                          <td className="px-4 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
                             {formatCurrency(item.value)}
                           </td>
                         </tr>
@@ -332,15 +352,15 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                 </table>
               </div>
 
-              <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+            <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4 closing-stock-print-hide">
                 <Button variant="secondary" onClick={() => setSelectedRow(null)}>
                   Close
                 </Button>
-              </div>
             </div>
-          </div>,
-          document.body,
-        )}
-    </div>
+        </div>
+    </div>,
+document.body,
+)}
+</div>
   );
 }

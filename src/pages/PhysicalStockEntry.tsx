@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Card, Button, Icon, Select, Input } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts } from "@/lib/data";
@@ -88,6 +89,7 @@ function emptyRow(): EntryRow {
 
 export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
   const storageKey = `${PHYSICAL_STORAGE_KEY}:${storeId}`;
+  const [selectedEntry, setSelectedEntry] = useState<SavedEntry | null>(null);
 
   const [savedEntries, setSavedEntries] = useState<SavedEntry[]>(() => {
     try {
@@ -174,24 +176,37 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
     setRows([emptyRow()]);
   }
 
-  return (
+    return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Physical Stock Entry
-          </h1>
-          <p className="mt-1 text-slate-500">
-            Enter the actual stock counted at the store. It's checked against
-            the calculated closing stock.
-          </p>
-        </div>
-        <Button variant="secondary" onClick={() => window.print()}>
-          <Icon name="print" size={18} />
-          Print
-        </Button>
-      </div>
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .physical-stock-print, .physical-stock-print * { visibility: visible !important; }
+          .physical-stock-print {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 700px !important;
+            box-shadow: none !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 12px !important;
+            max-height: none !important;
+            height: auto !important;
+          }
+        }
+      `}</style>
 
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-800">
+          Physical Stock Entry
+        </h1>
+        <p className="mt-1 text-slate-500">
+          Enter the actual stock counted at the store. It's checked against
+          the calculated closing stock.
+        </p>
+      </div>
       <Card className="p-4 mb-6">
         <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-800">
           Enter Physical Stock
@@ -270,15 +285,15 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
         </div>
       </Card>
 
-      {lastResult && (
+    {lastResult && (
         <Card
-          className={`p-5 mb-6 border-2 ${
+          className={`physical-stock-print p-5 mb-6 border-2 ${
             lastResult.isMatch
               ? "border-emerald-200 bg-emerald-50/50"
               : "border-red-200 bg-red-50/50"
           }`}
         >
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
             <Icon
               name={lastResult.isMatch ? "check_circle" : "error"}
               size={28}
@@ -303,7 +318,7 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
             </div>
           </div>
         </Card>
-      )}
+    )}
 
       <Card className="overflow-hidden p-0">
         <table className="w-full table-fixed border-collapse text-sm">
@@ -340,12 +355,13 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
                 </td>
               </tr>
             ) : (
-              savedEntries.map((entry, i) => (
+                savedEntries.map((entry, i) => (
                 <tr
                   key={entry.id}
-                  className={`border-b border-slate-100 ${
+                  onClick={() => setSelectedEntry(entry)}
+                  className={`cursor-pointer border-b border-slate-100 ${
                     i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
-                  }`}
+                  } hover:bg-slate-50`}
                 >
                   <td className="px-2 py-3 text-center text-slate-500">
                     {i + 1}
@@ -381,7 +397,103 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
             )}
           </tbody>
         </table>
-      </Card>
+            </Card>
+
+      {selectedEntry &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+            <div className="flex h-[76vh] w-[92vw] max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+                <div>
+                  <h3 className="font-bold text-slate-800">
+                    Physical Stock — {selectedEntry.date}
+                  </h3>
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                      selectedEntry.isMatch
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-red-100 text-red-700"
+                    }`}
+                  >
+                    {selectedEntry.isMatch ? "Correct" : "Mismatch"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEntry(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-slate-700"
+                >
+                  <Icon name="close" size={19} />
+                </button>
+              </div>
+
+              <div className="border-b border-slate-200 bg-white px-5 py-4">
+                <div className="flex flex-wrap gap-3">
+                  <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Physical Qty
+                    </span>
+                    <span className="text-lg font-extrabold text-slate-800">
+                      {selectedEntry.totalQty}
+                    </span>
+                  </div>
+                  <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Physical Value
+                    </span>
+                    <span className="text-lg font-extrabold text-indigo-700">
+                      {formatCurrency(selectedEntry.totalValue)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-auto">
+                <table className="w-full min-w-[600px] table-fixed text-sm">
+                  <thead className="sticky top-0 z-10 bg-white">
+                    <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                      <th className="w-[8%] px-4 py-3 text-center">S.No</th>
+                      <th className="w-[42%] px-4 py-3 text-left">Product</th>
+                      <th className="w-[20%] px-4 py-3 text-center">
+                        Pack Size
+                      </th>
+                      <th className="w-[15%] px-4 py-3 text-right">Qty</th>
+                      <th className="w-[15%] px-4 py-3 text-right">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedEntry.rows.map((row, index) => (
+                      <tr key={row.key} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-center text-slate-500">
+                          {index + 1}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-700">
+                          {row.productName}
+                        </td>
+                        <td className="px-4 py-3 text-center text-slate-600">
+                          {row.packSize}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-slate-800">
+                          {row.qty}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-slate-800">
+                          {formatCurrency(row.qty * row.unitPrice)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
+                <Button variant="secondary" onClick={() => setSelectedEntry(null)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
