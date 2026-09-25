@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  getBillsByStore,
   getProductsByStore,
   getStorePurchasesFromCompanySales,
   getAcceptedStoreDeliveryQty,
-  getFROStockByExecutive,
-  getFROStockTxns,
   productCategories,
+  type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-
-type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
 // type StockRow = {
 //   id: string;
@@ -31,6 +29,7 @@ type PackSizeStock = {
   stockInHand: number;
   stockValue: number;
   unitPrice?: number;
+  lowStockLimit: number;
 };
 
 type StockRow = {
@@ -87,7 +86,7 @@ function getStockWarnings(pack: PackSizeStock) {
   const totalStock = pack.availableStock + pack.stockInHand;
 
   return {
-    lowStock: totalStock <= 5,
+    lowStock: totalStock < pack.lowStockLimit,
     expiringSoon: daysToExpiry >= 0 && daysToExpiry <= 92,
     expired: daysToExpiry < 0,
     noSale30: daysSinceSale >= 30,
@@ -97,449 +96,292 @@ function getStockWarnings(pack: PackSizeStock) {
   };
 }
 
-// const stockData: Record<DateFilter, StockRow[]> = {
-//   today: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 125,
-//       stockValue: 56250,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//   ],
-//   weekly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 105,
-//       stockValue: 47250,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 65,
-//       stockValue: 24700,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 24,
-//       stockValue: 13440,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 180,
-//       stockValue: 198000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 18,
-//       stockValue: 12240,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 60,
-//       stockValue: 31200,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 8,
-//       stockValue: 4160,
-//       lastUpdated: "31 Jul 2026",
-//     },
-//   ],
-//   monthly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 120,
-//       stockValue: 54000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "28 Jul 2026",
-//     },
-//   ],
-//   quarterly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 120,
-//       stockValue: 54000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "20 Jul 2026",
-//     },
-//   ],
-//   yearly: [
-//     {
-//       id: "p0",
-//       name: "Electra",
-//       productType: "Crop Nutrition",
-//       packSize: "500 ml",
-//       available: 120,
-//       stockValue: 54000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p1",
-//       name: "Aalga",
-//       productType: "Bio Product",
-//       packSize: "250 ml",
-//       available: 85,
-//       stockValue: 32300,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p2",
-//       name: "Astra",
-//       productType: "Pesticide",
-//       packSize: "100 ml",
-//       available: 18,
-//       stockValue: 10080,
-//       lastUpdated: "02 Aug 2026",
-//     },
-//     {
-//       id: "p3",
-//       name: "Alpha",
-//       productType: "Fertilizer",
-//       packSize: "5 Kg",
-//       available: 200,
-//       stockValue: 220000,
-//       lastUpdated: "04 Aug 2026",
-//     },
-//     {
-//       id: "p4",
-//       name: "Neutra",
-//       productType: "Crop Nutrition",
-//       packSize: "1 L",
-//       available: 12,
-//       stockValue: 8160,
-//       lastUpdated: "01 Aug 2026",
-//     },
-//     {
-//       id: "p5",
-//       name: "Rootra",
-//       productType: "Bio Product",
-//       packSize: "500 ml",
-//       available: 50,
-//       stockValue: 26000,
-//       lastUpdated: "03 Aug 2026",
-//     },
-//     {
-//       id: "p6",
-//       name: "Ultra",
-//       productType: "Fungicide",
-//       packSize: "500 g",
-//       available: 4,
-//       stockValue: 2080,
-//       lastUpdated: "15 Jul 2026",
-//     },
-//   ],
-// };
+function buildInventoryRows(
+  storeId: string,
+  purchases: CompanyStoreSaleRecord[],
+): StockRow[] {
+  const products = getProductsByStore(storeId);
+  const bills = getBillsByStore(storeId);
 
-const stockData: Record<DateFilter, StockRow[]> = {
-  today: [
+  const productTypeByName = new Map(
+    products.map((product) => [
+      product.name.trim().toLowerCase(),
+      product.productCategory || "Product",
+    ]),
+  );
+
+  // Company Product master -> "Limit Stock" is stored as minStock.
+  // Match by Product + Pack Size first, then fall back to Product name.
+  const productLimitByNameAndSize = new Map(
+    products.map((product) => [
+      `${product.name.trim().toLowerCase()}::${product.size.trim().toLowerCase()}`,
+      Number(product.minStock ?? 0),
+    ]),
+  );
+
+  const productLimitByName = new Map(
+    products.map((product) => [
+      product.name.trim().toLowerCase(),
+      Number(product.minStock ?? 0),
+    ]),
+  );
+
+  // Keep the latest sale date for each product. The current Bill model does
+  // not contain batch/pack information, so sales are used only for the
+  // product-level "Last Sale" warning.
+  const lastSaleByProduct = new Map<string, string>();
+
+  bills.forEach((bill) => {
+    bill.items.forEach((item) => {
+      const key = item.name.trim().toLowerCase();
+      const existing = lastSaleByProduct.get(key);
+      if (!existing || bill.billDate > existing) {
+        lastSaleByProduct.set(key, bill.billDate);
+      }
+    });
+  });
+
+  // One inventory row is created for each Product + Pack Size + Batch.
+  // Quantity comes only from the store purchase records, so products that
+  // were never purchased by this store do not appear here.
+  const grouped = new Map<
+    string,
     {
-      id: "p1",
-      productType: "Pesticide",
-      productName: "Electra",
-      packSizes: [
-        {
-          packSize: "100 ml",
-          batchNo: "ELE020826",
-          expiryDate: "DEC 2026",
-          lastSaleDate: "2026-08-05",
-          availableStock: 125,
-          stockInHand: 10,
-          stockValue: 60000,
-        },
-        {
-          packSize: "100 ml",
-          batchNo: "ELE030826",
-          expiryDate: "JAN 2027",
-          lastSaleDate: "2026-06-20",
-          availableStock: 145,
-          stockInHand: 15,
-          stockValue: 60000,
-        },
-        {
-          packSize: "250 ml",
-          batchNo: "ELE010826",
-          expiryDate: "Aug 2026",
-          lastSaleDate: "2026-08-02",
-          availableStock: 85,
-          stockInHand: 12,
-          stockValue: 25000,
-        },
-        {
-          packSize: "500 ml",
-          batchNo: "ELE020826",
-          expiryDate: "Jul 2028",
-          lastSaleDate: "2026-05-25",
+      id: string;
+      productType: string;
+      productName: string;
+      packSize: string;
+      batchNo: string;
+      expiryDate: string;
+      quantity: number;
+      handQuantity: number;
+      stockValue: number;
+      unitPrice: number;
+      lowStockLimit: number;
+      lastSaleDate: string;
+    }
+  >();
 
-          availableStock: 50,
-          stockInHand: 5,
-          stockValue: 10000,
-        },
-        {
-          packSize: "1 L",
-          batchNo: "ELE020826",
-          expiryDate: "Jul 2028",
-          lastSaleDate: "2026-07-30",
-          availableStock: 3,
-          stockInHand: 1,
-          stockValue: 20000,
-        },
-      ],
-    },
-    {
-      id: "p2",
-      productType: "Pesticide",
-      productName: "Astra",
-      packSizes: [
-        {
-          packSize: "100 ml",
-          batchNo: "AST010826",
-          expiryDate: "Sep 2028",
-          lastSaleDate: "2026-07-25",
+  purchases.forEach((purchase) => {
+    const productName = String(purchase.product || "").trim();
+    if (!productName) return;
 
-          availableStock: 40,
-          stockInHand: 5,
-          stockValue: 18000,
-        },
-        {
-          packSize: "250 ml",
-          batchNo: "AST010826",
-          expiryDate: "Sep 2028",
-          lastSaleDate: "2026-08-03",
-          availableStock: 30,
-          stockInHand: 4,
-          stockValue: 22000,
-        },
-        {
-          packSize: "500 ml",
-          batchNo: "AST010826",
-          expiryDate: "Aug 2028",
-          lastSaleDate: "2026-06-10",
-          availableStock: 2,
-          stockInHand: 3,
-          stockValue: 26000,
-        },
-        {
-          packSize: "1 L",
-          batchNo: "AST020826",
-          expiryDate: "Aug 2028",
-          lastSaleDate: "2026-08-01",
-          availableStock: 10,
-          stockInHand: 2,
-          stockValue: 30000,
-        },
-        {
-          packSize: "1 L",
-          batchNo: "AST030826",
-          expiryDate: "DEC 2026",
-          lastSaleDate: "2026-06-28",
-          availableStock: 19,
-          stockInHand: 2,
-          stockValue: 30000,
-        },
-      ],
-    },
-  ],
+    const packSize = String(purchase.packSize || purchase.pkgsize || "").trim();
 
-  weekly: [],
-  monthly: [],
-  quarterly: [],
-  yearly: [],
-};
+    const batchNo = String(purchase.batchNo || "").trim();
+    const expiryDate = String(purchase.expiryDate || "").trim();
+
+    const configuredLimit =
+      productLimitByNameAndSize.get(
+        `${productName.toLowerCase()}::${packSize.toLowerCase()}`,
+      ) ??
+      productLimitByName.get(productName.toLowerCase()) ??
+      0;
+
+    const purchasedQuantity = Math.max(0, Number(purchase.quantity || 0));
+    if (purchasedQuantity <= 0) return;
+
+    // Purchase records created by the Store purchase flow may not contain
+    // productId. Resolve the product master ID from the product name so the
+    // accepted Stock Delivery ledger can match the same product correctly.
+    const productMaster = products.find(
+      (product: any) =>
+        String(product.name || "")
+          .trim()
+          .toLowerCase() === productName.toLowerCase(),
+    );
+
+    const resolvedProductId = String(
+      (purchase as any).productId || productMaster?.id || "",
+    );
+
+    const acceptedQuantity = getAcceptedStoreDeliveryQty(
+      storeId,
+      resolvedProductId,
+      packSize,
+      batchNo,
+    );
+
+    const quantity = Math.max(0, purchasedQuantity - acceptedQuantity);
+    const handQuantity = Math.min(purchasedQuantity, acceptedQuantity);
+    if (quantity <= 0 && handQuantity <= 0) return;
+
+    const unitPrice = Number(
+      purchase.unitPrice ?? purchase.rate ?? purchase.price ?? 0,
+    );
+
+    const key = [
+      productName.toLowerCase(),
+      packSize.toLowerCase(),
+      batchNo.toLowerCase(),
+    ].join("::");
+
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.quantity += quantity;
+      existing.handQuantity += handQuantity;
+      existing.stockValue += (quantity + handQuantity) * unitPrice;
+
+      if ((!existing.expiryDate || existing.expiryDate === "-") && expiryDate) {
+        existing.expiryDate = expiryDate;
+      }
+
+      if ((!existing.batchNo || existing.batchNo === "-") && batchNo) {
+        existing.batchNo = batchNo;
+      }
+
+      // Keep the product master's configured limit stock.
+      if (configuredLimit > 0) {
+        existing.lowStockLimit = configuredLimit;
+      }
+
+      if (unitPrice > 0) {
+        existing.unitPrice =
+          existing.quantity > 0
+            ? Math.round(existing.stockValue / existing.quantity)
+            : unitPrice;
+      }
+    } else {
+      grouped.set(key, {
+        id: `${purchase.id}-${productName}-${packSize}-${batchNo}`,
+        productType:
+          productTypeByName.get(productName.toLowerCase()) || "Product",
+        productName,
+        packSize: packSize || "-",
+        batchNo: batchNo || "-",
+        expiryDate: expiryDate || "-",
+        quantity,
+        handQuantity,
+        stockValue: (quantity + handQuantity) * unitPrice,
+        unitPrice,
+        lowStockLimit: configuredLimit,
+        lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
+      });
+    }
+  });
+
+  // Accepted FRO returns move stock back from FRO Hand Stock to Store Stock.
+  // The return is added only after Store accepts it; pending returns stay out.
+  try {
+    const returnKey = `nature-biotic-store-stock-return-received-v1:${storeId}`;
+    const rawReturns = localStorage.getItem(returnKey);
+    const receivedReturns = rawReturns ? JSON.parse(rawReturns) : [];
+
+    if (Array.isArray(receivedReturns)) {
+      receivedReturns
+        .filter((request: any) => request?.status === "accepted")
+        .forEach((request: any) => {
+          (request.items || []).forEach((item: any) => {
+            const productName = String(
+              item.product ?? item.productName ?? "",
+            ).trim();
+            if (!productName) return;
+
+            const packSize = String(item.packSize ?? "").trim();
+            const batchNo = String(item.batchNo ?? "").trim();
+            const expiryDate = String(item.expiryDate ?? "").trim();
+            const returnedQty = Math.max(0, Number(item.qty || 0));
+            if (returnedQty <= 0) return;
+
+            const key = [
+              productName.toLowerCase(),
+              packSize.toLowerCase(),
+              batchNo.toLowerCase(),
+            ].join("::");
+
+            const existing = grouped.get(key);
+            const unitPrice = Number(
+              item.unitValue ?? existing?.unitPrice ?? 0,
+            );
+
+            if (existing) {
+              // Transfer the accepted return from Hand Stock -> Store Stock.
+              // Total stock stays the same; only its location changes.
+              const movedQty = Math.min(existing.handQuantity, returnedQty);
+              existing.handQuantity = Math.max(
+                0,
+                existing.handQuantity - movedQty,
+              );
+              existing.quantity += returnedQty;
+
+              if (
+                (!existing.expiryDate || existing.expiryDate === "-") &&
+                expiryDate
+              ) {
+                existing.expiryDate = expiryDate;
+              }
+            } else {
+              const product = products.find(
+                (p: any) =>
+                  String(p.id ?? "") === String(item.productId ?? "") ||
+                  String(p.name ?? "")
+                    .trim()
+                    .toLowerCase() === productName.toLowerCase(),
+              );
+
+              grouped.set(key, {
+                id: `fro-return-${request.id}-${productName}-${packSize}-${batchNo}`,
+                productType: product?.productCategory || "Product",
+                productName,
+                packSize: packSize || "-",
+                batchNo: batchNo || "-",
+                expiryDate: expiryDate || "-",
+                quantity: returnedQty,
+                handQuantity: 0,
+                stockValue: returnedQty * unitPrice,
+                unitPrice,
+                lowStockLimit: Number(product?.minStock ?? 0),
+                lastSaleDate:
+                  lastSaleByProduct.get(productName.toLowerCase()) || "",
+              });
+            }
+          });
+        });
+    }
+  } catch {}
+
+  const productMap = new Map<string, StockRow>();
+
+  Array.from(grouped.values())
+    .sort((a, b) => {
+      const productCompare = a.productName.localeCompare(b.productName);
+      if (productCompare !== 0) return productCompare;
+
+      const packCompare = a.packSize.localeCompare(b.packSize);
+      if (packCompare !== 0) return packCompare;
+
+      return a.batchNo.localeCompare(b.batchNo);
+    })
+    .forEach((item) => {
+      const productKey = item.productName.toLowerCase();
+
+      if (!productMap.has(productKey)) {
+        productMap.set(productKey, {
+          id: `inventory-${productKey}`,
+          productType: item.productType,
+          productName: item.productName,
+          packSizes: [],
+        });
+      }
+
+      productMap.get(productKey)!.packSizes.push({
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        lastSaleDate: item.lastSaleDate,
+        availableStock: item.quantity,
+        // Accepted FRO deliveries move from Store Stock to Hand Stock.
+        stockInHand: item.handQuantity,
+        // Hand stock is populated from accepted FRO deliveries above.
+        stockValue: Math.round(item.stockValue),
+        unitPrice: item.unitPrice > 0 ? Math.round(item.unitPrice) : undefined,
+        lowStockLimit: item.lowStockLimit,
+      });
+    });
+
+  return Array.from(productMap.values());
+}
 
 type WarningPopupType =
   | "low-stock"
@@ -570,176 +412,53 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
   const [warningPopup, setWarningPopup] = useState<WarningPopupType | null>(
     null,
   );
-  const [handStockPopup, setHandStockPopup] = useState<{
-    productId: string;
-    productName: string;
-    packSize: string;
-    batchNo: string;
-    expiryDate: string;
-  } | null>(null);
-
+  const [purchases, setPurchases] = useState<CompanyStoreSaleRecord[]>(() =>
+    getStorePurchasesFromCompanySales(storeId),
+  );
   const [inventoryVersion, setInventoryVersion] = useState(0);
 
-  // Refresh when Purchase / Stock Delivery / FRO acceptance changes.
   useEffect(() => {
-    const refresh = () => setInventoryVersion((v) => v + 1);
+    const refresh = () => {
+      setPurchases(getStorePurchasesFromCompanySales(storeId));
+      setInventoryVersion((v) => v + 1);
+    };
+
+    refresh();
+
+    // Store Overview must react only when the stock movement is actually
+    // accepted:
+    //   Delivery: FRO accepts -> Store Stock decreases / Hand Stock increases
+    //   Return: Store accepts -> Hand Stock decreases / Store Stock increases
     window.addEventListener("company-store-sales-updated", refresh);
-    window.addEventListener("fro-accepted-deliveries-updated", refresh);
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
-    window.addEventListener("fro-stock-updated", refresh);
-    window.addEventListener("nature-biotic-delivery-challan-updated", refresh);
+    window.addEventListener("fro-accepted-deliveries-updated", refresh);
+    window.addEventListener(
+      "nature-biotic-store-stock-return-updated",
+      refresh,
+    );
     window.addEventListener("focus", refresh);
+
     return () => {
       window.removeEventListener("company-store-sales-updated", refresh);
-      window.removeEventListener("fro-accepted-deliveries-updated", refresh);
       window.removeEventListener(
         "nature-biotic-store-inventory-updated",
         refresh,
       );
-      window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener("fro-accepted-deliveries-updated", refresh);
       window.removeEventListener(
-        "nature-biotic-delivery-challan-updated",
+        "nature-biotic-store-stock-return-updated",
         refresh,
       );
       window.removeEventListener("focus", refresh);
     };
   }, [storeId]);
 
-  // Build the inventory from the store's actual purchase records.
-  // A Stock Delivery is deducted only from the accepted-delivery ledger.
-  const rows = useMemo<StockRow[]>(() => {
-    const products = getProductsByStore(storeId);
-    const purchases = getStorePurchasesFromCompanySales(storeId);
-    const productByName = new Map(
-      products.map((product: any) => [
-        String(product.name).trim().toLowerCase(),
-        product,
-      ]),
-    );
-
-    type Group = {
-      productId: string;
-      productType: string;
-      productName: string;
-      packSize: string;
-      batchNo: string;
-      expiryDate: string;
-      quantity: number;
-      unitPrice: number;
-      lastSaleDate: string;
-    };
-
-    const grouped = new Map<string, Group>();
-
-    purchases.forEach((purchase: any) => {
-      const productName = String(purchase.product ?? "").trim();
-      if (!productName) return;
-
-      const product =
-        (purchase.productId
-          ? products.find(
-              (p: any) => String(p.id) === String(purchase.productId),
-            )
-          : undefined) ?? productByName.get(productName.toLowerCase());
-
-      if (!product) return;
-
-      const productId = String(product.id);
-      const packSize = String(
-        purchase.packSize ??
-          purchase.pkgsize ??
-          purchase.size ??
-          product.size ??
-          "",
-      ).trim();
-      if (!packSize) return;
-
-      const batchNo =
-        String(purchase.batchNo ?? purchase.batchId ?? "").trim() || "-";
-      const expiryDate =
-        String(
-          purchase.expiryDate ?? purchase.expDate ?? purchase.expiry ?? "",
-        ).trim() || "-";
-      const quantity = Math.max(
-        0,
-        Number(purchase.quantity ?? purchase.qty ?? 0),
-      );
-      if (quantity <= 0) return;
-
-      const unitPrice = Number(
-        purchase.unitPrice ??
-          purchase.rate ??
-          purchase.price ??
-          product.sellingPrice ??
-          0,
-      );
-      const key = [
-        productId,
-        packSize.toLowerCase(),
-        batchNo.toLowerCase(),
-        expiryDate,
-      ].join("::");
-      const existing = grouped.get(key);
-
-      if (existing) {
-        existing.quantity += quantity;
-        existing.unitPrice = existing.unitPrice || unitPrice;
-        if (String(purchase.date || "") > existing.lastSaleDate) {
-          existing.lastSaleDate = String(purchase.date || "");
-        }
-      } else {
-        grouped.set(key, {
-          productId,
-          productType: String(
-            product.productType ?? product.productCategory ?? "-",
-          ),
-          productName,
-          packSize,
-          batchNo,
-          expiryDate,
-          quantity,
-          unitPrice,
-          lastSaleDate: String(purchase.date || ""),
-        });
-      }
-    });
-
-    const byProduct = new Map<string, StockRow>();
-
-    grouped.forEach((group) => {
-      const acceptedQty = getAcceptedStoreDeliveryQty(
-        storeId,
-        group.productId,
-        group.packSize,
-        group.batchNo,
-      );
-      const storeQty = Math.max(0, group.quantity - acceptedQty);
-      if (storeQty <= 0 && acceptedQty <= 0) return;
-
-      const productKey = group.productId;
-      const productRow = byProduct.get(productKey) ?? {
-        id: productKey,
-        productType: group.productType,
-        productName: group.productName,
-        packSizes: [],
-      };
-
-      const totalQty = storeQty + acceptedQty;
-      productRow.packSizes.push({
-        packSize: group.packSize,
-        batchNo: group.batchNo,
-        expiryDate: group.expiryDate,
-        lastSaleDate: group.lastSaleDate || "-",
-        availableStock: storeQty,
-        stockInHand: acceptedQty,
-        stockValue: totalQty * group.unitPrice,
-        unitPrice: group.unitPrice,
-      });
-      byProduct.set(productKey, productRow);
-    });
-
-    return Array.from(byProduct.values());
-  }, [storeId, inventoryVersion]);
+  // Inventory is now built only from the purchases made by this store,
+  // then adjusted by accepted Delivery/Return ledgers.
+  const rows = useMemo(
+    () => buildInventoryRows(storeId, purchases),
+    [storeId, purchases, inventoryVersion],
+  );
 
   const filteredRows = useMemo(
     () =>
@@ -833,7 +552,8 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
     ? {
         "low-stock": {
           title: "Low Stock Details",
-          subtitle: "Products with total stock of 5 or below.",
+          subtitle:
+            "Products whose total stock is below the configured limit stock.",
           icon: "warning",
         },
         expiry: {
@@ -858,214 +578,6 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
         },
       }[warningPopup]
     : null;
-
-  const handStockDetails = useMemo(() => {
-    if (!handStockPopup) return [];
-
-    const executives = Array.from(
-      new Set(
-        getFROStockTxns(storeId)
-          .map((txn: any) => String(txn.executiveName || "").trim())
-          .filter(Boolean),
-      ),
-    );
-
-    return executives
-      .map((executiveName) => {
-        const row = getFROStockByExecutive(storeId, executiveName).find(
-          (stock: any) =>
-            String(stock.productId || "") === handStockPopup.productId &&
-            String(stock.packSize || "")
-              .trim()
-              .toLowerCase() === handStockPopup.packSize.trim().toLowerCase() &&
-            String(stock.batchNo || "")
-              .trim()
-              .toLowerCase() === handStockPopup.batchNo.trim().toLowerCase(),
-        );
-
-        return {
-          executiveName,
-          quantity: Number(row?.currentQty || 0),
-        };
-      })
-      .filter((row) => row.quantity > 0);
-  }, [storeId, handStockPopup, inventoryVersion]);
-
-  const exportToPDF = () => {
-    const printWindow = window.open("", "_blank", "width=1200,height=800");
-    if (!printWindow) {
-      alert("Please allow pop-ups to download the PDF.");
-      return;
-    }
-
-    const rowsForPdf = filteredRows
-      .flatMap((product, productIndex) =>
-        product.packSizes.map((pack, packIndex) => {
-          const totalStock = pack.availableStock + pack.stockInHand;
-          const unitPrice =
-            pack.unitPrice ??
-            (totalStock > 0 ? Math.round(pack.stockValue / totalStock) : 0);
-
-          return `
-          <tr>
-            <td>${packIndex === 0 ? productIndex + 1 : ""}</td>
-            <td>${packIndex === 0 ? product.productType : ""}</td>
-            <td>${packIndex === 0 ? product.productName : ""}</td>
-            <td>${pack.packSize}</td>
-            <td class="right">${formatCurrency(unitPrice)}</td>
-            <td>${pack.batchNo}</td>
-            <td>${pack.expiryDate}</td>
-            <td class="center">${pack.availableStock}</td>
-            <td class="center">${pack.stockInHand}</td>
-            <td class="center">${totalStock}</td>
-            <td class="right">${formatCurrency(pack.stockValue)}</td>
-          </tr>
-        `;
-        }),
-      )
-      .join("");
-
-    const generatedDate = new Date().toLocaleDateString("en-IN");
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Store Inventory Report</title>
-          <meta charset="UTF-8" />
-          <style>
-            * { box-sizing: border-box; }
-            body {
-              font-family: Arial, Helvetica, sans-serif;
-              margin: 24px;
-              color: #1e293b;
-              font-size: 11px;
-            }
-            h1 {
-              margin: 0 0 4px;
-              font-size: 20px;
-              color: #14532d;
-            }
-            .subtitle {
-              color: #64748b;
-              margin-bottom: 18px;
-            }
-            .summary {
-              display: flex;
-              gap: 10px;
-              margin-bottom: 16px;
-            }
-            .summary-box {
-              border: 1px solid #dbe3ea;
-              border-radius: 6px;
-              padding: 8px 12px;
-              min-width: 110px;
-            }
-            .summary-label {
-              color: #64748b;
-              font-size: 9px;
-            }
-            .summary-value {
-              font-size: 14px;
-              font-weight: 700;
-              margin-top: 3px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              table-layout: fixed;
-            }
-            th {
-              background: #e2e8f0;
-              color: #334155;
-              font-size: 9px;
-              text-transform: uppercase;
-              padding: 7px 5px;
-              border: 1px solid #cbd5e1;
-              text-align: left;
-            }
-            td {
-              padding: 6px 5px;
-              border: 1px solid #e2e8f0;
-              vertical-align: middle;
-              word-break: break-word;
-            }
-            .center { text-align: center; }
-            .right { text-align: right; }
-            tfoot td {
-              background: #f1f5f9;
-              font-weight: 700;
-            }
-            @page {
-              size: A4 landscape;
-              margin: 12mm;
-            }
-          </style>
-        </head>
-        <body>
-          <h1>Store Inventory Report</h1>
-          <div class="subtitle">Generated on ${generatedDate}</div>
-
-          <div class="summary">
-            <div class="summary-box">
-              <div class="summary-label">Store Stock</div>
-              <div class="summary-value">${totals.availableStock}</div>
-            </div>
-            <div class="summary-box">
-              <div class="summary-label">Hand Stock</div>
-              <div class="summary-value">${totals.stockInHand}</div>
-            </div>
-            <div class="summary-box">
-              <div class="summary-label">Total Stock</div>
-              <div class="summary-value">${totals.totalStock}</div>
-            </div>
-            <div class="summary-box">
-              <div class="summary-label">Stock Value</div>
-              <div class="summary-value">${formatCurrency(totals.stockValue)}</div>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="width:4%">S.No</th>
-                <th style="width:10%">Product Type</th>
-                <th style="width:12%">Product Name</th>
-                <th style="width:8%">Pack Size</th>
-                <th style="width:9%">Unit Price</th>
-                <th style="width:11%">Batch No</th>
-                <th style="width:11%">Expiry Date</th>
-                <th style="width:8%">Store Stock</th>
-                <th style="width:8%">Hand Stock</th>
-                <th style="width:8%">Total Stock</th>
-                <th style="width:11%">Stock Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsForPdf}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="7" class="right">Total</td>
-                <td class="center">${totals.availableStock}</td>
-                <td class="center">${totals.stockInHand}</td>
-                <td class="center">${totals.totalStock}</td>
-                <td class="right">${formatCurrency(totals.stockValue)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-
-    printWindow.onload = () => {
-      printWindow.focus();
-      printWindow.print();
-      printWindow.onafterprint = () => printWindow.close();
-    };
-  };
 
   return (
     <div>
@@ -1098,8 +610,8 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                   }))}
                 />
               </div>
-              <Button variant="secondary" onClick={exportToPDF}>
-                <Icon name="download" size={18} /> Export PDF
+              <Button variant="secondary">
+                <Icon name="download" size={18} /> Export to Excel
               </Button>
             </div>
           </div>
@@ -1304,32 +816,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                             {pack.availableStock}
                           </td>
                           <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums text-slate-700">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                pack.stockInHand > 0 &&
-                                setHandStockPopup({
-                                  productId: product.id,
-                                  productName: product.productName,
-                                  packSize: pack.packSize,
-                                  batchNo: pack.batchNo,
-                                  expiryDate: pack.expiryDate,
-                                })
-                              }
-                              disabled={pack.stockInHand <= 0}
-                              className={`font-semibold ${
-                                pack.stockInHand > 0
-                                  ? "cursor-pointer text-brand-700 underline decoration-dotted underline-offset-2 hover:text-brand-900"
-                                  : "cursor-default text-slate-400"
-                              }`}
-                              title={
-                                pack.stockInHand > 0
-                                  ? "View FRO-wise hand stock"
-                                  : "No FRO hand stock"
-                              }
-                            >
-                              {pack.stockInHand}
-                            </button>
+                            {pack.stockInHand}
                           </td>
                           <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-bold">
                             <div className="flex flex-col items-center justify-center gap-1">
@@ -1426,120 +913,6 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
           </div>
         </Card>
       </div>
-
-      {handStockPopup &&
-        createPortal(
-          <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[82vh] w-[94vw] max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">
-                    FRO Hand Stock
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {handStockPopup.productName} · {handStockPopup.packSize} ·
-                    Batch {handStockPopup.batchNo}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Expiry: {handStockPopup.expiryDate}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setHandStockPopup(null)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
-                >
-                  <Icon name="close" size={20} />
-                </button>
-              </div>
-
-              <div className="border-b border-slate-200 px-6 py-3">
-                <div className="inline-flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-sm">
-                  <span className="text-slate-500">Total with FROs</span>
-                  <span className="font-bold text-brand-700">
-                    {handStockDetails.reduce(
-                      (sum, row) => sum + row.quantity,
-                      0,
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
-                    <tr className="border-b border-slate-200">
-                      <th className="w-[15%] border-r border-slate-200 px-3 py-3 text-center">
-                        S.No
-                      </th>
-                      <th className="border-r border-slate-200 px-3 py-3 text-left">
-                        FRO Name
-                      </th>
-                      <th className="w-[25%] px-3 py-3 text-center">
-                        Hand Stock
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {handStockDetails.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={3}
-                          className="px-4 py-10 text-center text-slate-400"
-                        >
-                          No FRO stock found for this product.
-                        </td>
-                      </tr>
-                    ) : (
-                      handStockDetails.map((row, index) => (
-                        <tr
-                          key={row.executiveName}
-                          className="border-b border-slate-100 hover:bg-slate-50"
-                        >
-                          <td className="border-r border-slate-100 px-3 py-3 text-center text-slate-500">
-                            {index + 1}
-                          </td>
-                          <td className="border-r border-slate-100 px-3 py-3 font-semibold text-slate-800">
-                            {row.executiveName}
-                          </td>
-                          <td className="px-3 py-3 text-center font-bold text-brand-700">
-                            {row.quantity}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                  {handStockDetails.length > 0 && (
-                    <tfoot>
-                      <tr className="bg-slate-100 font-bold text-slate-800">
-                        <td colSpan={2} className="px-3 py-3 text-right">
-                          Total
-                        </td>
-                        <td className="px-3 py-3 text-center text-brand-700">
-                          {handStockDetails.reduce(
-                            (sum, row) => sum + row.quantity,
-                            0,
-                          )}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
-              </div>
-
-              <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => setHandStockPopup(null)}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
 
       {warningPopup &&
         warningPopupConfig &&

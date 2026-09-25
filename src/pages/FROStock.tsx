@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Icon, Button } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { addFROStock, reduceFROStock } from "@/lib/data";
+import { addFROStock, reduceFROStock, recordAcceptedStoreDelivery } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 
 type DeliveryItem = {
@@ -232,6 +232,21 @@ export default function FROStock() {
         qty: Number(item.qty || 0),
       })),
       challan.date,
+    );
+
+    // IMPORTANT: Store Overview uses this accepted-delivery ledger to move
+    // quantity from Store Stock to Hand Stock. Record it only after FRO accepts.
+    recordAcceptedStoreDelivery(
+      challan.storeId || user?.storeId || "default",
+      challan.executive,
+      challan.items.map((item) => ({
+        productId: item.productId,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        qty: Number(item.qty || 0),
+      })),
+      challan.date,
+      challan.id,
     );
 
     const acceptedAt = new Date().toISOString();

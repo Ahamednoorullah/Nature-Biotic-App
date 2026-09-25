@@ -94,24 +94,11 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const [inventoryVersion, setInventoryVersion] = useState(0);
 
   function isChallanAccepted(challan: Challan): boolean {
-    if (challan.status === "accepted") return true;
-
-    // A delivery becomes visible in this table only after the FRO has
-    // accepted the complete delivery and it is recorded in the accepted
-    // delivery ledger.
-    try {
-      return challan.items.every((item) => {
-        const acceptedQty = getAcceptedStoreDeliveryQty(
-          storeId,
-          item.productId,
-          item.packSize,
-          item.batchNo,
-        );
-        return acceptedQty >= Number(item.qty || 0);
-      });
-    } catch {
-      return false;
-    }
+    // IMPORTANT: the Store table must depend on this delivery's own status.
+    // Do not infer acceptance from total quantity in the accepted ledger,
+    // because an older accepted delivery of the same product/batch can make
+    // a newly-created pending delivery look accepted.
+    return challan.status === "accepted";
   }
 
   const pendingChallans = useMemo(

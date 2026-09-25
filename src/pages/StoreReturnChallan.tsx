@@ -13,6 +13,10 @@ type ReturnItem = {
   issuedQty: string;
   returnedQty: string;
   unitValue: string;
+  taxPercent?: number;
+  cgstPercent?: number;
+  sgstPercent?: number;
+  igstPercent?: number;
 };
 
 type ReturnChallan = {
@@ -198,18 +202,140 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     [froReturns],
   );
 
+  function getReturnTaxForItem(item: FROReturnRequestItem) {
+    const product = (allProducts as any[]).find(
+      (p: any) =>
+        String(p.id || "") === String(item.productId || "") ||
+        String(p.name || "").trim().toLowerCase() ===
+          String(item.product || "").trim().toLowerCase(),
+    );
+
+    const totalTax = Number(product?.taxPercentage ?? product?.taxPercent ?? 0);
+    const taxType = String(product?.taxType ?? "").toLowerCase();
+
+    const explicitCgst = Number(
+      product?.cgstPercent ?? product?.cgst ?? 0,
+    );
+    const explicitSgst = Number(
+      product?.sgstPercent ?? product?.sgst ?? 0,
+    );
+    const explicitIgst = Number(
+      product?.igstPercent ?? product?.igst ?? 0,
+    );
+
+    if (explicitCgst || explicitSgst || explicitIgst) {
+      return {
+        taxPercent:
+          explicitCgst + explicitSgst + explicitIgst || totalTax,
+        cgstPercent: explicitCgst,
+        sgstPercent: explicitSgst,
+        igstPercent: explicitIgst,
+      };
+    }
+
+    if (taxType.includes("interstate") || taxType.includes("igst")) {
+      return {
+        taxPercent: totalTax,
+        cgstPercent: 0,
+        sgstPercent: 0,
+        igstPercent: totalTax,
+      };
+    }
+
+    const half = totalTax / 2;
+    return {
+      taxPercent: totalTax,
+      cgstPercent: half,
+      sgstPercent: half,
+      igstPercent: 0,
+    };
+  }
+
+  function getItemTaxAmount(item: ReturnItem) {
+    const base = Number(item.returnedQty || 0) * Number(item.unitValue || 0);
+    const cgst = Number(item.cgstPercent ?? 0);
+    const sgst = Number(item.sgstPercent ?? 0);
+    const igst = Number(item.igstPercent ?? 0);
+
+    if (cgst || sgst || igst) {
+      return (base * (cgst + sgst + igst)) / 100;
+    }
+
+    return (base * Number(item.taxPercent ?? 0)) / 100;
+  }
+
   function acceptFROReturn(request: FROReturnRequest) {
     if (request.status === "accepted") return;
+
+    // Resolve the request against the FRO's actual current hand stock.
+    // Older return requests may have an empty productId because the old
+    // FRO return form was built from historical challans.
+    let currentStock: any[] = [];
+    try {
+      const raw = localStorage.getItem(
+        `nature-biotic-fro-stock-v1:${storeId}`,
+      );
+      const parsed = raw ? JSON.parse(raw) : [];
+      currentStock = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      currentStock = [];
+    }
+
+    const resolvedItems = request.items.map((item) => {
+      const productName = String(item.product || "").trim().toLowerCase();
+      const requestedProductId = String(item.productId || "");
+
+      const stockRow = currentStock.find(
+        (row: any) =>
+          String(row.executiveName || "").trim().toLowerCase() ===
+            String(request.froName || "").trim().toLowerCase() &&
+          String(row.packSize || "") === String(item.packSize || "") &&
+          String(row.batchNo || "") === String(item.batchNo || "") &&
+          (
+            (requestedProductId &&
+              String(row.productId || "") === requestedProductId) ||
+            (!requestedProductId &&
+              String(row.productName || "").trim().toLowerCase() ===
+                productName)
+          ) &&
+          Number(row.currentQty || 0) > 0,
+      );
+
+      return {
+        ...item,
+        productId: String(stockRow?.productId || item.productId || ""),
+        availableQty: Number(stockRow?.currentQty || 0),
+      };
+    });
+
+    const invalid = resolvedItems.find(
+      (item) =>
+        !item.productId ||
+        Number(item.qty || 0) <= 0 ||
+        Number(item.qty || 0) > Number(item.availableQty || 0),
+    );
+
+    if (invalid) {
+      window.alert(
+        `Return quantity is greater than the FRO current Hand Stock. Available: ${Number(
+          invalid.availableQty || 0,
+        )}`,
+      );
+      loadFROReturns();
+      setSelectedFroReturn(null);
+      return;
+    }
 
     const acceptedAt = new Date().toISOString();
     const acceptedBy = "Store";
 
     // Remove the returned quantity from the FRO's hand stock only after
-    // Store accepts the return.
+    // Store accepts the return. Use the resolved productId so legacy
+    // requests with an empty productId also work.
     reduceFROStock(
       storeId,
       request.froName,
-      request.items.map((item) => ({
+      resolvedItems.map((item) => ({
         productId: item.productId,
         packSize: item.packSize,
         batchNo: item.batchNo,
@@ -221,6 +347,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
     const accepted: FROReturnRequest = {
       ...request,
+      items: resolvedItems.map(({ availableQty, ...item }) => item),
       status: "accepted",
       acceptedAt,
       acceptedBy,
@@ -284,20 +411,27 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       village: "",
       phone: "",
       farmer: request.froName,
-      placeOfSupply: "",
+      placeOfSupply: "Tamil Nadu",
       cgstPercent: 0,
       sgstPercent: 0,
       igstPercent: 0,
-      items: request.items.map((item) => ({
-        productId: item.productId,
-        product: item.product,
-        packSize: item.packSize,
-        batchNo: item.batchNo,
-        expiryDate: item.expiryDate,
-        issuedQty: String(item.qty),
-        returnedQty: String(item.qty),
-        unitValue: String(item.unitValue),
-      })),
+      items: request.items.map((item) => {
+        const tax = getReturnTaxForItem(item);
+        return {
+          productId: item.productId,
+          product: item.product,
+          packSize: item.packSize,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          issuedQty: String(item.qty),
+          returnedQty: String(item.qty),
+          unitValue: String(item.unitValue),
+          taxPercent: tax.taxPercent,
+          cgstPercent: tax.cgstPercent,
+          sgstPercent: tax.sgstPercent,
+          igstPercent: tax.igstPercent,
+        };
+      }),
     };
 
     // Show the accepted FRO return in the Store Return Challan list.
@@ -648,12 +782,23 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
                   0,
                 );
 
-                // Tax values
-                const sgst = (withoutTax * (row.sgstPercent || 0)) / 100;
-                const cgst = (withoutTax * (row.cgstPercent || 0)) / 100;
-                const igst = (withoutTax * (row.igstPercent || 0)) / 100;
+                // Tax values: accepted FRO returns keep product-level GST.
+                const itemTax = row.items.reduce(
+                  (sum, item) => sum + getItemTaxAmount(item),
+                  0,
+                );
+                const fallbackSgst =
+                  (withoutTax * Number(row.sgstPercent || 0)) / 100;
+                const fallbackCgst =
+                  (withoutTax * Number(row.cgstPercent || 0)) / 100;
+                const fallbackIgst =
+                  (withoutTax * Number(row.igstPercent || 0)) / 100;
+                const taxTotal =
+                  itemTax > 0
+                    ? itemTax
+                    : fallbackSgst + fallbackCgst + fallbackIgst;
 
-                const total = withoutTax + sgst + cgst + igst;
+                const total = withoutTax + taxTotal;
 
                 return (
                   <tr
@@ -694,7 +839,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
                     {/* TAX */}
                     <td className="border-r border-slate-100 px-1.5 py-3 text-right text-slate-600 whitespace-nowrap">
-                      {formatCurrency(sgst + cgst + igst)}
+                      {formatCurrency(taxTotal)}
                     </td>
 
                     {/* TOTAL */}
@@ -1639,16 +1784,27 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
                           Number(item.unitValue || 0),
                       0,
                     );
-                    const sgst =
-                      (withoutTax * Number(selectesdhallan.sgstPercent || 0)) /
+                    const itemTaxAmount = selectesdhallan.items.reduce(
+                      (sum: number, item: ReturnItem) =>
+                        sum + getItemTaxAmount(item),
+                      0,
+                    );
+                    const fallbackSgst =
+                      (withoutTax *
+                        Number(selectesdhallan.sgstPercent || 0)) /
                       100;
-                    const cgst =
-                      (withoutTax * Number(selectesdhallan.cgstPercent || 0)) /
+                    const fallbackCgst =
+                      (withoutTax *
+                        Number(selectesdhallan.cgstPercent || 0)) /
                       100;
-                    const igst =
-                      (withoutTax * Number(selectesdhallan.igstPercent || 0)) /
+                    const fallbackIgst =
+                      (withoutTax *
+                        Number(selectesdhallan.igstPercent || 0)) /
                       100;
-                    const taxAmount = sgst + cgst + igst;
+                    const taxAmount =
+                      itemTaxAmount > 0
+                        ? itemTaxAmount
+                        : fallbackSgst + fallbackCgst + fallbackIgst;
                     const grandTotal = withoutTax + taxAmount;
                     const roundedTotal = Math.round(grandTotal);
                     const roundOff = roundedTotal - grandTotal;

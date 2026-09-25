@@ -2051,9 +2051,49 @@ export type FROStockTxn = {
 // Accepted Store → FRO delivery ledger.
 // Store stock moves to Hand Stock only after the FRO accepts the delivery.
 const FRO_ACCEPTED_DELIVERY_KEY = "nature-biotic-fro-accepted-deliveries-v1";
+const STORE_RETURN_RECEIVED_PREFIX =
+  "nature-biotic-store-stock-return-received-v1";
+const FRO_PENDING_DELIVERY_PREFIX = "nature-biotic-fro-pending-deliveries-v1";
+const FRO_RETURN_REQUEST_PREFIX = "nature-biotic-fro-stock-return-requests-v1";
+const PROCESSED_STOCK_MOVEMENT_KEY =
+  "nature-biotic-processed-stock-movements-v1";
+const DELIVERY_CHALLAN_PREFIX = "nature-biotic-store-delivery-challans-v2";
+
+function normStockText(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function stockVariantsMatch(
+  a: {
+    productId?: string;
+    productName?: string;
+    packSize?: string;
+    batchNo?: string;
+  },
+  b: {
+    productId?: string;
+    productName?: string;
+    packSize?: string;
+    batchNo?: string;
+  },
+) {
+  if (normStockText(a.packSize) !== normStockText(b.packSize)) return false;
+  if (normStockText(a.batchNo) !== normStockText(b.batchNo)) return false;
+
+  const aId = String(a.productId || "");
+  const bId = String(b.productId || "");
+  if (aId && bId && aId === bId) return true;
+
+  const aName = normStockText(a.productName);
+  const bName = normStockText(b.productName);
+  return Boolean(aName && bName && aName === bName);
+}
 
 type AcceptedStoreDeliveryItem = {
   productId: string;
+  productName?: string;
   packSize: string;
   batchNo: string;
   qty: number;
@@ -2067,10 +2107,46 @@ type AcceptedStoreDelivery = {
   items: AcceptedStoreDeliveryItem[];
 };
 
+function getProcessedStockMovementIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PROCESSED_STOCK_MOVEMENT_KEY);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function markStockMovementProcessed(movementId?: string) {
+  if (!movementId || typeof window === "undefined") return;
+  const existing = getProcessedStockMovementIds();
+  if (existing.includes(movementId)) return;
+  try {
+    window.localStorage.setItem(
+      PROCESSED_STOCK_MOVEMENT_KEY,
+      JSON.stringify([movementId, ...existing]),
+    );
+  } catch {}
+}
+
+function isStockMovementProcessed(movementId?: string) {
+  if (!movementId) return false;
+  return getProcessedStockMovementIds().includes(movementId);
+}
+
+function notifyStoreStockChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+  window.dispatchEvent(new Event("fro-accepted-deliveries-updated"));
+}
+
 function getAcceptedStoreDeliveries(storeId: string): AcceptedStoreDelivery[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(`${FRO_ACCEPTED_DELIVERY_KEY}:${storeId}`);
+    const raw = window.localStorage.getItem(
+      `${FRO_ACCEPTED_DELIVERY_KEY}:${storeId}`,
+    );
     const rows = raw ? JSON.parse(raw) : [];
     return Array.isArray(rows) ? rows : [];
   } catch {
@@ -2078,12 +2154,17 @@ function getAcceptedStoreDeliveries(storeId: string): AcceptedStoreDelivery[] {
   }
 }
 
-function saveAcceptedStoreDeliveries(storeId: string, rows: AcceptedStoreDelivery[]) {
+function saveAcceptedStoreDeliveries(
+  storeId: string,
+  rows: AcceptedStoreDelivery[],
+) {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(`${FRO_ACCEPTED_DELIVERY_KEY}:${storeId}`, JSON.stringify(rows));
-    window.dispatchEvent(new Event("fro-accepted-deliveries-updated"));
-    window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    window.localStorage.setItem(
+      `${FRO_ACCEPTED_DELIVERY_KEY}:${storeId}`,
+      JSON.stringify(rows),
+    );
+    notifyStoreStockChanged();
   } catch {}
 }
 
@@ -2092,20 +2173,109 @@ export function getAcceptedStoreDeliveryQty(
   productId: string,
   packSize: string,
   batchNo: string,
+  productName?: string,
 ): number {
-  const productKey = String(productId || "").trim();
-  const packKey = String(packSize || "").trim().toLowerCase();
-  const batchKey = String(batchNo || "").trim().toLowerCase();
-
+  const target = { productId, productName, packSize, batchNo };
   return getAcceptedStoreDeliveries(storeId).reduce((sum, delivery) => {
-    return sum + delivery.items.reduce((itemSum, item) => {
-      const matches =
-        String(item.productId || "").trim() === productKey &&
-        String(item.packSize || "").trim().toLowerCase() === packKey &&
-        String(item.batchNo || "").trim().toLowerCase() === batchKey;
-      return itemSum + (matches ? Math.max(0, Number(item.qty || 0)) : 0);
-    }, 0);
+    return (
+      sum +
+      delivery.items.reduce((itemSum, item) => {
+        return (
+          itemSum +
+          (stockVariantsMatch(item, target)
+            ? Math.max(0, Number(item.qty || 0))
+            : 0)
+        );
+      }, 0)
+    );
   }, 0);
+}
+
+export function getAcceptedStoreReturns(storeId: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(
+      `${STORE_RETURN_RECEIVED_PREFIX}:${storeId}`,
+    );
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows)
+      ? rows.filter((row: any) => row?.status === "accepted")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getAcceptedStoreReturnQty(
+  storeId: string,
+  productId: string,
+  packSize: string,
+  batchNo: string,
+  productName?: string,
+): number {
+  const target = { productId, productName, packSize, batchNo };
+  return getAcceptedStoreReturns(storeId).reduce((sum, request: any) => {
+    return (
+      sum +
+      (request.items || []).reduce((itemSum: number, item: any) => {
+        return (
+          itemSum +
+          (stockVariantsMatch(
+            {
+              productId: item.productId,
+              productName: item.product ?? item.productName,
+              packSize: item.packSize,
+              batchNo: item.batchNo,
+            },
+            target,
+          )
+            ? Math.max(0, Number(item.qty || 0))
+            : 0)
+        );
+      }, 0)
+    );
+  }, 0);
+}
+
+export function getStoreAvailableQty(
+  storeId: string,
+  productId: string,
+  packSize: string,
+  batchNo: string,
+  productName?: string,
+): number {
+  const purchased = getStorePurchasesFromCompanySales(storeId).reduce(
+    (sum, purchase) => {
+      const matches = stockVariantsMatch(
+        {
+          productId: String((purchase as any).productId || ""),
+          productName: String(purchase.product || ""),
+          packSize: String(purchase.packSize || purchase.pkgsize || ""),
+          batchNo: String(purchase.batchNo || ""),
+        },
+        { productId, productName, packSize, batchNo },
+      );
+      return matches ? sum + Math.max(0, Number(purchase.quantity || 0)) : sum;
+    },
+    0,
+  );
+
+  const delivered = getAcceptedStoreDeliveryQty(
+    storeId,
+    productId,
+    packSize,
+    batchNo,
+    productName,
+  );
+  const returned = getAcceptedStoreReturnQty(
+    storeId,
+    productId,
+    packSize,
+    batchNo,
+    productName,
+  );
+
+  return Math.max(0, purchased - delivered + returned);
 }
 
 export function recordAcceptedStoreDelivery(
@@ -2116,23 +2286,188 @@ export function recordAcceptedStoreDelivery(
   deliveryId?: string,
 ) {
   const existing = getAcceptedStoreDeliveries(storeId);
-  if (deliveryId && existing.some((row) => row.id === deliveryId)) return existing;
+
+  if (deliveryId && existing.some((row) => row.id === deliveryId)) {
+    markStockMovementProcessed(deliveryId);
+    return existing;
+  }
 
   const next: AcceptedStoreDelivery = {
-    id: deliveryId || `accepted-delivery-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    id:
+      deliveryId ||
+      `accepted-delivery-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     storeId,
     executiveName,
     date: date || new Date().toISOString().split("T")[0],
     items: items.map((item) => ({
       productId: String(item.productId || ""),
+      productName: String(item.productName || ""),
       packSize: String(item.packSize || ""),
       batchNo: String(item.batchNo || ""),
       qty: Math.max(0, Number(item.qty || 0)),
     })),
   };
 
-  saveAcceptedStoreDeliveries(storeId, [next, ...existing]);
-  return [next, ...existing];
+  const rows = [next, ...existing];
+  saveAcceptedStoreDeliveries(storeId, rows);
+  markStockMovementProcessed(next.id);
+  return rows;
+}
+
+export function recordAcceptedStoreReturn(storeId: string, request: any) {
+  if (typeof window === "undefined") return [];
+  try {
+    const key = `${STORE_RETURN_RECEIVED_PREFIX}:${storeId}`;
+    const existing = JSON.parse(localStorage.getItem(key) || "[]");
+    const rows = Array.isArray(existing) ? existing : [];
+    if (rows.some((row: any) => String(row.id) === String(request.id))) {
+      markStockMovementProcessed(request.id);
+      return rows;
+    }
+
+    const next = [
+      {
+        ...request,
+        status: "accepted",
+        source: "FRO",
+        receivedBy: "Store",
+      },
+      ...rows,
+    ];
+    localStorage.setItem(key, JSON.stringify(next));
+    markStockMovementProcessed(request.id);
+    notifyStoreStockChanged();
+    window.dispatchEvent(new Event("nature-biotic-store-stock-return-updated"));
+    return next;
+  } catch {
+    return [];
+  }
+}
+
+export function persistDeliveryChallanAccepted(accepted: {
+  id: string;
+  storeId?: string;
+  executive?: string;
+  [key: string]: any;
+}) {
+  if (typeof window === "undefined") return;
+
+  const updateKey = (key: string) => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return false;
+      const rows = JSON.parse(raw);
+      if (!Array.isArray(rows)) return false;
+      let found = false;
+      const next = rows.map((item: any) => {
+        if (String(item.id) === String(accepted.id)) {
+          found = true;
+          return { ...item, ...accepted, status: "accepted" };
+        }
+        return item;
+      });
+      if (found) localStorage.setItem(key, JSON.stringify(next));
+      return found;
+    } catch {
+      return false;
+    }
+  };
+
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (
+      key.startsWith(`${DELIVERY_CHALLAN_PREFIX}:`) ||
+      key.startsWith(`${FRO_PENDING_DELIVERY_PREFIX}:`)
+    ) {
+      keys.push(key);
+    }
+  }
+  keys.forEach(updateKey);
+
+  if (accepted.storeId) {
+    const storeKey = `${DELIVERY_CHALLAN_PREFIX}:${accepted.storeId}`;
+    const found = updateKey(storeKey);
+    if (!found) {
+      try {
+        const existing = JSON.parse(localStorage.getItem(storeKey) || "[]");
+        const rows = Array.isArray(existing) ? existing : [];
+        localStorage.setItem(
+          storeKey,
+          JSON.stringify([
+            { ...accepted, status: "accepted" },
+            ...rows.filter((row: any) => String(row.id) !== String(accepted.id)),
+          ]),
+        );
+      } catch {}
+    }
+  }
+
+  window.dispatchEvent(new Event("nature-biotic-delivery-challan-updated"));
+}
+
+export function persistFROReturnAccepted(accepted: {
+  id: string;
+  froName?: string;
+  storeId?: string;
+  [key: string]: any;
+}) {
+  if (typeof window === "undefined") return;
+
+  const froKey = String(accepted.froName || "")
+    .trim()
+    .toLowerCase();
+  if (!froKey) return;
+
+  try {
+    const requestKey = `${FRO_RETURN_REQUEST_PREFIX}:${froKey}`;
+    const saved = JSON.parse(localStorage.getItem(requestKey) || "[]");
+    if (Array.isArray(saved)) {
+      localStorage.setItem(
+        requestKey,
+        JSON.stringify(
+          saved.map((item: any) =>
+            String(item.id) === String(accepted.id)
+              ? { ...item, ...accepted, status: "accepted" }
+              : item,
+          ),
+        ),
+      );
+    }
+  } catch {}
+
+  window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
+}
+
+export function getFROAvailableQty(
+  storeId: string,
+  executiveName: string,
+  productId: string,
+  packSize: string,
+  batchNo: string,
+  productName?: string,
+): number {
+  const target = { productId, productName, packSize, batchNo };
+  return getFROStock(storeId).reduce((sum, row) => {
+    if (normStockText(row.executiveName) !== normStockText(executiveName)) {
+      return sum;
+    }
+    if (
+      !stockVariantsMatch(
+        {
+          productId: row.productId,
+          productName: row.productName,
+          packSize: row.packSize,
+          batchNo: row.batchNo,
+        },
+        target,
+      )
+    ) {
+      return sum;
+    }
+    return sum + Math.max(0, Number(row.currentQty || 0));
+  }, 0);
 }
 
 // Called from Delivery Challan → Store gives stock to FRO
@@ -2148,8 +2483,13 @@ export function addFROStock(
     unitValue: number;
     qty: number;
   }[],
-  date?: string, // ✅ NEW — pass actual challan date
+  date?: string,
+  deliveryId?: string,
 ) {
+  if (deliveryId && isStockMovementProcessed(deliveryId)) {
+    return getFROStock(storeId);
+  }
+
   const rows = getFROStock(storeId);
   const map = new Map(
     rows.map((r) => [
@@ -2189,25 +2529,28 @@ export function addFROStock(
 
   saveFROStock(storeId, Array.from(map.values()));
 
-  // Acceptance is the moment stock moves from Store Stock to FRO Hand Stock.
+  // One unique accepted-delivery record per challan id.
   recordAcceptedStoreDelivery(
     storeId,
     executiveName,
     items.map((item) => ({
       productId: item.productId,
+      productName: item.productName,
       packSize: item.packSize,
       batchNo: item.batchNo,
       qty: item.qty,
     })),
     date,
+    deliveryId,
   );
 
-  // ✅ NEW — log dated transaction for filterable reporting
   const txnDate = date || new Date().toISOString().split("T")[0];
   addFROStockTxns(
     storeId,
     items.map((item) => ({
-      id: `fro-txn-${Date.now()}-${Math.random()}`,
+      id: deliveryId
+        ? `fro-txn-delivery-${deliveryId}-${item.productId}-${item.packSize}-${item.batchNo}`
+        : `fro-txn-${Date.now()}-${Math.random()}`,
       storeId,
       executiveName,
       productId: item.productId,
@@ -2221,6 +2564,9 @@ export function addFROStock(
       type: "Delivery" as const,
     })),
   );
+
+  markStockMovementProcessed(deliveryId);
+  return Array.from(map.values());
 }
 
 // Called from Return Challan (FRO → Store) AND from Executive Sale (FRO → Farmer)
@@ -2229,27 +2575,55 @@ export function reduceFROStock(
   executiveName: string,
   items: {
     productId: string;
+    productName?: string;
     packSize: string;
     batchNo: string;
     qty: number;
   }[],
-  date?: string, // ✅ NEW
-  txnType: "Return" | "Sale" = "Sale", // ✅ NEW
+  date?: string,
+  txnType: "Return" | "Sale" = "Sale",
+  movementId?: string,
 ) {
+  if (movementId && isStockMovementProcessed(movementId)) {
+    return getFROStock(storeId);
+  }
+
   const rows = getFROStock(storeId);
   items.forEach((item) => {
-    const row = rows.find(
-      (r) =>
-        r.executiveName === executiveName &&
-        r.productId === item.productId &&
-        r.packSize === item.packSize &&
-        r.batchNo === item.batchNo,
-    );
-    if (row) row.currentQty = Math.max(0, row.currentQty - item.qty);
+    let remaining = Math.max(0, Number(item.qty || 0));
+
+    for (const row of rows) {
+      if (remaining <= 0) break;
+      if (normStockText(row.executiveName) !== normStockText(executiveName)) {
+        continue;
+      }
+      if (
+        !stockVariantsMatch(
+          {
+            productId: row.productId,
+            productName: row.productName,
+            packSize: row.packSize,
+            batchNo: row.batchNo,
+          },
+          {
+            productId: item.productId,
+            productName: item.productName,
+            packSize: item.packSize,
+            batchNo: item.batchNo,
+          },
+        )
+      ) {
+        continue;
+      }
+
+      const available = Math.max(0, Number(row.currentQty || 0));
+      const take = Math.min(available, remaining);
+      row.currentQty = available - take;
+      remaining -= take;
+    }
   });
   saveFROStock(storeId, rows);
 
-  // ✅ NEW — log dated transaction (negative qty = stock going OUT)
   const txnDate = date || new Date().toISOString().split("T")[0];
   const rowsMap = getFROStock(storeId);
   addFROStockTxns(
@@ -2257,17 +2631,30 @@ export function reduceFROStock(
     items.map((item) => {
       const ref = rowsMap.find(
         (r) =>
-          r.executiveName === executiveName &&
-          r.productId === item.productId &&
-          r.packSize === item.packSize &&
-          r.batchNo === item.batchNo,
+          normStockText(r.executiveName) === normStockText(executiveName) &&
+          stockVariantsMatch(
+            {
+              productId: r.productId,
+              productName: r.productName,
+              packSize: r.packSize,
+              batchNo: r.batchNo,
+            },
+            {
+              productId: item.productId,
+              productName: item.productName,
+              packSize: item.packSize,
+              batchNo: item.batchNo,
+            },
+          ),
       );
       return {
-        id: `fro-txn-${Date.now()}-${Math.random()}`,
+        id: movementId
+          ? `fro-txn-return-${movementId}-${item.productId}-${item.packSize}-${item.batchNo}`
+          : `fro-txn-${Date.now()}-${Math.random()}`,
         storeId,
         executiveName,
         productId: item.productId,
-        productName: ref?.productName || "",
+        productName: ref?.productName || item.productName || "",
         packSize: item.packSize,
         batchNo: item.batchNo,
         expiryDate: ref?.expiryDate || "",
@@ -2278,6 +2665,9 @@ export function reduceFROStock(
       };
     }),
   );
+
+  markStockMovementProcessed(movementId);
+  return rows;
 }
 
 const FRO_STOCK_TXN_KEY = "nature-biotic-fro-stock-txns-v1";
@@ -2318,7 +2708,6 @@ export function getFROStockTxnsByExecutive(
   );
 }
 
-const DELIVERY_CHALLAN_PREFIX = "nature-biotic-store-delivery-challans-v2";
 const RETURN_CHALLAN_PREFIX = "nature-biotic-store-return-challans-v2";
 
 export function getFROCurrentStock(
@@ -2337,7 +2726,11 @@ export function getFROCurrentStock(
     const challans = raw ? JSON.parse(raw) : [];
 
     challans
-      .filter((c: any) => c.executive === executiveName)
+      .filter(
+        (c: any) =>
+          c.executive === executiveName &&
+          (c.status === "accepted" || !c.status),
+      )
       .forEach((c: any) => {
         c.items.forEach((item: any) => {
           const key = `${item.productId || item.product}-${item.packSize}-${item.batchNo}`;
