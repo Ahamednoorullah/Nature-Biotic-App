@@ -27,6 +27,18 @@ type Receipt = {
   remarks?: string;
 };
 
+const COMPANY_RECEIPT_KEY = "nature-biotic-company-receipts-v1";
+
+function loadCompanyReceipts(): Receipt[] {
+  try {
+    const raw = localStorage.getItem(COMPANY_RECEIPT_KEY);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 const methods = ["Cash", "Bank Transfer", "UPI", "Cheque"];
 const receivers = ["Ramesh Kumar", "Priya S", "Karthik N"];
 const statuses: ReceiptStatus[] = ["Completed", "Pending"];
@@ -63,7 +75,9 @@ export default function CompanyReceipts() {
   const [customTo, setCustomTo] = useState("");
   const [viewReceipt, setViewReceipt] = useState<Receipt | null>(null);
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
-  const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>([]);
+  const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>(() =>
+    loadCompanyReceipts(),
+  );
   const [showCreate, setShowCreate] = useState(false);
   const [receiptDate, setReceiptDate] = useState(
     new Date().toISOString().split("T")[0],
@@ -117,7 +131,14 @@ export default function CompanyReceipts() {
       receivedBy,
       remarks,
     };
-    setCreatedReceipts((prev) => [newReceipt, ...prev]);
+    setCreatedReceipts((prev) => {
+      const next = [newReceipt, ...prev];
+      try {
+        localStorage.setItem(COMPANY_RECEIPT_KEY, JSON.stringify(next));
+        window.dispatchEvent(new Event("nature-biotic-company-receipts-updated"));
+      } catch {}
+      return next;
+    });
     closeCreateForm();
   }
 

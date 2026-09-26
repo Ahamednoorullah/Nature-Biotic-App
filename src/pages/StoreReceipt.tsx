@@ -187,6 +187,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       const next = [newReceipt, ...prev];
       try {
         localStorage.setItem(storageKey, JSON.stringify(next));
+        window.dispatchEvent(new Event("nature-biotic-store-receipts-updated"));
       } catch {}
       return next;
     });
