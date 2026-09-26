@@ -624,7 +624,7 @@ export default function CompanySales() {
       ...prev,
       productId: firstVariant.id,
       pkgsize: firstVariant.size,
-      sellingPrice: firstVariant.sellingPrice,
+      sellingPrice: firstVariant.purchasePrice,
     }));
   }
 
@@ -643,7 +643,7 @@ export default function CompanySales() {
       ...prev,
       productId: variant?.id || prev.productId,
       pkgsize: size,
-      sellingPrice: variant?.sellingPrice ?? prev.sellingPrice,
+      sellingPrice: variant?.purchasePrice ?? prev.sellingPrice,
     }));
   }
 
@@ -2367,7 +2367,7 @@ export default function CompanySales() {
                         }
                       />
                       <Input
-                        label="Selling Price"
+                        label="Unit Price"
                         type="number"
                         value={String(entry.sellingPrice)}
                         onChange={() => {}}

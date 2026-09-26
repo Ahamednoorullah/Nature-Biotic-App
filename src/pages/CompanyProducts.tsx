@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import {
   getProductMaster,
+  saveProductMaster,
   productCategories,
   productMasterUpdatedEvent,
   type Product,
@@ -164,10 +165,31 @@ export default function CompanyProducts() {
   }
 
   if (selected) {
-    return (
-      <ProductDetail product={selected.product} onBack={() => setSelected(null)} />
-    );
-  }
+  return (
+    <ProductDetail
+      product={selected.product}
+      onBack={() => setSelected(null)}
+      onSave={(updated) => {
+        const current = getProductMaster();
+        const exists = current.some((p) => p.id === updated.id);
+
+        const next = exists
+          ? current.map((p) => (p.id === updated.id ? updated : p))
+          : [...current, updated];
+
+        saveProductMaster(next);
+        setProducts(next);
+
+        setSelected({
+          product: updated,
+          variants: selected.variants.map((v) =>
+            v.id === updated.id ? updated : v,
+          ),
+        });
+      }}
+    />
+  );
+}
 
   return (
     <div>

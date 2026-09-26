@@ -274,31 +274,31 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     } catch {}
 
     const storeRow: ReturnChallan = {
-      id: `fro-return-store-${request.id}`,
-      productId: request.items[0]?.productId || "",
-      rcNo: request.rcNo,
-      date: request.date,
-      sdNo: "",
-      executive: request.froName,
-      customerName: request.froName,
-      village: "",
-      phone: "",
-      farmer: request.froName,
-      placeOfSupply: "",
-      cgstPercent: 0,
-      sgstPercent: 0,
-      igstPercent: 0,
-      items: request.items.map((item) => ({
-        productId: item.productId,
-        product: item.product,
-        packSize: item.packSize,
-        batchNo: item.batchNo,
-        expiryDate: item.expiryDate,
-        issuedQty: String(item.qty),
-        returnedQty: String(item.qty),
-        unitValue: String(item.unitValue),
-      })),
-    };
+  id: `fro-return-store-${request.id}`,
+  productId: request.items[0]?.productId || "",
+  rcNo: request.rcNo,
+  date: request.date,
+  sdNo: "",
+  executive: request.froName,
+  customerName: request.froName,
+  village: "",
+  phone: "",
+  farmer: request.froName,
+  placeOfSupply: "Tamil Nadu",
+  cgstPercent: 9,
+  sgstPercent: 9,
+  igstPercent: 0,
+  items: request.items.map((item) => ({
+    productId: item.productId,
+    product: item.product,
+    packSize: item.packSize,
+    batchNo: item.batchNo,
+    expiryDate: item.expiryDate,
+    issuedQty: String(item.qty),
+    returnedQty: String(item.qty),
+    unitValue: String(item.unitValue),
+  })),
+};
 
     // Show the accepted FRO return in the Store Return Challan list.
     if (

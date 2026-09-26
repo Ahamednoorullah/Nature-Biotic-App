@@ -1,6 +1,7 @@
 import type { Product } from "@/lib/data";
 import { Card, Badge, Button, Icon, SectionTitle } from "@/components/ui";
 import { formatCurrency, initials } from "@/lib/format";
+import { useState, useEffect } from "react";
 
 const colorMap: Record<string, string> = {
   emerald: "from-emerald-400 to-emerald-600",
@@ -14,9 +15,11 @@ const colorMap: Record<string, string> = {
 export default function CompanyProductDetail({
   product,
   onBack,
+  onSave,
 }: {
   product: Product;
   onBack: () => void;
+  onSave?: (updated: Product) => void;
 }) {
   const masterProduct = product as Product & {
     productImage?: string;
@@ -27,6 +30,35 @@ export default function CompanyProductDetail({
     fillerUnit?: string;
     fillerType?: "Water" | "NA" | "";
   };
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({ ...masterProduct });
+
+  const startEdit = () => {
+    setFormData({ ...masterProduct });
+    setIsEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setFormData({ ...masterProduct });
+    setIsEditing(false);
+  };
+
+  const saveEdit = () => {
+    onSave?.(formData);
+    setIsEditing(false);
+  };
+
+  const update = (key: string, value: any) => {
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  useEffect(() => {
+  if (!isEditing) {
+    setFormData({ ...masterProduct });
+  }
+}, [product]);
+
 
   return (
     <div>
@@ -84,10 +116,23 @@ export default function CompanyProductDetail({
             </p>
           </div>
 
-          <Button variant="secondary" size="sm">
+          {isEditing ? (
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={cancelEdit}>
+              <Icon name="close" size={16} />
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={saveEdit}>
+              <Icon name="check" size={16} />
+              Save
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={startEdit}>
             <Icon name="edit" size={16} />
             Edit
           </Button>
+        )}
         </div>
       </Card>
 
@@ -99,34 +144,53 @@ export default function CompanyProductDetail({
         />
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <DetailField label="Product Name" value={product.name} />
+          <DetailField
+            label="Product Name"
+            value={formData.name}
+            editing={isEditing}
+            onChange={(v) => update("name", v)}
+          />
           <DetailField
             label="Product Type"
-            value={product.productType}
+            value={formData.productType}
+            editing={isEditing}
+            onChange={(v) => update("productType", v)}
           />
           <DetailField
             label="Product Category"
-            value={product.productCategory}
+            value={formData.productCategory}
+            editing={isEditing}
+            onChange={(v) => update("productCategory", v)}
           />
           <DetailField
             label="Product Purpose"
-            value={product.purpose}
+            value={formData.purpose}
+            editing={isEditing}
+            onChange={(v) => update("purpose", v)}
           />
           <DetailField
             label="Packing Type"
-            value={product.unit}
+            value={formData.unit}
+            editing={isEditing}
+            onChange={(v) => update("unit", v)}
           />
           <DetailField
             label="HSN / SAC Code"
-            value={product.hsnCode}
+            value={formData.hsnCode}
+            editing={isEditing}
+            onChange={(v) => update("hsnCode", v)}
           />
           <DetailField
             label="Manufacturer"
-            value={product.manufacturer}
+            value={formData.manufacturer}
+            editing={isEditing}
+            onChange={(v) => update("manufacturer", v)}
           />
           <DetailField
             label="Vendor"
-            value={product.vendor}
+            value={formData.vendor}
+            editing={isEditing}
+            onChange={(v) => update("vendor", v)}
           />
         </div>
       </Card>
@@ -161,31 +225,91 @@ export default function CompanyProductDetail({
           </div>
 
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <DetailField
-              label="Dosage"
-              value={
-                masterProduct.dosage !== undefined
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Dosage
+            </p>
+            {isEditing ? (
+              <div className="mt-1.5 flex gap-1">
+                <input
+                  type="number"
+                  className="w-2/3 rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                  value={formData.dosage ?? ""}
+                  onChange={(e) => update("dosage", e.target.value === "" ? undefined : Number(e.target.value))}
+                />
+                <input
+                  type="text"
+                  className="w-1/3 rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                  value={formData.dosageUnit || ""}
+                  onChange={(e) => update("dosageUnit", e.target.value)}
+                  placeholder="unit"
+                />
+              </div>
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">
+                {masterProduct.dosage !== undefined
                   ? `${masterProduct.dosage} ${masterProduct.dosageUnit || ""}`.trim()
-                  : "-"
-              }
-            />
+                  : "-"}
+              </p>
+            )}
+          </div>
 
-            <DetailField
-              label="Filler Type"
-              value={masterProduct.fillerType || "-"}
-            />
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Filler Type
+            </p>
+            {isEditing ? (
+              <select
+                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                value={formData.fillerType || ""}
+                onChange={(e) => update("fillerType", e.target.value)}
+              >
+                <option value="">-</option>
+                <option value="Water">Water</option>
+                <option value="NA">NA</option>
+              </select>
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">
+                {masterProduct.fillerType || "-"}
+              </p>
+            )}
+          </div>
 
-            <DetailField
-              label="Filler"
-              value={
-                masterProduct.fillerType === "NA"
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Filler
+            </p>
+            {isEditing ? (
+              formData.fillerType === "NA" ? (
+                <p className="mt-1.5 text-sm font-bold text-slate-800">NA</p>
+              ) : (
+                <div className="mt-1.5 flex gap-1">
+                  <input
+                    type="number"
+                    className="w-2/3 rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                    value={formData.filler ?? ""}
+                    onChange={(e) => update("filler", e.target.value === "" ? undefined : Number(e.target.value))}
+                  />
+                  <input
+                    type="text"
+                    className="w-1/3 rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                    value={formData.fillerUnit || ""}
+                    onChange={(e) => update("fillerUnit", e.target.value)}
+                    placeholder="unit"
+                  />
+                </div>
+              )
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">
+                {masterProduct.fillerType === "NA"
                   ? "NA"
                   : masterProduct.filler !== undefined
                     ? `${masterProduct.filler} ${masterProduct.fillerUnit || ""}`.trim()
-                    : "-"
-              }
-            />
+                    : "-"}
+              </p>
+            )}
           </div>
+        </div>
         </div>
       </Card>
 
@@ -197,27 +321,87 @@ export default function CompanyProductDetail({
         />
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <DetailField label="Pack Size" value={product.size} />
           <DetailField
-            label="Purchase Price"
-            value={formatCurrency(product.purchasePrice)}
+            label="Pack Size"
+            value={formData.size}
+            editing={isEditing}
+            onChange={(v) => update("size", v)}
           />
-          <DetailField
-            label="Selling Price"
-            value={formatCurrency(product.sellingPrice)}
-          />
-          <DetailField
-            label="MRP"
-            value={formatCurrency(product.mrp)}
-          />
-          <DetailField
-            label="GST Rate"
-            value={`${product.taxPercentage}%`}
-          />
-          <DetailField
-            label="Low Stock Limit"
-            value={String(product.minStock)}
-          />
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Purchase Price
+            </p>
+            {isEditing ? (
+              <input
+                type="number"
+                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                value={formData.purchasePrice ?? ""}
+                onChange={(e) => update("purchasePrice", e.target.value === "" ? undefined : Number(e.target.value))}
+              />
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">{formatCurrency(product.purchasePrice)}</p>
+            )}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Selling Price
+            </p>
+            {isEditing ? (
+              <input
+                type="number"
+                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                value={formData.sellingPrice ?? ""}
+                onChange={(e) => update("sellingPrice", e.target.value === "" ? undefined : Number(e.target.value))}
+              />
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">{formatCurrency(product.sellingPrice)}</p>
+            )}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              MRP
+            </p>
+            {isEditing ? (
+              <input
+                type="number"
+                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                value={formData.mrp ?? ""}
+                onChange={(e) => update("mrp", e.target.value === "" ? undefined : Number(e.target.value))}
+              />
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">{formatCurrency(product.mrp)}</p>
+            )}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              GST Rate
+            </p>
+            {isEditing ? (
+              <input
+                type="number"
+                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                value={formData.taxPercentage ?? ""}
+                onChange={(e) => update("taxPercentage", e.target.value === "" ? undefined : Number(e.target.value))}
+              />
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">{product.taxPercentage}%</p>
+            )}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Low Stock Limit
+            </p>
+            {isEditing ? (
+              <input
+                type="number"
+                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+                value={formData.minStock ?? ""}
+                onChange={(e) => update("minStock", e.target.value === "" ? undefined : Number(e.target.value))}
+              />
+            ) : (
+              <p className="mt-1.5 text-sm font-bold text-slate-800">{product.minStock}</p>
+            )}
+          </div>
         </div>
       </Card>
     </div>
@@ -227,18 +411,31 @@ export default function CompanyProductDetail({
 function DetailField({
   label,
   value,
+  editing,
+  onChange,
 }: {
   label: string;
   value: string;
+  editing?: boolean;
+  onChange?: (value: string) => void;
 }) {
   return (
     <div className="rounded-xl bg-slate-50 p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
         {label}
       </p>
-      <p className="mt-1.5 break-words text-sm font-bold text-slate-800">
-        {value || "-"}
-      </p>
+      {editing ? (
+        <input
+          type="text"
+          className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white p-1.5 text-sm font-bold text-slate-800"
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+        />
+      ) : (
+        <p className="mt-1.5 break-words text-sm font-bold text-slate-800">
+          {value || "-"}
+        </p>
+      )}
     </div>
   );
 }
