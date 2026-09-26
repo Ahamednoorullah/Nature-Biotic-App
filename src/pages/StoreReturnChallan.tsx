@@ -2,7 +2,12 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select, EmptyState } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { products as allProducts, reduceFROStock } from "@/lib/data";
+import {
+  products as allProducts,
+  reduceFROStock,
+  recordAcceptedStoreReturn,
+  persistFROReturnAccepted,
+} from "@/lib/data";
 
 type ReturnItem = {
   product: string;
@@ -64,8 +69,6 @@ type FROReturnRequest = {
 const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 const STORAGE_PREFIX = "nature-biotic-store-return-challans-v2";
 const FRO_RETURN_PREFIX = "nature-biotic-fro-stock-return-requests-v1";
-const STORE_RETURN_RECEIVED_PREFIX =
-  "nature-biotic-store-stock-return-received-v1";
 
 function emptyItems(): ReturnItem[] {
   return [
@@ -308,12 +311,14 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       request.froName,
       resolvedItems.map((item) => ({
         productId: item.productId,
+        productName: item.product,
         packSize: item.packSize,
         batchNo: item.batchNo,
         qty: Number(item.qty || 0),
       })),
       request.date,
       "Return",
+      `return:${request.id}`,
     );
 
     const accepted: FROReturnRequest = {
@@ -329,47 +334,15 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     );
     setFroReturns(nextRequests);
 
-    // Keep an explicit store-side return ledger. Store stock/inventory can
-    // consume this ledger without modifying the original FRO return request.
-    try {
-      const ledgerKey = `${STORE_RETURN_RECEIVED_PREFIX}:${storeId}`;
-      const ledger = JSON.parse(localStorage.getItem(ledgerKey) || "[]");
-      localStorage.setItem(
-        ledgerKey,
-        JSON.stringify([
-          {
-            ...accepted,
-            source: "FRO",
-            receivedBy: "Store",
-          },
-          ...ledger.filter((item: FROReturnRequest) => item.id !== request.id),
-        ]),
-      );
-
-      // Update the FRO request source so the same return cannot be accepted twice.
-      const froKey = String(request.froName || "")
-        .trim()
-        .toLowerCase();
-      if (froKey) {
-        const requestKey = `${FRO_RETURN_PREFIX}:${froKey}`;
-        const saved = JSON.parse(localStorage.getItem(requestKey) || "[]");
-        if (Array.isArray(saved)) {
-          localStorage.setItem(
-            requestKey,
-            JSON.stringify(
-              saved.map((item: FROReturnRequest) =>
-                item.id === request.id ? accepted : item,
-              ),
-            ),
-          );
-        }
-      }
-
-      window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
-      window.dispatchEvent(
-        new Event("nature-biotic-store-stock-return-updated"),
-      );
-    } catch {}
+    recordAcceptedStoreReturn(storeId, {
+      ...accepted,
+      items: accepted.items.map((item) => ({
+        ...item,
+        product: item.product,
+        qty: Number(item.qty || 0),
+      })),
+    });
+    persistFROReturnAccepted(accepted);
 
     const storeRow: ReturnChallan = {
       id: `fro-return-store-${request.id}`,
@@ -520,13 +493,28 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       executive,
       items.map((item) => ({
         productId: item.productId,
+        productName: item.product,
         packSize: item.packSize,
         batchNo: item.batchNo,
         qty: Number(item.returnedQty || 0),
       })),
-      date, // ✅ ADD
-      "Return", // ✅ ADD
+      date,
+      "Return",
+      `store-return:${row.id}`,
     );
+    recordAcceptedStoreReturn(storeId, {
+      id: row.id,
+      froName: executive,
+      date,
+      status: "accepted",
+      items: items.map((item) => ({
+        productId: item.productId,
+        product: item.product,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        qty: Number(item.returnedQty || 0),
+      })),
+    });
 
     persist([row, ...rows]);
     closeForm();

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import {
@@ -7,6 +7,7 @@ import {
   getFarmersByStore,
   getStorePurchasesFromCompanySales,
   getFROStockByExecutive,
+  getStoreAvailableQty,
   reduceFROStock,
   type Product,
 } from "@/lib/data";
@@ -159,6 +160,26 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       setExecutiveName(froName);
     }
   }, [isFRO, froName]);
+  const [stockVersion, setStockVersion] = useState(0);
+  const savingSale = useRef(false);
+  useEffect(() => {
+    const refresh = () => setStockVersion((version) => version + 1);
+    window.addEventListener("nature-biotic-store-inventory-updated", refresh);
+    window.addEventListener("fro-stock-updated", refresh);
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("fro-accepted-deliveries-updated", refresh);
+    window.addEventListener("nature-biotic-store-stock-return-updated", refresh);
+    return () => {
+      window.removeEventListener("nature-biotic-store-inventory-updated", refresh);
+      window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener("fro-accepted-deliveries-updated", refresh);
+      window.removeEventListener(
+        "nature-biotic-store-stock-return-updated",
+        refresh,
+      );
+    };
+  }, []);
   const [saleDate, setSaleDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -202,53 +223,48 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }, [rows, isFRO, froName]);
    const storePurchaseRows = useMemo(
     () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
-    [storeId],
+    [storeId, stockVersion],
   );
 
   console.log("DEBUG storePurchaseRows:", storePurchaseRows);
 
   const storeStockVariants = useMemo(() => {
-    return storePurchaseRows
-      .map((row: any, index: number) => {
-        const master = allProducts.find(
-          (p) =>
-            p.id === row.productId ||
-            p.name.toLowerCase() ===
-              String(row.productName ?? row.product ?? "").toLowerCase(),
-        );
-        const productId = String(
-          master?.id ?? row.productId ?? `stock-${index}`,
-        );
-        const name = String(
-          row.productName ?? row.product ?? master?.name ?? "",
-        ).trim();
-        const size = String(
-          row.packSize ?? row.pkgsize ?? row.size ?? master?.size ?? "",
-        ).trim();
-        const quantity = Number(row.quantity ?? row.qty ?? 0);
-        return {
-          key: `${productId}-${size}-${row.batchNo ?? ""}-${row.expiryDate ?? ""}-${index}`,
-          productId,
-          product: master,
-          name,
-          size,
-          batchNo: String(row.batchNo ?? ""),
-          expiryDate: String(row.expiryDate ?? ""),
-          quantity,
-          sellingPrice: Number(
-            row.sellingPrice ??
-              row.rate ??
-              row.price ??
-              master?.sellingPrice ??
-              0,
-          ),
-          taxPercentage: Number(
-            row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
-          ),
-        };
-      })
-      .filter((item) => item.name && item.quantity > 0);
-  }, [storePurchaseRows]);
+    const seen = new Map<string, any>();
+    storePurchaseRows.forEach((row: any) => {
+      const name = String(row.productName ?? row.product ?? "").trim();
+      const size = String(row.packSize ?? row.pkgsize ?? row.size ?? "").trim();
+      const batchNo = String(row.batchNo ?? "");
+      if (!name) return;
+      const master = allProducts.find(
+        (p) =>
+          (row.productId && p.id === row.productId) ||
+          (p.name.toLowerCase() === name.toLowerCase() &&
+            p.size.trim().toLowerCase() === size.toLowerCase()),
+      );
+      const productId = String(master?.id ?? row.productId ?? "");
+      const key = `${productId || name.toLowerCase()}|${size.toLowerCase()}|${batchNo.toLowerCase()}`;
+      if (seen.has(key)) return;
+      const quantity = getStoreAvailableQty(storeId, productId, size, batchNo, name);
+      if (quantity <= 0) return;
+      seen.set(key, {
+        key,
+        productId: productId || key,
+        product: master,
+        name,
+        size,
+        batchNo,
+        expiryDate: String(row.expiryDate ?? ""),
+        quantity,
+        sellingPrice: Number(
+          row.sellingPrice ?? row.rate ?? row.price ?? master?.sellingPrice ?? 0,
+        ),
+        taxPercentage: Number(
+          row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
+        ),
+      });
+    });
+    return Array.from(seen.values());
+  }, [storePurchaseRows, storeId]);
 
   // FRO's own delivered stock — used when Through = Executive
     const froStockVariants = useMemo(() => {
@@ -271,7 +287,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         };
       })
       .filter((item: any) => item.name && item.quantity > 0);
-  }, [through, executiveName, storeId]);
+  }, [through, executiveName, storeId, stockVersion]);
 
   // Switch source based on sale type
   const activeStockVariants =
@@ -389,9 +405,17 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       selectedStock?.product ||
       allProducts.find((p) => p.id === entry.productId);
     if (!selectedStock || !product) return;
-    if (entry.quantity > selectedStock.quantity) {
+    const reserved = added
+      .filter(
+        (item) =>
+          item.productId === entry.productId &&
+          item.pkgsize === entry.pkgsize &&
+          item.batchNo === entry.batchNo,
+      )
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    if (entry.quantity + reserved > selectedStock.quantity) {
       window.alert(
-        `Only ${selectedStock.quantity} available in ${through === "Executive" ? "FRO" : "store"} stock.`,
+        `Only ${Math.max(0, selectedStock.quantity - reserved)} available in ${through === "Executive" ? "FRO" : "store"} stock.`,
       );
       return;
     }
@@ -454,10 +478,22 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }
 
   function handleCreate() {
+    if (savingSale.current) return;
     if (!invoiceNo.trim() || !partyName.trim() || added.length === 0) return;
     if (through === "Executive" && !(isFRO ? froName : executiveName).trim())
       return;
+    if (
+      rows.some(
+        (item) =>
+          item.invoiceNo.trim().toLowerCase() === invoiceNo.trim().toLowerCase(),
+      )
+    ) {
+      window.alert("This invoice number is already saved.");
+      return;
+    }
 
+    savingSale.current = true;
+    try {
     const row: SaleRow = {
       id: `store-sale-${Date.now()}`,
       date: formatDateInput(saleDate),
@@ -488,21 +524,31 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
 
-    reduceFROStock(
-      storeId,
-      executiveName,
-      added.map((item) => ({
-        productId: item.productId,
-        packSize: item.pkgsize,
-        batchNo: item.batchNo,
-        qty: item.quantity,
-      })),
-      saleDate,
-      "Sale",
-    );
+    if (row.through === "Executive") {
+      reduceFROStock(
+        storeId,
+        row.executiveName || "",
+        added.map((item) => ({
+          productId: item.productId,
+          productName: item.product?.name,
+          packSize: item.pkgsize,
+          batchNo: item.batchNo,
+          qty: item.quantity,
+        })),
+        saleDate,
+        "Sale",
+        `sale:${row.id}`,
+      );
+    } else {
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    }
 
+    savingSale.current = false;
     setShowCreate(false);
     resetForm();
+    } finally {
+      savingSale.current = false;
+    }
   }
 
   const canCreate =

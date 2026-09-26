@@ -9,7 +9,7 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { stores, getStore, type Product } from "@/lib/data";
+import { stores, getStore, increaseFROStock, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
 
 type StoreSaleType = "Direct" | "Executive";
@@ -89,6 +89,7 @@ type CreditNote = {
   farmerAcre?: string;
   through?: StoreSaleType;
   executiveName?: string;
+  catalogProductId?: string;
 };
 
 type AddedProduct = {
@@ -110,6 +111,7 @@ type AddedProduct = {
   cgst: number;
   igst: number;
   total: number;
+  catalogProductId?: string;
 };
 
 const parties = [
@@ -395,6 +397,7 @@ export default function StoreCreditNotes({
       )}-${Math.random().toString(36).slice(2, 6)}`,
       productId: entry.productId,
       productName: saleRow.product?.name || "Product",
+      catalogProductId: saleRow.productId,
       pkgsize:
         saleRow.pkgsize || saleRow.packSize || saleRow.product?.size || "",
       batchNo: saleRow.batchNo || "",
@@ -523,6 +526,7 @@ export default function StoreCreditNotes({
         farmerVillage || selectedStore.location?.split(",")[0] || "",
       storeId: selectedStore.id,
       product: item.productName,
+      catalogProductId: item.catalogProductId || "",
       quantity: item.quantity,
       reason: item.reason || remarks || "Product Return",
       status: "Pending",
@@ -549,6 +553,25 @@ export default function StoreCreditNotes({
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
+
+    if (through === "Executive" && executiveName.trim()) {
+      increaseFROStock(
+        selectedStore.id,
+        executiveName.trim(),
+        added.map((item) => ({
+          productId: item.catalogProductId || "",
+          productName: item.productName,
+          packSize: item.pkgsize,
+          batchNo: item.batchNo,
+          qty: Number(item.quantity || 0),
+          unitValue: Number(item.sellingPrice || 0),
+        })),
+        returnDate,
+        `credit-note:${creditNoteNo}`,
+      );
+    } else {
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    }
 
     closeForm();
   }

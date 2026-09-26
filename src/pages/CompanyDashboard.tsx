@@ -3,6 +3,7 @@ import {
   stores as allStores,
   getStoreApprovalRequests,
   updateStoreApprovalRequestStatus,
+  approveStorePurchaseOrder,
   storeApprovalRequestsUpdatedEvent,
   type StoreApprovalRequest,
 } from "@/lib/data";
@@ -338,6 +339,12 @@ export default function CompanyDashboard() {
     (row) => row.status === "Pending",
   );
   const approveRequest = (id: string) => {
+    const request = approvalRequests.find((row) => row.id === id);
+    if (!request || request.status !== "Pending") return;
+    if (request.type === "Purchase Order") {
+      setApprovalRequests(approveStorePurchaseOrder(id));
+      return;
+    }
     setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
   };
 

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { getProductsByStore, type AdjustmentType, type AdjustmentReason } from '@/lib/data';
+import { useRef, useState } from 'react';
+import { getProductsByStore, getStoreAvailableQty, allocateStoreStockAdjustment, type AdjustmentType, type AdjustmentReason } from '@/lib/data';
 import { useNav } from '@/context/NavContext';
 import { Card, Button, Input, Select, Textarea, SectionTitle, Icon } from '@/components/ui';
 
@@ -31,6 +31,7 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saved, setSaved] = useState(false);
   const [approved, setApproved] = useState(false);
+  const approving = useRef(false);
   const products = getProductsByStore(storeId);
 
   function update<K extends keyof FormState>(key: K, value: string) {
@@ -43,6 +44,22 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
   }
 
   function handleApprove() {
+    const product = products.find((item) => item.id === form.product);
+    const qty = Number(form.quantity || 0);
+    if (!product || qty <= 0 || approving.current) return;
+    approving.current = true;
+    const signedQty = form.adjustmentType === "Increase" ? qty : -qty;
+    allocateStoreStockAdjustment({
+      id: `adjust-${Date.now()}`,
+      storeId,
+      productId: product.id,
+      productName: product.name,
+      packSize: product.size,
+      batchNo: "",
+      qty: signedQty,
+      reason: form.reason || "Adjustment",
+      date: new Date().toISOString().split("T")[0],
+    });
     setApproved(true);
     setTimeout(() => { setApproved(false); goStorePage('stock-management'); }, 1200);
   }
@@ -76,7 +93,7 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
           <SectionTitle icon="tune" title="Adjustment Details" description="Select product and adjustment configuration." />
           <div className="grid sm:grid-cols-2 gap-4">
             <Select label="Product" value={form.product} onChange={(v) => update('product', v)} placeholder="Select product" required
-              options={products.map((p) => ({ value: p.id, label: `${p.name} (Stock: ${p.stock})` }))} />
+              options={products.map((p) => ({ value: p.id, label: `${p.name} - ${p.size} (Stock: ${getStoreAvailableQty(storeId, p.id, p.size, "", p.name)})` }))} />
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Adjustment Type</label>
               <div className="flex gap-2">

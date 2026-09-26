@@ -4,6 +4,7 @@ import { Card, Button, Icon, EmptyState, Input, Select } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getStoreDebitNotesFromCompanyCredits,
+  approveCompanyCreditNotes,
   type CompanyCreditNoteSyncRecord,
 } from "@/lib/data";
 
@@ -352,6 +353,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     : null;
 
   function approveDebitNoteGroup(debitNoteNo: string) {
+    approveCompanyCreditNotes(storeId, debitNoteNo);
     setAllNotes((prev) =>
       prev.map((note) =>
         note.debitNoteNo === debitNoteNo

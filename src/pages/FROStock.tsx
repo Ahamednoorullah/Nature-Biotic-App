@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import {
   addFROStock,
   getStoreAvailableQty,
+  getFROStockByExecutive,
   persistDeliveryChallanAccepted,
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
@@ -110,6 +111,7 @@ export default function FROStock() {
   const [returnProductId, setReturnProductId] = useState("");
   const [returnQty, setReturnQty] = useState("");
   const [returnReason, setReturnReason] = useState("");
+  const [stockVersion, setStockVersion] = useState(0);
 
   const loasdhallans = () => {
     try {
@@ -174,10 +176,15 @@ export default function FROStock() {
   useEffect(() => {
     loasdhallans();
 
-    const refresh = () => loasdhallans();
+    const refresh = () => {
+      loasdhallans();
+      setStockVersion((version) => version + 1);
+    };
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-delivery-challan-updated", refresh);
+    window.addEventListener("fro-stock-updated", refresh);
+    window.addEventListener("nature-biotic-fro-stock-return-updated", refresh);
 
     // Keep the FRO screen in sync when Store creates a delivery challan
     // in the same browser/app session.
@@ -188,6 +195,11 @@ export default function FROStock() {
       window.removeEventListener("focus", refresh);
       window.removeEventListener(
         "nature-biotic-delivery-challan-updated",
+        refresh,
+      );
+      window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener(
+        "nature-biotic-fro-stock-return-updated",
         refresh,
       );
       window.clearInterval(interval);
@@ -382,26 +394,17 @@ export default function FROStock() {
   );
 
   const returnStockOptions = useMemo(() => {
-    const map = new Map<string, ReturnRequestItem>();
-    receivedItems.forEach((item) => {
-      const key = `${item.product}|${item.packSize}|${item.batchNo}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          productId: "",
-          product: item.product,
-          packSize: item.packSize,
-          batchNo: item.batchNo,
-          expiryDate: item.expiryDate,
-          qty: item.qty,
-          unitValue: item.unitValue,
-        });
-      } else {
-        const existing = map.get(key)!;
-        existing.qty += item.qty;
-      }
-    });
-    return Array.from(map.values());
-  }, [receivedItems]);
+    const storeId = user?.storeId || "default";
+    return getFROStockByExecutive(storeId, user?.name || "").map((item) => ({
+      productId: String(item.productId || ""),
+      product: String(item.productName || ""),
+      packSize: String(item.packSize || ""),
+      batchNo: String(item.batchNo || ""),
+      expiryDate: String(item.expiryDate || ""),
+      qty: Number(item.currentQty || 0),
+      unitValue: Number(item.unitValue || 0),
+    }));
+  }, [user?.storeId, user?.name, stockVersion]);
 
   const acceptedReturnItems = useMemo(
     () =>
@@ -418,14 +421,13 @@ export default function FROStock() {
     [acceptedReturns],
   );
 
-  // Current FRO hand stock = all accepted received stock minus returns accepted by Store.
   const handStockRows = useMemo(() => {
     const map = new Map<
       string,
       { product: string; packSize: string; qty: number; value: number }
     >();
 
-    receivedItems.forEach((item) => {
+    returnStockOptions.forEach((item) => {
       const key = `${item.product}|${item.packSize}`;
       const row = map.get(key) || {
         product: item.product,
@@ -433,17 +435,9 @@ export default function FROStock() {
         qty: 0,
         value: 0,
       };
-      row.qty += item.qty;
-      row.value += item.value;
+      row.qty += Number(item.qty || 0);
+      row.value += Number(item.qty || 0) * Number(item.unitValue || 0);
       map.set(key, row);
-    });
-
-    acceptedReturnItems.forEach((item) => {
-      const key = `${item.product}|${item.packSize}`;
-      const row = map.get(key);
-      if (!row) return;
-      row.qty -= item.qty;
-      row.value -= item.value;
     });
 
     return Array.from(map.values())
@@ -451,7 +445,7 @@ export default function FROStock() {
       .sort((a, b) =>
         `${a.product}${a.packSize}`.localeCompare(`${b.product}${b.packSize}`),
       );
-  }, [receivedItems, acceptedReturnItems]);
+  }, [returnStockOptions]);
 
   const handStockQty = handStockRows.reduce((sum, row) => sum + row.qty, 0);
 

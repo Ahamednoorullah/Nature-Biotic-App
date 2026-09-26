@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getProductsByStore, warehouseList, productSizes } from '@/lib/data';
+import { getProductsByStore, warehouseList, productSizes, recordStoreStockAdjustment } from '@/lib/data';
 import { useNav } from '@/context/NavContext';
 import { Card, Button, Input, Select, Textarea, SectionTitle, Icon } from '@/components/ui';
 
@@ -32,12 +32,32 @@ export default function StoreAddStock({ storeId }: { storeId: string }) {
     setForm({ ...form, [key]: value });
   }
 
+  function saveStockEntry() {
+    const product = products.find((item) => item.id === form.product);
+    const qty = Number(form.quantity || 0);
+    if (!product || qty <= 0) return false;
+    recordStoreStockAdjustment({
+      id: `add-stock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      storeId,
+      productId: product.id,
+      productName: product.name,
+      packSize: product.size,
+      batchNo: form.batchNumber.trim(),
+      qty,
+      reason: "Add Stock",
+      date: form.purchaseDate || new Date().toISOString().split("T")[0],
+    });
+    return true;
+  }
+
   function handleSave() {
+    if (!saveStockEntry()) return;
     setSaved(true);
     setTimeout(() => { setSaved(false); goStorePage('stock-management'); }, 1200);
   }
 
   function handleSaveAndAdd() {
+    if (!saveStockEntry()) return;
     setSaved(true);
     setTimeout(() => { setSaved(false); setForm(emptyForm); }, 1200);
   }

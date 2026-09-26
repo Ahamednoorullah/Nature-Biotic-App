@@ -159,6 +159,15 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
   function handleCreateReceipt() {
     if (!canCreate || !selectedInvoice) return;
+    if (
+      createdReceipts.some(
+        (receipt) =>
+          receipt.receiptNo.trim().toLowerCase() === receiptNo.trim().toLowerCase(),
+      )
+    ) {
+      window.alert("This receipt number is already saved.");
+      return;
+    }
 
     const newReceipt: Receipt = {
       id: `r-new-${Date.now()}`,

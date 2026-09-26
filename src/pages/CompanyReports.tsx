@@ -1,15 +1,37 @@
-import { stores } from '@/lib/data';
+import { stores, getCompanyStoreSales, getStoreAvailableQty, getFROHandQty } from '@/lib/data';
 import { Card, Badge, EmptyState } from '@/components/ui';
 import { Icon } from '@/components/ui';
 import { formatCompact, formatCurrency } from '@/lib/format';
 
 export default function CompanyReports() {
-  const sorted = [...stores].sort((a, b) => b.monthlySales - a.monthlySales);
+  const sales = getCompanyStoreSales();
+  const performance = stores.map((store) => {
+    const storeSales = sales.filter((row) => row.storeId === store.id);
+    const monthlySales = storeSales.reduce(
+      (sum, row) => sum + Number(row.total || 0),
+      0,
+    );
+    const seen = new Set<string>();
+    let inventoryValue = 0;
+    storeSales.forEach((row) => {
+      const packSize = String(row.packSize || row.pkgsize || "");
+      const batchNo = String(row.batchNo || "");
+      const key = `${row.productId || row.product}|${packSize}|${batchNo}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const available =
+        getStoreAvailableQty(store.id, String(row.productId || ""), packSize, batchNo, row.product) +
+        getFROHandQty(store.id, String(row.productId || ""), packSize, batchNo, row.product);
+      inventoryValue += available * Number(row.unitPrice || row.rate || 0);
+    });
+    return { ...store, monthlySales, inventoryValue };
+  });
+  const sorted = [...performance].sort((a, b) => b.monthlySales - a.monthlySales);
 
-  const totalRevenue = stores.reduce((s, x) => s + x.monthlySales, 0);
+  const totalRevenue = performance.reduce((s, x) => s + x.monthlySales, 0);
   const totalProfit = stores.reduce((s, x) => s + x.totalProfit, 0);
   const totalOutstanding = stores.reduce((s, x) => s + x.outstanding, 0);
-  const totalInventory = stores.reduce((s, x) => s + x.inventoryValue, 0);
+  const totalInventory = performance.reduce((s, x) => s + x.inventoryValue, 0);
 
   return (
     <div>

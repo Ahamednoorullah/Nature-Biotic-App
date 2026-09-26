@@ -4,8 +4,9 @@ import {
   getBillsByStore,
   getProductsByStore,
   getStorePurchasesFromCompanySales,
-  getAcceptedStoreDeliveryQty,
-  getAcceptedStoreReturnQty,
+  getStoreAvailableQty,
+  getFROHandQty,
+  getStoreStockAdjustments,
   productCategories,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
@@ -263,26 +264,71 @@ function buildInventoryRows(
   });
 
   grouped.forEach((existing) => {
-    const deliveredQty = getAcceptedStoreDeliveryQty(
+    const packSize = existing.packSize === "-" ? "" : existing.packSize;
+    const batchNo = existing.batchNo === "-" ? "" : existing.batchNo;
+    existing.quantity = getStoreAvailableQty(
       storeId,
       existing.productId,
-      existing.packSize === "-" ? "" : existing.packSize,
-      existing.batchNo === "-" ? "" : existing.batchNo,
+      packSize,
+      batchNo,
       existing.productName,
     );
-    const returnedQty = getAcceptedStoreReturnQty(
+    existing.handQuantity = getFROHandQty(
       storeId,
       existing.productId,
-      existing.packSize === "-" ? "" : existing.packSize,
-      existing.batchNo === "-" ? "" : existing.batchNo,
+      packSize,
+      batchNo,
       existing.productName,
     );
-
-    const purchasedQty = existing.quantity;
-    existing.quantity = Math.max(0, purchasedQty - deliveredQty + returnedQty);
-    existing.handQuantity = Math.max(0, deliveredQty - returnedQty);
     existing.stockValue =
       (existing.quantity + existing.handQuantity) * (existing.unitPrice || 0);
+  });
+
+  getStoreStockAdjustments(storeId).forEach((adjustment) => {
+    const productName = String(adjustment.productName || "").trim();
+    const packSize = String(adjustment.packSize || "").trim();
+    const batchNo = String(adjustment.batchNo || "").trim();
+    const key = [
+      productName.toLowerCase(),
+      packSize.toLowerCase(),
+      batchNo.toLowerCase(),
+    ].join("::");
+    if (grouped.has(key) || !productName) return;
+    const available = getStoreAvailableQty(
+      storeId,
+      adjustment.productId,
+      packSize,
+      batchNo,
+      productName,
+    );
+    const hand = getFROHandQty(
+      storeId,
+      adjustment.productId,
+      packSize,
+      batchNo,
+      productName,
+    );
+    if (available <= 0 && hand <= 0) return;
+    grouped.set(key, {
+      id: adjustment.id,
+      productId: adjustment.productId,
+      productType: productTypeByName.get(productName.toLowerCase()) || "Product",
+      productName,
+      packSize: packSize || "-",
+      batchNo: batchNo || "-",
+      expiryDate: "-",
+      quantity: available,
+      handQuantity: hand,
+      stockValue: 0,
+      unitPrice: 0,
+      lowStockLimit:
+        productLimitByNameAndSize.get(
+          `${productName.toLowerCase()}::${packSize.toLowerCase()}`,
+        ) ??
+        productLimitByName.get(productName.toLowerCase()) ??
+        0,
+      lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
+    });
   });
 
   Array.from(grouped.entries()).forEach(([key, existing]) => {
@@ -386,6 +432,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
       "nature-biotic-store-stock-return-updated",
       refresh,
     );
+    window.addEventListener("fro-stock-updated", refresh);
     window.addEventListener("focus", refresh);
 
     return () => {
@@ -399,6 +446,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
         "nature-biotic-store-stock-return-updated",
         refresh,
       );
+      window.removeEventListener("fro-stock-updated", refresh);
       window.removeEventListener("focus", refresh);
     };
   }, [storeId]);

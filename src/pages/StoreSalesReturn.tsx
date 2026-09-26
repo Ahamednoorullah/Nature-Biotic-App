@@ -3,9 +3,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { products as allProducts, getStore, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
-import { products as reduceFROStock } from "@/lib/data";
+import {
+  products as allProducts,
+  getStore,
+  increaseFROStock,
+  type Product,
+} from "@/lib/data";
 
 
 type SaleType = "Direct" | "Executive";
@@ -521,6 +525,25 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     try {
       localStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {}
+
+    if (next.through === "Executive" && next.executiveName && next.executiveName !== "-") {
+      increaseFROStock(
+        storeId,
+        next.executiveName,
+        items.map((item) => ({
+          productId: item.productId,
+          productName: item.product?.name,
+          packSize: item.packSize,
+          batchNo: item.batchNo,
+          qty: Number(item.quantity || 0),
+          unitValue: Number(item.price || 0),
+        })),
+        date,
+        `sales-return:${next.id}`,
+      );
+    } else {
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    }
 
     closeForm();
   }
