@@ -5,7 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getProductsByStore,
   getStorePurchasesFromCompanySales,
-  getAcceptedStoreDeliveryQty,
+  getStoreAvailableQty,
 } from "@/lib/data";
 
 type Item = {
@@ -59,27 +59,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       if (saved) return JSON.parse(saved);
     } catch {}
 
-    return [
-      {
-        id: "1",
-        sdNo: "SD-1001",
-        date: "2026-08-17",
-        executive: "Ram Kumar",
-        status: "accepted",
-        items: [
-          {
-            productId: "electra",
-            product: "Electra",
-            packSize: "250 ml",
-            batchNo: "ELE010826",
-            expiryDate: "2027-08-31",
-            qty: "10",
-            unitValue: "250",
-            taxPercent: 18,
-          },
-        ],
-      },
-    ];
+    return [];
   });
 
   const [showAdd, setShowAdd] = useState(false);
@@ -130,19 +110,46 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   }, [acceptedChallans, froFilter]);
 
   useEffect(() => {
-    const refresh = () => setInventoryVersion((v) => v + 1);
-    window.addEventListener("company-store-sales-updated", refresh);
-    window.addEventListener("fro-accepted-deliveries-updated", refresh);
-    window.addEventListener("nature-biotic-delivery-challan-updated", refresh);
+    const loadChallans = () => {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setChallans(parsed);
+        }
+      } catch {}
+      setInventoryVersion((v) => v + 1);
+    };
+
+    loadChallans();
+    window.addEventListener("company-store-sales-updated", loadChallans);
+    window.addEventListener("fro-accepted-deliveries-updated", loadChallans);
+    window.addEventListener(
+      "nature-biotic-delivery-challan-updated",
+      loadChallans,
+    );
+    window.addEventListener(
+      "nature-biotic-store-inventory-updated",
+      loadChallans,
+    );
+    window.addEventListener("focus", loadChallans);
     return () => {
-      window.removeEventListener("company-store-sales-updated", refresh);
-      window.removeEventListener("fro-accepted-deliveries-updated", refresh);
+      window.removeEventListener("company-store-sales-updated", loadChallans);
+      window.removeEventListener(
+        "fro-accepted-deliveries-updated",
+        loadChallans,
+      );
       window.removeEventListener(
         "nature-biotic-delivery-challan-updated",
-        refresh,
+        loadChallans,
       );
+      window.removeEventListener(
+        "nature-biotic-store-inventory-updated",
+        loadChallans,
+      );
+      window.removeEventListener("focus", loadChallans);
     };
-  }, [storeId]);
+  }, [storeId, storageKey]);
 
   // Only stock that actually exists in this store's purchase records is shown.
   // Batch / expiry / price are read from those purchase records and are not
@@ -233,13 +240,13 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
     const byProduct = new Map<string, any>();
     groups.forEach((variant) => {
-      const acceptedQty = getAcceptedStoreDeliveryQty(
+      const availableQty = getStoreAvailableQty(
         storeId,
         variant.productId,
         variant.packSize,
         variant.batchNo,
+        variant.productName,
       );
-      const availableQty = Math.max(0, variant.quantity - acceptedQty);
       if (availableQty <= 0) return;
 
       const product = byProduct.get(variant.productId) ?? {
@@ -511,7 +518,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Stock Delivery</h1>
           <p className="mt-1 text-slate-500">
@@ -667,7 +674,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       {showAdd &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               {/* Fixed header */}
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
@@ -1099,7 +1106,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   }
 `}</style>
 
-            <div className="delivery-challan-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="delivery-challan-print-area nb-print-panel flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="delivery-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">

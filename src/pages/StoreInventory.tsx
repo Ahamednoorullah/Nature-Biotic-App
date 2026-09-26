@@ -5,6 +5,7 @@ import {
   getProductsByStore,
   getStorePurchasesFromCompanySales,
   getAcceptedStoreDeliveryQty,
+  getAcceptedStoreReturnQty,
   productCategories,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
@@ -148,6 +149,7 @@ function buildInventoryRows(
     string,
     {
       id: string;
+      productId: string;
       productType: string;
       productName: string;
       packSize: string;
@@ -181,30 +183,26 @@ function buildInventoryRows(
     const purchasedQuantity = Math.max(0, Number(purchase.quantity || 0));
     if (purchasedQuantity <= 0) return;
 
-    // Purchase records created by the Store purchase flow may not contain
-    // productId. Resolve the product master ID from the product name so the
-    // accepted Stock Delivery ledger can match the same product correctly.
-    const productMaster = products.find(
-      (product: any) =>
-        String(product.name || "")
-          .trim()
-          .toLowerCase() === productName.toLowerCase(),
-    );
+    const productMaster =
+      products.find(
+        (product: any) =>
+          String(product.name || "")
+            .trim()
+            .toLowerCase() === productName.toLowerCase() &&
+          String(product.size || "")
+            .trim()
+            .toLowerCase() === packSize.toLowerCase(),
+      ) ||
+      products.find(
+        (product: any) =>
+          String(product.name || "")
+            .trim()
+            .toLowerCase() === productName.toLowerCase(),
+      );
 
     const resolvedProductId = String(
       (purchase as any).productId || productMaster?.id || "",
     );
-
-    const acceptedQuantity = getAcceptedStoreDeliveryQty(
-      storeId,
-      resolvedProductId,
-      packSize,
-      batchNo,
-    );
-
-    const quantity = Math.max(0, purchasedQuantity - acceptedQuantity);
-    const handQuantity = Math.min(purchasedQuantity, acceptedQuantity);
-    if (quantity <= 0 && handQuantity <= 0) return;
 
     const unitPrice = Number(
       purchase.unitPrice ?? purchase.rate ?? purchase.price ?? 0,
@@ -219,9 +217,11 @@ function buildInventoryRows(
     const existing = grouped.get(key);
 
     if (existing) {
-      existing.quantity += quantity;
-      existing.handQuantity += handQuantity;
-      existing.stockValue += (quantity + handQuantity) * unitPrice;
+      existing.quantity += purchasedQuantity;
+      existing.stockValue += purchasedQuantity * unitPrice;
+      if (!existing.productId && resolvedProductId) {
+        existing.productId = resolvedProductId;
+      }
 
       if ((!existing.expiryDate || existing.expiryDate === "-") && expiryDate) {
         existing.expiryDate = expiryDate;
@@ -245,15 +245,16 @@ function buildInventoryRows(
     } else {
       grouped.set(key, {
         id: `${purchase.id}-${productName}-${packSize}-${batchNo}`,
+        productId: resolvedProductId,
         productType:
           productTypeByName.get(productName.toLowerCase()) || "Product",
         productName,
         packSize: packSize || "-",
         batchNo: batchNo || "-",
         expiryDate: expiryDate || "-",
-        quantity,
-        handQuantity,
-        stockValue: (quantity + handQuantity) * unitPrice,
+        quantity: purchasedQuantity,
+        handQuantity: 0,
+        stockValue: purchasedQuantity * unitPrice,
         unitPrice,
         lowStockLimit: configuredLimit,
         lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
@@ -261,85 +262,34 @@ function buildInventoryRows(
     }
   });
 
-  // Accepted FRO returns move stock back from FRO Hand Stock to Store Stock.
-  // The return is added only after Store accepts it; pending returns stay out.
-  try {
-    const returnKey = `nature-biotic-store-stock-return-received-v1:${storeId}`;
-    const rawReturns = localStorage.getItem(returnKey);
-    const receivedReturns = rawReturns ? JSON.parse(rawReturns) : [];
+  grouped.forEach((existing) => {
+    const deliveredQty = getAcceptedStoreDeliveryQty(
+      storeId,
+      existing.productId,
+      existing.packSize === "-" ? "" : existing.packSize,
+      existing.batchNo === "-" ? "" : existing.batchNo,
+      existing.productName,
+    );
+    const returnedQty = getAcceptedStoreReturnQty(
+      storeId,
+      existing.productId,
+      existing.packSize === "-" ? "" : existing.packSize,
+      existing.batchNo === "-" ? "" : existing.batchNo,
+      existing.productName,
+    );
 
-    if (Array.isArray(receivedReturns)) {
-      receivedReturns
-        .filter((request: any) => request?.status === "accepted")
-        .forEach((request: any) => {
-          (request.items || []).forEach((item: any) => {
-            const productName = String(
-              item.product ?? item.productName ?? "",
-            ).trim();
-            if (!productName) return;
+    const purchasedQty = existing.quantity;
+    existing.quantity = Math.max(0, purchasedQty - deliveredQty + returnedQty);
+    existing.handQuantity = Math.max(0, deliveredQty - returnedQty);
+    existing.stockValue =
+      (existing.quantity + existing.handQuantity) * (existing.unitPrice || 0);
+  });
 
-            const packSize = String(item.packSize ?? "").trim();
-            const batchNo = String(item.batchNo ?? "").trim();
-            const expiryDate = String(item.expiryDate ?? "").trim();
-            const returnedQty = Math.max(0, Number(item.qty || 0));
-            if (returnedQty <= 0) return;
-
-            const key = [
-              productName.toLowerCase(),
-              packSize.toLowerCase(),
-              batchNo.toLowerCase(),
-            ].join("::");
-
-            const existing = grouped.get(key);
-            const unitPrice = Number(
-              item.unitValue ?? existing?.unitPrice ?? 0,
-            );
-
-            if (existing) {
-              // Transfer the accepted return from Hand Stock -> Store Stock.
-              // Total stock stays the same; only its location changes.
-              const movedQty = Math.min(existing.handQuantity, returnedQty);
-              existing.handQuantity = Math.max(
-                0,
-                existing.handQuantity - movedQty,
-              );
-              existing.quantity += returnedQty;
-
-              if (
-                (!existing.expiryDate || existing.expiryDate === "-") &&
-                expiryDate
-              ) {
-                existing.expiryDate = expiryDate;
-              }
-            } else {
-              const product = products.find(
-                (p: any) =>
-                  String(p.id ?? "") === String(item.productId ?? "") ||
-                  String(p.name ?? "")
-                    .trim()
-                    .toLowerCase() === productName.toLowerCase(),
-              );
-
-              grouped.set(key, {
-                id: `fro-return-${request.id}-${productName}-${packSize}-${batchNo}`,
-                productType: product?.productCategory || "Product",
-                productName,
-                packSize: packSize || "-",
-                batchNo: batchNo || "-",
-                expiryDate: expiryDate || "-",
-                quantity: returnedQty,
-                handQuantity: 0,
-                stockValue: returnedQty * unitPrice,
-                unitPrice,
-                lowStockLimit: Number(product?.minStock ?? 0),
-                lastSaleDate:
-                  lastSaleByProduct.get(productName.toLowerCase()) || "",
-              });
-            }
-          });
-        });
+  Array.from(grouped.entries()).forEach(([key, existing]) => {
+    if (existing.quantity <= 0 && existing.handQuantity <= 0) {
+      grouped.delete(key);
     }
-  } catch {}
+  });
 
   const productMap = new Map<string, StockRow>();
 
@@ -589,7 +539,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
 
         {/* Controls */}
         <Card className="p-4 mb-5">
-          <div className="flex flex-col lg:flex-row gap-3">
+          <div className="flex flex-col gap-3 lg:flex-row">
             <div className="flex-1 max-w-md">
               <Input
                 value={search}
@@ -672,7 +622,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
 
         {/* Excel-style table */}
         <Card className="overflow-hidden p-0">
-          <div className="w-full overflow-hidden">
+          <div className="w-full max-w-full overflow-x-auto">
             <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
               <thead className="sticky top-0">
                 <tr className="bg-slate-100 text-slate-600 text-[10px] xl:text-xs uppercase tracking-wide border-b-2 border-slate-200">
@@ -918,7 +868,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
         warningPopupConfig &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex h-[78vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="nb-modal-panel flex h-[min(78vh,100dvh)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">

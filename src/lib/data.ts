@@ -2065,6 +2065,16 @@ function normStockText(value: unknown) {
     .toLowerCase();
 }
 
+function normPackSize(value: unknown) {
+  return normStockText(value).replace(/\s+/g, "");
+}
+
+function normBatchNo(value: unknown) {
+  const text = normStockText(value);
+  if (!text || text === "-" || text === "n/a" || text === "na") return "";
+  return text;
+}
+
 function stockVariantsMatch(
   a: {
     productId?: string;
@@ -2079,8 +2089,11 @@ function stockVariantsMatch(
     batchNo?: string;
   },
 ) {
-  if (normStockText(a.packSize) !== normStockText(b.packSize)) return false;
-  if (normStockText(a.batchNo) !== normStockText(b.batchNo)) return false;
+  if (normPackSize(a.packSize) !== normPackSize(b.packSize)) return false;
+
+  const aBatch = normBatchNo(a.batchNo);
+  const bBatch = normBatchNo(b.batchNo);
+  if (aBatch && bBatch && aBatch !== bBatch) return false;
 
   const aId = String(a.productId || "");
   const bId = String(b.productId || "");
@@ -2486,8 +2499,18 @@ export function addFROStock(
   date?: string,
   deliveryId?: string,
 ) {
-  if (deliveryId && isStockMovementProcessed(deliveryId)) {
-    return getFROStock(storeId);
+  if (deliveryId) {
+    if (isStockMovementProcessed(deliveryId)) {
+      return getFROStock(storeId);
+    }
+    if (
+      getAcceptedStoreDeliveries(storeId).some(
+        (row) => String(row.id) === String(deliveryId),
+      )
+    ) {
+      markStockMovementProcessed(deliveryId);
+      return getFROStock(storeId);
+    }
   }
 
   const rows = getFROStock(storeId);
