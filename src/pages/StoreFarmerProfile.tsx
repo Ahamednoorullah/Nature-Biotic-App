@@ -131,7 +131,6 @@ export default function StoreFarmerProfile({
   });
 
   const oldPurchases = getPurchasesByFarmer(farmerId);
-  const oldPayments = getPaymentsByFarmer(farmerId);
 
   // Convert live invoice rows into the same purchase shape the existing UI expects.
   const purchases =
@@ -194,18 +193,17 @@ export default function StoreFarmerProfile({
   const invoices = purchases;
 
   // Existing Payment Receipt tab keeps its old table UI and receives live receipts.
-  const payments: ReturnType<typeof getPaymentsByFarmer> =
-    liveReceipts.length > 0
-      ? (liveReceipts.map((receipt: any) => ({
-          id: receipt.id,
-          farmerId,
-          receiptNo: receipt.receiptNo,
-          date: receipt.date,
-          method: receipt.method,
-          note: receipt.remarks || "",
-          amount: Number(receipt.amount || 0),
-        })) as ReturnType<typeof getPaymentsByFarmer>)
-      : oldPayments;
+  const payments: ReturnType<typeof getPaymentsByFarmer> = liveReceipts.map(
+    (receipt: any) => ({
+      id: receipt.id,
+      farmerId,
+      receiptNo: receipt.receiptNo,
+      date: receipt.date,
+      method: receipt.method,
+      note: receipt.remarks || "",
+      amount: Number(receipt.amount || 0),
+    }),
+  ) as ReturnType<typeof getPaymentsByFarmer>;
 
   return (
     <div>

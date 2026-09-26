@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import {
   getStore,
   getFROTotalStockCount,
-  getFROCurrentStock,
   products,
 } from "@/lib/data";
 import {
@@ -19,9 +18,6 @@ import { createPortal } from "react-dom";
 import { getStorePurchasesFromCompanySales } from "@/lib/data";
 import { getFROStockTxnsByExecutive } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
-
-const getStockByExecutive = (storeId: string, executiveName: string) =>
-  getFROCurrentStock(storeId, executiveName);
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -1047,16 +1043,17 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       const raw = localStorage.getItem(storageKey);
       const all: FROHandover[] = raw ? JSON.parse(raw) : [];
 
-      const next = all.map((handover) =>
-        handover.id === handoverId
-          ? {
-              ...handover,
-              status: "accepted" as const,
-              acceptedAt: new Date().toISOString(),
-              acceptedBy: user?.name || "Store Admin",
-            }
-          : handover,
-      );
+      const next = all.map((handover) => {
+        if (handover.id !== handoverId || handover.status === "accepted") {
+          return handover;
+        }
+        return {
+          ...handover,
+          status: "accepted" as const,
+          acceptedAt: new Date().toISOString(),
+          acceptedBy: user?.name || "Store Admin",
+        };
+      });
 
       localStorage.setItem(storageKey, JSON.stringify(next));
       setPendingHandovers(
@@ -1079,8 +1076,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </div>
       </div> */}
 
+      <div className="mb-6 w-full overflow-x-auto lg:hidden">
+        <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
+      </div>
       {createPortal(
-        <div className="fixed top-[82px] right-8 z-[9999]">
+        <div className="fixed right-4 top-[82px] z-[40] hidden max-w-[calc(100vw-2rem)] lg:block xl:right-8">
           <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
         </div>,
         document.body,

@@ -1,8 +1,13 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { getFarmersByStore, getStore } from "@/lib/data";
+import {
+  commitReceiptNumber,
+  getFarmersByStore,
+  getStore,
+  nextReceiptNumber,
+} from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 
@@ -38,16 +43,67 @@ type Receipt = {
   invoiceNo: string;
   invoiceAmount: number;
   amount: number;
+  balanceAfter?: number;
+  storeId?: string;
   receivedBy?: string;
   remarks?: string;
 };
 
 const methods = ["Cash", "Bank Transfer", "UPI", "Cheque"];
-const receivers = ["Ramesh Kumar", "Priya S", "Karthik N"];
+const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
+const STORE_CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
+
+function money(value: unknown) {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function readStoredRows(key: string) {
+  try {
+    const raw = localStorage.getItem(key);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function invoiceDeductions(storeId: string, invoiceNo: string) {
+  const key = invoiceNo.trim().toLowerCase();
+  const returned = readStoredRows(`${STORE_RETURN_KEY}:${storeId}`).reduce(
+    (sum, row) => {
+      if (String(row.invoiceNo || "").trim().toLowerCase() !== key) return sum;
+      return sum + money(row.total);
+    },
+    0,
+  );
+  const credited = readStoredRows(`${STORE_CREDIT_KEY}:${storeId}`).reduce(
+    (sum, row) => {
+      if (row.status === "Rejected") return sum;
+      if (String(row.invoiceNo || "").trim().toLowerCase() !== key) return sum;
+      return sum + money(row.total);
+    },
+    0,
+  );
+  return returned + credited;
+}
+
+function collectedAgainst(receipts: Receipt[], invoiceNo: string) {
+  const key = invoiceNo.trim().toLowerCase();
+  return receipts.reduce((sum, receipt) => {
+    if (receipt.invoiceNo.trim().toLowerCase() !== key) return sum;
+    return sum + money(receipt.amount);
+  }, 0);
+}
+
+function receiptBalance(receipt: Receipt) {
+  if (typeof receipt.balanceAfter === "number") {
+    return Math.max(receipt.balanceAfter, 0);
+  }
+  return Math.max(receipt.invoiceAmount - receipt.amount, 0);
+}
 
 const STORAGE_PREFIX = "nature-biotic-store-receipts-v3";
-
-const receipts: Receipt[] = [];
 
 export default function StoreReceipt({ storeId }: { storeId: string }) {
   const { user } = useAuth();
@@ -85,20 +141,6 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     );
   }, [saleInvoices, isFRO, user?.name]);
 
-  const invoiceOptions = useMemo(
-    () =>
-      visibleSaleInvoices.map((invoice) => ({
-        value: invoice.invoiceNo,
-        label: `${invoice.invoiceNo} - ${invoice.partyName}`,
-      })),
-    [visibleSaleInvoices],
-  );
-
-  const selectedInvoice = useMemo(
-    () =>
-      visibleSaleInvoices.find((invoice) => invoice.invoiceNo === invoiceNo),
-    [visibleSaleInvoices, invoiceNo],
-  );
   const [search, setSearch] = useState("");
   const [farmerFilter, setFarmerFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState<
@@ -119,6 +161,47 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       return [];
     }
   });
+  const savingRef = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const rows = raw ? JSON.parse(raw) : [];
+      setCreatedReceipts(Array.isArray(rows) ? rows : []);
+    } catch {
+      setCreatedReceipts([]);
+    }
+  }, [storageKey]);
+  const invoiceChoices = useMemo(
+    () =>
+      visibleSaleInvoices
+        .map((invoice) => {
+          const total = money(invoice.amount);
+          const net = Math.max(
+            0,
+            total - invoiceDeductions(storeId, invoice.invoiceNo),
+          );
+          const remaining = Math.max(
+            0,
+            net - collectedAgainst(createdReceipts, invoice.invoiceNo),
+          );
+          return { invoice, total, remaining };
+        })
+        .filter((row) => row.remaining > 0),
+    [visibleSaleInvoices, createdReceipts, storeId],
+  );
+  const invoiceOptions = useMemo(
+    () =>
+      invoiceChoices.map((row) => ({
+        value: row.invoice.invoiceNo,
+        label: `${row.invoice.invoiceNo} - ${row.invoice.partyName}`,
+      })),
+    [invoiceChoices],
+  );
+  const selectedChoice = invoiceChoices.find(
+    (row) => row.invoice.invoiceNo === invoiceNo,
+  );
+  const selectedInvoice = selectedChoice?.invoice;
+  const outstandingBefore = selectedChoice?.remaining ?? 0;
   const [receiptDate, setReceiptDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -126,9 +209,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   const [method, setMethod] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
   const [amountReceived, setAmountReceived] = useState(0);
-  const [receivedBy, setReceivedBy] = useState(
-    user?.role === "fro" ? user.name : "",
-  );
+  const [receivedBy, setReceivedBy] = useState(user?.name ?? "");
   const [remarks, setRemarks] = useState("");
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const portalRoot = typeof document !== "undefined" ? document.body : null;
@@ -139,16 +220,16 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     !!selectedInvoice &&
     !!method &&
     amountReceived > 0 &&
-    amountReceived <= invoiceAmount;
+    amountReceived <= outstandingBefore;
 
   function resetCreateForm() {
     setReceiptDate(new Date().toISOString().split("T")[0]);
-    setReceiptNo("");
+    setReceiptNo(nextReceiptNumber());
     setInvoiceNo("");
     setMethod("");
     setInvoiceAmount(0);
     setAmountReceived(0);
-    setReceivedBy(isFRO ? (user?.name ?? "") : "");
+    setReceivedBy(user?.name ?? "");
     setRemarks("");
   }
 
@@ -157,32 +238,86 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     resetCreateForm();
   }
 
+  function openCreateForm() {
+    savingRef.current = false;
+    resetCreateForm();
+    setShowCreate(true);
+  }
+
+  function loadStoreReceipts(): Receipt[] {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const rows = raw ? JSON.parse(raw) : [];
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
+  }
+
   function handleCreateReceipt() {
-    if (!canCreate || !selectedInvoice) return;
+    if (savingRef.current || !canCreate || !selectedInvoice) return;
+    savingRef.current = true;
 
-    const newReceipt: Receipt = {
-      id: `r-new-${Date.now()}`,
-      receiptNo: receiptNo.trim(),
-      date: receiptDate,
-      farmerId: selectedInvoice.farmerId || "",
-      farmerName: selectedInvoice.partyName || "Farmer",
-      method,
-      invoiceNo: selectedInvoice.invoiceNo,
-      invoiceAmount: selectedInvoice.amount,
-      amount: amountReceived,
-      receivedBy: isFRO ? (user?.name ?? "") : receivedBy,
-      remarks,
-    };
+    try {
+      const latest = loadStoreReceipts();
+      const total = money(selectedInvoice.amount);
+      const remaining = Math.max(
+        0,
+        total -
+          invoiceDeductions(storeId, selectedInvoice.invoiceNo) -
+          collectedAgainst(latest, selectedInvoice.invoiceNo),
+      );
+      if (amountReceived <= 0 || amountReceived > remaining) {
+        savingRef.current = false;
+        window.alert(
+          "Amount received cannot exceed the outstanding balance of this invoice.",
+        );
+        return;
+      }
 
-    setCreatedReceipts((prev) => {
-      const next = [newReceipt, ...prev];
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+      const allocatedNo = nextReceiptNumber();
+      if (
+        latest.some(
+          (receipt) =>
+            receipt.receiptNo.trim().toLowerCase() ===
+            allocatedNo.toLowerCase(),
+        )
+      ) {
+        savingRef.current = false;
+        window.alert("This receipt number is already saved.");
+        return;
+      }
 
-    closeCreateForm();
+      const newReceipt: Receipt = {
+        id: `rcp-${allocatedNo}`,
+        receiptNo: allocatedNo,
+        date: receiptDate,
+        farmerId: selectedInvoice.farmerId || "",
+        farmerName: selectedInvoice.partyName || "Farmer",
+        method,
+        invoiceNo: selectedInvoice.invoiceNo,
+        invoiceAmount: total,
+        amount: amountReceived,
+        balanceAfter: Math.max(0, remaining - amountReceived),
+        storeId,
+        receivedBy: user?.name || "",
+        remarks,
+      };
+      if (latest.some((receipt) => receipt.id === newReceipt.id)) {
+        savingRef.current = false;
+        return;
+      }
+
+      const next = [newReceipt, ...latest];
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      commitReceiptNumber(allocatedNo);
+      window.dispatchEvent(new Event("nature-biotic-store-receipts-updated"));
+      setCreatedReceipts(next);
+      closeCreateForm();
+    } catch {
+      savingRef.current = false;
+      window.alert("The receipt could not be saved.");
+    }
   }
 
   const filtered = useMemo(() => {
@@ -236,7 +371,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       return true;
     };
 
-    return [...createdReceipts, ...receipts].filter((r) => {
+    return createdReceipts.filter((r) => {
       const matchesSearch =
         !q ||
         r.receiptNo.toLowerCase().includes(q) ||
@@ -289,9 +424,9 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                 />
                 <Input
                   label="Receipt Number"
-                  placeholder="e.g. RCP-3050"
                   value={receiptNo}
-                  onChange={setReceiptNo}
+                  onChange={() => {}}
+                  readOnly
                   required
                 />
                 <Select
@@ -357,7 +492,9 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   value={String(amountReceived)}
                   onChange={(v) => {
                     const next = Number(v) || 0;
-                    setAmountReceived(Math.min(next, invoiceAmount || next));
+                    setAmountReceived(
+                      Math.min(Math.max(next, 0), outstandingBefore || 0),
+                    );
                   }}
                   placeholder="Amount collected now"
                   required
@@ -380,7 +517,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   </label>
                   <div className="flex h-11 w-full items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-base font-bold text-slate-800">
                     {formatCurrency(
-                      Math.max(invoiceAmount - amountReceived, 0),
+                      Math.max(outstandingBefore - amountReceived, 0),
                     )}
                   </div>
                 </div>
@@ -480,12 +617,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   />
                   <DetailField
                     label="Balance"
-                    value={formatCurrency(
-                      Math.max(
-                        viewReceipt.invoiceAmount - viewReceipt.amount,
-                        0,
-                      ),
-                    )}
+                    value={formatCurrency(receiptBalance(viewReceipt))}
                   />
                   <DetailField
                     label="Received By"
@@ -527,6 +659,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                 <button
                   type="button"
                   onClick={() => {
+                    savingRef.current = false;
                     resetCreateForm();
                     setFroReceiptMode("create");
                     setShowCreate(false);
@@ -712,7 +845,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
             {/* Buttons */}
             <div className="flex items-center gap-3">
-              <Button onClick={() => setShowCreate(true)}>
+              <Button onClick={openCreateForm}>
                 <Icon name="add" size={20} fill /> Create Receipt
               </Button>
               <Button variant="secondary">
@@ -953,9 +1086,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                           {formatCurrency(r.amount)}
                         </td>
                         <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                          {formatCurrency(
-                            Math.max(r.invoiceAmount - r.amount, 0),
-                          )}
+                          {formatCurrency(receiptBalance(r))}
                         </td>
                       </tr>
                     ))}
@@ -1011,9 +1142,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                       <div className="rounded-lg bg-slate-50 p-2.5">
                         <p className="text-[10px] text-slate-400">Balance</p>
                         <p className="mt-0.5 text-xs font-semibold text-slate-700">
-                          {formatCurrency(
-                            Math.max(r.invoiceAmount - r.amount, 0),
-                          )}
+                          {formatCurrency(receiptBalance(r))}
                         </p>
                       </div>
                     </div>
@@ -1420,7 +1549,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
           {showCreate &&
             createPortal(
               <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-                <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                   {/* Fixed header */}
                   <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                     <div>
@@ -1454,9 +1583,9 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
                       <Input
                         label="Receipt Number"
-                        placeholder="e.g. RCP-3050"
                         value={receiptNo}
-                        onChange={setReceiptNo}
+                        onChange={() => {}}
+                        readOnly
                         required
                       />
 
@@ -1537,32 +1666,19 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                         onChange={(v) => {
                           const next = Number(v) || 0;
                           setAmountReceived(
-                            Math.min(next, invoiceAmount || next),
+                            Math.min(Math.max(next, 0), outstandingBefore || 0),
                           );
                         }}
                         placeholder="Amount collected now"
                         required
                       />
 
-                      {isFRO ? (
-                        <Input
-                          label="Received By"
-                          value={user?.name ?? ""}
-                          onChange={() => {}}
-                          readOnly
-                        />
-                      ) : (
-                        <Select
-                          label="Received By"
-                          value={receivedBy}
-                          onChange={setReceivedBy}
-                          placeholder="Select staff"
-                          options={receivers.map((p) => ({
-                            value: p,
-                            label: p,
-                          }))}
-                        />
-                      )}
+                      <Input
+                        label="Received By"
+                        value={user?.name ?? ""}
+                        onChange={() => {}}
+                        readOnly
+                      />
 
                       <Input
                         label="Remarks"
@@ -1577,7 +1693,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                         </label>
                         <div className="w-full h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center text-base font-bold text-slate-800">
                           {formatCurrency(
-                            Math.max(invoiceAmount - amountReceived, 0),
+                            Math.max(outstandingBefore - amountReceived, 0),
                           )}
                         </div>
                       </div>

@@ -49,7 +49,7 @@ export default function FROSales() {
   }, []);
 
   return (
-    <div className="px-3 pt-3 pb-24 sm:px-4 sm:pt-4 max-w-md mx-auto">
+    <div className="mx-auto w-full max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4 lg:max-w-none lg:px-0 lg:pb-0">
       {/* <div className="mb-4">
         <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
           SALES
@@ -60,7 +60,7 @@ export default function FROSales() {
         </p>
       </div> */}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         {salesCards.map((card) => (
           <Card
             key={card.label}

@@ -1163,7 +1163,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="purchase-return-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="purchase-return-print-area nb-print-panel flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="purchase-return-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">

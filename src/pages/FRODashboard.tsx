@@ -4,6 +4,7 @@ import {
   getFarmersByStore,
   getStore,
   getFROStockTxnsByExecutive,
+  getFROStockByExecutive,
 } from "@/lib/data";
 import { Card, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -310,6 +311,8 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-delivery-challan-updated", refresh);
     window.addEventListener("nature-biotic-fro-visits-updated", refresh);
+    window.addEventListener("fro-stock-updated", refresh);
+    window.addEventListener("nature-biotic-handover-updated", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
@@ -318,6 +321,8 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
         refresh,
       );
       window.removeEventListener("nature-biotic-fro-visits-updated", refresh);
+      window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener("nature-biotic-handover-updated", refresh);
     };
   }, []);
 
@@ -610,53 +615,17 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
    * current hand stock becomes 0.
    */
   const currentHandStock = useMemo(() => {
-    const txns = getFROStockTxnsByExecutive(storeId, user?.name || "");
-
-    const map = new Map<
-      string,
-      {
-        product: string;
-        qty: number;
-        value: number;
-        productId: string;
-        packSize: string;
-        batchNo: string;
-        unitValue: number;
-      }
-    >();
-
-    txns.forEach((txn: any) => {
-      const qty = Number(txn.qty || 0);
-      const key = [
-        String(txn.productId || txn.productName || ""),
-        String(txn.packSize || ""),
-        String(txn.batchNo || ""),
-      ].join("|");
-
-      const existing = map.get(key);
-      if (existing) {
-        existing.qty += qty;
-      } else {
-        map.set(key, {
-          product: `${txn.productName || "-"} - ${txn.packSize || "-"}`,
-          qty,
-          value: 0,
-          productId: String(txn.productId || ""),
-          packSize: String(txn.packSize || ""),
-          batchNo: String(txn.batchNo || ""),
-          unitValue: Number(txn.unitValue || 0),
-        });
-      }
-    });
-
-    return Array.from(map.values())
-      .filter((row) => row.qty > 0)
-      .map((row, index) => ({
-        ...row,
-        value: row.qty * row.unitValue,
-        sno: index + 1,
-      }));
-  }, [storeId, user?.name]);
+    return getFROStockByExecutive(storeId, user?.name || "").map((row, index) => ({
+      product: `${row.productName || "-"} - ${row.packSize || "-"}`,
+      qty: Number(row.currentQty || 0),
+      value: Number(row.currentQty || 0) * Number(row.unitValue || 0),
+      productId: String(row.productId || ""),
+      packSize: String(row.packSize || ""),
+      batchNo: String(row.batchNo || ""),
+      unitValue: Number(row.unitValue || 0),
+      sno: index + 1,
+    }));
+  }, [storeId, user?.name, refresh]);
 
   const handStockValue = useMemo(
     () =>
@@ -672,6 +641,7 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
         (row) =>
           (!row.handedOverBy ||
             String(row.handedOverBy).trim().toLowerCase() === froName) &&
+          (!row.status || row.status === "accepted") &&
           inSelectedRange(row.date || row.createdAt, dateFilter),
       ),
     [storeId, froName, dateFilter],
@@ -823,9 +793,9 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+    <div className="mx-auto w-full max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4 lg:max-w-none lg:px-0 lg:pb-0">
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-        <div className="flex">
+        <div className="flex flex-wrap">
           {filters.map((filter) => (
             <button
               key={filter.key}
@@ -843,7 +813,7 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {cards.map((card) => (
           <Card
             key={card.label}

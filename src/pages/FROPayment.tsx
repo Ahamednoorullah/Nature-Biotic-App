@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -40,6 +40,7 @@ type PaymentDateFilter = "today" | "monthly" | "custom";
 export default function FROPayment({ storeId }: { storeId: string }) {
   const { user } = useAuth();
   const { goStorePage } = useNav();
+  const savingHandover = useRef(false);
   const receiptStorageKey = `${RECEIPT_STORAGE_PREFIX}:${storeId}`;
   const handoverStorageKey = `${HANDOVER_STORAGE_PREFIX}:${storeId}`;
 
@@ -154,13 +155,31 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     allCollectedAmount - allHandedOverAmount,
     0,
   );
-  // Cash in Hand is always the current overall balance.
-  // It must not change when Today/Monthly/Custom Date filters change.
-  // It becomes 0 only when the full current cash is handed over.
+  // Cash in Hand stays at the collected balance until the store accepts a handover.
+  // Pending handovers are reserved so the same cash cannot be handed over twice.
+
+  const pendingReservedAmount = useMemo(
+    () =>
+      handovers
+        .filter(
+          (handover) =>
+            handover.status === "pending" &&
+            (!handover.handedOverBy ||
+              handover.handedOverBy.trim().toLowerCase() ===
+                (user?.name || "").trim().toLowerCase()),
+        )
+        .reduce((sum, handover) => sum + (Number(handover.amount) || 0), 0),
+    [handovers, user?.name],
+  );
+
+  const availableToHandover = Math.max(
+    currentCashInHand - pendingReservedAmount,
+    0,
+  );
   const balanceAmount = currentCashInHand;
   const requestedAmount = Number(handoverAmount) || 0;
   const canCreateHandover =
-    requestedAmount > 0 && requestedAmount <= currentCashInHand && !!user?.name;
+    requestedAmount > 0 && requestedAmount <= availableToHandover && !!user?.name;
 
   function loadPaymentData() {
     try {
@@ -204,7 +223,8 @@ export default function FROPayment({ storeId }: { storeId: string }) {
   }
 
   function handleCreateHandover() {
-    if (!canCreateHandover || !user?.name) return;
+    if (savingHandover.current || !canCreateHandover || !user?.name) return;
+    savingHandover.current = true;
 
     const newHandover: Handover = {
       id: `fro-ho-${Date.now()}`,
@@ -219,6 +239,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     const nextHandovers = [...handovers, newHandover];
     setHandovers(nextHandovers);
     localStorage.setItem(handoverStorageKey, JSON.stringify(nextHandovers));
+    savingHandover.current = false;
     closeHandoverForm();
     setShowHandoverDetails(true);
     window.dispatchEvent(new Event("nature-biotic-handover-updated"));
@@ -226,7 +247,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
 
   return (
     <>
-      <div className="mx-auto min-h-screen w-full max-w-md px-0 pb-24 pt-3">
+      <div className="mx-auto min-h-0 w-full max-w-md px-0 pb-24 pt-3 lg:max-w-none">
         <div className="mb-5 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <button

@@ -99,7 +99,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
 
   if (isFRO) {
     return (
-      <div className="mx-auto w-full max-w-md pb-24">
+      <div className="mx-auto w-full max-w-md pb-24 lg:max-w-none">
         {/* FRO header */}
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">

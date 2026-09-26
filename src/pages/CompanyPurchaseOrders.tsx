@@ -4,12 +4,10 @@ import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getStoreApprovalRequests,
-  updateStoreApprovalRequestStatus,
   getProductMaster,
   type Product,
   type StoreApprovalRequest,
-  syncApprovedPurchaseOrderToSales,
-  stores,
+  approveStorePurchaseOrder,
 } from "@/lib/data";
 
 type PurchaseOrderItem = {
@@ -91,31 +89,6 @@ function updatePurchaseOrderNotes(
   writeStorePurchaseOrders(storeId, updated);
   return updated;
 }
-
-function handleApprove(request: StoreApprovalRequest) {
-  updateStoreApprovalRequestStatus(request.id, "Approved");
-
-  if (request.type === "Purchase Order") {
-    // fetch the actual PO items from store's saved PO record
-    const poData = JSON.parse(
-      localStorage.getItem(`naturebiotic:purchase-orders:${request.storeId}`) || "[]"
-    );
-    const po = poData.find((p: any) => p.poNo === request.referenceNo);
-
-    if (po) {
-      syncApprovedPurchaseOrderToSales(
-        request.storeId,
-        request.storeName,
-        po.poNo,
-        po.date,
-        po.items,
-        stores.find((s) => s.id === request.storeId)?.location || "",
-        "Tamil Nadu", // or derive properly
-      );
-    }
-  }
-}
-
 
 export default function CompanyPurchaseOrders() {
   const [requests, setRequests] = useState<StoreApprovalRequest[]>(() =>
@@ -202,7 +175,10 @@ export default function CompanyPurchaseOrders() {
   }
 
   function approve(id: string) {
-    updateStoreApprovalRequestStatus(id, "Approved");
+    const request = requests.find((row) => row.id === id);
+    if (request?.status === "Approved" || request?.status === "Rejected") return;
+
+    approveStorePurchaseOrder(id);
     refresh();
 
     if (selected?.id === id) {

@@ -3,9 +3,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { products as allProducts, getStore, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
-import { products as reduceFROStock } from "@/lib/data";
+import {
+  products as allProducts,
+  getStore,
+  increaseFROStock,
+  type Product,
+} from "@/lib/data";
 
 
 type SaleType = "Direct" | "Executive";
@@ -522,6 +526,25 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       localStorage.setItem(storageKey, JSON.stringify(updated));
     } catch {}
 
+    if (next.through === "Executive" && next.executiveName && next.executiveName !== "-") {
+      increaseFROStock(
+        storeId,
+        next.executiveName,
+        items.map((item) => ({
+          productId: item.productId,
+          productName: item.product?.name,
+          packSize: item.packSize,
+          batchNo: item.batchNo,
+          qty: Number(item.quantity || 0),
+          unitValue: Number(item.price || 0),
+        })),
+        date,
+        `sales-return:${next.id}`,
+      );
+    } else {
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    }
+
     closeForm();
   }
 
@@ -567,7 +590,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
           </div>
         ) : null
       ) : (
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight text-slate-800">
               Sales Return
@@ -807,7 +830,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               className={`flex flex-col overflow-hidden border-slate-200 bg-white ${
                 isFRO
                   ? "h-full w-full border-0"
-                  : "max-h-[92vh] w-[94vw] max-w-7xl rounded-2xl border shadow-2xl"
+                  : "nb-modal-panel w-full max-w-7xl rounded-2xl border shadow-2xl"
               }`}
             >
               <div className={`flex items-center gap-3 border-b border-slate-200 px-4 py-4 sm:px-6 ${isFRO ? "" : "justify-between"}`}>

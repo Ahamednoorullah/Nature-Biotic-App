@@ -9,7 +9,7 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { stores, getStore, type Product } from "@/lib/data";
+import { stores, getStore, increaseFROStock, type Product } from "@/lib/data";
 import { createPortal } from "react-dom";
 
 type StoreSaleType = "Direct" | "Executive";
@@ -89,6 +89,7 @@ type CreditNote = {
   farmerAcre?: string;
   through?: StoreSaleType;
   executiveName?: string;
+  catalogProductId?: string;
 };
 
 type AddedProduct = {
@@ -110,6 +111,7 @@ type AddedProduct = {
   cgst: number;
   igst: number;
   total: number;
+  catalogProductId?: string;
 };
 
 const parties = [
@@ -395,6 +397,7 @@ export default function StoreCreditNotes({
       )}-${Math.random().toString(36).slice(2, 6)}`,
       productId: entry.productId,
       productName: saleRow.product?.name || "Product",
+      catalogProductId: saleRow.productId,
       pkgsize:
         saleRow.pkgsize || saleRow.packSize || saleRow.product?.size || "",
       batchNo: saleRow.batchNo || "",
@@ -523,6 +526,7 @@ export default function StoreCreditNotes({
         farmerVillage || selectedStore.location?.split(",")[0] || "",
       storeId: selectedStore.id,
       product: item.productName,
+      catalogProductId: item.catalogProductId || "",
       quantity: item.quantity,
       reason: item.reason || remarks || "Product Return",
       status: "Pending",
@@ -549,6 +553,25 @@ export default function StoreCreditNotes({
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
+
+    if (through === "Executive" && executiveName.trim()) {
+      increaseFROStock(
+        selectedStore.id,
+        executiveName.trim(),
+        added.map((item) => ({
+          productId: item.catalogProductId || "",
+          productName: item.productName,
+          packSize: item.pkgsize,
+          batchNo: item.batchNo,
+          qty: Number(item.quantity || 0),
+          unitValue: Number(item.sellingPrice || 0),
+        })),
+        returnDate,
+        `credit-note:${creditNoteNo}`,
+      );
+    } else {
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    }
 
     closeForm();
   }
@@ -1000,7 +1023,7 @@ export default function StoreCreditNotes({
               }
             `}</style>
 
-            <div className="credit-note-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="credit-note-print-area nb-print-panel flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="credit-note-screen-only flex items-center justify-between border-b border-slate-200 px-5 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -1579,7 +1602,7 @@ export default function StoreCreditNotes({
       {showCreate &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               {/* Header (fixed, does not scroll) */}
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>

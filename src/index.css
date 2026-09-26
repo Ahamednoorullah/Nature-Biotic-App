@@ -23,10 +23,46 @@ html {
     sans-serif;
 }
 
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   background: #f8fafb;
   color: #0f172a;
+}
+
+/* Contained table scrolling — the page itself must not scroll sideways */
+@media (max-width: 1023px) {
+  .overflow-hidden:has(> table),
+  .overflow-hidden:has(> div > table),
+  .overflow-hidden:has(> .w-full > table) {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+.nb-modal-panel {
+  width: min(94vw, 80rem);
+  max-height: min(92dvh, 960px);
+}
+
+.nb-print-panel {
+  width: min(98vw, calc(100vw - 1rem));
+  max-width: min(1450px, calc(100vw - 1rem));
+  max-height: min(94vh, 100dvh);
 }
 
 .material-symbols-rounded {

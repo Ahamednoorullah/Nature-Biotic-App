@@ -761,6 +761,7 @@ export default function CompanySales() {
           ? `${selectedFarmer.name}, ${buildFarmerAddress(selectedFarmer)}`
           : shippingAddress,
         product: r.product?.name || "",
+        productId: r.productId,
         packSize: r.packSize,
         pkgsize: r.pkgsize,
         batchNo: r.batchNo,
@@ -826,7 +827,15 @@ export default function CompanySales() {
     setSelectedFarmer(null);
 
     const nextAdded: AddedRow[] = invoice.rows.map((row, index) => {
-      const product = productMaster.find((p) => p.name === row.product);
+      const product =
+        productMaster.find((p) => p.id === row.productId) ||
+        productMaster.find(
+          (p) =>
+            p.name === row.product &&
+            String(p.size || "").trim().toLowerCase() ===
+              String(row.packSize || row.pkgsize || "").trim().toLowerCase(),
+        ) ||
+        productMaster.find((p) => p.name === row.product);
       const taxType: TaxType =
         (row.placeOfSupply || "Tamil Nadu") === "Tamil Nadu"
           ? "Tamilnadu (SGST + CGST)"
@@ -929,6 +938,14 @@ export default function CompanySales() {
 
     const builtRows = buildFormRows();
     if (!builtRows?.length) return;
+
+    if (
+      !editingInvoiceNo &&
+      sales.some((row) => row.invoiceNo === invoiceNo.trim())
+    ) {
+      window.alert("This invoice number is already saved.");
+      return;
+    }
 
     const newRows: SaleRow[] = builtRows.map((row, i) => ({
       ...row,
@@ -2170,7 +2187,7 @@ export default function CompanySales() {
       {showCreate &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               {/* Fixed header */}
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>

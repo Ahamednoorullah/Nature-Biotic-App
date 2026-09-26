@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Icon, Button } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { addFROStock, reduceFROStock } from "@/lib/data";
+import {
+  addFROStock,
+  getStoreAvailableQty,
+  getFROStockByExecutive,
+  persistDeliveryChallanAccepted,
+} from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 
 type DeliveryItem = {
@@ -106,6 +111,7 @@ export default function FROStock() {
   const [returnProductId, setReturnProductId] = useState("");
   const [returnQty, setReturnQty] = useState("");
   const [returnReason, setReturnReason] = useState("");
+  const [stockVersion, setStockVersion] = useState(0);
 
   const loasdhallans = () => {
     try {
@@ -170,10 +176,15 @@ export default function FROStock() {
   useEffect(() => {
     loasdhallans();
 
-    const refresh = () => loasdhallans();
+    const refresh = () => {
+      loasdhallans();
+      setStockVersion((version) => version + 1);
+    };
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-delivery-challan-updated", refresh);
+    window.addEventListener("fro-stock-updated", refresh);
+    window.addEventListener("nature-biotic-fro-stock-return-updated", refresh);
 
     // Keep the FRO screen in sync when Store creates a delivery challan
     // in the same browser/app session.
@@ -184,6 +195,11 @@ export default function FROStock() {
       window.removeEventListener("focus", refresh);
       window.removeEventListener(
         "nature-biotic-delivery-challan-updated",
+        refresh,
+      );
+      window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener(
+        "nature-biotic-fro-stock-return-updated",
         refresh,
       );
       window.clearInterval(interval);
@@ -219,8 +235,36 @@ export default function FROStock() {
   function acceptChallan(challan: DeliveryChallan) {
     if (challan.status === "accepted") return;
 
+    const storeId = challan.storeId || user?.storeId || "default";
+
+    const invalidItem = challan.items.find((item) => {
+      const qty = Number(item.qty || 0);
+      if (qty <= 0) return false;
+      const available = getStoreAvailableQty(
+        storeId,
+        item.productId,
+        item.packSize,
+        item.batchNo,
+        item.product,
+      );
+      return qty > available;
+    });
+
+    if (invalidItem) {
+      window.alert(
+        `Store does not have enough stock to accept this delivery. Available: ${getStoreAvailableQty(
+          storeId,
+          invalidItem.productId,
+          invalidItem.packSize,
+          invalidItem.batchNo,
+          invalidItem.product,
+        )}`,
+      );
+      return;
+    }
+
     addFROStock(
-      user?.storeId || "default",
+      storeId,
       challan.executive,
       challan.items.map((item) => ({
         productId: item.productId,
@@ -232,12 +276,14 @@ export default function FROStock() {
         qty: Number(item.qty || 0),
       })),
       challan.date,
+      challan.id,
     );
 
     const acceptedAt = new Date().toISOString();
     const acceptedBy = user?.name || challan.executive;
     const accepted: DeliveryChallan = {
       ...challan,
+      storeId,
       status: "accepted",
       acceptedAt,
       acceptedBy,
@@ -247,43 +293,7 @@ export default function FROStock() {
       item.id === challan.id ? accepted : item,
     );
     setChallans(updated);
-
-    try {
-      // Update the Store's challan record.
-      const storeKey = `${STORAGE_PREFIX}:${user?.storeId || challan.storeId || "default"}`;
-      const storeSaved = localStorage.getItem(storeKey);
-      if (storeSaved) {
-        const storeRows: DeliveryChallan[] = JSON.parse(storeSaved);
-        localStorage.setItem(
-          storeKey,
-          JSON.stringify(
-            storeRows.map((item) => (item.id === challan.id ? accepted : item)),
-          ),
-        );
-      }
-
-      // Update the FRO inbox record so the same delivery cannot be accepted twice.
-      const froKey = String(challan.executive || "")
-        .trim()
-        .toLowerCase();
-      if (froKey) {
-        const pendingKey = `${FRO_PENDING_PREFIX}:${froKey}`;
-        const pendingSaved = localStorage.getItem(pendingKey);
-        if (pendingSaved) {
-          const pendingRows: DeliveryChallan[] = JSON.parse(pendingSaved);
-          localStorage.setItem(
-            pendingKey,
-            JSON.stringify(
-              pendingRows.map((item) =>
-                item.id === challan.id ? accepted : item,
-              ),
-            ),
-          );
-        }
-      }
-
-      window.dispatchEvent(new Event("nature-biotic-delivery-challan-updated"));
-    } catch {}
+    persistDeliveryChallanAccepted(accepted);
 
     setShowPendingDetails(false);
     setSelected(accepted);
@@ -384,26 +394,17 @@ export default function FROStock() {
   );
 
   const returnStockOptions = useMemo(() => {
-    const map = new Map<string, ReturnRequestItem>();
-    receivedItems.forEach((item) => {
-      const key = `${item.product}|${item.packSize}|${item.batchNo}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          productId: "",
-          product: item.product,
-          packSize: item.packSize,
-          batchNo: item.batchNo,
-          expiryDate: item.expiryDate,
-          qty: item.qty,
-          unitValue: item.unitValue,
-        });
-      } else {
-        const existing = map.get(key)!;
-        existing.qty += item.qty;
-      }
-    });
-    return Array.from(map.values());
-  }, [receivedItems]);
+    const storeId = user?.storeId || "default";
+    return getFROStockByExecutive(storeId, user?.name || "").map((item) => ({
+      productId: String(item.productId || ""),
+      product: String(item.productName || ""),
+      packSize: String(item.packSize || ""),
+      batchNo: String(item.batchNo || ""),
+      expiryDate: String(item.expiryDate || ""),
+      qty: Number(item.currentQty || 0),
+      unitValue: Number(item.unitValue || 0),
+    }));
+  }, [user?.storeId, user?.name, stockVersion]);
 
   const acceptedReturnItems = useMemo(
     () =>
@@ -420,14 +421,13 @@ export default function FROStock() {
     [acceptedReturns],
   );
 
-  // Current FRO hand stock = all accepted received stock minus returns accepted by Store.
   const handStockRows = useMemo(() => {
     const map = new Map<
       string,
       { product: string; packSize: string; qty: number; value: number }
     >();
 
-    receivedItems.forEach((item) => {
+    returnStockOptions.forEach((item) => {
       const key = `${item.product}|${item.packSize}`;
       const row = map.get(key) || {
         product: item.product,
@@ -435,17 +435,9 @@ export default function FROStock() {
         qty: 0,
         value: 0,
       };
-      row.qty += item.qty;
-      row.value += item.value;
+      row.qty += Number(item.qty || 0);
+      row.value += Number(item.qty || 0) * Number(item.unitValue || 0);
       map.set(key, row);
-    });
-
-    acceptedReturnItems.forEach((item) => {
-      const key = `${item.product}|${item.packSize}`;
-      const row = map.get(key);
-      if (!row) return;
-      row.qty -= item.qty;
-      row.value -= item.value;
     });
 
     return Array.from(map.values())
@@ -453,7 +445,7 @@ export default function FROStock() {
       .sort((a, b) =>
         `${a.product}${a.packSize}`.localeCompare(`${b.product}${b.packSize}`),
       );
-  }, [receivedItems, acceptedReturnItems]);
+  }, [returnStockOptions]);
 
   const handStockQty = handStockRows.reduce((sum, row) => sum + row.qty, 0);
 
@@ -604,7 +596,7 @@ export default function FROStock() {
   if (activeStockView) {
     if (activeStockView === "received-detail" && selected) {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
           {stockViewHeader(`SD No : ${selected.sdNo}`, formatDate(selected.date), "text-blue-600")}
           <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
             <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 text-xs">
@@ -666,7 +658,7 @@ export default function FROStock() {
 
     if (activeStockView === "total-detail" && selectedTotalProduct) {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
           {stockViewHeader(
             selectedTotalProduct.split("|")[0],
             selectedTotalProduct.split("|")[1] || "-",
@@ -707,7 +699,7 @@ export default function FROStock() {
 
     if (activeStockView === "return-detail" && selectedReturn) {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
           {stockViewHeader(selectedReturn.rcNo, formatDate(selectedReturn.date), "text-amber-600")}
           <div className="space-y-3">
             <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
@@ -755,7 +747,7 @@ export default function FROStock() {
           `${item.product}|${item.packSize}|${item.batchNo}` === returnProductId,
       );
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
           {stockViewHeader("Return Stock", "Send stock return request to the Store", "text-amber-600")}
           <div className="space-y-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
             <div>
@@ -837,7 +829,7 @@ export default function FROStock() {
 
     if (activeStockView === "pending") {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4">
           {stockViewHeader("Pending Stock Received", "Stock waiting for your acceptance", "text-orange-600")}
           <div className="space-y-3">
             {pendingChallans.length === 0 ? (
@@ -884,7 +876,7 @@ export default function FROStock() {
 
     if (activeStockView === "hand") {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4">
           {stockViewHeader("Hand Stock", "Current stock in your hand", "text-purple-600")}
           <Card className="overflow-hidden p-0">
             {handStockRows.length === 0 ? (
@@ -919,7 +911,7 @@ export default function FROStock() {
 
     if (activeStockView === "returned") {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <button
@@ -1015,7 +1007,7 @@ export default function FROStock() {
 
     if (activeStockView === "total") {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4">
           {stockViewHeader("Total Stock", "Product wise stock", "text-emerald-600")}
           <div className="mb-3 flex w-full overflow-hidden rounded-lg bg-slate-100 p-1">
             {[
@@ -1079,7 +1071,7 @@ export default function FROStock() {
 
     if (activeStockView === "received") {
       return (
-        <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4">
           {stockViewHeader("Stock Received", "Delivery challan details", "text-blue-600")}
           <div className="mb-3 flex items-center justify-end gap-1">
             {(["today", "monthly", "custom"] as const).map((filter) => (
@@ -1145,8 +1137,8 @@ export default function FROStock() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
-      <div className="grid grid-cols-2 gap-3">
+    <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {stockCards.map((card) => (
           <Card
             key={card.label}

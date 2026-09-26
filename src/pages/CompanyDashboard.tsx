@@ -1,14 +1,17 @@
-import { useEffect, useState, useMemo } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import {
   stores as allStores,
   getStoreApprovalRequests,
   updateStoreApprovalRequestStatus,
+  approveStorePurchaseOrder,
   storeApprovalRequestsUpdatedEvent,
+  getCompanyStoreSales,
+  getCompanyCreditNoteSyncRecords,
   type StoreApprovalRequest,
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
 import { Card, StatCard, Button, Icon } from "@/components/ui";
-import { formatCurrency, formatCompact, initials } from "@/lib/format";
+import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
@@ -22,298 +25,390 @@ const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "yearly", label: "Yearly" },
 ];
 
-type SectionData = {
-  receivable: number;
-  revenue: number;
+const STORE_SALES_KEY = "nature-biotic-store-sales-invoices-v2";
+const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
+const STORE_CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
+const STORE_RECEIPT_KEY = "nature-biotic-store-receipts-v3";
+const COMPANY_RECEIPT_KEY = "nature-biotic-company-receipts-v1";
+
+type SalesDetail = {
+  date: string;
+  invoiceNo: string;
+  storeName: string;
+  value: number;
+};
+
+type CollectionDetail = {
+  date: string;
+  receiptNo: string;
+  storeName: string;
+  amount: number;
+};
+
+type OutstandingDetail = {
+  storeName: string;
+  under30: number;
+  over30: number;
+  over60: number;
+  over90: number;
+  totalAmount: number;
+};
+
+type StoreDashboardRow = {
+  storeId: string;
+  sales: number;
+  collection: number;
   outstanding: number;
   farmers: number;
-  trends: {
-    receivable: string;
-    revenue: string;
-    outstanding: string;
-    farmers: string;
+};
+
+function readRows(key: string): any[] {
+  try {
+    const raw = localStorage.getItem(key);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseTxnDate(value: unknown): Date | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "-") return null;
+
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const local = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (local) {
+    let year = Number(local[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, Number(local[2]) - 1, Number(local[1]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function periodBounds(filter: DateFilter) {
+  const now = new Date();
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+  let start: Date;
+
+  switch (filter) {
+    case "today":
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
+    case "weekly": {
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const day = start.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      start.setDate(start.getDate() - diffToMonday);
+      break;
+    }
+    case "monthly":
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case "quarterly": {
+      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      start = new Date(now.getFullYear(), quarterStartMonth, 1);
+      break;
+    }
+    case "yearly":
+      start = new Date(now.getFullYear(), 0, 1);
+      break;
+  }
+
+  return { start, end };
+}
+
+function inPeriod(value: unknown, filter: DateFilter) {
+  const date = parseTxnDate(value);
+  if (!date) return false;
+  const { start, end } = periodBounds(filter);
+  return date >= start && date <= end;
+}
+
+function displayDate(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return formatDate(raw.slice(0, 10));
+  return raw || "-";
+}
+
+function money(value: unknown) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function ageBucket(invoiceDate: Date | null) {
+  if (!invoiceDate) return "under30" as const;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.floor(
+    (today.getTime() - invoiceDate.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  if (days <= 30) return "under30" as const;
+  if (days <= 60) return "over30" as const;
+  if (days <= 90) return "over60" as const;
+  return "over90" as const;
+}
+
+function buildAdminDashboard(filter: DateFilter) {
+  const companyLines = getCompanyStoreSales();
+  const companyInvoices = new Map<
+    string,
+    {
+      invoiceNo: string;
+      date: string;
+      storeId: string;
+      storeName: string;
+      total: number;
+    }
+  >();
+
+  companyLines.forEach((line) => {
+    const invoiceNo = String(line.invoiceNo || "").trim();
+    if (!invoiceNo) return;
+    const key = `${line.storeId}|${invoiceNo}`;
+    const existing = companyInvoices.get(key);
+    if (existing) {
+      existing.total += money(line.total);
+      return;
+    }
+    companyInvoices.set(key, {
+      invoiceNo,
+      date: String(line.date || ""),
+      storeId: String(line.storeId || ""),
+      storeName: String(line.storeName || ""),
+      total: money(line.total),
+    });
+  });
+
+  const creditsByInvoice = new Map<string, number>();
+  getCompanyCreditNoteSyncRecords().forEach((note) => {
+    if (note.status === "Rejected") return;
+    const invoiceNo = String(note.invoiceNo || note.purchaseRef || "")
+      .trim()
+      .toLowerCase();
+    if (!invoiceNo) return;
+    const key = `${note.storeId}|${invoiceNo}`;
+    creditsByInvoice.set(
+      key,
+      (creditsByInvoice.get(key) || 0) + money(note.returnAmount),
+    );
+  });
+
+  const companyReceipts = readRows(COMPANY_RECEIPT_KEY);
+  const paidByInvoice = new Map<string, number>();
+  companyReceipts.forEach((receipt) => {
+    const invoiceNo = String(receipt.invoiceNo || "")
+      .trim()
+      .toLowerCase();
+    if (!invoiceNo) return;
+    const key = `${receipt.storeId || ""}|${invoiceNo}`;
+    paidByInvoice.set(key, (paidByInvoice.get(key) || 0) + money(receipt.amount));
+  });
+
+  const actualSalesList: SalesDetail[] = [];
+  const outstandingMap = new Map<string, OutstandingDetail>();
+  let actualSales = 0;
+  let actualOutstanding = 0;
+
+  companyInvoices.forEach((invoice) => {
+    if (!inPeriod(invoice.date, filter)) return;
+    const invoiceKey = `${invoice.storeId}|${invoice.invoiceNo.trim().toLowerCase()}`;
+    const net = Math.max(
+      0,
+      invoice.total - (creditsByInvoice.get(invoiceKey) || 0),
+    );
+    if (net <= 0) return;
+    actualSales += net;
+    actualSalesList.push({
+      date: displayDate(invoice.date),
+      invoiceNo: invoice.invoiceNo,
+      storeName: invoice.storeName || "-",
+      value: net,
+    });
+
+    const balance = Math.max(0, net - (paidByInvoice.get(invoiceKey) || 0));
+    actualOutstanding += balance;
+    if (balance <= 0) return;
+    const bucket = ageBucket(parseTxnDate(invoice.date));
+    const row = outstandingMap.get(invoice.storeName) || {
+      storeName: invoice.storeName || "-",
+      under30: 0,
+      over30: 0,
+      over60: 0,
+      over90: 0,
+      totalAmount: 0,
+    };
+    row[bucket] += balance;
+    row.totalAmount += balance;
+    outstandingMap.set(invoice.storeName, row);
+  });
+
+  const actualCollectionList: CollectionDetail[] = [];
+  let actualCollection = 0;
+  companyReceipts.forEach((receipt) => {
+    if (!inPeriod(receipt.date, filter)) return;
+    const amount = money(receipt.amount);
+    if (amount <= 0) return;
+    actualCollection += amount;
+    actualCollectionList.push({
+      date: displayDate(receipt.date),
+      receiptNo: String(receipt.receiptNo || "-"),
+      storeName: String(receipt.storeName || "-"),
+      amount,
+    });
+  });
+
+  const storeRows: StoreDashboardRow[] = allStores.map((store) => {
+    const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
+    const returns = readRows(`${STORE_RETURN_KEY}:${store.id}`);
+    const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
+    const receipts = readRows(`${STORE_RECEIPT_KEY}:${store.id}`);
+
+    const returnedByInvoice = new Map<string, number>();
+    returns.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      if (!invoiceNo) return;
+      returnedByInvoice.set(
+        invoiceNo,
+        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
+      );
+    });
+    credits.forEach((row) => {
+      if (row.status === "Rejected") return;
+      const invoiceNo = String(row.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      if (!invoiceNo) return;
+      returnedByInvoice.set(
+        invoiceNo,
+        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
+      );
+    });
+
+    const receiptPaid = new Map<string, number>();
+    receipts.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      if (!invoiceNo) return;
+      receiptPaid.set(
+        invoiceNo,
+        (receiptPaid.get(invoiceNo) || 0) + money(row.amount),
+      );
+    });
+
+    let sales = 0;
+    let outstanding = 0;
+    const farmers = new Set<string>();
+
+    invoices.forEach((invoice) => {
+      if (!inPeriod(invoice.date, filter)) return;
+      const invoiceNo = String(invoice.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      const net = Math.max(
+        0,
+        money(invoice.amount) - (returnedByInvoice.get(invoiceNo) || 0),
+      );
+      if (net <= 0) return;
+      sales += net;
+      outstanding += Math.max(0, net - (receiptPaid.get(invoiceNo) || 0));
+      const farmerKey = String(
+        invoice.farmerId || invoice.partyName || "",
+      ).trim();
+      if (farmerKey) farmers.add(farmerKey.toLowerCase());
+    });
+
+    const collection = receipts.reduce((sum, receipt) => {
+      if (!inPeriod(receipt.date, filter)) return sum;
+      return sum + money(receipt.amount);
+    }, 0);
+
+    return {
+      storeId: store.id,
+      sales,
+      collection,
+      outstanding,
+      farmers: farmers.size,
+    };
+  });
+
+  const marketFarmers = new Set<string>();
+  allStores.forEach((store) => {
+    const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
+    const returns = readRows(`${STORE_RETURN_KEY}:${store.id}`);
+    const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
+    const returnedByInvoice = new Map<string, number>();
+    returns.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      if (!invoiceNo) return;
+      returnedByInvoice.set(
+        invoiceNo,
+        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
+      );
+    });
+    credits.forEach((row) => {
+      if (row.status === "Rejected") return;
+      const invoiceNo = String(row.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      if (!invoiceNo) return;
+      returnedByInvoice.set(
+        invoiceNo,
+        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
+      );
+    });
+    invoices.forEach((invoice) => {
+      if (!inPeriod(invoice.date, filter)) return;
+      const invoiceNo = String(invoice.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      const net = Math.max(
+        0,
+        money(invoice.amount) - (returnedByInvoice.get(invoiceNo) || 0),
+      );
+      if (net <= 0) return;
+      const farmerKey = String(
+        invoice.farmerId || invoice.partyName || "",
+      ).trim();
+      if (farmerKey) marketFarmers.add(farmerKey.toLowerCase());
+    });
+  });
+
+  return {
+    actualSales,
+    actualCollection,
+    actualOutstanding,
+    marketSales: storeRows.reduce((sum, row) => sum + row.sales, 0),
+    marketCollection: storeRows.reduce((sum, row) => sum + row.collection, 0),
+    marketOutstanding: storeRows.reduce((sum, row) => sum + row.outstanding, 0),
+    marketFarmers: marketFarmers.size,
+    storeRows,
+    actualSalesList,
+    actualCollectionList,
+    actualOutstandingList: Array.from(outstandingMap.values()),
   };
-};
-
-type DashboardData = {
-  actual: SectionData;
-  market: SectionData;
-  store: SectionData;
-};
-
-const dashboardData: Record<DateFilter, DashboardData> = {
-  today: {
-    actual: {
-      receivable: 184000,
-      revenue: 24500,
-      outstanding: 18000,
-      farmers: 685,
-      trends: {
-        receivable: "+4.2% vs yesterday",
-        revenue: "+6.8% vs yesterday",
-        outstanding: "-1.4% vs yesterday",
-        farmers: "+2 new today",
-      },
-    },
-    market: {
-      receivable: 245000,
-      revenue: 31800,
-      outstanding: 28500,
-      farmers: 142,
-      trends: {
-        receivable: "+5.1% vs yesterday",
-        revenue: "+9.4% vs yesterday",
-        outstanding: "-2.0% vs yesterday",
-        farmers: "+1 new today",
-      },
-    },
-    store: {
-      receivable: 245000,
-      revenue: 24500,
-      outstanding: 18000,
-      farmers: 142,
-      trends: {
-        receivable: "+4.2% vs yesterday",
-        revenue: "+6.8% vs yesterday",
-        outstanding: "-1.4% vs yesterday",
-        farmers: "+2 new today",
-      },
-    },
-  },
-  weekly: {
-    actual: {
-      receivable: 412000,
-      revenue: 168400,
-      outstanding: 22500,
-      farmers: 694,
-      trends: {
-        receivable: "+8.5% vs last week",
-        revenue: "+12.3% vs last week",
-        outstanding: "-3.2% vs last week",
-        farmers: "+9 this week",
-      },
-    },
-    market: {
-      receivable: 548000,
-      revenue: 214600,
-      outstanding: 36500,
-      farmers: 148,
-      trends: {
-        receivable: "+10.2% vs last week",
-        revenue: "+14.1% vs last week",
-        outstanding: "-4.5% vs last week",
-        farmers: "+6 this week",
-      },
-    },
-    store: {
-      receivable: 412000,
-      revenue: 168400,
-      outstanding: 22500,
-      farmers: 148,
-      trends: {
-        receivable: "+8.5% vs last week",
-        revenue: "+12.3% vs last week",
-        outstanding: "-3.2% vs last week",
-        farmers: "+6 this week",
-      },
-    },
-  },
-  monthly: {
-    actual: {
-      receivable: 1640000,
-      revenue: 612000,
-      outstanding: 32000,
-      farmers: 712,
-      trends: {
-        receivable: "+14.6% this month",
-        revenue: "+18.2% this month",
-        outstanding: "-5.1% this month",
-        farmers: "+24 this month",
-      },
-    },
-    market: {
-      receivable: 2180000,
-      revenue: 826000,
-      outstanding: 48500,
-      farmers: 156,
-      trends: {
-        receivable: "+16.8% this month",
-        revenue: "+21.4% this month",
-        outstanding: "-6.3% this month",
-        farmers: "+12 this month",
-      },
-    },
-    store: {
-      receivable: 1640000,
-      revenue: 485000,
-      outstanding: 32000,
-      farmers: 156,
-      trends: {
-        receivable: "+14.6% this month",
-        revenue: "+18.2% this month",
-        outstanding: "-5.1% this month",
-        farmers: "+12 this month",
-      },
-    },
-  },
-  quarterly: {
-    actual: {
-      receivable: 1840000,
-      revenue: 614000,
-      outstanding: 54000,
-      farmers: 685,
-      trends: {
-        receivable: "+14.6% this month",
-        revenue: "+18.2% this month",
-        outstanding: "-5.1% this month",
-        farmers: "+24 this month",
-      },
-    },
-    market: {
-      receivable: 2280000,
-      revenue: 886000,
-      outstanding: 42500,
-      farmers: 142,
-      trends: {
-        receivable: "+16.8% this month",
-        revenue: "+21.4% this month",
-        outstanding: "-6.3% this month",
-        farmers: "+12 this month",
-      },
-    },
-    store: {
-      receivable: 2280000,
-      revenue: 8865000,
-      outstanding: 42000,
-      farmers: 142,
-      trends: {
-        receivable: "+14.6% this month",
-        revenue: "+18.2% this month",
-        outstanding: "-5.1% this month",
-        farmers: "+12 this month",
-      },
-    },
-  },
-  yearly: {
-    actual: {
-      receivable: 19840000,
-      revenue: 7348000,
-      outstanding: 84000,
-      farmers: 871,
-      trends: {
-        receivable: "+22.4% this year",
-        revenue: "+26.8% this year",
-        outstanding: "-8.7% this year",
-        farmers: "+186 this year",
-      },
-    },
-    market: {
-      receivable: 26420000,
-      revenue: 9860000,
-      outstanding: 128000,
-      farmers: 920,
-      trends: {
-        receivable: "+28.1% this year",
-        revenue: "+31.6% this year",
-        outstanding: "-10.2% this year",
-        farmers: "+94 this year",
-      },
-    },
-    store: {
-      receivable: 19840000,
-      revenue: 4850000,
-      outstanding: 84000,
-      farmers: 920,
-      trends: {
-        receivable: "+22.4% this year",
-        revenue: "+26.8% this year",
-        outstanding: "-8.7% this year",
-        farmers: "+94 this year",
-      },
-    },
-  },
-};
-
-const actualSalesList = [
-  {
-    date: "08 Aug 2026",
-    invoiceNo: "INV-1028",
-    storeName: "Sairam Agri Input",
-    value: 48200,
-  },
-  {
-    date: "08 Aug 2026",
-    invoiceNo: "INV-1027",
-    storeName: "Shriya Tech",
-    value: 36500,
-  },
-  {
-    date: "07 Aug 2026",
-    invoiceNo: "INV-1026",
-    storeName: "Nature Bio Mart",
-    value: 52800,
-  },
-  {
-    date: "07 Aug 2026",
-    invoiceNo: "INV-1025",
-    storeName: "Sairam Agri Input",
-    value: 46500,
-  },
-];
-
-const actualCollectionList = [
-  {
-    date: "08 Aug 2026",
-    receiptNo: "RCPT-0821",
-    storeName: "Sairam Agri Input",
-    amount: 8500,
-  },
-  {
-    date: "08 Aug 2026",
-    receiptNo: "RCPT-0820",
-    storeName: "Shriya Tech",
-    amount: 6200,
-  },
-  {
-    date: "07 Aug 2026",
-    receiptNo: "RCPT-0819",
-    storeName: "Nature Bio Mart",
-    amount: 4800,
-  },
-  {
-    date: "07 Aug 2026",
-    receiptNo: "RCPT-0818",
-    storeName: "Sairam Agri Input",
-    amount: 5000,
-  },
-];
-
-const actualOutstandingList = [
-  {
-    storeName: "Sairam Agri Input",
-    under30: 5000,
-    over30: 5000,
-    over60: 10000,
-    over90: 10000,
-    totalAmount: 30000,
-  },
-  {
-    storeName: "Shriya Tech",
-    under30: 4200,
-    over30: 3600,
-    over60: 5200,
-    over90: 3000,
-    totalAmount: 16000,
-  },
-  {
-    storeName: "Nature Bio Mart",
-    under30: 3000,
-    over30: 2500,
-    over60: 4000,
-    over90: 3500,
-    totalAmount: 13000,
-  },
-];
+}
 
 export default function CompanyDashboard() {
   const { goStore } = useNav();
@@ -326,23 +421,64 @@ export default function CompanyDashboard() {
   >([]);
   const [showApprovals, setShowApprovals] = useState(false);
 
+  const [dashboardVersion, setDashboardVersion] = useState(0);
+
   useEffect(() => {
-    const refresh = () => setApprovalRequests(getStoreApprovalRequests());
+    const refresh = () => {
+      setApprovalRequests(getStoreApprovalRequests());
+      setDashboardVersion((version) => version + 1);
+    };
     refresh();
     window.addEventListener(storeApprovalRequestsUpdatedEvent, refresh);
-    return () =>
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("company-credit-note-sync-updated", refresh);
+    window.addEventListener("nature-biotic-company-receipts-updated", refresh);
+    window.addEventListener("nature-biotic-store-inventory-updated", refresh);
+    window.addEventListener("nature-biotic-store-receipts-updated", refresh);
+    window.addEventListener("fro-stock-updated", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
       window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener("company-credit-note-sync-updated", refresh);
+      window.removeEventListener("nature-biotic-company-receipts-updated", refresh);
+      window.removeEventListener("nature-biotic-store-inventory-updated", refresh);
+      window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
+      window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
 
   const pendingApprovals = approvalRequests.filter(
     (row) => row.status === "Pending",
   );
   const approveRequest = (id: string) => {
+    const request = approvalRequests.find((row) => row.id === id);
+    if (!request || request.status !== "Pending") return;
+    if (request.type === "Purchase Order") {
+      setApprovalRequests(approveStorePurchaseOrder(id));
+      return;
+    }
     setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
   };
 
-  const data = useMemo(() => dashboardData[dateFilter], [dateFilter]);
-  const store = allStores[0];
+  const dashboard = useMemo(
+    () => buildAdminDashboard(dateFilter),
+    [dateFilter, dashboardVersion],
+  );
+  const data = {
+    actual: {
+      receivable: dashboard.actualSales,
+      revenue: dashboard.actualCollection,
+      outstanding: dashboard.actualOutstanding,
+    },
+    market: {
+      receivable: dashboard.marketSales,
+      revenue: dashboard.marketCollection,
+      outstanding: dashboard.marketOutstanding,
+      farmers: dashboard.marketFarmers,
+    },
+  };
 
   return (
     <div>
@@ -352,14 +488,17 @@ export default function CompanyDashboard() {
           <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
         </div>
       </div> */}
+      <div className="mb-6 w-full overflow-x-auto lg:hidden">
+        <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
+      </div>
       {createPortal(
-        <div className="fixed top-[82px] right-8 z-[9999]">
+        <div className="fixed right-4 top-[82px] z-[40] hidden max-w-[calc(100vw-2rem)] lg:block xl:right-8">
           <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
         </div>,
         document.body,
       )}
 
-      <div className="h-[30px]" />
+      <div className="hidden h-[30px] lg:block" />
 
       {pendingApprovals.length > 0 && (
         <section className="mb-8">
@@ -515,6 +654,9 @@ export default function CompanyDashboard() {
           <div className="mt-5 animate-fade-in">
             <ActualDetailsBox
               view={actualDetailView}
+              sales={dashboard.actualSalesList}
+              collections={dashboard.actualCollectionList}
+              outstanding={dashboard.actualOutstandingList}
               onClose={() => setActualDetailView(null)}
             />
           </div>
@@ -570,7 +712,18 @@ export default function CompanyDashboard() {
           </p>
         </div>
 
-        <Card className="p-5 sm:p-6 animate-fade-in">
+        <div className="flex flex-col gap-5">
+          {allStores.map((store, index) => {
+            const metrics = dashboard.storeRows.find(
+              (row) => row.storeId === store.id,
+            ) || {
+              sales: 0,
+              collection: 0,
+              outstanding: 0,
+              farmers: 0,
+            };
+            return (
+        <Card key={store.id} className="p-5 sm:p-6 animate-fade-in">
           {/* Store details + KPI cards in one row on desktop */}
           <div className="flex flex-col xl:flex-row xl:items-center gap-5">
             {/* Store details */}
@@ -583,7 +736,7 @@ export default function CompanyDashboard() {
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md">
-                    Store 1
+                    Store {index + 1}
                   </span>
                   <h3 className="text-lg font-bold text-slate-800 tracking-tight truncate">
                     {store.name}
@@ -603,30 +756,33 @@ export default function CompanyDashboard() {
               <StoreKpi
                 icon="account_balance_wallet"
                 label="Sales"
-                value={formatCurrency(data.store.receivable)}
+                value={formatCurrency(metrics.sales)}
                 color="brand"
               />
               <StoreKpi
                 icon="payments"
                 label="Collection"
-                value={formatCurrency(data.store.revenue)}
+                value={formatCurrency(metrics.collection)}
                 color="blue"
               />
               <StoreKpi
                 icon="receipt_long"
                 label="Outstanding"
-                value={formatCurrency(data.store.outstanding)}
+                value={formatCurrency(metrics.outstanding)}
                 color="amber"
               />
               <StoreKpi
                 icon="groups"
                 label="No of Farmers"
-                value={String(data.store.farmers)}
+                value={String(metrics.farmers)}
                 color="purple"
               />
             </div>
           </div>
         </Card>
+            );
+          })}
+        </div>
       </section>
     </div>
   );
@@ -634,9 +790,15 @@ export default function CompanyDashboard() {
 
 function ActualDetailsBox({
   view,
+  sales,
+  collections,
+  outstanding,
   onClose,
 }: {
   view: Exclude<ActualDetailView, null>;
+  sales: SalesDetail[];
+  collections: CollectionDetail[];
+  outstanding: OutstandingDetail[];
   onClose: () => void;
 }) {
   const config = {
@@ -703,8 +865,8 @@ function ActualDetailsBox({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {actualSalesList.map((row) => (
-                <tr key={row.invoiceNo} className="hover:bg-slate-50">
+              {sales.map((row) => (
+                <tr key={`${row.invoiceNo}-${row.storeName}`} className="hover:bg-slate-50">
                   <td className="px-5 py-3 text-slate-600">{row.date}</td>
                   <td className="px-5 py-3 font-semibold text-slate-700">
                     {row.invoiceNo}
@@ -736,7 +898,7 @@ function ActualDetailsBox({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {actualCollectionList.map((row) => (
+              {collections.map((row) => (
                 <tr key={row.receiptNo} className="hover:bg-slate-50">
                   <td className="px-5 py-3 text-slate-600">{row.date}</td>
                   <td className="px-5 py-3 font-semibold text-slate-700">
@@ -780,7 +942,7 @@ function ActualDetailsBox({
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {actualOutstandingList.map((row) => (
+              {outstanding.map((row) => (
                 <tr key={row.storeName} className="hover:bg-slate-50">
                   <td className="px-5 py-4 font-semibold text-slate-800">
                     {row.storeName}
@@ -809,7 +971,7 @@ function ActualDetailsBox({
                 <td className="px-5 py-4 text-right">Total</td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    actualOutstandingList.reduce(
+                    outstanding.reduce(
                       (sum, row) => sum + row.under30,
                       0,
                     ),
@@ -817,7 +979,7 @@ function ActualDetailsBox({
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    actualOutstandingList.reduce(
+                    outstanding.reduce(
                       (sum, row) => sum + row.over30,
                       0,
                     ),
@@ -825,7 +987,7 @@ function ActualDetailsBox({
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    actualOutstandingList.reduce(
+                    outstanding.reduce(
                       (sum, row) => sum + row.over60,
                       0,
                     ),
@@ -833,7 +995,7 @@ function ActualDetailsBox({
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    actualOutstandingList.reduce(
+                    outstanding.reduce(
                       (sum, row) => sum + row.over90,
                       0,
                     ),
@@ -841,7 +1003,7 @@ function ActualDetailsBox({
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums text-brand-700">
                   {formatCurrency(
-                    actualOutstandingList.reduce(
+                    outstanding.reduce(
                       (sum, row) => sum + row.totalAmount,
                       0,
                     ),
