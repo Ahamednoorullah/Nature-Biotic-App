@@ -1,13 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Card,
-  Button,
-  Input,
-  Select,
-  EmptyState,
-  Icon,
-} from "@/components/ui";
+import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   commitReceiptNumber,
@@ -196,18 +189,17 @@ export default function CompanyReceipts() {
     try {
       const latest = loadCompanyReceipts();
       const invoiceKey = selectedInvoice.invoiceNo.trim().toLowerCase();
-      const credited = getCompanyCreditNoteSyncRecords().reduce(
-        (sum, note) => {
-          if (note.storeId !== createStore.id || note.status === "Rejected") {
-            return sum;
-          }
-          const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
-            .trim()
-            .toLowerCase();
-          return noteInvoice === invoiceKey ? sum + money(note.returnAmount) : sum;
-        },
-        0,
-      );
+      const credited = getCompanyCreditNoteSyncRecords().reduce((sum, note) => {
+        if (note.storeId !== createStore.id || note.status === "Rejected") {
+          return sum;
+        }
+        const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
+          .trim()
+          .toLowerCase();
+        return noteInvoice === invoiceKey
+          ? sum + money(note.returnAmount)
+          : sum;
+      }, 0);
       const collected = latest.reduce((sum, receipt) => {
         if (receipt.storeId !== createStore.id) return sum;
         if (receipt.invoiceNo.trim().toLowerCase() !== invoiceKey) return sum;
@@ -260,9 +252,7 @@ export default function CompanyReceipts() {
       const next = [newReceipt, ...latest];
       localStorage.setItem(COMPANY_RECEIPT_KEY, JSON.stringify(next));
       commitReceiptNumber(allocatedNo);
-      window.dispatchEvent(
-        new Event("nature-biotic-company-receipts-updated"),
-      );
+      window.dispatchEvent(new Event("nature-biotic-company-receipts-updated"));
       setCreatedReceipts(next);
       closeCreateForm();
     } catch {
@@ -329,20 +319,11 @@ export default function CompanyReceipts() {
         r.storeName.toLowerCase().includes(q) ||
         r.invoiceNo.toLowerCase().includes(q);
 
-      const matchesStore =
-        storeFilter === "all" || r.storeId === storeFilter;
+      const matchesStore = storeFilter === "all" || r.storeId === storeFilter;
 
       return matchesSearch && matchesStore && matchesDate(r.date);
     });
-  }, [
-    search,
-    storeFilter,
-    dateFilter,
-    customFrom,
-    customTo,
-    createdReceipts,
-  ]);
-
+  }, [search, storeFilter, dateFilter, customFrom, customTo, createdReceipts]);
 
   return (
     <div>
@@ -359,7 +340,7 @@ export default function CompanyReceipts() {
         {/* Buttons */}
         <div className="flex items-center gap-3">
           <Button onClick={openCreateForm}>
-            <Icon name="add" size={20} fill /> Create Receipt
+            <Icon name="add" size={20} fill /> Create
           </Button>
           <Button variant="secondary">
             <Icon name="download" size={20} /> Export
@@ -726,37 +707,40 @@ export default function CompanyReceipts() {
 
                   <div className="grid grid-cols-[1fr_280px]">
                     {/* NOTES */}
-                        <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                            Notes
-                          </p>
+                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        Notes
+                      </p>
 
-                          {(() => {
-                            const storeName =
-                              viewReceipt?.storeName ||
-                              stores.find((s) => s.id === viewReceipt?.storeId)?.name ||
-                              "this store";
-                            const defaultNotes = `Purchase order raised by ${storeName} to Nature Biotic.`;
+                      {(() => {
+                        const storeName =
+                          viewReceipt?.storeName ||
+                          stores.find((s) => s.id === viewReceipt?.storeId)
+                            ?.name ||
+                          "this store";
+                        const defaultNotes = `Purchase order raised by ${storeName} to Nature Biotic.`;
 
-                            return (
-                              <>
-                                {/* Screen - Editable Notes */}
-                                <textarea
-                                  value={purchaseOrderNotes}
-                                  onChange={(e) => setPurchaseOrderNotes(e.target.value)}
-                                  rows={2}
-                                  placeholder="Enter notes..."
-                                  className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                                />
+                        return (
+                          <>
+                            {/* Screen - Editable Notes */}
+                            <textarea
+                              value={purchaseOrderNotes}
+                              onChange={(e) =>
+                                setPurchaseOrderNotes(e.target.value)
+                              }
+                              rows={2}
+                              placeholder="Enter notes..."
+                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
+                            />
 
-                                {/* Print - Show edited notes */}
-                                <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                                  {purchaseOrderNotes || defaultNotes}
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </div>
+                            {/* Print - Show edited notes */}
+                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
+                              {purchaseOrderNotes || defaultNotes}
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </div>
 
                     <div className="p-4 text-sm">
                       <div className="flex justify-between py-1.5">
@@ -872,9 +856,7 @@ export default function CompanyReceipts() {
                     value={invoiceNo}
                     onChange={handleInvoiceChange}
                     placeholder={
-                      createStoreId
-                        ? "Select invoice"
-                        : "Choose a store first"
+                      createStoreId ? "Select invoice" : "Choose a store first"
                     }
                     options={storeInvoices.map((invoice) => ({
                       value: invoice.invoiceNo,
