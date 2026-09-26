@@ -1241,6 +1241,69 @@ export function saveCompanyStoreSales(rows: CompanyStoreSaleRecord[]) {
   } catch {}
 }
 
+const RECEIPT_SEQUENCE_KEY = "nature-biotic-receipt-sequence-v1";
+const COMPANY_RECEIPT_STORAGE_KEY = "nature-biotic-company-receipts-v1";
+const STORE_RECEIPT_STORAGE_PREFIX = "nature-biotic-store-receipts-v3:";
+
+function receiptSequenceValue(receiptNo: unknown) {
+  const match = String(receiptNo ?? "")
+    .trim()
+    .match(/^RCP-(\d+)$/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function savedReceiptNumbers() {
+  const numbers: number[] = [];
+  if (typeof window === "undefined") return numbers;
+
+  try {
+    const sequence = Number(localStorage.getItem(RECEIPT_SEQUENCE_KEY) || 0);
+    if (Number.isFinite(sequence) && sequence > 0) numbers.push(sequence);
+
+    const company = JSON.parse(
+      localStorage.getItem(COMPANY_RECEIPT_STORAGE_KEY) || "[]",
+    );
+    if (Array.isArray(company)) {
+      company.forEach((row) => numbers.push(receiptSequenceValue(row?.receiptNo)));
+    }
+
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(STORE_RECEIPT_STORAGE_PREFIX)) continue;
+      const rows = JSON.parse(localStorage.getItem(key) || "[]");
+      if (!Array.isArray(rows)) continue;
+      rows.forEach((row) => numbers.push(receiptSequenceValue(row?.receiptNo)));
+    }
+  } catch {
+    return numbers;
+  }
+
+  return numbers;
+}
+
+export function nextReceiptNumber() {
+  const highest = savedReceiptNumbers().reduce(
+    (max, value) => Math.max(max, value),
+    0,
+  );
+  return `RCP-${String(highest + 1).padStart(4, "0")}`;
+}
+
+export function commitReceiptNumber(receiptNo: string) {
+  if (typeof window === "undefined") return;
+  const value = receiptSequenceValue(receiptNo);
+  if (!value) return;
+
+  try {
+    const current = Number(localStorage.getItem(RECEIPT_SEQUENCE_KEY) || 0);
+    if (value > current) {
+      localStorage.setItem(RECEIPT_SEQUENCE_KEY, String(value));
+    }
+  } catch {
+    // Keep the receipt save even if the sequence marker cannot be written.
+  }
+}
+
 function purchaseItemName(item: any) {
   if (typeof item?.product === "string" && item.product.trim()) return item.product.trim();
   if (item?.product?.name) return String(item.product.name).trim();
