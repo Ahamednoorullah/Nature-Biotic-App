@@ -94,7 +94,7 @@ export function Card({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl shadow-card border border-slate-100 ${hover ? "transition-base hover:shadow-elevated hover:border-slate-200 cursor-pointer" : ""} ${className}`}
+      className={`bg-white rounded-2xl shadow-card border border-slate-100 min-w-0 ${hover ? "transition-base hover:shadow-elevated hover:border-slate-200 cursor-pointer" : ""} ${className}`}
     >
       {children}
     </div>
@@ -135,7 +135,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-base disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl font-semibold transition-base disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {children}
     </button>
@@ -324,7 +324,7 @@ export function Modal({
     "2xl": "max-w-6xl",
   }[size];
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-4">
       {/* Background */}
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
@@ -333,15 +333,15 @@ export function Modal({
 
       {/* Popup */}
       <div
-        className={`relative bg-white rounded-2xl shadow-elevated w-full ${sizeClass} animate-scale-in`}
+        className={`relative flex max-h-[min(92dvh,960px)] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-elevated animate-scale-in ${sizeClass}`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+          <h3 className="min-w-0 truncate text-lg font-bold text-slate-800">{title}</h3>
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-base p-1 rounded-lg hover:bg-slate-100"
+            className="shrink-0 rounded-lg p-2 text-slate-400 transition-base hover:bg-slate-100 hover:text-slate-600"
           >
             <span className="material-symbols-rounded" style={{ fontSize: 22 }}>
               close
@@ -350,11 +350,11 @@ export function Modal({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+          <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
             {footer}
           </div>
         )}
@@ -388,9 +388,9 @@ export function StatCard({
   return (
     <Card className="p-5" hover>
       <div className="flex items-start justify-between">
-        <div className="min-w-0">
+        <div className="min-w-0 pr-3">
           <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1.5 tracking-tight">
+          <p className="mt-1.5 break-words text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">
             {value}
           </p>
           {trend && (

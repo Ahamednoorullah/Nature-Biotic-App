@@ -26,7 +26,7 @@ export default function Login() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-white via-white to-emerald-50/50">
+    <div className="min-h-[100dvh] overflow-x-clip bg-gradient-to-br from-white via-white to-emerald-50/50">
       <div className="h-full grid lg:grid-cols-[1.12fr_0.88fr]">
         {/* Left side — large logo */}
         <div className="hidden lg:flex h-full items-center justify-center overflow-hidden px-8 xl:px-12">

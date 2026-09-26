@@ -567,7 +567,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
           </div>
         ) : null
       ) : (
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight text-slate-800">
               Sales Return
@@ -807,7 +807,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               className={`flex flex-col overflow-hidden border-slate-200 bg-white ${
                 isFRO
                   ? "h-full w-full border-0"
-                  : "max-h-[92vh] w-[94vw] max-w-7xl rounded-2xl border shadow-2xl"
+                  : "nb-modal-panel w-full max-w-7xl rounded-2xl border shadow-2xl"
               }`}
             >
               <div className={`flex items-center gap-3 border-b border-slate-200 px-4 py-4 sm:px-6 ${isFRO ? "" : "justify-between"}`}>

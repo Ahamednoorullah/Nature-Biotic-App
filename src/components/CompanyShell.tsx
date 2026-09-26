@@ -34,8 +34,8 @@ export default function CompanyShell({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <aside className="hidden lg:flex w-64 flex-col bg-white border-r border-slate-100 fixed inset-y-0 left-0 z-30">
+    <div className="flex min-h-screen overflow-x-clip bg-slate-50">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-100 bg-white lg:flex">
         <SidebarContent
           active={active}
           onNavigate={(p) => goCompany(p)}
@@ -49,7 +49,7 @@ export default function CompanyShell({
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-white animate-slide-in-right flex flex-col">
+          <aside className="absolute inset-y-0 left-0 flex w-[min(16rem,86vw)] flex-col bg-white animate-slide-in-right">
             <SidebarContent
               active={active}
               onNavigate={(p) => {
@@ -63,12 +63,13 @@ export default function CompanyShell({
         </div>
       )}
 
-      <div className="flex-1 lg:ml-64 flex flex-col min-w-0">
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-md border-b border-slate-100">
-          <div className="flex items-center gap-4 px-4 sm:px-6 h-16">
+      <div className="flex min-w-0 flex-1 flex-col lg:ml-64">
+        <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/80 backdrop-blur-md">
+          <div className="flex h-16 items-center gap-3 px-3 sm:gap-4 sm:px-6">
             <button
               onClick={() => setMobileOpen(true)}
-              className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition-base"
+              className="rounded-lg p-2.5 transition-base hover:bg-slate-100 lg:hidden"
+              aria-label="Open menu"
             >
               <Icon name="menu" size={24} />
             </button>
@@ -111,7 +112,7 @@ export default function CompanyShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:p-8">
           <div key={active} className="animate-fade-in">
             {children}
           </div>

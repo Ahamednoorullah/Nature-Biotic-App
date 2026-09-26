@@ -227,7 +227,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
     const rows = isFarms ? farmRows : cropRows;
 
     return (
-      <section className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+      <section className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
         <div className="mb-4 flex items-center gap-2">
           <button
             type="button"
@@ -322,7 +322,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
 
   if (showVisitForm && showVisitHistory) {
     return (
-      <section className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+      <section className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
         <div className="mb-4 flex items-center gap-2">
           <button
             type="button"
@@ -457,7 +457,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
 
   if (showVisitHistory) {
     return (
-      <section className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+      <section className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -540,7 +540,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
   }
 
   return (
-    <section className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+    <section className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
       <div className="grid grid-cols-2 gap-3">
         {visitModules.map((item, index) => (
           <button

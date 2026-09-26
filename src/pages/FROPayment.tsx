@@ -226,7 +226,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
 
   return (
     <>
-      <div className="mx-auto min-h-screen w-full max-w-md px-0 pb-24 pt-3">
+      <div className="mx-auto min-h-0 w-full max-w-md px-0 pb-24 pt-3 lg:max-w-none">
         <div className="mb-5 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <button

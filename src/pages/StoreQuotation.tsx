@@ -847,7 +847,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         className={
           isFRO
             ? "flex min-h-full w-full flex-col bg-white"
-            : "flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            : "nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
         }
       >
         {/* MODAL HEADER */}
@@ -1568,7 +1568,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   return (
     <div>
       {/* PAGE HEADER */}
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-2">
           {isFRO && (
             <button
@@ -1927,7 +1927,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               className={
                 isFRO
                   ? "w-full overflow-y-auto bg-white"
-                  : "flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+                  : "nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
               }
             >
               {/* MODAL HEADER */}
@@ -2592,7 +2592,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="quotation-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="quotation-print-area nb-print-panel flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="quotation-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">

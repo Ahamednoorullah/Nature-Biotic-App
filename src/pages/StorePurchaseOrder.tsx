@@ -362,7 +362,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Purchase Order
@@ -381,7 +381,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
       {showCreate &&
         createPortal(
           <div className="po-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">
@@ -877,7 +877,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="store-po-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="store-po-print-area nb-print-panel flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="store-po-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">

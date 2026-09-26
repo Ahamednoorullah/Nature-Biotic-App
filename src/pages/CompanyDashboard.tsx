@@ -352,14 +352,17 @@ export default function CompanyDashboard() {
           <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
         </div>
       </div> */}
+      <div className="mb-6 w-full overflow-x-auto lg:hidden">
+        <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
+      </div>
       {createPortal(
-        <div className="fixed top-[82px] right-8 z-[9999]">
+        <div className="fixed right-4 top-[82px] z-[40] hidden max-w-[calc(100vw-2rem)] lg:block xl:right-8">
           <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
         </div>,
         document.body,
       )}
 
-      <div className="h-[30px]" />
+      <div className="hidden h-[30px] lg:block" />
 
       {pendingApprovals.length > 0 && (
         <section className="mb-8">

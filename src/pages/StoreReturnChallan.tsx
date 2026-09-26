@@ -99,36 +99,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
     if (saved.length > 0) return saved;
 
-    return [
-      {
-        id: "1",
-        productId: "",
-        rcNo: "RC-001",
-        date: "2026-08-18",
-        sdNo: "sd-1001",
-        executive: "Ram Kumar",
-        customerName: "Murugan",
-        phone: "9876543210",
-        village: "Rajapalayam",
-        farmer: "Murugan",
-        placeOfSupply: "Tamil Nadu",
-        cgstPercent: 0,
-        sgstPercent: 0,
-        igstPercent: 0,
-        items: [
-          {
-            productId: "",
-            product: "Electra",
-            packSize: "250 ml",
-            batchNo: "ELE010826",
-            expiryDate: "2027-08-31",
-            issuedQty: "10",
-            returnedQty: "3",
-            unitValue: "250",
-          },
-        ],
-      },
-    ];
+    return [];
   });
 
   const [showAdd, setShowAdd] = useState(false);
@@ -206,27 +177,24 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     const product = (allProducts as any[]).find(
       (p: any) =>
         String(p.id || "") === String(item.productId || "") ||
-        String(p.name || "").trim().toLowerCase() ===
-          String(item.product || "").trim().toLowerCase(),
+        String(p.name || "")
+          .trim()
+          .toLowerCase() ===
+          String(item.product || "")
+            .trim()
+            .toLowerCase(),
     );
 
     const totalTax = Number(product?.taxPercentage ?? product?.taxPercent ?? 0);
     const taxType = String(product?.taxType ?? "").toLowerCase();
 
-    const explicitCgst = Number(
-      product?.cgstPercent ?? product?.cgst ?? 0,
-    );
-    const explicitSgst = Number(
-      product?.sgstPercent ?? product?.sgst ?? 0,
-    );
-    const explicitIgst = Number(
-      product?.igstPercent ?? product?.igst ?? 0,
-    );
+    const explicitCgst = Number(product?.cgstPercent ?? product?.cgst ?? 0);
+    const explicitSgst = Number(product?.sgstPercent ?? product?.sgst ?? 0);
+    const explicitIgst = Number(product?.igstPercent ?? product?.igst ?? 0);
 
     if (explicitCgst || explicitSgst || explicitIgst) {
       return {
-        taxPercent:
-          explicitCgst + explicitSgst + explicitIgst || totalTax,
+        taxPercent: explicitCgst + explicitSgst + explicitIgst || totalTax,
         cgstPercent: explicitCgst,
         sgstPercent: explicitSgst,
         igstPercent: explicitIgst,
@@ -272,9 +240,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     // FRO return form was built from historical challans.
     let currentStock: any[] = [];
     try {
-      const raw = localStorage.getItem(
-        `nature-biotic-fro-stock-v1:${storeId}`,
-      );
+      const raw = localStorage.getItem(`nature-biotic-fro-stock-v1:${storeId}`);
       const parsed = raw ? JSON.parse(raw) : [];
       currentStock = Array.isArray(parsed) ? parsed : [];
     } catch {
@@ -282,22 +248,27 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     }
 
     const resolvedItems = request.items.map((item) => {
-      const productName = String(item.product || "").trim().toLowerCase();
+      const productName = String(item.product || "")
+        .trim()
+        .toLowerCase();
       const requestedProductId = String(item.productId || "");
 
       const stockRow = currentStock.find(
         (row: any) =>
-          String(row.executiveName || "").trim().toLowerCase() ===
-            String(request.froName || "").trim().toLowerCase() &&
+          String(row.executiveName || "")
+            .trim()
+            .toLowerCase() ===
+            String(request.froName || "")
+              .trim()
+              .toLowerCase() &&
           String(row.packSize || "") === String(item.packSize || "") &&
           String(row.batchNo || "") === String(item.batchNo || "") &&
-          (
-            (requestedProductId &&
-              String(row.productId || "") === requestedProductId) ||
+          ((requestedProductId &&
+            String(row.productId || "") === requestedProductId) ||
             (!requestedProductId &&
-              String(row.productName || "").trim().toLowerCase() ===
-                productName)
-          ) &&
+              String(row.productName || "")
+                .trim()
+                .toLowerCase() === productName)) &&
           Number(row.currentQty || 0) > 0,
       );
 
@@ -640,7 +611,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   }
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Stock Return</h1>
           <p className="mt-1 text-slate-500">
@@ -958,7 +929,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       {showAdd &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <div className="flex max-h-[92vh] w-[94vw] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">
@@ -1531,7 +1502,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
               }
             `}</style>
 
-            <div className="return-challan-print-area flex max-h-[94vh] w-[98vw] max-w-[1450px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="return-challan-print-area nb-print-panel flex flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="return-challan-screen-only flex items-start justify-between border-b border-slate-200 px-6 py-4">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
@@ -1790,16 +1761,13 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
                       0,
                     );
                     const fallbackSgst =
-                      (withoutTax *
-                        Number(selectesdhallan.sgstPercent || 0)) /
+                      (withoutTax * Number(selectesdhallan.sgstPercent || 0)) /
                       100;
                     const fallbackCgst =
-                      (withoutTax *
-                        Number(selectesdhallan.cgstPercent || 0)) /
+                      (withoutTax * Number(selectesdhallan.cgstPercent || 0)) /
                       100;
                     const fallbackIgst =
-                      (withoutTax *
-                        Number(selectesdhallan.igstPercent || 0)) /
+                      (withoutTax * Number(selectesdhallan.igstPercent || 0)) /
                       100;
                     const taxAmount =
                       itemTaxAmount > 0

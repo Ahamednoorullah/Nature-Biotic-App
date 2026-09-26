@@ -4,79 +4,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon } from "@/components/ui";
 
-type SubItem = { key: StorePage; label: string; icon: string };
-type NavItem =
-  | { type: "link"; key: StorePage; label: string; icon: string }
-  | {
-      type: "group";
-      key: "purchases" | "sales";
-      label: string;
-      icon: string;
-      children: SubItem[];
-    };
-
-const navItems: NavItem[] = [
-  { type: "link", key: "dashboard", label: "Dashboard", icon: "dashboard" },
-  {
-    type: "group",
-    key: "purchases",
-    label: "Purchases",
-    icon: "shopping_cart",
-    children: [
-      { key: "purchases", label: "Purchase", icon: "shopping_cart" },
-      { key: "debit-notes", label: "Debit Notes", icon: "request_quote" },
-      { key: "return-stock", label: "Return Stock", icon: "assignment_return" },
-      { key: "payments", label: "Payment", icon: "payments" },
-      { key: "expenses", label: "Expenses", icon: "receipt_long" },
-    ],
-  },
-  {
-    type: "link",
-    key: "stock-management",
-    label: "Stock Management",
-    icon: "inventory_2",
-  },
-  {
-    type: "group",
-    key: "sales",
-    label: "Sales",
-    icon: "sell",
-    children: [
-      { key: "farmers", label: "Farmer", icon: "groups" },
-      {
-        key: "delivery-challan",
-        label: "Delivery Challan",
-        icon: "local_shipping",
-      },
-      {
-        key: "return-challan",
-        label: "Return Challan",
-        icon: "assignment_return",
-      },
-      { key: "credit-notes", label: "Credit Note", icon: "request_quote" },
-      {
-        key: "receipt-refund" as StorePage,
-        label: "Receipt & Refund",
-        icon: "receipt",
-      },
-    ],
-  },
-  { type: "link", key: "attendance", label: "Attendance", icon: "badge" },
-  { type: "link", key: "reports", label: "Reports", icon: "bar_chart" },
-];
-
-const groupKeys = ["purchases", "sales"] as const;
-
-function activeGroupFor(page: StorePage): "purchases" | "sales" | null {
-  if (page === "purchases") return "purchases";
-  if (page === "sales") return "sales";
-  for (const item of navItems) {
-    if (item.type === "group" && item.children.some((c) => c.key === page))
-      return item.key;
-  }
-  return null;
-}
-
 export default function FROShell({
   storeId,
   active,
@@ -183,10 +110,14 @@ function FROMobileShell({
   };
 
   return (
-    <div className={`h-[100dvh] flex justify-center overflow-hidden ${darkMode ? "bg-slate-950 text-slate-100" : "bg-slate-50"}`}>
-      <div className={`w-full h-[100dvh] relative overflow-hidden flex flex-col sm:max-w-[520px] sm:shadow-[0_0_40px_rgba(15,23,42,0.08)] ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
-        <header className={`shrink-0 z-30 backdrop-blur-md border-b ${darkMode ? "bg-slate-900/95 border-slate-800" : "bg-white/95 border-slate-100"}`}>
-          <div className="h-[68px] px-4 flex items-center gap-3">
+    <div className={`flex h-[100dvh] overflow-x-clip ${darkMode ? "bg-slate-950 text-slate-100" : "bg-slate-50"}`}>
+      <aside className={`hidden lg:flex w-64 shrink-0 flex-col border-r ${darkMode ? "border-slate-800 bg-slate-900" : "border-slate-100 bg-white"}`}>
+        <FRODesktopNav active={active} onNavigate={onNavigate} onSignOut={onSignOut} />
+      </aside>
+
+      <div className={`relative flex h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden ${darkMode ? "bg-slate-950" : "bg-slate-50"}`}>
+        <header className={`z-30 shrink-0 border-b backdrop-blur-md ${darkMode ? "border-slate-800 bg-slate-900/95" : "border-slate-100 bg-white/95"}`}>
+          <div className="flex h-[68px] items-center gap-3 px-3 sm:px-4 lg:px-6">
             <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0 overflow-hidden">
               <img
                 src="/logo.png"
@@ -208,8 +139,16 @@ function FROMobileShell({
             </div>
             <button
               type="button"
+              onClick={() => setMoreOpen(true)}
+              className="rounded-xl p-2 text-slate-500 lg:hidden"
+              aria-label="Open menu"
+            >
+              <Icon name="menu" size={22} />
+            </button>
+            <button
+              type="button"
               onClick={() => setNotificationsOpen(true)}
-              className="relative p-2 rounded-xl text-slate-500"
+              className="relative rounded-xl p-2 text-slate-500"
               aria-label="Notifications"
             >
               <Icon name="notifications" size={22} />
@@ -226,7 +165,7 @@ function FROMobileShell({
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-4 sm:py-4 pb-24">
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3 pb-24 sm:px-4 sm:py-4 lg:px-8 lg:py-6 lg:pb-8">
           <div key={active} className="animate-fade-in">
             {children}
           </div>
@@ -240,7 +179,7 @@ function FROMobileShell({
               className="absolute inset-0 bg-slate-900/35 backdrop-blur-[2px]"
               onClick={() => setProfileOpen(false)}
             />
-            <div className="absolute left-0 right-0 bottom-0 mx-auto w-full sm:max-w-[520px] rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)]">
+            <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-lg rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)] lg:bottom-auto lg:top-1/2 lg:max-h-[min(82vh,720px)] lg:-translate-y-1/2 lg:rounded-3xl">
               <div className="px-5 pt-4 pb-3 border-b border-slate-100">
                 <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
                 <div className="flex items-center gap-3">
@@ -349,7 +288,7 @@ function FROMobileShell({
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
               onClick={() => setAccountView(null)}
             />
-            <div className="absolute left-0 right-0 bottom-0 mx-auto w-full sm:max-w-[520px] rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)] max-h-[82vh] overflow-y-auto">
+            <div className="absolute bottom-0 left-0 right-0 mx-auto max-h-[82vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)] lg:bottom-auto lg:top-1/2 lg:-translate-y-1/2 lg:rounded-3xl">
               <div className="sticky top-0 z-10 bg-white px-5 pt-4 pb-3 border-b border-slate-100">
                 <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200" />
                 <div className="flex items-center gap-3">
@@ -488,7 +427,7 @@ function FROMobileShell({
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
               onClick={() => setNotificationsOpen(false)}
             />
-            <div className="absolute left-0 right-0 top-0 mx-auto w-full sm:max-w-[520px] rounded-b-[28px] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.2)]">
+            <div className="absolute left-0 right-0 top-0 mx-auto w-full max-w-lg rounded-b-[28px] bg-white shadow-[0_20px_60px_rgba(15,23,42,0.2)] lg:top-1/2 lg:max-h-[min(82vh,640px)] lg:-translate-y-1/2 lg:overflow-y-auto lg:rounded-3xl">
               <div className="px-5 pt-5 pb-3 border-b border-slate-100">
                 <div className="flex items-center justify-between">
                   <div>
@@ -547,7 +486,7 @@ function FROMobileShell({
               className="absolute inset-0 bg-slate-900/35 backdrop-blur-[2px]"
               onClick={() => setMoreOpen(false)}
             />
-            <div className="absolute left-0 right-0 bottom-0 mx-auto w-full sm:max-w-[520px] rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)] max-h-[78vh] overflow-y-auto">
+            <div className="absolute bottom-0 left-0 right-0 mx-auto max-h-[78vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-white shadow-[0_-20px_60px_rgba(15,23,42,0.2)] lg:bottom-auto lg:top-1/2 lg:-translate-y-1/2 lg:rounded-3xl">
               <div className="sticky top-0 bg-white px-5 pt-4 pb-3 border-b border-slate-100">
                 <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200" />
                 <div className="flex items-center justify-between">
@@ -605,7 +544,7 @@ function FROMobileShell({
           </div>
         )}
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto w-full sm:max-w-[520px] border-t border-slate-200 bg-white/95 backdrop-blur-md px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.08)]">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur-md lg:hidden">
           <div className="grid grid-cols-5 gap-1">
             <MobileNavButton
               active={active === "dashboard"}
@@ -671,131 +610,63 @@ function MobileNavButton({
   );
 }
 
-function SidebarContent({
-  store,
+function FRODesktopNav({
   active,
   onNavigate,
-  onBack,
   onSignOut,
-  onClose,
 }: {
-  store: ReturnType<typeof getStore>;
   active: StorePage;
   onNavigate: (p: StorePage) => void;
-  onBack: () => void;
   onSignOut: () => void;
-  onClose?: () => void;
 }) {
-  const initialGroup = activeGroupFor(active);
-  const [openGroup, setOpenGroup] = useState<"purchases" | "sales" | null>(
-    initialGroup,
-  );
-
-  function toggleGroup(key: "purchases" | "sales") {
-    setOpenGroup((cur) => (cur === key ? null : key));
-  }
+  const items: { key: StorePage; label: string; icon: string }[] = [
+    { key: "dashboard", label: "Dashboard", icon: "dashboard" },
+    { key: "stock-management", label: "Stock", icon: "inventory_2" },
+    { key: "sales", label: "Sales", icon: "sell" },
+    { key: "attendance", label: "Visits", icon: "event_available" },
+    { key: "expenses", label: "Expenses", icon: "receipt_long" },
+    { key: "payments", label: "Payments", icon: "payments" },
+    { key: "farmers", label: "Farmers", icon: "groups" },
+    { key: "quotation", label: "Quotation", icon: "request_quote" },
+    { key: "sales-invoice", label: "Sales Invoice", icon: "receipt_long" },
+    { key: "delivery-challan", label: "Delivery Challan", icon: "local_shipping" },
+    { key: "return-challan", label: "Return Challan", icon: "assignment_return" },
+    { key: "reports", label: "Reports", icon: "bar_chart" },
+  ];
 
   return (
     <>
-      <div className="border-b border-slate-100 shrink-0">
-        <div className="flex items-center justify-center px-5 h-16 relative">
-          <img
-            src="/logo.png"
-            alt="Nature Biotic"
-            className="h-12 w-auto object-contain"
-          />
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="absolute right-3 p-1.5 rounded-lg hover:bg-slate-100 lg:hidden"
-            >
-              <Icon name="close" size={20} />
-            </button>
-          )}
-        </div>
+      <div className="relative flex h-16 shrink-0 items-center justify-center border-b border-slate-100 px-5">
+        <img src="/logo.png" alt="Nature Biotic" className="h-12 w-auto object-contain" />
       </div>
-
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <button
-          onClick={onBack}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-base mb-2"
-        >
-          <Icon name="arrow_back" size={20} />
-          Back to Stores
-        </button>
-
-        {navItems.map((item) => {
-          if (item.type === "link") {
-            const isActive = active === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => onNavigate(item.key)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-base ${
-                  isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <Icon name={item.icon} size={22} fill={isActive} />
-                {item.label}
-              </button>
-            );
-          }
-
-          const isOpen = openGroup === item.key;
-          const isChildActive = item.children.some((c) => c.key === active);
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        {items.map((item) => {
+          const isActive =
+            active === item.key ||
+            (item.key === "sales" &&
+              ["quotation", "sales-invoice", "sales-return", "credit-notes", "receipt", "refund"].includes(active));
           return (
-            <div key={item.key}>
-              <button
-                onClick={() => {
-                  toggleGroup(item.key);
-                  onNavigate(item.key as StorePage);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-base ${
-                  isChildActive
-                    ? "text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <Icon name={item.icon} size={22} fill={isChildActive} />
-                <span className="flex-1 text-left">{item.label}</span>
-                <Icon
-                  name="chevron_right"
-                  size={18}
-                  className={`text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
-                />
-              </button>
-              {isOpen && (
-                <div className="mt-1 ml-3 pl-4 border-l border-slate-100 space-y-0.5">
-                  {item.children.map((child) => {
-                    const isActive = active === child.key;
-                    return (
-                      <button
-                        key={child.key}
-                        onClick={() => onNavigate(child.key)}
-                        className={`w-full flex items-center gap-2.5 pl-3 pr-3 py-2 rounded-lg text-sm font-medium transition-base ${
-                          isActive
-                            ? "bg-brand-50 text-brand-700"
-                            : "text-slate-500 hover:bg-slate-50"
-                        }`}
-                      >
-                        <Icon name={child.icon} size={18} fill={isActive} />
-                        {child.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onNavigate(item.key)}
+              className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-base ${
+                isActive
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Icon name={item.icon} size={22} fill={isActive} />
+              {item.label}
+            </button>
           );
         })}
       </nav>
-
-      <div className="px-3 py-4 border-t border-slate-100 shrink-0">
+      <div className="shrink-0 border-t border-slate-100 px-3 py-4">
         <button
+          type="button"
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600 transition-base"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition-base hover:bg-red-50 hover:text-red-600"
         >
           <Icon name="logout" size={22} />
           Sign Out

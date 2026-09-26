@@ -823,9 +823,9 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   }
 
   return (
-    <div className="mx-auto max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
+    <div className="mx-auto w-full max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4 lg:max-w-none lg:px-0 lg:pb-0">
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-        <div className="flex">
+        <div className="flex flex-wrap">
           {filters.map((filter) => (
             <button
               key={filter.key}
@@ -843,7 +843,7 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {cards.map((card) => (
           <Card
             key={card.label}
