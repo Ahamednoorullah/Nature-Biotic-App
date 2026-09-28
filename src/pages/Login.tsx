@@ -27,9 +27,9 @@ export default function Login() {
 
   return (
     <div className="min-h-[100dvh] overflow-x-clip bg-gradient-to-br from-white via-white to-emerald-50/50">
-      <div className="h-full grid lg:grid-cols-[1.12fr_0.88fr]">
+      <div className="min-h-[100dvh] grid lg:grid-cols-[1.12fr_0.88fr]">
         {/* Left side — large logo */}
-        <div className="hidden lg:flex h-full items-center justify-center overflow-hidden px-8 xl:px-12">
+        <div className="hidden lg:flex min-h-[100dvh] items-center justify-center overflow-hidden px-8 xl:px-12">
           <div
             className="flex items-center justify-center overflow-hidden"
             style={{ width: 450, height: 330 }}
@@ -39,7 +39,7 @@ export default function Login() {
         </div>
 
         {/* Right side — login form */}
-        <div className="flex h-full items-center justify-center overflow-hidden px-5 py-5 sm:px-8 lg:px-8 xl:px-12">
+        <div className="flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 py-8 sm:px-8 lg:px-8 xl:px-12">
           <div className="w-full max-w-[520px] max-h-[94vh] overflow-hidden rounded-[28px] border border-slate-100 bg-white/95 px-6 py-7 shadow-[0_24px_70px_rgba(15,23,42,0.12)] backdrop-blur sm:px-9 sm:py-8 lg:px-10">
             {/* Mobile logo */}
             <div className="mb-8 flex justify-center lg:hidden">
