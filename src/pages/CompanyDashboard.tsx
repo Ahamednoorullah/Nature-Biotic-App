@@ -218,7 +218,10 @@ function buildAdminDashboard(filter: DateFilter) {
       .toLowerCase();
     if (!invoiceNo) return;
     const key = `${receipt.storeId || ""}|${invoiceNo}`;
-    paidByInvoice.set(key, (paidByInvoice.get(key) || 0) + money(receipt.amount));
+    paidByInvoice.set(
+      key,
+      (paidByInvoice.get(key) || 0) + money(receipt.amount),
+    );
   });
 
   const actualSalesList: SalesDetail[] = [];
@@ -441,9 +444,18 @@ export default function CompanyDashboard() {
       window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
       window.removeEventListener("company-store-sales-updated", refresh);
       window.removeEventListener("company-credit-note-sync-updated", refresh);
-      window.removeEventListener("nature-biotic-company-receipts-updated", refresh);
-      window.removeEventListener("nature-biotic-store-inventory-updated", refresh);
-      window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
+      window.removeEventListener(
+        "nature-biotic-company-receipts-updated",
+        refresh,
+      );
+      window.removeEventListener(
+        "nature-biotic-store-inventory-updated",
+        refresh,
+      );
+      window.removeEventListener(
+        "nature-biotic-store-receipts-updated",
+        refresh,
+      );
       window.removeEventListener("fro-stock-updated", refresh);
       window.removeEventListener("focus", refresh);
     };
@@ -723,63 +735,63 @@ export default function CompanyDashboard() {
               farmers: 0,
             };
             return (
-        <Card key={store.id} className="p-5 sm:p-6 animate-fade-in">
-          {/* Store details + KPI cards in one row on desktop */}
-          <div className="flex flex-col xl:flex-row xl:items-center gap-5">
-            {/* Store details */}
-            <div className="flex items-center gap-3 xl:w-[26%] shrink-0">
-              <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center shrink-0">
-                <span className="font-bold text-brand-700">
-                  {initials(store.name)}
-                </span>
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md">
-                    Store {index + 1}
-                  </span>
-                  <h3 className="text-lg font-bold text-slate-800 tracking-tight truncate">
-                    {store.name}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => goStore(store.id)}
-                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-semibold transition-base hover:bg-brand-700"
-                >
-                  <Icon name="dashboard" size={16} /> Open Dashboard
-                </button>
-              </div>
-            </div>
+              <Card key={store.id} className="p-5 sm:p-6 animate-fade-in">
+                {/* Store details + KPI cards in one row on desktop */}
+                <div className="flex flex-col xl:flex-row xl:items-center gap-5">
+                  {/* Store details */}
+                  <div className="flex items-center gap-3 xl:w-[26%] shrink-0">
+                    <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center shrink-0">
+                      <span className="font-bold text-brand-700">
+                        {initials(store.name)}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md">
+                          Store {index + 1}
+                        </span>
+                        <h3 className="text-lg font-bold text-slate-800 tracking-tight truncate">
+                          {store.name}
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() => goStore(store.id)}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-semibold transition-base hover:bg-brand-700"
+                      >
+                        <Icon name="dashboard" size={16} /> Open Dashboard
+                      </button>
+                    </div>
+                  </div>
 
-            {/* KPI cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-4 gap-3 flex-1">
-              <StoreKpi
-                icon="account_balance_wallet"
-                label="Sales"
-                value={formatCurrency(metrics.sales)}
-                color="brand"
-              />
-              <StoreKpi
-                icon="payments"
-                label="Collection"
-                value={formatCurrency(metrics.collection)}
-                color="blue"
-              />
-              <StoreKpi
-                icon="receipt_long"
-                label="Outstanding"
-                value={formatCurrency(metrics.outstanding)}
-                color="amber"
-              />
-              <StoreKpi
-                icon="groups"
-                label="No of Farmers"
-                value={String(metrics.farmers)}
-                color="purple"
-              />
-            </div>
-          </div>
-        </Card>
+                  {/* KPI cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-4 gap-3 flex-1">
+                    <StoreKpi
+                      icon="account_balance_wallet"
+                      label="Sales"
+                      value={formatCurrency(metrics.sales)}
+                      color="brand"
+                    />
+                    <StoreKpi
+                      icon="payments"
+                      label="Collection"
+                      value={formatCurrency(metrics.collection)}
+                      color="blue"
+                    />
+                    <StoreKpi
+                      icon="receipt_long"
+                      label="Outstanding"
+                      value={formatCurrency(metrics.outstanding)}
+                      color="amber"
+                    />
+                    <StoreKpi
+                      icon="groups"
+                      label="No of Farmers"
+                      value={String(metrics.farmers)}
+                      color="purple"
+                    />
+                  </div>
+                </div>
+              </Card>
             );
           })}
         </div>
@@ -866,7 +878,10 @@ function ActualDetailsBox({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {sales.map((row) => (
-                <tr key={`${row.invoiceNo}-${row.storeName}`} className="hover:bg-slate-50">
+                <tr
+                  key={`${row.invoiceNo}-${row.storeName}`}
+                  className="hover:bg-slate-50"
+                >
                   <td className="px-5 py-3 text-slate-600">{row.date}</td>
                   <td className="px-5 py-3 font-semibold text-slate-700">
                     {row.invoiceNo}
@@ -971,42 +986,27 @@ function ActualDetailsBox({
                 <td className="px-5 py-4 text-right">Total</td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    outstanding.reduce(
-                      (sum, row) => sum + row.under30,
-                      0,
-                    ),
+                    outstanding.reduce((sum, row) => sum + row.under30, 0),
                   )}
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    outstanding.reduce(
-                      (sum, row) => sum + row.over30,
-                      0,
-                    ),
+                    outstanding.reduce((sum, row) => sum + row.over30, 0),
                   )}
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    outstanding.reduce(
-                      (sum, row) => sum + row.over60,
-                      0,
-                    ),
+                    outstanding.reduce((sum, row) => sum + row.over60, 0),
                   )}
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums">
                   {formatCurrency(
-                    outstanding.reduce(
-                      (sum, row) => sum + row.over90,
-                      0,
-                    ),
+                    outstanding.reduce((sum, row) => sum + row.over90, 0),
                   )}
                 </td>
                 <td className="px-5 py-4 text-right tabular-nums text-brand-700">
                   {formatCurrency(
-                    outstanding.reduce(
-                      (sum, row) => sum + row.totalAmount,
-                      0,
-                    ),
+                    outstanding.reduce((sum, row) => sum + row.totalAmount, 0),
                   )}
                 </td>
               </tr>

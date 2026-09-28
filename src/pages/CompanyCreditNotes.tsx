@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card,
   Badge,
@@ -69,57 +69,76 @@ type AddedProduct = {
   cgst: number;
   igst: number;
   total: number;
+  sourceInvoiceNo?: string;
 };
 
-const parties = [
-  "Murugan Farms",
-  "Sairam Agri Inputs",
-  "Selvam Agri Mart",
-  "Karthikeyan Estates",
-  "Green Harvest Agro",
-];
-const reasons = [
-  "Damaged Product",
-  "Expired Stock",
-  "Wrong Item Supplied",
-  "Quality Issue",
-  "Customer Return",
-];
-const statuses: CreditNoteStatus[] = ["Approved", "Pending", "Rejected"];
+const CREDIT_NOTE_SEQUENCE_KEY = "nature-biotic-credit-note-sequence-v1";
 
-const seesdreditNotes: CreditNote[] = Array.from({ length: 12 }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() - (i * 3 + 1));
+function creditNoteSequence(creditNoteNo: string) {
+  const match = String(creditNoteNo || "")
+    .trim()
+    .match(/^NB-CN-(\d+)$/i);
+  return match ? Number(match[1]) : 0;
+}
 
-  const withoutTax = (1 + (i % 5)) * (300 + (i % 4) * 80);
-  const isTamilNadu = i % 2 === 0;
+function nextCreditNoteNo() {
+  let highest = 0;
+  getCompanyCreditNoteSyncRecords().forEach((row) => {
+    highest = Math.max(highest, creditNoteSequence(row.creditNoteNo));
+  });
+  try {
+    highest = Math.max(
+      highest,
+      Number(localStorage.getItem(CREDIT_NOTE_SEQUENCE_KEY) || 0),
+    );
+  } catch {
+    // Existing saved credit notes still set the next number.
+  }
+  return `NB-CN-${String(highest + 1).padStart(4, "0")}`;
+}
 
-  const cgst = isTamilNadu ? withoutTax * 0.09 : 0;
-  const sgst = isTamilNadu ? withoutTax * 0.09 : 0;
-  const igst = isTamilNadu ? 0 : withoutTax * 0.18;
+function rememberCreditNoteNo(creditNoteNo: string) {
+  const value = creditNoteSequence(creditNoteNo);
+  if (!value) return;
+  try {
+    const current = Number(localStorage.getItem(CREDIT_NOTE_SEQUENCE_KEY) || 0);
+    if (value > current) {
+      localStorage.setItem(CREDIT_NOTE_SEQUENCE_KEY, String(value));
+    }
+  } catch {
+    // The saved credit note still keeps its number.
+  }
+}
 
-  const total = withoutTax + cgst + sgst + igst;
+function lineSize(row: CompanyStoreSaleRecord) {
+  return String(row.pkgsize || row.packSize || "").trim();
+}
 
-  return {
-    id: `cn${i}`,
-    creditNoteNo: `CN-${String(2001 + i)}`,
-    party: parties[i % parties.length],
-    Date: d.toISOString().split("T")[0],
-    amount: withoutTax,
-    sgst,
-    cgst,
-    igst,
-    total,
-    storeLocation: stores[i % stores.length].location,
-    placeofreturn: stores[i % stores.length].location?.split(",")[0] || "",
-  };
-});
+function lineProductKey(row: CompanyStoreSaleRecord) {
+  return String(row.productId || row.product || "").trim();
+}
 
-const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red"> = {
-  Approved: "green",
-  Pending: "amber",
-  Rejected: "red",
-};
+function unitPriceOf(row: CompanyStoreSaleRecord) {
+  return Number(row.rate || row.price || row.unitPrice || 0);
+}
+
+function discountPercentOf(row: CompanyStoreSaleRecord) {
+  if (Number.isFinite(Number(row.discountPercent))) {
+    return Number(row.discountPercent);
+  }
+  const gross = Number(row.quantity || 0) * unitPriceOf(row);
+  const amount = Number(row.discountAmount || row.discount || 0);
+  return gross > 0 ? (amount / gross) * 100 : 0;
+}
+
+function taxPercentOf(row: CompanyStoreSaleRecord) {
+  if (Number.isFinite(Number(row.taxPercent)) && Number(row.taxPercent) > 0) {
+    return Number(row.taxPercent);
+  }
+  const base = Number(row.taxableAmount || row.withoutTax || 0);
+  const tax = Number(row.taxAmount || row.sgst + row.cgst + row.igst || 0);
+  return base > 0 ? (tax / base) * 100 : 0;
+}
 
 function CreditInfo({ label, value }: { label: string; value: string }) {
   return (
@@ -169,8 +188,9 @@ export default function CompanyCreditNotes() {
       };
     });
 
-    return [...createdNotes, ...seesdreditNotes];
+    return createdNotes;
   });
+  const savingRef = useRef(false);
 
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<
@@ -188,8 +208,8 @@ export default function CompanyCreditNotes() {
   const [returnDate, setReturnDate] = useState("");
   const [creditNoteNo, setCreditNoteNo] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
-  const [companySales] = useState<CompanyStoreSaleRecord[]>(() =>
-    getCompanyStoreSales(),
+  const [companySales, setCompanySales] = useState<CompanyStoreSaleRecord[]>(
+    () => getCompanyStoreSales(),
   );
   const [storeId, setStoreId] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
@@ -207,32 +227,133 @@ export default function CompanyCreditNotes() {
   const [added, setAdded] = useState<AddedProduct[]>([]);
 
   const selectedStore = stores.find((s) => s.id === storeId);
-  const invoiceOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return companySales.filter((row) => {
-      if (seen.has(row.invoiceNo)) return false;
-      seen.add(row.invoiceNo);
-      return true;
-    });
-  }, [companySales]);
 
-  const selectedInvoiceRows = useMemo(
-    () => companySales.filter((row) => row.invoiceNo === invoiceNo),
-    [companySales, invoiceNo],
+  useEffect(() => {
+    const refresh = () => setCompanySales(getCompanyStoreSales());
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
+  const storeSales = useMemo(
+    () => companySales.filter((row) => row.storeId === storeId),
+    [companySales, storeId],
   );
 
-  const entryProduct = selectedInvoiceRows.find(
-    (_, index) => String(index) === entry.productId,
+  const productOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    storeSales.forEach((row) => {
+      const key = lineProductKey(row);
+      if (key && !seen.has(key)) seen.set(key, row.product);
+    });
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
+  }, [storeSales]);
+
+  const sizeOptions = useMemo(() => {
+    const sizes = new Set<string>();
+    storeSales
+      .filter((row) => lineProductKey(row) === entry.productId)
+      .forEach((row) => {
+        const size = lineSize(row);
+        if (size) sizes.add(size);
+      });
+    return Array.from(sizes);
+  }, [storeSales, entry.productId]);
+
+  const batchOptions = useMemo(() => {
+    const batches = new Set<string>();
+    storeSales
+      .filter(
+        (row) =>
+          lineProductKey(row) === entry.productId &&
+          lineSize(row).toLowerCase() === entry.pkgsize.trim().toLowerCase(),
+      )
+      .forEach((row) => {
+        const batch = String(row.batchNo || "").trim();
+        if (batch) batches.add(batch);
+      });
+    return Array.from(batches);
+  }, [storeSales, entry.productId, entry.pkgsize]);
+
+  const selectedSaleLines = useMemo(
+    () =>
+      storeSales.filter(
+        (row) =>
+          lineProductKey(row) === entry.productId &&
+          lineSize(row).toLowerCase() === entry.pkgsize.trim().toLowerCase() &&
+          String(row.batchNo || "").trim().toLowerCase() ===
+            entry.batchNo.trim().toLowerCase(),
+      ),
+    [storeSales, entry.productId, entry.pkgsize, entry.batchNo],
+  );
+
+  const entryProduct = useMemo(() => {
+    return [...selectedSaleLines].sort((a, b) =>
+      String(b.date).localeCompare(String(a.date)),
+    )[0];
+  }, [selectedSaleLines]);
+
+  const soldQuantity = selectedSaleLines.reduce(
+    (sum, row) => sum + Number(row.quantity || 0),
+    0,
+  );
+
+  function returnedQuantity(
+    productId: string,
+    productName: string,
+    size: string,
+    batch: string,
+  ) {
+    const saved = getCompanyCreditNoteSyncRecords()
+      .filter((row) => {
+        if (row.storeId !== storeId || row.status === "Rejected") return false;
+        const rowKey = String(row.productId || "").trim();
+        const sameProduct = rowKey
+          ? rowKey === productId
+          : String(row.product || "").trim() === productName;
+        return (
+          sameProduct &&
+          String(row.pkgsize || row.packSize || "")
+            .trim()
+            .toLowerCase() === size.trim().toLowerCase() &&
+          String(row.batchNo || "").trim().toLowerCase() ===
+            batch.trim().toLowerCase()
+        );
+      })
+      .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    const pending = added
+      .filter(
+        (item) =>
+          item.productId === productId &&
+          item.pkgsize.trim().toLowerCase() === size.trim().toLowerCase() &&
+          item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
+      )
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    return saved + pending;
+  }
+
+  const remainingQuantity = Math.max(
+    0,
+    soldQuantity -
+      returnedQuantity(
+        entry.productId,
+        entryProduct?.product || "",
+        entry.pkgsize,
+        entry.batchNo,
+      ),
   );
 
   const canAdd =
-    entry.productId &&
-    entry.batchNo &&
-    entry.expiryDate &&
+    !!entryProduct &&
+    !!entry.batchNo &&
     entry.quantity > 0 &&
+    entry.quantity <= remainingQuantity &&
     entry.sellingPrice > 0;
   const canCreate =
-    creditNoteNo && invoiceNo && storeId && returnDate && added.length > 0;
+    !!creditNoteNo && !!storeId && !!returnDate && added.length > 0;
 
   // ---- Totals: calculated live from the added products list ----
   const totals = useMemo(() => {
@@ -265,31 +386,35 @@ export default function CompanyCreditNotes() {
   }
 
   function computeLine(
-    productId: string,
+    saleRow: CompanyStoreSaleRecord | undefined,
     quantity: number,
     sellingPrice: number,
     discount: number,
   ) {
-    const saleRow = selectedInvoiceRows[Number(productId)];
     const gross = sellingPrice * quantity;
     const discountAmt = (gross * discount) / 100;
     const taxableAmount = gross - discountAmt;
-    const taxPercent = Number(
-      (saleRow as any)?.taxPercent ??
-        (saleRow?.withoutTax > 0
-          ? (saleRow.taxAmount / saleRow.withoutTax) * 100
-          : 0),
-    );
+    const taxPercent = saleRow ? taxPercentOf(saleRow) : 0;
+    const taxAmount = (taxableAmount * taxPercent) / 100;
+    const recordedTax = saleRow
+      ? Number(saleRow.sgst || 0) +
+        Number(saleRow.cgst || 0) +
+        Number(saleRow.igst || 0)
+      : 0;
 
-    const sgstAmt = isTamilNaduSupply()
-      ? (taxableAmount * (taxPercent / 2)) / 100
-      : 0;
-    const cgstAmt = isTamilNaduSupply()
-      ? (taxableAmount * (taxPercent / 2)) / 100
-      : 0;
-    const igstAmt = !isTamilNaduSupply()
-      ? (taxableAmount * taxPercent) / 100
-      : 0;
+    let sgstAmt = 0;
+    let cgstAmt = 0;
+    let igstAmt = 0;
+    if (recordedTax > 0 && saleRow) {
+      sgstAmt = taxAmount * (Number(saleRow.sgst || 0) / recordedTax);
+      cgstAmt = taxAmount * (Number(saleRow.cgst || 0) / recordedTax);
+      igstAmt = taxAmount * (Number(saleRow.igst || 0) / recordedTax);
+    } else if (isTamilNaduSupply()) {
+      sgstAmt = taxAmount / 2;
+      cgstAmt = taxAmount / 2;
+    } else {
+      igstAmt = taxAmount;
+    }
 
     return {
       taxableAmount,
@@ -297,79 +422,151 @@ export default function CompanyCreditNotes() {
       cgst: cgstAmt,
       igst: igstAmt,
       total: taxableAmount + sgstAmt + cgstAmt + igstAmt,
+      taxPercent,
+      discountAmount: discountAmt,
     };
   }
 
-  function selectProduct(productId: string) {
-    const saleRow = selectedInvoiceRows[Number(productId)];
-    if (!saleRow) return;
-    const gross = saleRow.quantity * saleRow.rate;
-    const discountPercent = Number(
-      (saleRow as any).discountPercent ??
-        (gross > 0
-          ? (Number((saleRow as any).discount || 0) / gross) * 100
-          : 0),
+  function saleFor(productId: string, size: string, batch: string) {
+    const matches = storeSales.filter(
+      (row) =>
+        lineProductKey(row) === productId &&
+        lineSize(row).toLowerCase() === size.trim().toLowerCase() &&
+        String(row.batchNo || "").trim().toLowerCase() ===
+          batch.trim().toLowerCase(),
     );
-    setEntry((p) => ({
-      ...p,
+    return [...matches].sort((a, b) =>
+      String(b.date).localeCompare(String(a.date)),
+    )[0];
+  }
+
+  function sizesFor(productId: string) {
+    const sizes = new Set<string>();
+    storeSales
+      .filter((row) => lineProductKey(row) === productId)
+      .forEach((row) => {
+        const size = lineSize(row);
+        if (size) sizes.add(size);
+      });
+    return Array.from(sizes);
+  }
+
+  function batchesFor(productId: string, size: string) {
+    const batches = new Set<string>();
+    storeSales
+      .filter(
+        (row) =>
+          lineProductKey(row) === productId &&
+          lineSize(row).toLowerCase() === size.trim().toLowerCase(),
+      )
+      .forEach((row) => {
+        const batch = String(row.batchNo || "").trim();
+        if (batch) batches.add(batch);
+      });
+    return Array.from(batches);
+  }
+
+  function fillFromSale(
+    productId: string,
+    size: string,
+    batch: string,
+    reason = "",
+  ) {
+    const saleRow = saleFor(productId, size, batch);
+    setEntry({
       productId,
-      pkgsize: (saleRow as any).pkgsize || saleRow.packSize || "",
-      batchNo: (saleRow as any).batchNo || "",
-      expiryDate: (saleRow as any).expiryDate || "",
-      quantity: 1,
-      sellingPrice: saleRow.rate,
-      discount: discountPercent,
-    }));
+      pkgsize: size,
+      batchNo: batch,
+      expiryDate: saleRow?.expiryDate || "",
+      quantity: saleRow ? 1 : 0,
+      sellingPrice: saleRow ? unitPriceOf(saleRow) : 0,
+      discount: saleRow ? discountPercentOf(saleRow) : 0,
+      reason,
+    });
+  }
+
+  function selectStore(nextStoreId: string) {
+    const store = stores.find((item) => item.id === nextStoreId);
+    setStoreId(nextStoreId);
+    setInvoiceNo("");
+    setAdded([]);
+    setPlaceOfSupply(
+      store?.location?.toLowerCase().includes("kerala")
+        ? "Others"
+        : store
+          ? "Tamil Nadu"
+          : "",
+    );
+    setEntry({
+      productId: "",
+      pkgsize: "",
+      batchNo: "",
+      expiryDate: "",
+      quantity: 0,
+      sellingPrice: 0,
+      discount: 0,
+      reason: "",
+    });
+  }
+
+  function selectProduct(productId: string) {
+    const sizes = sizesFor(productId);
+    const size = sizes.length === 1 ? sizes[0] : "";
+    const batches = size ? batchesFor(productId, size) : [];
+    const batch = batches.length === 1 ? batches[0] : "";
+    fillFromSale(productId, size, batch, entry.reason);
+  }
+
+  function selectSize(size: string) {
+    const batches = batchesFor(entry.productId, size);
+    const batch = batches.length === 1 ? batches[0] : "";
+    fillFromSale(entry.productId, size, batch, entry.reason);
+  }
+
+  function selectBatch(batch: string) {
+    fillFromSale(entry.productId, entry.pkgsize, batch, entry.reason);
   }
 
   function addProduct() {
-    if (!canAdd) return;
-    const saleRow = selectedInvoiceRows[Number(entry.productId)];
-    if (!saleRow) return;
-    const alreadyReturned = getCompanyCreditNoteSyncRecords()
-      .filter(
-        (r: any) =>
-          r.invoiceNo === invoiceNo &&
-          r.product === saleRow.product &&
-          r.status !== "Rejected",
-      )
-      .reduce((sum, r) => sum + Number(r.quantity || 0), 0);
-    const remainingQty = Math.max(0, saleRow.quantity - alreadyReturned);
-    if (entry.quantity > remainingQty) return;
+    if (!canAdd || !entryProduct) return;
+    if (entry.quantity > remainingQuantity) {
+      window.alert(
+        "Credit note quantity cannot exceed the quantity sold to this store for the selected batch.",
+      );
+      return;
+    }
 
     const computed = computeLine(
-      entry.productId,
+      entryProduct,
       entry.quantity,
       entry.sellingPrice,
       entry.discount,
     );
 
     const newItem: AddedProduct = {
-      key: `${entry.productId}-${entry.batchNo}-${String(globalThis.Date.now())}-${Math.random().toString(36).slice(2, 6)}`,
+      key: `${entry.productId}-${entry.pkgsize}-${entry.batchNo}-${String(globalThis.Date.now())}`,
       productId: entry.productId,
-      productName: saleRow.product,
+      productName: entryProduct.product,
       pkgsize: entry.pkgsize,
       batchNo: entry.batchNo,
-      expiryDate: entry.expiryDate,
+      expiryDate: entry.expiryDate || entryProduct.expiryDate || "",
       quantity: entry.quantity,
       sellingPrice: entry.sellingPrice,
       discount: entry.discount,
       reason: entry.reason,
-      soldQuantity: saleRow.quantity,
-      taxPercent: Number(
-        (saleRow as any).taxPercent ??
-          (saleRow.withoutTax > 0
-            ? (saleRow.taxAmount / saleRow.withoutTax) * 100
-            : 0),
-      ),
-      discountAmount:
-        (entry.sellingPrice * entry.quantity * entry.discount) / 100,
-      ...computed,
+      soldQuantity,
+      taxPercent: computed.taxPercent,
+      discountAmount: computed.discountAmount,
+      taxableAmount: computed.taxableAmount,
+      sgst: computed.sgst,
+      cgst: computed.cgst,
+      igst: computed.igst,
+      total: computed.total,
+      sourceInvoiceNo: entryProduct.invoiceNo,
     };
 
     setAdded((prev) => [...prev, newItem]);
 
-    // reset entry row for the next product
     setEntry({
       productId: "",
       pkgsize: "",
@@ -387,13 +584,18 @@ export default function CompanyCreditNotes() {
       prev.map((item) => {
         if (item.key !== key) return item;
         const merged = { ...item, ...updates };
+        const saleRow = saleFor(merged.productId, merged.pkgsize, merged.batchNo);
         const computed = computeLine(
-          merged.productId,
+          saleRow,
           merged.quantity,
           merged.sellingPrice,
           merged.discount,
         );
-        return { ...merged, ...computed };
+        return {
+          ...merged,
+          ...computed,
+          sourceInvoiceNo: saleRow?.invoiceNo || merged.sourceInvoiceNo,
+        };
       }),
     );
   }
@@ -418,7 +620,7 @@ export default function CompanyCreditNotes() {
 
   function resetForm() {
     setReturnDate("");
-    setCreditNoteNo("");
+    setCreditNoteNo(nextCreditNoteNo());
     setInvoiceNo("");
     setStoreId("");
     setPlaceOfSupply("");
@@ -437,7 +639,7 @@ export default function CompanyCreditNotes() {
   }
 
   function handleSaveDraft() {
-    if (!storeId || !invoiceNo || !creditNoteNo) return;
+    if (!storeId || !creditNoteNo) return;
     // TODO: persist as a draft (status: 'Pending') via your API / store
     console.log("Saved as draft", {
       returnDate,
@@ -452,25 +654,25 @@ export default function CompanyCreditNotes() {
   }
 
   function handleCreate() {
-    if (!canCreate || !selectedStore) return;
+    if (savingRef.current || !canCreate || !selectedStore) return;
+    savingRef.current = true;
 
     const createdAt = new globalThis.Date().getTime();
+    const allocatedNo = nextCreditNoteNo();
 
-    const defaultCreditNoteNotes = `This credit note is generated against returned goods from ${selectedStore.name}${
-      invoiceNo ? ` for original invoice ${invoiceNo}.` : "."
-    }`;
+    const defaultCreditNoteNotes = `This credit note is generated against returned goods from ${selectedStore.name}.`;
 
-    // Company Credit Note -> selected Store Debit Note sync
     const syncRows: CompanyCreditNoteSyncRecord[] = added.map(
       (item, index) => ({
-        id: `${creditNoteNo}-${item.key}-${createdAt}-${index}`,
-        creditNoteNo,
+        id: `${allocatedNo}-${item.key}-${createdAt}-${index}`,
+        creditNoteNo: allocatedNo,
         storeId: selectedStore.id,
         storeName: selectedStore.name,
         returnDate,
-        purchaseRef: invoiceNo,
-        invoiceNo,
+        purchaseRef: item.sourceInvoiceNo || "",
+        invoiceNo: item.sourceInvoiceNo,
         product: item.productName,
+        productId: item.productId,
         packSize: item.pkgsize,
         quantity: item.quantity,
         unitPrice: item.sellingPrice,
@@ -494,11 +696,11 @@ export default function CompanyCreditNotes() {
     );
 
     adsdompanyCreditNoteSyncRecords(syncRows);
+    rememberCreditNoteNo(allocatedNo);
 
-    // Show newly created rows immediately in Company Credit Notes.
     const companyRows: CreditNote[] = added.map((item, index) => ({
       id: syncRows[index].id,
-      creditNoteNo,
+      creditNoteNo: allocatedNo,
       party: selectedStore.name,
       Date: returnDate,
       amount: item.taxableAmount,
@@ -513,7 +715,7 @@ export default function CompanyCreditNotes() {
       quantity: item.quantity,
       reason: item.reason || remarks || "Product Return",
       status: "Pending",
-      invoiceNo,
+      invoiceNo: item.sourceInvoiceNo,
       pkgsize: item.pkgsize,
       batchNo: item.batchNo,
       expiryDate: item.expiryDate,
@@ -526,17 +728,6 @@ export default function CompanyCreditNotes() {
     }));
 
     setCreditNotes((prev) => [...companyRows, ...prev]);
-
-    console.log("Creating credit note", {
-      Date,
-      invoiceNo,
-      storeId,
-      placeOfSupply,
-      remarks,
-      added,
-      totals,
-    });
-
     closeForm();
   }
 
@@ -700,6 +891,12 @@ export default function CompanyCreditNotes() {
     });
   }, [search, creditNotes, dateFilter, customFrom, customTo]);
 
+  function openCreateForm() {
+    savingRef.current = false;
+    resetForm();
+    setShowCreate(true);
+  }
+
   function closeForm() {
     setShowCreate(false);
     resetForm();
@@ -716,7 +913,7 @@ export default function CompanyCreditNotes() {
             Manage product returns and credit note records.
           </p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button onClick={openCreateForm}>
           <Icon name="add" size={20} fill />
           Create Credit Note
         </Button>
@@ -1659,57 +1856,22 @@ export default function CompanyCreditNotes() {
 
                     <Input
                       label="Credit Note Number"
-                      placeholder="e.g. CN-2050"
                       value={creditNoteNo}
-                      onChange={setCreditNoteNo}
+                      onChange={() => {}}
+                      readOnly
                       required
                     />
 
                     <Select
-                      label="Invoice No"
-                      value={invoiceNo}
-                      onChange={(value) => {
-                        setInvoiceNo(value);
-                        setAdded([]);
-                        setEntry((p) => ({
-                          ...p,
-                          productId: "",
-                          pkgsize: "",
-                          batchNo: "",
-                          expiryDate: "",
-                          quantity: 0,
-                          sellingPrice: 0,
-                          discount: 0,
-                        }));
-                        const invoice = companySales.find(
-                          (row) => row.invoiceNo === value,
-                        );
-                        if (invoice) {
-                          setStoreId(invoice.storeId);
-                          setPlaceOfSupply(
-                            invoice.placeOfSupply ||
-                              (invoice.storeLocation
-                                ?.toLowerCase()
-                                .includes("kerala")
-                                ? "Others"
-                                : "Tamil Nadu"),
-                          );
-                        }
-                      }}
-                      placeholder="Select original sales invoice"
-                      options={invoiceOptions.map((row) => ({
-                        value: row.invoiceNo,
-                        label: `${row.invoiceNo} — ${row.storeName}`,
+                      label="Store"
+                      value={storeId}
+                      onChange={selectStore}
+                      placeholder="Choose a registered store"
+                      options={stores.map((store) => ({
+                        value: store.id,
+                        label: store.name,
                       }))}
                       required
-                    />
-
-                    <Input
-                      label="Store"
-                      value={selectedStore?.name || ""}
-                      onChange={() => {}}
-                      readOnly
-                      placeholder="Auto-filled from invoice"
                     />
 
                     <Select
@@ -1760,35 +1922,39 @@ export default function CompanyCreditNotes() {
                         label="Select Product"
                         value={entry.productId}
                         onChange={selectProduct}
-                        placeholder="Select"
-                        options={selectedInvoiceRows.map((row, index) => ({
-                          value: String(index),
-                          label: `${row.product} — ${(row as any).pkgsize || row.packSize}`,
+                        placeholder={
+                          storeId ? "Select" : "Choose a store first"
+                        }
+                        options={productOptions.map((row) => ({
+                          value: row.id,
+                          label: row.name,
                         }))}
                       />
 
                       <Select
                         label="PKG Size"
                         value={entry.pkgsize}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, pkgsize: v }))
+                        onChange={selectSize}
+                        placeholder={
+                          entry.productId ? "Select size" : "Select product first"
                         }
-                        placeholder="Select size"
-                        options={
-                          entry.pkgsize
-                            ? [{ value: entry.pkgsize, label: entry.pkgsize }]
-                            : []
-                        }
+                        options={sizeOptions.map((size) => ({
+                          value: size,
+                          label: size,
+                        }))}
                       />
 
-                      <Input
+                      <Select
                         label="Batch No"
                         value={entry.batchNo}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, batchNo: v }))
+                        onChange={selectBatch}
+                        placeholder={
+                          entry.pkgsize ? "Select batch" : "Select size first"
                         }
-                        placeholder="Auto from invoice"
-                        readOnly
+                        options={batchOptions.map((batch) => ({
+                          value: batch,
+                          label: batch,
+                        }))}
                         required
                       />
 
@@ -1807,9 +1973,16 @@ export default function CompanyCreditNotes() {
                         label="Quantity"
                         type="number"
                         value={String(entry.quantity)}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, quantity: Number(v) || 0 }))
-                        }
+                        onChange={(v) => {
+                          const next = Number(v) || 0;
+                          setEntry((p) => ({
+                            ...p,
+                            quantity:
+                              remainingQuantity > 0
+                                ? Math.min(Math.max(next, 0), remainingQuantity)
+                                : 0,
+                          }));
+                        }}
                       />
 
                       <Input
@@ -1867,7 +2040,7 @@ export default function CompanyCreditNotes() {
                         />
                         <DetailField
                           label="Sold Qty"
-                          value={String(entryProduct.quantity)}
+                          value={String(soldQuantity)}
                         />
                         <DetailField
                           label="Unit Price"

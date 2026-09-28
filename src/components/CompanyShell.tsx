@@ -1,7 +1,13 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNav, type CompanyPage } from "@/context/NavContext";
-import { Icon, Logo } from "@/components/ui";
+import { Icon } from "@/components/ui";
+import {
+  getStoreApprovalRequests,
+  storeApprovalRequestsUpdatedEvent,
+  type StoreApprovalRequest,
+} from "@/lib/data";
+import { formatDate } from "@/lib/format";
 
 const navItems: { key: CompanyPage; label: string; icon: string }[] = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -19,7 +25,6 @@ const navItems: { key: CompanyPage; label: string; icon: string }[] = [
   { key: "credit-notes", label: "Credit Notes", icon: "undo" },
   { key: "receipts", label: "Receipts", icon: "receipt" },
   { key: "reports", label: "Reports", icon: "bar_chart" },
-  { key: "settings", label: "Settings", icon: "settings" },
 ];
 
 export default function CompanyShell({
@@ -32,6 +37,42 @@ export default function CompanyShell({
   const { user, signOut } = useAuth();
   const { goCompany } = useNav();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<"profile" | "notifications" | null>(
+    null,
+  );
+  const [pendingApprovals, setPendingApprovals] = useState<
+    StoreApprovalRequest[]
+  >([]);
+
+  useEffect(() => {
+    const refresh = () =>
+      setPendingApprovals(
+        getStoreApprovalRequests().filter(
+          (request) =>
+            request.type === "Purchase Order" && request.status === "Pending",
+        ),
+      );
+    refresh();
+    window.addEventListener(storeApprovalRequestsUpdatedEvent, refresh);
+    window.addEventListener("store-purchase-orders-updated", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
+      window.removeEventListener("store-purchase-orders-updated", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-header-menu]")) return;
+      setOpenMenu(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [openMenu]);
 
   return (
     <div className="flex min-h-screen overflow-x-clip bg-slate-50">
@@ -64,7 +105,7 @@ export default function CompanyShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col lg:ml-64">
-        <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/80 backdrop-blur-md">
+        <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/80 backdrop-blur-md">
           <div className="flex h-16 items-center gap-3 px-3 sm:gap-4 sm:px-6">
             <button
               onClick={() => setMobileOpen(true)}
@@ -83,31 +124,149 @@ export default function CompanyShell({
               />
             </div>
 
-            <div className="flex items-center gap-1 sm:gap-2 ml-auto">
-              <button className="p-2.5 rounded-xl hover:bg-slate-100 transition-base relative">
+            <div
+              data-header-menu
+              className="relative z-[10000] ml-auto flex items-center gap-1 sm:gap-2"
+            >
+              <button
+                type="button"
+                aria-label="Notifications"
+                onClick={() =>
+                  setOpenMenu((current) =>
+                    current === "notifications" ? null : "notifications",
+                  )
+                }
+                className="relative rounded-xl p-2.5 transition-base hover:bg-slate-100"
+              >
                 <Icon
                   name="notifications"
                   size={22}
                   className="text-slate-600"
                 />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-white" />
+                {pendingApprovals.length > 0 && (
+                  <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                    {pendingApprovals.length > 9
+                      ? "9+"
+                      : pendingApprovals.length}
+                  </span>
+                )}
               </button>
 
-              <button className="flex items-center gap-2.5 pl-2 sm:pl-3 sm:pr-1 py-1 rounded-xl hover:bg-slate-100 transition-base">
-                <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+              <button
+                type="button"
+                aria-label="Settings"
+                onClick={() => {
+                  setOpenMenu(null);
+                  goCompany("settings");
+                }}
+                className={`rounded-xl p-2.5 transition-base hover:bg-slate-100 ${
+                  active === "settings" ? "bg-brand-50 text-brand-700" : ""
+                }`}
+              >
+                <Icon
+                  name="settings"
+                  size={22}
+                  className={
+                    active === "settings" ? "text-brand-700" : "text-slate-600"
+                  }
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenMenu((current) =>
+                    current === "profile" ? null : "profile",
+                  )
+                }
+                className="flex items-center gap-2.5 rounded-xl py-1 pl-2 transition-base hover:bg-slate-100 sm:pl-3 sm:pr-1"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
                   {(user?.name ?? "U").charAt(0)}
                 </div>
-                <div className="hidden sm:block text-left">
-                  <p className="text-sm font-semibold text-slate-700 leading-tight">
-                    Administrator
+                <div className="hidden text-left sm:block">
+                  <p className="text-sm font-semibold leading-tight text-slate-700">
+                    {user?.name || "Administrator"}
                   </p>
                 </div>
                 <Icon
                   name="expand_more"
                   size={18}
-                  className="text-slate-400 hidden sm:block"
+                  className="hidden text-slate-400 sm:block"
                 />
               </button>
+
+              {openMenu === "notifications" && (
+                <div className="absolute right-0 top-12 z-[10001] w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <p className="text-sm font-bold text-slate-800">
+                      Notifications
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {pendingApprovals.length} pending
+                    </p>
+                  </div>
+                  {pendingApprovals.length === 0 ? (
+                    <p className="px-4 py-6 text-sm text-slate-500">
+                      No pending notifications.
+                    </p>
+                  ) : (
+                    <div className="max-h-80 overflow-y-auto">
+                      {pendingApprovals.map((request) => (
+                        <button
+                          key={request.id}
+                          type="button"
+                          onClick={() => {
+                            setOpenMenu(null);
+                            goCompany("purchase-orders");
+                          }}
+                          className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50"
+                        >
+                          <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
+                            Purchase Order
+                          </p>
+                          <p className="mt-1 text-sm font-bold text-slate-800">
+                            {request.referenceNo}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {request.storeName}
+                            {request.date
+                              ? ` · ${formatDate(request.date)}`
+                              : ""}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-amber-700">
+                            Pending Acceptance
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {openMenu === "profile" && (
+                <div className="absolute right-0 top-12 z-[10001] w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-xl">
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <p className="text-sm font-bold text-slate-800">
+                      {user?.name || "Administrator"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {user?.roleLabel || "Company Administrator"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      signOut();
+                    }}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Icon name="logout" size={18} />
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>

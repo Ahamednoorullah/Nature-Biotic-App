@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { staff as staffSeed, stores, type Staff } from "@/lib/data";
+import { getStaffRecords, replaceStaffRegistry, stores, type Staff } from "@/lib/data";
+import { getAuthAdapter } from "@/lib/auth/localAuth";
+import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { formatCurrency } from "@/lib/format";
 
 type StaffWithProfile = Staff & {
@@ -93,8 +95,9 @@ function calculateAge(dob: string) {
 
 export default function CompanyStaffManagement() {
   const [staffList, setStaffList] = useState<StaffWithProfile[]>(
-    staffSeed as StaffWithProfile[],
+    () => [...getStaffRecords()] as StaffWithProfile[],
   );
+  const [accountNotice, setAccountNotice] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<StaffWithProfile | null>(
     null,
@@ -207,21 +210,23 @@ export default function CompanyStaffManagement() {
 
   const isValid = missingRequiredFields.length === 0;
 
-  function handleSave() {
+  async function handleSave() {
     if (!isValid) {
       window.alert(`Please fill: ${missingRequiredFields.join(", ")}`);
       return;
     }
 
+    const email = form.email.trim();
+    const role = roleForStaffDesignation(form.designation);
     const member: StaffWithProfile = {
       id: editingStaff?.id ?? `st-${Date.now()}`,
       storeId: form.storeId,
-      name: form.name,
+      name: form.name.trim(),
       phone: form.phone,
       alternativePhone: form.alternativePhone,
       familyRelation: form.familyRelation,
       profileImage: form.profileImage,
-      email: form.email,
+      email,
       dob: form.dob,
       age,
       bloodGroup: form.bloodGroup,
@@ -237,14 +242,48 @@ export default function CompanyStaffManagement() {
       targetVisits: Number(form.targetVisits) || 0,
       role: form.designation,
       status: editingStaff?.status ?? "Active",
+      accountId: editingStaff?.accountId,
     };
 
-    setStaffList((prev) =>
-      editingStaff
-        ? prev.map((item) => (item.id === editingStaff.id ? member : item))
-        : [...prev, member],
-    );
+    const auth = getAuthAdapter();
+    if (member.accountId) {
+      const updated = await auth.updateAccount({
+        accountId: member.accountId,
+        name: member.name,
+        email,
+        role,
+        storeId: member.storeId,
+        staffId: member.id,
+      });
+      if (!updated.account) {
+        window.alert(updated.error || "Could not update the staff account.");
+        return;
+      }
+    } else {
+      const created = await auth.createAccount({
+        name: member.name,
+        email,
+        role,
+        subjectType: "staff",
+        subjectId: member.id,
+        storeId: member.storeId,
+        staffId: member.id,
+      });
+      if (!created.account) {
+        window.alert(created.error || "Could not create the staff account.");
+        return;
+      }
+      member.accountId = created.account.id;
+      setAccountNotice(
+        `Staff account created for ${email}. They can set a password the first time they sign in.`,
+      );
+    }
 
+    const next = editingStaff
+      ? staffList.map((item) => (item.id === editingStaff.id ? member : item))
+      : [...staffList, member];
+    replaceStaffRegistry(next);
+    setStaffList(next);
     closeAdd();
   }
 
@@ -258,6 +297,9 @@ export default function CompanyStaffManagement() {
           <p className="mt-1 text-slate-500">
             Manage staff, store assignments, levels and targets.
           </p>
+          {accountNotice && (
+            <p className="mt-2 text-sm font-medium text-brand-700">{accountNotice}</p>
+          )}
         </div>
 
         <Button onClick={openCreate}>
