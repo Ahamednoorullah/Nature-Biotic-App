@@ -1,0 +1,376 @@
+import { useState, type ReactNode } from "react";
+import { getStore } from "@/lib/data";
+import { useAuth } from "@/context/AuthContext";
+import { useNav, type StorePage } from "@/context/NavContext";
+import { Icon } from "@/components/ui";
+
+type SubItem = { key: StorePage; label: string; icon: string };
+type NavItem =
+  | { type: "link"; key: StorePage; label: string; icon: string }
+  | {
+      type: "group";
+      key: "purchases" | "stock-management" | "sales";
+      label: string;
+      icon: string;
+      children: SubItem[];
+    };
+
+const navItems: NavItem[] = [
+  { type: "link", key: "dashboard", label: "Dashboard", icon: "dashboard" },
+  {
+    type: "group",
+    key: "purchases",
+    label: "Purchases",
+    icon: "shopping_cart",
+    children: [
+      { key: "purchase-order", label: "Purchase Order", icon: "description" },
+      { key: "purchases", label: "Purchase Bills", icon: "shopping_cart" },
+      { key: "debit-notes", label: "Debit Notes", icon: "request_quote" },
+      {
+        key: "return-stock",
+        label: "Purchase Return",
+        icon: "assignment_return",
+      },
+      { key: "payments", label: "Payment", icon: "payments" },
+      { key: "expenses", label: "Expenses", icon: "receipt_long" },
+    ],
+  },
+  {
+    type: "group",
+    key: "stock-management",
+    label: "Stock Management",
+    icon: "inventory_2",
+    children: [
+      {
+        key: "stock-management",
+        label: "Stock Overview",
+        icon: "inventory_2",
+      },
+      {
+        key: "delivery-challan",
+        label: "Stock Delivery",
+        icon: "local_shipping",
+      },
+      {
+        key: "return-challan",
+        label: "Stock Return",
+        icon: "assignment_return",
+      },
+      {
+        key: "closing-stock",
+        label: "Closing Stock",
+        icon: "calendar_month",
+      },
+      {
+        key: "physical-stock",
+        label: "Physical Stock",
+        icon: "fact_check",
+      },
+    ],
+  },
+  {
+    type: "group",
+    key: "sales",
+    label: "Sales",
+    icon: "sell",
+    children: [
+      { key: "farmers", label: "Farmer", icon: "groups" },
+      { key: "quotation", label: "Quotation", icon: "description" },
+
+      { key: "sales-invoice", label: "Sales Invoice", icon: "receipt_long" },
+      { key: "sales-return", label: "Sales Return", icon: "assignment_return" },
+      { key: "credit-notes", label: "Credit Note", icon: "request_quote" },
+      { key: "receipt", label: "Receipt", icon: "receipt" },
+      { key: "refund", label: "Refund", icon: "currency_exchange" },
+    ],
+  },
+  { type: "link", key: "attendance", label: "Attendance", icon: "badge" },
+  { type: "link", key: "reports", label: "Reports", icon: "bar_chart" },
+];
+
+const groupKeys = ["purchases", "stock-management", "sales"] as const;
+
+function activeGroupFor(
+  page: StorePage,
+): "purchases" | "stock-management" | "sales" | null {
+  if (page === "purchases") return "purchases";
+  if (page === "stock-management") return "stock-management";
+  if (page === "sales") return "sales";
+  for (const item of navItems) {
+    if (item.type === "group" && item.children.some((c) => c.key === page))
+      return item.key;
+  }
+  return null;
+}
+
+export default function StoreShell({
+  storeId,
+  active,
+  children,
+}: {
+  storeId: string;
+  active: StorePage;
+  children: ReactNode;
+}) {
+  const { user, signOut } = useAuth();
+  const { goStorePage, backToCompany } = useNav();
+  const store = getStore(storeId);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const isStoreUser = user?.role === "store_admin";
+  const roleLabel =
+    user?.roleLabel ||
+    (user?.role === "store_admin"
+      ? "Store Administrator"
+      : "Company Administrator");
+
+  return (
+    <div className="flex min-h-screen overflow-x-clip bg-slate-50">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-100 bg-white lg:flex">
+        <SidebarContent
+          store={store}
+          active={active}
+          onNavigate={goStorePage}
+          onBack={() => backToCompany()}
+          showBack={!isStoreUser}
+          onSignOut={signOut}
+        />
+      </aside>
+
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-[min(16rem,86vw)] flex-col bg-white animate-slide-in-right">
+            <SidebarContent
+              store={store}
+              active={active}
+              onNavigate={(p) => {
+                goStorePage(p);
+                setMobileOpen(false);
+              }}
+              onBack={() => backToCompany()}
+              showBack={!isStoreUser}
+              onSignOut={signOut}
+              onClose={() => setMobileOpen(false)}
+            />
+          </aside>
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col lg:ml-64">
+        <header className="sticky top-0 z-20 border-b border-slate-100 bg-white/80 backdrop-blur-md">
+          <div className="flex h-16 items-center gap-3 px-3 sm:gap-4 sm:px-6">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="rounded-lg p-2.5 transition-base hover:bg-slate-100 lg:hidden"
+              aria-label="Open menu"
+            >
+              <Icon name="menu" size={24} />
+            </button>
+
+            {/* Logo in navbar — mobile only */}
+            <div className="lg:hidden">
+              <img
+                src="/logo.png"
+                alt="Nature Biotic"
+                className="h-8 w-auto object-contain"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm min-w-0">
+              {!isStoreUser && (
+                <>
+                  <button
+                    onClick={() => backToCompany()}
+                    className="text-slate-400 hover:text-slate-600 font-medium transition-base hidden sm:block"
+                  >
+                    Store
+                  </button>
+                  <Icon
+                    name="chevron_right"
+                    size={18}
+                    className="text-slate-300 hidden sm:block"
+                  />
+                </>
+              )}
+
+              <span className="font-semibold text-slate-700 truncate">
+                {store?.name ?? "Store"}, {store?.location?.split(",")[0] ?? ""}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 sm:gap-2 ml-auto">
+              <button className="p-2.5 rounded-xl hover:bg-slate-100 transition-base relative">
+                <Icon
+                  name="notifications"
+                  size={22}
+                  className="text-slate-600"
+                />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-white" />
+              </button>
+              <button className="flex items-center gap-2.5 pl-2 sm:pl-3 sm:pr-1 py-1 rounded-xl hover:bg-slate-100 transition-base">
+                <div className="w-9 h-9 rounded-full bg-brand-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {(user?.name ?? "U").charAt(0)}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-semibold text-slate-700 leading-tight">
+                    {user?.name ?? "User"}
+                  </p>
+                  <p className="text-xs text-slate-400">{roleLabel}</p>
+                </div>
+                <Icon
+                  name="expand_more"
+                  size={18}
+                  className="text-slate-400 hidden sm:block"
+                />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:p-8">
+          <div key={active} className="animate-fade-in">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function SidebarContent({
+  store,
+  active,
+  onNavigate,
+  onBack,
+  showBack,
+  onSignOut,
+  onClose,
+}: {
+  store: ReturnType<typeof getStore>;
+  active: StorePage;
+  onNavigate: (p: StorePage) => void;
+  onBack: () => void;
+  showBack: boolean;
+  onSignOut: () => void;
+  onClose?: () => void;
+}) {
+  const initialGroup = activeGroupFor(active);
+  const [openGroup, setOpenGroup] = useState<
+    "purchases" | "stock-management" | "sales" | null
+  >(initialGroup);
+
+  function toggleGroup(key: "purchases" | "stock-management" | "sales") {
+    setOpenGroup((cur) => (cur === key ? null : key));
+  }
+
+  return (
+    <>
+      <div className="border-b border-slate-100 shrink-0">
+        <div className="flex items-center justify-center px-5 h-16 relative">
+          <img
+            src="/logo.png"
+            alt="Nature Biotic"
+            className="h-12 w-auto object-contain"
+          />
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="absolute right-3 p-1.5 rounded-lg hover:bg-slate-100 lg:hidden"
+            >
+              <Icon name="close" size={20} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {showBack && (
+          <button
+            onClick={onBack}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-base mb-2"
+          >
+            <Icon name="arrow_back" size={20} />
+            Back to Stores
+          </button>
+        )}
+
+        {navItems.map((item) => {
+          if (item.type === "link") {
+            const isActive = active === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => onNavigate(item.key)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-base ${
+                  isActive
+                    ? "bg-brand-50 text-brand-700"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <Icon name={item.icon} size={22} fill={isActive} />
+                {item.label}
+              </button>
+            );
+          }
+
+          const isOpen = openGroup === item.key;
+          const isChildActive = item.children.some((c) => c.key === active);
+          return (
+            <div key={item.key}>
+              <button
+                onClick={() => toggleGroup(item.key)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-base ${
+                  isChildActive
+                    ? "text-brand-700"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <Icon name={item.icon} size={22} fill={isChildActive} />
+                <span className="flex-1 text-left">{item.label}</span>
+                <Icon
+                  name="chevron_right"
+                  size={18}
+                  className={`text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                />
+              </button>
+              {isOpen && (
+                <div className="mt-1 ml-3 pl-4 border-l border-slate-100 space-y-0.5">
+                  {item.children.map((child) => {
+                    const isActive = active === child.key;
+                    return (
+                      <button
+                        key={child.key}
+                        onClick={() => onNavigate(child.key)}
+                        className={`w-full flex items-center gap-2.5 pl-3 pr-3 py-2 rounded-lg text-sm font-medium transition-base ${
+                          isActive
+                            ? "bg-brand-50 text-brand-700"
+                            : "text-slate-500 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Icon name={child.icon} size={18} fill={isActive} />
+                        {child.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      <div className="px-3 py-4 border-t border-slate-100 shrink-0">
+        <button
+          onClick={onSignOut}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600 transition-base"
+        >
+          <Icon name="logout" size={22} />
+          Sign Out
+        </button>
+      </div>
+    </>
+  );
+}

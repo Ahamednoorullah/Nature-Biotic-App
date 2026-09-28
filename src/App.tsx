@@ -1,0 +1,264 @@
+import { useEffect } from "react";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { NavProvider, useNav } from "@/context/NavContext";
+import { canAccessStorePage } from "@/lib/access";
+import { Spinner } from "@/components/ui";
+import Login from "@/pages/Login";
+import CompanyShell from "@/components/CompanyShell";
+import CompanyDashboard from "@/pages/CompanyDashboard";
+import CompanyProducts from "@/pages/CompanyProducts";
+import CompanyStores from "@/pages/CompanyStores";
+import CompanySales from "@/pages/CompanySales";
+import CompanyExpenses from "@/pages/CompanyExpenses";
+import CompanyPurchaseOrders from "@/pages/CompanyPurchaseOrders";
+import CompanyStaffManagement from "@/pages/CompanyStaffManagement";
+import CompanyCreditNotes from "@/pages/CompanyCreditNotes";
+import CompanyReceipts from "@/pages/CompanyReceipts";
+import CompanyReports from "@/pages/CompanyReports";
+import Settings from "@/pages/CompanySettings";
+import StoreShell from "@/components/StoreShell";
+import FROShell from "@/components/FROShell";
+import StoreDashboard from "@/pages/StoreDashboard";
+import FRODashboard from "@/pages/FRODashboard";
+import FROSales from "@/pages/FROSales";
+import FROStock from "@/pages/FROStock";
+import FROVisits from "@/pages/FROVisits";
+import FROPayment from "@/pages/FROPayment";
+import FROExpenses from "@/pages/FROExpenses";
+import StoreInventory from "@/pages/StoreInventory";
+import StoreFarmers from "@/pages/StoreFarmers";
+import StoreReports from "@/pages/StoreReports";
+import StoreAddProduct from "@/pages/StoreAddProduct";
+import StoreAddFarmer from "@/pages/StoreAddFarmer";
+import StoreFarmerProfile from "@/pages/StoreFarmerProfile";
+import StoreInventoryDetail from "@/pages/StoreInventoryDetail";
+import StoreAddStock from "@/pages/StoreAddStock";
+import StoreStockAdjustment from "@/pages/StoreStockAdjustment";
+import StoreLowStock from "@/pages/StoreLowStock";
+import StorePlaceholder from "@/pages/StorePlaceholder";
+import StorePurchases from "@/pages/StorePurchases";
+import StoreDebitNotes from "@/pages/StoreDebitNotes";
+import StorePayments from "@/pages/StorePayments";
+import StoreExpenses from "@/pages/StoreExpenses";
+import StoreSales from "@/pages/StoreSales";
+import StoreQuotation from "@/pages/StoreQuotation";
+import StoreSalesInvoice from "@/pages/StoreSalesInvoice";
+import StoreDeliveryChallan from "@/pages/StoreDeliveryChallan";
+import StoreReturnChallan from "@/pages/StoreReturnChallan";
+import StoreReceipt from "@/pages/StoreReceipt";
+import StoreRefund from "@/pages/StoreRefund";
+import StorePurchaseReturn from "@/pages/StorePurchaseReturn";
+import StorePurchaseOrder from "@/pages/StorePurchaseOrder";
+import StoreSalesReturn from "@/pages/StoreSalesReturn";
+import StoreCreditNotes from "@/pages/StoreCreditNotes";
+import StoreAttendance from "@/pages/StoreAttendance";
+import ClosingStock from "@/pages/ClosingStock";
+import PhysicalStockEntry from "@/pages/PhysicalStockEntry";
+
+function AppContent() {
+  const { user, loading } = useAuth();
+  const { route, goStore } = useNav();
+
+  const isStoreUser = user?.role === "store_admin";
+  const isFROUser = user?.role === "fro";
+  const isStoreScopedUser = isStoreUser || isFROUser;
+  const ownStoreId = user?.storeId;
+
+  useEffect(() => {
+    if (!user || !isStoreScopedUser || !user.storeId) {
+      return;
+    }
+
+    const isOwnStoreRoute =
+      route.view === "store" && route.storeId === user.storeId;
+
+    if (!isOwnStoreRoute) {
+      goStore(user.storeId, "dashboard");
+      return;
+    }
+
+    const isFROPaymentRoute =
+      user.role === "fro" &&
+      route.view === "store" &&
+      route.page === "payments";
+
+    if (!isFROPaymentRoute && !canAccessStorePage(user, route.page)) {
+      goStore(user.storeId, "dashboard");
+    }
+  }, [user, route, goStore]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Spinner className="text-4xl text-brand-600" />
+      </div>
+    );
+  }
+
+  if (!user) return <Login />;
+
+  // Store-scoped users (Store Admin / FRO) must never see company pages or another store.
+  if (isStoreScopedUser) {
+    if (!ownStoreId) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="rounded-2xl border border-red-100 bg-white p-6 text-center shadow-sm">
+            <h2 className="font-bold text-slate-800">
+              Store access is not configured
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Contact the company administrator to assign a store.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (route.view !== "store" || route.storeId !== ownStoreId) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <Spinner className="text-4xl text-brand-600" />
+        </div>
+      );
+    }
+  }
+
+  // Company-level views
+  if (route.view === "company" && user.role === "company_admin") {
+    return (
+      <CompanyShell active={route.page}>
+        {route.page === "dashboard" && <CompanyDashboard />}
+        {route.page === "products" && <CompanyProducts />}
+        {route.page === "stores" && <CompanyStores />}
+        {route.page === "sales" && <CompanySales />}
+        {route.page === "expenses" && <CompanyExpenses />}
+        {route.page === "purchase-orders" && <CompanyPurchaseOrders />}
+        {route.page === "staff-management" && <CompanyStaffManagement />}
+        {route.page === "credit-notes" && <CompanyCreditNotes />}
+        {route.page === "receipts" && <CompanyReceipts />}
+        {route.page === "reports" && <CompanyReports />}
+        {route.page === "settings" && <Settings />}
+      </CompanyShell>
+    );
+  }
+
+  // From this point onward TypeScript must know this is a store route.
+  // Company routes were already handled above.
+  if (route.view !== "store") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Spinner className="text-4xl text-brand-600" />
+      </div>
+    );
+  }
+
+  // Store-level views
+  const storeContent = (
+    <>
+      {route.page === "dashboard" &&
+        (isFROUser ? (
+          <FRODashboard storeId={route.storeId} />
+        ) : (
+          <StoreDashboard storeId={route.storeId} />
+        ))}
+      {route.page === "stock-management" &&
+        (isFROUser ? <FROStock /> : <StoreInventory storeId={route.storeId} />)}
+      {route.page === "purchase-order" && (
+        <StorePurchaseOrder storeId={route.storeId} />
+      )}
+      {route.page === "purchases" && <StorePurchases storeId={route.storeId} />}
+      {route.page === "debit-notes" && (
+        <StoreDebitNotes storeId={route.storeId} />
+      )}
+      {route.page === "payments" &&
+        (isFROUser ? (
+          <FROPayment storeId={route.storeId} />
+        ) : (
+          <StorePayments storeId={route.storeId} />
+        ))}
+      {route.page === "expenses" &&
+        (isFROUser ? (
+          <FROExpenses storeId={route.storeId} />
+        ) : (
+          <StoreExpenses storeId={route.storeId} />
+        ))}
+      {route.page === "return-stock" && (
+        <StorePurchaseReturn storeId={route.storeId} />
+      )}
+      {route.page === "sales" &&
+        (isFROUser ? <FROSales /> : <StoreSales storeId={route.storeId} />)}
+      {route.page === "credit-notes" && (
+        <StoreCreditNotes storeId={route.storeId} />
+      )}
+      {route.page === "farmers" && <StoreFarmers storeId={route.storeId} />}
+      {route.page === "quotation" && <StoreQuotation storeId={route.storeId} />}
+      {route.page === "delivery-challan" && (
+        <StoreDeliveryChallan storeId={route.storeId} />
+      )}
+      {route.page === "return-challan" && (
+        <StoreReturnChallan storeId={route.storeId} />
+      )}
+      {route.page === "sales-invoice" && (
+        <StoreSalesInvoice storeId={route.storeId} />
+      )}
+      {route.page === "sales-return" && (
+        <StoreSalesReturn storeId={route.storeId} />
+      )}
+      {route.page === "receipt" && <StoreReceipt storeId={route.storeId} />}
+      {route.page === "refund" && <StoreRefund storeId={route.storeId} />}
+      {route.page === "attendance" &&
+        (isFROUser ? (
+          <FROVisits storeId={route.storeId} />
+        ) : (
+          <StoreAttendance storeId={route.storeId} />
+        ))}
+      {route.page === "reports" && <StoreReports storeId={route.storeId} />}
+      {route.page === "add-product" && (
+        <StoreAddProduct storeId={route.storeId} />
+      )}
+      {route.page === "add-farmer" && (
+        <StoreAddFarmer storeId={route.storeId} />
+      )}
+      {route.page === "farmer-profile" && route.farmerId && (
+        <StoreFarmerProfile storeId={route.storeId} farmerId={route.farmerId} />
+      )}
+      {route.page === "inventory-detail" && route.productId && (
+        <StoreInventoryDetail
+          storeId={route.storeId}
+          productId={route.productId}
+        />
+      )}
+      {route.page === "add-stock" && <StoreAddStock storeId={route.storeId} />}
+      {route.page === "stock-adjustment" && (
+        <StoreStockAdjustment storeId={route.storeId} />
+      )}
+      {route.page === "low-stock" && <StoreLowStock storeId={route.storeId} />}
+      {route.page === "closing-stock" && <ClosingStock storeId={route.storeId} />}
+      {route.page === "physical-stock" && (
+      <PhysicalStockEntry storeId={route.storeId} />
+)}
+    </>
+  );
+
+  return isFROUser ? (
+    <FROShell storeId={route.storeId} active={route.page}>
+      {storeContent}
+    </FROShell>
+  ) : (
+    <StoreShell storeId={route.storeId} active={route.page}>
+      {storeContent}
+    </StoreShell>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <NavProvider>
+        <AppContent />
+      </NavProvider>
+    </AuthProvider>
+  );
+}
+
+export default App;
