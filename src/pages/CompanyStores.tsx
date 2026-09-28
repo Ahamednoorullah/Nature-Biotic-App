@@ -1,12 +1,14 @@
 import { useState } from "react";
-import { stores as initialStores, type Store } from "@/lib/data";
+import { getStores, replaceStoreRegistry, type Store } from "@/lib/data";
+import { getAuthAdapter } from "@/lib/auth/localAuth";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Input, Modal, Icon } from "@/components/ui";
 import { createPortal } from "react-dom";
 
 export default function CompanyStores() {
   const { goStore } = useNav();
-  const [stores, setStores] = useState<Store[]>(initialStores);
+  const [stores, setStores] = useState<Store[]>(() => [...getStores()]);
+  const [accountNotice, setAccountNotice] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
@@ -42,9 +44,14 @@ export default function CompanyStores() {
     setForm({ ...form, [key]: value });
   }
 
-  function handleSave() {
+  async function handleSave() {
+    const email = form.email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      window.alert("Enter a valid email address.");
+      return;
+    }
     const newStore: Store = {
-  id: `s${stores.length + 1}`,
+  id: `s-${Date.now()}`,
   code: form.code || form.name.slice(0, 3).toUpperCase(),
   name: form.name,
   owner: form.owner,
@@ -53,6 +60,7 @@ export default function CompanyStores() {
   address: form.address,
   gst: form.gst,
   phone: form.phone,
+  email,
   status: "Active",
   todaySales: 0,
   monthlySales: 0,
@@ -69,7 +77,26 @@ export default function CompanyStores() {
   bankUpiId: form.bankUpiId,
 } as Store;
 
-    setStores([...stores, newStore]);
+    const created = await getAuthAdapter().createAccount({
+      name: form.owner.trim() || form.name.trim(),
+      email,
+      role: "store_admin",
+      subjectType: "store",
+      subjectId: newStore.id,
+      storeId: newStore.id,
+    });
+    if (!created.account) {
+      window.alert(created.error || "Could not create the store account.");
+      return;
+    }
+    newStore.accountId = created.account.id;
+
+    const nextStores = [...stores, newStore];
+    replaceStoreRegistry(nextStores);
+    setStores(nextStores);
+    setAccountNotice(
+      `Store account created for ${email}. They can set a password the first time they sign in.`,
+    );
     setForm({
   name: "",
   code: "",
@@ -142,19 +169,33 @@ export default function CompanyStores() {
     bankBranch: editForm.bankBranch.trim(),
     bankUpiId: editForm.bankUpiId.trim(),
   } as Store;
-  setStores((prev) => prev.map((s) => s.id === editingStore.id ? updated : s));
+  setStores((prev) => {
+    const next = prev.map((s) => (s.id === editingStore.id ? updated : s));
+    replaceStoreRegistry(next);
+    return next;
+  });
   setEditingStore(null);
 }
 
   function handleDeleteStore() {
     if (!deleteStore) return;
-    setStores((prev) => prev.filter((s) => s.id !== deleteStore.id));
+    if (deleteStore.accountId) {
+      void getAuthAdapter().disableAccount(deleteStore.accountId);
+    }
+    setStores((prev) => {
+      const next = prev.filter((s) => s.id !== deleteStore.id);
+      replaceStoreRegistry(next);
+      return next;
+    });
     if (selectedStore?.id === deleteStore.id) setSelectedStore(null);
     setDeleteStore(null);
   }
 
   const isEditValid = editForm.name.trim() && editForm.phone.trim();
-  const isValid = form.name.trim() && form.phone.trim();
+  const isValid =
+    form.name.trim() &&
+    form.phone.trim() &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
 
   return (
     <div>
@@ -166,6 +207,9 @@ export default function CompanyStores() {
           <p className="text-slate-500 mt-1">
             Manage Nature Biotic retail stores.
           </p>
+          {accountNotice && (
+            <p className="mt-2 text-sm font-medium text-brand-700">{accountNotice}</p>
+          )}
         </div>
         <Button onClick={() => setShowAdd(true)}>
           <Icon name="add" size={20} fill /> Add Store
@@ -616,6 +660,7 @@ export default function CompanyStores() {
                     onChange={(v) => update("email", v)}
                     placeholder="e.g. store@naturebiotic.in"
                     icon="mail"
+                    required
                   />
                   <Input
                     label="GST Number"

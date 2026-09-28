@@ -83,51 +83,12 @@ export default function CompanyProducts() {
       return n;
     };
 
-    return Array.from(groups.values()).map((group) => {
-      const existingVariants = [...group.variants].sort(
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      variants: [...group.variants].sort(
         (a, b) => sizeValue(a.size) - sizeValue(b.size),
-      );
-
-      // If the source data contains only one row for a product,
-      // expand it into the common pack sizes for this UI preview.
-      if (existingVariants.length === 1) {
-        const base = existingVariants[0];
-        const isSolid =
-          base.size.toLowerCase().includes("kg") ||
-          base.size.toLowerCase().includes(" g");
-
-        const packSizes = isSolid
-          ? ["100 g", "250 g", "500 g", "1 Kg"]
-          : ["100 ml", "250 ml", "500 ml", "1 L"];
-
-        const priceFactors = [0.28, 0.55, 1, 1.85];
-
-        return {
-          ...group,
-          variants: packSizes.map((size, index) => {
-            const isOriginalSize =
-              size.trim().toLowerCase() === base.size.trim().toLowerCase();
-
-            return {
-              ...base,
-              id: `${base.id}-${size.replace(/\s+/g, "-").toLowerCase()}`,
-              size,
-              sellingPrice: isOriginalSize
-                ? base.sellingPrice
-                : Math.round(base.sellingPrice * priceFactors[index]),
-              mrp: isOriginalSize
-                ? base.mrp
-                : Math.round(base.mrp * priceFactors[index]),
-            };
-          }),
-        };
-      }
-
-      return {
-        ...group,
-        variants: existingVariants,
-      };
-    });
+      ),
+    }));
   }, [filtered]);
 
   function handleSaved() {

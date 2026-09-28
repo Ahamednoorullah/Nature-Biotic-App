@@ -1,102 +1,612 @@
-import { stores, getCompanyStoreSales, getStoreAvailableQty, getFROHandQty } from '@/lib/data';
-import { Card, Badge, EmptyState } from '@/components/ui';
-import { Icon } from '@/components/ui';
-import { formatCompact, formatCurrency } from '@/lib/format';
+import { useEffect, useMemo, useState } from "react";
+import {
+  getCompanyCreditNoteSyncRecords,
+  getCompanyStoreSales,
+  stores as allStores,
+} from "@/lib/data";
+import { Card, Icon } from "@/components/ui";
+import { formatCurrency, formatDate } from "@/lib/format";
 
-export default function CompanyReports() {
-  const sales = getCompanyStoreSales();
-  const performance = stores.map((store) => {
-    const storeSales = sales.filter((row) => row.storeId === store.id);
-    const monthlySales = storeSales.reduce(
-      (sum, row) => sum + Number(row.total || 0),
+type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
+
+const filterTabs: { key: DateFilter; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+  { key: "quarterly", label: "Quarterly" },
+  { key: "yearly", label: "Yearly" },
+];
+
+const STORE_SALES_KEY = "nature-biotic-store-sales-invoices-v2";
+const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
+const STORE_CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
+const STORE_RECEIPT_KEY = "nature-biotic-store-receipts-v3";
+const COMPANY_RECEIPT_KEY = "nature-biotic-company-receipts-v1";
+const COMPANY_EXPENSE_KEY = "nature-biotic-company-expenses-v1";
+
+type StoreReport = {
+  id: string;
+  name: string;
+  sales: number;
+  collection: number;
+  outstanding: number;
+};
+
+function readRows(key: string) {
+  try {
+    const raw = localStorage.getItem(key);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function money(value: unknown) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function parseTxnDate(value: unknown): Date | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "-") return null;
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const local = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (local) {
+    let year = Number(local[3]);
+    if (year < 100) year += 2000;
+    const date = new Date(year, Number(local[2]) - 1, Number(local[1]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function periodBounds(filter: DateFilter) {
+  const now = new Date();
+  const end = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+  let start: Date;
+  switch (filter) {
+    case "today":
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
+    case "weekly": {
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const day = start.getDay();
+      start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+      break;
+    }
+    case "monthly":
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case "quarterly":
+      start = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+      break;
+    case "yearly":
+      start = new Date(now.getFullYear(), 0, 1);
+      break;
+  }
+  return { start, end };
+}
+
+function inPeriod(value: unknown, filter: DateFilter) {
+  const date = parseTxnDate(value);
+  if (!date) return false;
+  const { start, end } = periodBounds(filter);
+  return date >= start && date <= end;
+}
+
+function buildReport(filter: DateFilter) {
+  const companyInvoices = new Map<
+    string,
+    { date: string; storeId: string; storeName: string; total: number }
+  >();
+  getCompanyStoreSales().forEach((line) => {
+    const invoiceNo = String(line.invoiceNo || "").trim();
+    if (!invoiceNo) return;
+    const key = `${line.storeId}|${invoiceNo.toLowerCase()}`;
+    const existing = companyInvoices.get(key);
+    if (existing) existing.total += money(line.total);
+    else {
+      companyInvoices.set(key, {
+        date: String(line.date || ""),
+        storeId: String(line.storeId || ""),
+        storeName: String(line.storeName || ""),
+        total: money(line.total),
+      });
+    }
+  });
+
+  const companyCredits = new Map<string, number>();
+  getCompanyCreditNoteSyncRecords().forEach((note) => {
+    if (note.status === "Rejected") return;
+    const invoiceNo = String(note.invoiceNo || note.purchaseRef || "")
+      .trim()
+      .toLowerCase();
+    if (!invoiceNo) return;
+    const key = `${note.storeId}|${invoiceNo}`;
+    companyCredits.set(key, (companyCredits.get(key) || 0) + money(note.returnAmount));
+  });
+
+  const companyReceipts = readRows(COMPANY_RECEIPT_KEY);
+  const companyPaid = new Map<string, number>();
+  companyReceipts.forEach((receipt) => {
+    const invoiceNo = String(receipt.invoiceNo || "").trim().toLowerCase();
+    if (!invoiceNo) return;
+    const key = `${receipt.storeId || ""}|${invoiceNo}`;
+    companyPaid.set(key, (companyPaid.get(key) || 0) + money(receipt.amount));
+  });
+
+  let companySales = 0;
+  let companyOutstanding = 0;
+  companyInvoices.forEach((invoice, key) => {
+    if (!inPeriod(invoice.date, filter)) return;
+    const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
+    companySales += net;
+    companyOutstanding += Math.max(0, net - (companyPaid.get(key) || 0));
+  });
+
+  const companyCollection = companyReceipts.reduce((sum, receipt) => {
+    return inPeriod(receipt.date, filter) ? sum + money(receipt.amount) : sum;
+  }, 0);
+
+  const storeBooks = allStores.map((store) => {
+    const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
+    const returns = readRows(`${STORE_RETURN_KEY}:${store.id}`);
+    const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
+    const receipts = readRows(`${STORE_RECEIPT_KEY}:${store.id}`);
+    const returned = new Map<string, number>();
+    [...returns, ...credits].forEach((row) => {
+      if (row.status === "Rejected") return;
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      if (!invoiceNo) return;
+      returned.set(invoiceNo, (returned.get(invoiceNo) || 0) + money(row.total));
+    });
+    const paid = new Map<string, number>();
+    receipts.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      if (!invoiceNo) return;
+      paid.set(invoiceNo, (paid.get(invoiceNo) || 0) + money(row.amount));
+    });
+    return { store, invoices, receipts, returned, paid };
+  });
+
+  const storeRows: StoreReport[] = storeBooks.map(
+    ({ store, invoices, receipts, returned, paid }) => {
+      let sales = 0;
+      let outstanding = 0;
+      invoices.forEach((invoice) => {
+        if (!inPeriod(invoice.date, filter)) return;
+        const invoiceNo = String(invoice.invoiceNo || "").trim().toLowerCase();
+        const net = Math.max(
+          0,
+          money(invoice.amount) - (returned.get(invoiceNo) || 0),
+        );
+        sales += net;
+        outstanding += Math.max(0, net - (paid.get(invoiceNo) || 0));
+      });
+      const collection = receipts.reduce((sum, receipt) => {
+        return inPeriod(receipt.date, filter) ? sum + money(receipt.amount) : sum;
+      }, 0);
+      return { id: store.id, name: store.name, sales, collection, outstanding };
+    },
+  );
+
+  const marketSales = storeRows.reduce((sum, row) => sum + row.sales, 0);
+  const marketCollection = storeRows.reduce((sum, row) => sum + row.collection, 0);
+  const marketOutstanding = storeRows.reduce((sum, row) => sum + row.outstanding, 0);
+
+  const expenses = readRows(COMPANY_EXPENSE_KEY).filter((row) =>
+    inPeriod(row.date, filter),
+  );
+  const expenseTotal = expenses.reduce((sum, row) => sum + money(row.amount), 0);
+  const expenseCategories = new Map<string, number>();
+  expenses.forEach((row) => {
+    const category = String(row.category || "Other");
+    expenseCategories.set(
+      category,
+      (expenseCategories.get(category) || 0) + money(row.amount),
+    );
+  });
+
+  const { start, end } = periodBounds(filter);
+  const buckets: { label: string; sales: number; collection: number }[] = [];
+  const cursor = new Date(start);
+  const monthly = filter === "quarterly" || filter === "yearly";
+  while (cursor <= end) {
+    const bucketStart = new Date(cursor);
+    const bucketEnd = new Date(cursor);
+    if (monthly) bucketEnd.setMonth(bucketEnd.getMonth() + 1);
+    else bucketEnd.setDate(bucketEnd.getDate() + 1);
+    const label = monthly
+      ? bucketStart.toLocaleString("en-IN", { month: "short" })
+      : formatDate(bucketStart.toISOString().slice(0, 10));
+    const inBucket = (value: unknown) => {
+      const date = parseTxnDate(value);
+      return !!date && date >= bucketStart && date < bucketEnd && date <= end;
+    };
+    let sales = 0;
+    companyInvoices.forEach((invoice, key) => {
+      if (!inBucket(invoice.date)) return;
+      sales += Math.max(0, invoice.total - (companyCredits.get(key) || 0));
+    });
+    storeBooks.forEach(({ invoices, returned }) => {
+      invoices.forEach((invoice) => {
+        if (!inBucket(invoice.date)) return;
+        const invoiceNo = String(invoice.invoiceNo || "").trim().toLowerCase();
+        sales += Math.max(
+          0,
+          money(invoice.amount) - (returned.get(invoiceNo) || 0),
+        );
+      });
+    });
+    let collection = companyReceipts.reduce(
+      (sum, receipt) => (inBucket(receipt.date) ? sum + money(receipt.amount) : sum),
       0,
     );
-    const seen = new Set<string>();
-    let inventoryValue = 0;
-    storeSales.forEach((row) => {
-      const packSize = String(row.packSize || row.pkgsize || "");
-      const batchNo = String(row.batchNo || "");
-      const key = `${row.productId || row.product}|${packSize}|${batchNo}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      const available =
-        getStoreAvailableQty(store.id, String(row.productId || ""), packSize, batchNo, row.product) +
-        getFROHandQty(store.id, String(row.productId || ""), packSize, batchNo, row.product);
-      inventoryValue += available * Number(row.unitPrice || row.rate || 0);
+    storeBooks.forEach(({ receipts }) => {
+      collection += receipts.reduce(
+        (sum, receipt) => (inBucket(receipt.date) ? sum + money(receipt.amount) : sum),
+        0,
+      );
     });
-    return { ...store, monthlySales, inventoryValue };
-  });
-  const sorted = [...performance].sort((a, b) => b.monthlySales - a.monthlySales);
+    buckets.push({ label, sales, collection });
+    if (monthly) cursor.setMonth(cursor.getMonth() + 1);
+    else cursor.setDate(cursor.getDate() + 1);
+    if (buckets.length > 40) break;
+  }
 
-  const totalRevenue = performance.reduce((s, x) => s + x.monthlySales, 0);
-  const totalProfit = stores.reduce((s, x) => s + x.totalProfit, 0);
-  const totalOutstanding = stores.reduce((s, x) => s + x.outstanding, 0);
-  const totalInventory = performance.reduce((s, x) => s + x.inventoryValue, 0);
+  return {
+    companySales,
+    marketSales,
+    sales: companySales + marketSales,
+    companyCollection,
+    marketCollection,
+    collection: companyCollection + marketCollection,
+    companyOutstanding,
+    marketOutstanding,
+    outstanding: companyOutstanding + marketOutstanding,
+    expenseTotal,
+    expenseCategories: Array.from(expenseCategories.entries()).map(
+      ([name, value]) => ({ name, value }),
+    ),
+    storeRows,
+    buckets,
+  };
+}
+
+export default function CompanyReports() {
+  const [filter, setFilter] = useState<DateFilter>("monthly");
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setVersion((current) => current + 1);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("nature-biotic-company-receipts-updated", refresh);
+    window.addEventListener("nature-biotic-store-receipts-updated", refresh);
+    window.addEventListener("nature-biotic-company-expense-updated", refresh);
+    window.addEventListener("company-credit-note-sync-updated", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener("nature-biotic-company-receipts-updated", refresh);
+      window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
+      window.removeEventListener("nature-biotic-company-expense-updated", refresh);
+      window.removeEventListener("company-credit-note-sync-updated", refresh);
+    };
+  }, []);
+
+  const report = useMemo(() => buildReport(filter), [filter, version]);
+  const hasActivity =
+    report.sales > 0 ||
+    report.collection > 0 ||
+    report.outstanding > 0 ||
+    report.expenseTotal > 0;
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Reports</h1>
-        <p className="text-slate-500 mt-1">Company-wide performance across all stores.</p>
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 stagger">
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">Total Revenue</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">{formatCompact(totalRevenue)}</p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">Total Profit</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">{formatCompact(totalProfit)}</p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">Outstanding</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">{formatCompact(totalOutstanding)}</p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-sm text-slate-500 font-medium">Inventory Value</p>
-          <p className="text-2xl font-bold text-slate-800 mt-1">{formatCompact(totalInventory)}</p>
-        </Card>
-      </div>
-
-      <Card className="overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-          <Icon name="leaderboard" size={22} className="text-brand-600" />
-          <h2 className="font-bold text-slate-800">Store Performance</h2>
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
+            Reports
+          </h1>
+          <p className="mt-1 text-slate-500">
+            Company and market performance from saved transactions.
+          </p>
         </div>
-        {sorted.length === 0 ? (
-          <EmptyState icon="bar_chart" title="No data available" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                  <th className="text-left font-semibold border-r border px-5 py-3">Store</th>
-                  <th className="text-left font-semibold border-r border px-5 py-3">Manager</th>
-                  <th className="text-right font-semibold border-r border px-5 py-3">Monthly Sales</th>
-                  <th className="text-right font-semibold border-r border px-5 py-3">Profit</th>
-                  <th className="text-right font-semibold border-r border px-5 py-3">Outstanding</th>
-                  <th className="text-center font-semibold border-r border px-5 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sorted.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/50 transition-base">
-                    <td className="px-5 py-3.5 font-semibold border-r border-text-slate-800">{s.name}</td>
-                    <td className="px-5 py-3.5 border-r border-text-slate-600">{s.manager}</td>
-                    <td className="px-5 py-3.5 text-right font-semibold border-r border-text-slate-700">{formatCurrency(s.monthlySales)}</td>
-                    <td className="px-5 py-3.5 text-right border-r border-text-slate-600">{formatCurrency(s.totalProfit)}</td>
-                    <td className="px-5 py-3.5 text-right border-r border-text-slate-600">{formatCurrency(s.outstanding)}</td>
-                    <td className="px-5 py-3.5 text-center">
-                      <Badge color={s.status === 'Active' ? 'green' : 'slate'}>{s.status}</Badge>
-                    </td>
+        <div className="flex gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
+          {filterTabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setFilter(tab.key)}
+              className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
+                filter === tab.key
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Summary
+          label="Sales"
+          value={report.sales}
+          detail={`Company ${formatCurrency(report.companySales)} · Market ${formatCurrency(report.marketSales)}`}
+        />
+        <Summary
+          label="Collection"
+          value={report.collection}
+          detail={`Company ${formatCurrency(report.companyCollection)} · Market ${formatCurrency(report.marketCollection)}`}
+        />
+        <Summary
+          label="Outstanding"
+          value={report.outstanding}
+          detail={`Company ${formatCurrency(report.companyOutstanding)} · Market ${formatCurrency(report.marketOutstanding)}`}
+        />
+        <Summary label="Expenses" value={report.expenseTotal} detail="Company expenses" />
+      </div>
+
+      {!hasActivity ? (
+        <Card className="p-8 text-center">
+          <Icon name="bar_chart" size={28} className="mx-auto text-slate-300" />
+          <p className="mt-3 font-semibold text-slate-700">No transactions in this period</p>
+          <p className="mt-1 text-sm text-slate-500">Sales, collection, and expenses are {formatCurrency(0)}.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Card className="p-5">
+            <h2 className="font-bold text-slate-800">Sales and collection</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Company and market amounts in the selected period.
+            </p>
+            <TrendChart buckets={report.buckets} />
+          </Card>
+          <Card className="p-5">
+            <h2 className="font-bold text-slate-800">Sales distribution</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Nature Biotic sales and combined store sales.
+            </p>
+            <Donut
+              parts={[
+                { label: "Company sales", value: report.companySales, color: "#15803d" },
+                { label: "Market sales", value: report.marketSales, color: "#86efac" },
+              ]}
+            />
+          </Card>
+          <Card className="overflow-hidden xl:col-span-2">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
+              <Icon name="storefront" size={22} className="text-brand-600" />
+              <h2 className="font-bold text-slate-800">Store performance</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                    <th className="px-5 py-3 text-left font-semibold">Store</th>
+                    <th className="px-5 py-3 text-right font-semibold">Sales</th>
+                    <th className="px-5 py-3 text-right font-semibold">Collection</th>
+                    <th className="px-5 py-3 text-right font-semibold">Outstanding</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {report.storeRows.map((store) => (
+                    <tr key={store.id}>
+                      <td className="px-5 py-3.5 font-semibold text-slate-800">
+                        {store.name}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">{formatCurrency(store.sales)}</td>
+                      <td className="px-5 py-3.5 text-right">
+                        {formatCurrency(store.collection)}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        {formatCurrency(store.outstanding)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid gap-4 p-5 md:grid-cols-3">
+              <BarList
+                title="Sales by store"
+                rows={report.storeRows.map((store) => ({
+                  label: store.name,
+                  value: store.sales,
+                }))}
+              />
+              <BarList
+                title="Collection by store"
+                rows={report.storeRows.map((store) => ({
+                  label: store.name,
+                  value: store.collection,
+                }))}
+              />
+              <BarList
+                title="Outstanding by store"
+                rows={report.storeRows.map((store) => ({
+                  label: store.name,
+                  value: store.outstanding,
+                }))}
+              />
+            </div>
+          </Card>
+          <Card className="p-5 xl:col-span-2">
+            <h2 className="font-bold text-slate-800">Expenses by category</h2>
+            {report.expenseCategories.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-500">
+                No company expenses in this period. Total {formatCurrency(0)}.
+              </p>
+            ) : (
+              <BarList title="" rows={report.expenseCategories.map((row) => ({
+                label: row.name,
+                value: row.value,
+              }))} />
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Summary({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <Card className="p-5">
+      <p className="text-sm font-medium text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-bold text-slate-800">{formatCurrency(value)}</p>
+      <p className="mt-2 text-xs text-slate-500">{detail}</p>
+    </Card>
+  );
+}
+
+function TrendChart({
+  buckets,
+}: {
+  buckets: { label: string; sales: number; collection: number }[];
+}) {
+  const max = Math.max(
+    1,
+    ...buckets.map((bucket) => Math.max(bucket.sales, bucket.collection)),
+  );
+  const visible = buckets.filter(
+    (bucket, index) =>
+      bucket.sales > 0 ||
+      bucket.collection > 0 ||
+      index === buckets.length - 1 ||
+      buckets.length <= 12,
+  );
+  if (visible.every((bucket) => bucket.sales === 0 && bucket.collection === 0)) {
+    return <p className="mt-6 text-sm text-slate-500">No dated sales or receipts in this period.</p>;
+  }
+  return (
+    <div className="mt-5">
+      <div className="flex h-40 items-end gap-1">
+        {visible.map((bucket) => (
+          <div key={bucket.label} className="flex min-w-0 flex-1 items-end gap-0.5">
+            <div
+              className="w-1/2 rounded-t bg-brand-700"
+              style={{ height: `${(bucket.sales / max) * 100}%` }}
+              title={`Sales ${formatCurrency(bucket.sales)}`}
+            />
+            <div
+              className="w-1/2 rounded-t bg-brand-300"
+              style={{ height: `${(bucket.collection / max) * 100}%` }}
+              title={`Collection ${formatCurrency(bucket.collection)}`}
+            />
           </div>
-        )}
-      </Card>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-4 text-xs text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-brand-700" /> Sales
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-brand-300" /> Collection
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function Donut({
+  parts,
+}: {
+  parts: { label: string; value: number; color: string }[];
+}) {
+  const total = parts.reduce((sum, part) => sum + part.value, 0);
+  if (total <= 0) {
+    return <p className="mt-6 text-sm text-slate-500">No sales in this period.</p>;
+  }
+  let offset = 0;
+  const circles = parts.map((part) => {
+    const fraction = part.value / total;
+    const dash = `${fraction * 100} ${100 - fraction * 100}`;
+    const circle = (
+      <circle
+        key={part.label}
+        cx="20"
+        cy="20"
+        r="14"
+        fill="none"
+        stroke={part.color}
+        strokeWidth="6"
+        strokeDasharray={dash}
+        strokeDashoffset={-offset}
+        pathLength={100}
+      />
+    );
+    offset += fraction * 100;
+    return circle;
+  });
+  return (
+    <div className="mt-5 flex items-center gap-6">
+      <svg viewBox="0 0 40 40" className="h-32 w-32 -rotate-90">
+        {circles}
+      </svg>
+      <div className="space-y-2 text-sm">
+        {parts.map((part) => (
+          <div key={part.label}>
+            <p className="text-slate-500">{part.label}</p>
+            <p className="font-bold text-slate-800">{formatCurrency(part.value)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BarList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { label: string; value: number }[];
+}) {
+  const max = Math.max(1, ...rows.map((row) => row.value));
+  return (
+    <div>
+      {title && <p className="mb-3 text-sm font-semibold text-slate-700">{title}</p>}
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <div className="mb-1 flex justify-between gap-3 text-xs text-slate-500">
+              <span className="truncate">{row.label}</span>
+              <span>{formatCurrency(row.value)}</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100">
+              <div
+                className="h-2 rounded-full bg-brand-600"
+                style={{ width: `${(row.value / max) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

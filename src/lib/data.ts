@@ -25,6 +25,8 @@ export type Store = {
   bankName?: string;
   bankBranch?: string;
   bankUpiId?: string;
+  email?: string;
+  accountId?: string;
 };
 
 export type ProductCategory =
@@ -241,6 +243,7 @@ export type CompanyCreditNoteSyncRecord = {
   purchaseRef: string;
   invoiceNo?: string;
   product: string;
+  productId?: string;
   packSize?: string;
   quantity: number;
   unitPrice?: number;
@@ -347,6 +350,7 @@ export type Staff = {
   targetVisits: number;
   role: string;
   status: "Active" | "On Leave" | "Inactive";
+  accountId?: string;
 };
 
 export const stores: Store[] = [
@@ -935,14 +939,58 @@ export type CompanyStoreSaleRecord = {
 };
 
 const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
+const APPROVED_PO_RECEIPTS_KEY = "nature-biotic-approved-po-receipts-v1";
+
+function isPurchaseOrderReference(value: unknown) {
+  return /^[A-Z0-9]+-PO-\d+$/i.test(String(value || "").trim());
+}
+
+function isPurchaseOrderSale(row: CompanyStoreSaleRecord) {
+  return (
+    String(row?.id || "").startsWith("po-sync-") ||
+    isPurchaseOrderReference(row?.invoiceNo)
+  );
+}
+
+function readApprovedPurchaseOrders(): CompanyStoreSaleRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = localStorage.getItem(APPROVED_PO_RECEIPTS_KEY);
+    const rows = saved ? JSON.parse(saved) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveApprovedPurchaseOrders(rows: CompanyStoreSaleRecord[]) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(APPROVED_PO_RECEIPTS_KEY, JSON.stringify(rows));
+    window.dispatchEvent(new Event("store-purchase-orders-updated"));
+  } catch {}
+}
 
 export function getCompanyStoreSales(): CompanyStoreSaleRecord[] {
   if (typeof window === "undefined") return [];
 
   try {
     const saved = localStorage.getItem(COMPANY_STORE_SALES_KEY);
+    const rows = saved ? JSON.parse(saved) : [];
+    if (!Array.isArray(rows)) return [];
 
-    return saved ? JSON.parse(saved) : [];
+    const purchaseOrders = rows.filter(isPurchaseOrderSale);
+    const sales = rows.filter((row) => !isPurchaseOrderSale(row));
+    if (purchaseOrders.length > 0) {
+      const existing = readApprovedPurchaseOrders();
+      const seen = new Set(existing.map((row) => row.id));
+      saveApprovedPurchaseOrders([
+        ...purchaseOrders.filter((row) => !seen.has(row.id)),
+        ...existing,
+      ]);
+      localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(sales));
+    }
+    return sales;
   } catch {
     return [];
   }
@@ -1034,9 +1082,10 @@ export function syncApprovedPurchaseOrderToSales(
   storeLocation: string,
   placeOfSupply: string,
 ) {
-  const existing = getCompanyStoreSales();
+  getCompanyStoreSales();
+  const existing = readApprovedPurchaseOrders();
 
-  // Avoid duplicate sync if this PO was already converted
+  // A purchase order stays a purchase order. Acceptance must not create a sale.
   const alreadySynced = existing.some((row) => row.invoiceNo === poNo);
   if (alreadySynced) return existing;
 
@@ -1050,7 +1099,7 @@ export function syncApprovedPurchaseOrderToSales(
     const total = Number(item?.total ?? item?.rowTotal ?? withoutTax + sgst + cgst + igst);
     const packSize = String(item?.packSize || item?.pkgsize || "").trim();
     return {
-      id: `po-sync-${poNo}-${i}`,
+      id: `po-receipt-${poNo}-${i}`,
       invoiceNo: poNo,
       date: poDate,
       storeId,
@@ -1082,7 +1131,13 @@ export function syncApprovedPurchaseOrderToSales(
   }).filter((row) => row.product && row.quantity > 0);
 
   const merged = [...newRows, ...existing];
-  saveCompanyStoreSales(merged);
+  saveApprovedPurchaseOrders(merged);
+
+  const sales = getCompanyStoreSales().filter((row) => row.invoiceNo !== poNo);
+  try {
+    localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(sales));
+    window.dispatchEvent(new Event("company-store-sales-updated"));
+  } catch {}
   return merged;
 }
 
@@ -1132,7 +1187,13 @@ export function approveStorePurchaseOrder(requestId: string) {
 }
 
 export function getStorePurchasesFromCompanySales(storeId: string) {
-  return getCompanyStoreSales().filter((sale) => sale.storeId === storeId);
+  const invoices = getCompanyStoreSales().filter(
+    (sale) => sale.storeId === storeId,
+  );
+  const acceptedOrders = readApprovedPurchaseOrders().filter(
+    (order) => order.storeId === storeId,
+  );
+  return [...acceptedOrders, ...invoices];
 }
 
 export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
@@ -1408,6 +1469,74 @@ export const staff: Staff[] = staffNames.map((name, i) => ({
   role: roles[i % roles.length],
   status: i === 3 ? "On Leave" : "Active",
 }));
+
+const STORE_REGISTRY_KEY = "nature-biotic-store-registry-v1";
+const STAFF_REGISTRY_KEY = "nature-biotic-staff-registry-v1";
+
+function readRegistry<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function mergeRegistry<T extends { id: string }>(target: T[], saved: T[]) {
+  saved.forEach((row) => {
+    const index = target.findIndex((item) => item.id === row.id);
+    if (index >= 0) target[index] = { ...target[index], ...row };
+    else target.push(row);
+  });
+}
+
+mergeRegistry(stores, readRegistry<Store>(STORE_REGISTRY_KEY));
+mergeRegistry(staff, readRegistry<Staff>(STAFF_REGISTRY_KEY));
+
+export function getStores() {
+  return stores;
+}
+
+export function getStaffRecords() {
+  return staff;
+}
+
+export function replaceStoreRegistry(next: Store[]) {
+  stores.splice(0, stores.length, ...next);
+  try {
+    localStorage.setItem(STORE_REGISTRY_KEY, JSON.stringify(stores));
+  } catch {}
+}
+
+export function replaceStaffRegistry(next: Staff[]) {
+  staff.splice(0, staff.length, ...next);
+  try {
+    localStorage.setItem(STAFF_REGISTRY_KEY, JSON.stringify(staff));
+  } catch {}
+}
+
+export function attachAccountLink(
+  kind: "store" | "staff",
+  subjectId: string,
+  accountId: string,
+) {
+  if (kind === "store") {
+    const row = stores.find((store) => store.id === subjectId);
+    if (!row || row.accountId === accountId) return;
+    row.accountId = accountId;
+    try {
+      localStorage.setItem(STORE_REGISTRY_KEY, JSON.stringify(stores));
+    } catch {}
+    return;
+  }
+  const row = staff.find((member) => member.id === subjectId);
+  if (!row || row.accountId === accountId) return;
+  row.accountId = accountId;
+  try {
+    localStorage.setItem(STAFF_REGISTRY_KEY, JSON.stringify(staff));
+  } catch {}
+}
 
 export const deliveryChallans: DeliveryChallan[] = [
   {
@@ -2393,7 +2522,7 @@ export function getCompanyAvailableQty(
     )
     .reduce((sum, product) => sum + Math.max(0, Number(product.stock || 0)), 0);
 
-  const sold = getCompanyStoreSales().reduce((sum, sale) => {
+  const soldFromInvoices = getCompanyStoreSales().reduce((sum, sale) => {
     return (
       sum +
       (sameSize({
@@ -2405,6 +2534,22 @@ export function getCompanyAvailableQty(
         : 0)
     );
   }, 0);
+  const soldFromPurchaseOrders = readApprovedPurchaseOrders().reduce(
+    (sum, order) => {
+      return (
+        sum +
+        (sameSize({
+          productId: order.productId,
+          productName: order.product,
+          packSize: order.packSize || order.pkgsize,
+        })
+          ? Math.max(0, Number(order.quantity || 0))
+          : 0)
+      );
+    },
+    0,
+  );
+  const sold = soldFromInvoices + soldFromPurchaseOrders;
 
   const returned = getCompanyCreditNoteSyncRecords().reduce((sum, row) => {
     if (row.status !== "Approved") return sum;

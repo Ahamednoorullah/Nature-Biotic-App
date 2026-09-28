@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   addStoreApprovalRequest,
@@ -49,45 +49,60 @@ type PurchaseOrderRow = {
   notes?: string;
 };
 
-const initialRows: PurchaseOrderRow[] = [
-  {
-    id: "po1",
-    poNo: "SAI-PO-0001",
-    date: "2026-08-18",
-    totalProduct: 20,
-    withoutTax: 5000,
-    sgst: 20,
-    cgst: 20,
-    igst: 0,
-    total: 5040,
-    status: "Pending",
-    items: [],
-  },
-  {
-    id: "po2",
-    poNo: "SAI-PO-0002",
-    date: "2026-08-19",
-    totalProduct: 50,
-    withoutTax: 8000,
-    sgst: 0,
-    cgst: 0,
-    igst: 460,
-    total: 8460,
-    status: "Approved",
-    items: [],
-  },
-];
+const PO_SEQUENCE_KEY = "nature-biotic-purchase-order-sequence-v1";
+
+function isSamplePurchaseOrder(row: PurchaseOrderRow) {
+  return row.id === "po1" || row.id === "po2";
+}
+
+function nextPurchaseOrderNo(storeCode: string, rows: PurchaseOrderRow[]) {
+  const prefix = `${storeCode}-PO-`;
+  let highest = 0;
+  rows.forEach((row) => {
+    const match = String(row.poNo || "")
+      .trim()
+      .match(new RegExp(`^${prefix}(\\d+)$`, "i"));
+    if (match) highest = Math.max(highest, Number(match[1]));
+  });
+  try {
+    const saved = JSON.parse(localStorage.getItem(PO_SEQUENCE_KEY) || "{}");
+    const marked = Number(saved?.[storeCode] || 0);
+    if (marked > highest) highest = marked;
+  } catch {
+    // Numbering still continues from saved purchase orders.
+  }
+  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
+}
+
+function rememberPurchaseOrderNo(storeCode: string, poNo: string) {
+  const match = poNo.match(/-PO-(\d+)$/i);
+  if (!match) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(PO_SEQUENCE_KEY) || "{}");
+    const next = Math.max(Number(saved?.[storeCode] || 0), Number(match[1]));
+    localStorage.setItem(
+      PO_SEQUENCE_KEY,
+      JSON.stringify({ ...saved, [storeCode]: next }),
+    );
+  } catch {
+    // The saved purchase order still keeps its number.
+  }
+}
 
 export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   const storageKey = `naturebiotic:purchase-orders:${storeId}`;
   const [rows, setRows] = useState<PurchaseOrderRow[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? (JSON.parse(saved) as PurchaseOrderRow[]) : initialRows;
+      const parsed = saved ? (JSON.parse(saved) as PurchaseOrderRow[]) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((row) => !isSamplePurchaseOrder(row))
+        : [];
     } catch {
-      return initialRows;
+      return [];
     }
   });
+  const savingRef = useRef(false);
   const [productMaster, setProductMaster] = useState<Product[]>(() =>
     getProductMaster(),
   );
@@ -149,7 +164,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   }, [storeId]);
 
   const selectedProduct = productMaster.find((p) => p.id === product);
-  const price = selectedProduct?.sellingPrice ?? 0;
+  const price = selectedProduct?.purchasePrice ?? 0;
   const currentStore = stores.find((item) => item.id === storeId);
 
   const isTamilNaduStore = useMemo(() => {
@@ -283,8 +298,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
         unit: selectedProduct.unit,
         packSize: selectedProduct.size || packSize,
         quantity: Number(quantity),
-        price: selectedProduct.sellingPrice,
-        sellingPrice: selectedProduct.sellingPrice,
+        price: selectedProduct.purchasePrice,
+        sellingPrice: selectedProduct.purchasePrice,
         taxPercent: selectedProduct.taxPercentage,
         taxType: isTamilNaduStore ? "Intrastate" : "Interstate",
         withoutTax: computed.withoutTax,
@@ -309,11 +324,17 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
 
   function resetForm() {
     setDate("");
-    setPoNo("");
+    setPoNo(nextPurchaseOrderNo(currentStore?.code || "PO", rows));
     setProduct("");
     setPackSize("");
     setQuantity("");
     setAdded([]);
+  }
+
+  function openForm() {
+    savingRef.current = false;
+    resetForm();
+    setShowCreate(true);
   }
 
   function closeForm() {
@@ -322,10 +343,17 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   }
 
   function saveOrder() {
-    if (!canSave) return;
+    if (savingRef.current || !canSave) return;
+    savingRef.current = true;
+    const allocatedNo = nextPurchaseOrderNo(currentStore?.code || "PO", rows);
+    if (rows.some((row) => row.poNo.toLowerCase() === allocatedNo.toLowerCase())) {
+      savingRef.current = false;
+      window.alert("This purchase order number is already saved.");
+      return;
+    }
     const newRow: PurchaseOrderRow = {
-      id: `po-${Date.now()}`,
-      poNo: poNo.trim(),
+      id: `po-${allocatedNo}`,
+      poNo: allocatedNo,
       date,
       totalProduct: totals.totalProduct,
       withoutTax: totals.withoutTax,
@@ -339,6 +367,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
       currentStore?.name || "this store"
     } to Nature Biotic.`,
     };
+    rememberPurchaseOrderNo(currentStore?.code || "PO", allocatedNo);
     setRows((prev) => [newRow, ...prev]);
     const store = stores.find((item) => item.id === storeId);
     addStoreApprovalRequest({
@@ -372,7 +401,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
           </p>
         </div>
 
-        <Button onClick={() => setShowCreate(true)}>
+        <Button onClick={openForm}>
           <Icon name="add" size={18} />
           Create PO
         </Button>
@@ -413,8 +442,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                     <Input
                       label="PO No"
                       value={poNo}
-                      onChange={setPoNo}
-                      placeholder="e.g. SAI-PO-0003"
+                      onChange={() => {}}
+                      readOnly
                       required
                     />
                   </div>

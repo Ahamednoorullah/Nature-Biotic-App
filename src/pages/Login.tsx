@@ -3,20 +3,48 @@ import { useAuth } from "@/context/AuthContext";
 import { Logo } from "@/components/ui";
 
 export default function Login() {
-  const { signIn } = useAuth();
+  const { signIn, completePasswordSetup } = useAuth();
   const [email, setEmail] = useState("admin@naturebiotic.com");
   const [password, setPassword] = useState("demo1234");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [setupMode, setSetupMode] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    const result = await signIn(email, password);
+    if (setupMode) {
+      if (password.trim().length < 6) {
+        setError("Password must be at least 6 characters.");
+        setLoading(false);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Passwords do not match.");
+        setLoading(false);
+        return;
+      }
+      const setup = await completePasswordSetup(email, password, remember);
+      if (setup.error) setError(setup.error);
+      setLoading(false);
+      return;
+    }
+
+    const result = await signIn(email, password, remember);
+
+    if (result.needsPasswordSetup) {
+      setSetupMode(true);
+      setPassword("");
+      setConfirmPassword("");
+      setError("");
+      setLoading(false);
+      return;
+    }
 
     if (result.error) {
       setError(result.error);
@@ -48,8 +76,13 @@ export default function Login() {
 
             <div className="mb-6 text-center">
               <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                Sign In
+                {setupMode ? "Set Password" : "Sign In"}
               </h1>
+              {setupMode && (
+                <p className="mx-auto mt-2 max-w-md text-sm leading-5 text-slate-500">
+                  Create a password for {email}. You will be signed in after it is saved.
+                </p>
+              )}
               {/* <p className="mx-auto mt-2 max-w-md text-sm leading-5 text-slate-500">
                 Welcome back! Please enter your details to access your account.
               </p> */}
@@ -79,7 +112,10 @@ export default function Login() {
                     id="email"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (setupMode) setSetupMode(false);
+                    }}
                     placeholder="admin@naturebiotic.com"
                     required
                     className="h-[60px] w-full rounded-2xl border border-slate-200 bg-white pl-20 pr-5 text-base text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 sm:text-lg"
@@ -134,6 +170,36 @@ export default function Login() {
                 </div>
               </div>
 
+              {setupMode && (
+                <div>
+                  <label
+                    htmlFor="confirm-password"
+                    className="mb-2 block text-sm font-semibold text-slate-800 sm:text-base"
+                  >
+                    Confirm Password
+                  </label>
+                  <div className="group relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex w-16 items-center justify-center rounded-l-2xl bg-emerald-50 text-brand-600">
+                      <span
+                        className="material-symbols-rounded"
+                        style={{ fontSize: 24 }}
+                      >
+                        lock
+                      </span>
+                    </div>
+                    <input
+                      id="confirm-password"
+                      type={showPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter your password"
+                      required
+                      className="h-[60px] w-full rounded-2xl border border-slate-200 bg-white pl-20 pr-5 text-base text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 sm:text-lg"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Remember and forgot */}
               <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
                 <label className="flex cursor-pointer select-none items-center gap-2.5">
@@ -172,7 +238,7 @@ export default function Login() {
                   <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 ) : (
                   <span className="relative flex w-full items-center justify-center">
-                    <span>Sign In </span>
+                    <span>{setupMode ? "Save Password" : "Sign In"} </span>
                     <span
                       className="material-symbols-rounded absolute right-0"
                       style={{ fontSize: 26 }}
