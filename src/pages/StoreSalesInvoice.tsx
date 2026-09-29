@@ -255,9 +255,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         batchNo,
         expiryDate: String(row.expiryDate ?? ""),
         quantity,
-        sellingPrice: Number(
-          row.sellingPrice ?? row.rate ?? row.price ?? master?.sellingPrice ?? 0,
-        ),
+        sellingPrice:
+          Number(master?.sellingPrice ?? 0) > 0
+            ? Number(master?.sellingPrice)
+            : Number(row.sellingPrice ?? row.rate ?? row.price ?? 0),
         taxPercentage: Number(
           row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
         ),
@@ -282,7 +283,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
           batchNo: item.batchNo,
           expiryDate: item.expiryDate,
           quantity: item.currentQty, // ✅ this field DOES exist on FROStockEntry
-          sellingPrice: item.unitValue,
+          sellingPrice:
+            Number(master?.sellingPrice ?? 0) > 0
+              ? Number(master?.sellingPrice)
+              : Number(item.unitValue ?? 0),
           taxPercentage: Number(master?.taxPercentage ?? 0),
         };
       })

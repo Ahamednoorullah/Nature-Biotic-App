@@ -205,9 +205,12 @@ function buildInventoryRows(
       (purchase as any).productId || productMaster?.id || "",
     );
 
-    const unitPrice = Number(
-      purchase.unitPrice ?? purchase.rate ?? purchase.price ?? 0,
-    );
+    const purchaseUnitPrice = Number(
+    purchase.unitPrice ?? purchase.rate ?? purchase.price ?? 0,
+  );
+  const masterSellingPrice = Number(productMaster?.sellingPrice ?? 0);
+  const unitPrice =
+    masterSellingPrice > 0 ? masterSellingPrice : purchaseUnitPrice;
 
     const key = [
       productName.toLowerCase(),
@@ -238,25 +241,34 @@ function buildInventoryRows(
       }
 
       if (unitPrice > 0) {
-        existing.unitPrice =
-          existing.quantity > 0
-            ? Math.round(existing.stockValue / existing.quantity)
-            : unitPrice;
+        existing.unitPrice = unitPrice;
       }
     } else {
+
+      const adjMaster =
+      products.find(
+        (p: any) =>
+          String(p.name || "").trim().toLowerCase() === productName.toLowerCase() &&
+          String(p.size || "").trim().toLowerCase() === packSize.toLowerCase(),
+      ) ||
+      products.find(
+        (p: any) =>
+          String(p.name || "").trim().toLowerCase() === productName.toLowerCase(),
+      );
+    const adjUnitPrice = Number(adjMaster?.sellingPrice ?? 0);
+
       grouped.set(key, {
-        id: `${purchase.id}-${productName}-${packSize}-${batchNo}`,
+        id: String(purchase.id || key),
         productId: resolvedProductId,
-        productType:
-          productTypeByName.get(productName.toLowerCase()) || "Product",
+        productType: productTypeByName.get(productName.toLowerCase()) || "Product",
         productName,
         packSize: packSize || "-",
         batchNo: batchNo || "-",
         expiryDate: expiryDate || "-",
         quantity: purchasedQuantity,
         handQuantity: 0,
-        stockValue: purchasedQuantity * unitPrice,
-        unitPrice,
+        stockValue: purchasedQuantity * adjUnitPrice,
+        unitPrice: adjUnitPrice,
         lowStockLimit: configuredLimit,
         lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
       });
