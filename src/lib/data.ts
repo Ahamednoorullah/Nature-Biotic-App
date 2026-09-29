@@ -1196,6 +1196,25 @@ export function getStorePurchasesFromCompanySales(storeId: string) {
   return [...acceptedOrders, ...invoices];
 }
 
+export const STORE_PURCHASE_STATUS_KEY = "nature-biotic-store-purchase-status-v1";
+export const storePurchaseStatusUpdatedEvent =
+  "nature-biotic-store-purchase-status-updated";
+
+export function getStorePurchaseStatuses(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STORE_PURCHASE_STATUS_KEY);
+    const statuses = raw ? JSON.parse(raw) : {};
+    return statuses && typeof statuses === "object" ? statuses : {};
+  } catch {
+    return {};
+  }
+}
+
+export function isStorePurchaseReceived(invoiceNo: string) {
+  return getStorePurchaseStatuses()[String(invoiceNo || "")] === "Received";
+}
+
 export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
   ...f,
   id: `f${i}`,

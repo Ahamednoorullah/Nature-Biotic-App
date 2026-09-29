@@ -71,37 +71,28 @@ function FROMobileShell({
     } catch {}
   };
 
-  const isSalesActive =
-    active === "sales" ||
-    active === "quotation" ||
-    active === "sales-invoice" ||
-    active === "sales-return" ||
-    active === "credit-notes" ||
-    active === "receipt" ||
-    active === "refund" ||
-    active === "payments" ||
-    active === "delivery-challan" ||
-    active === "return-challan";
+  const isSalesActive = [
+    "sales",
+    "quotation",
+    "sales-invoice",
+    "sales-return",
+    "credit-notes",
+    "receipt",
+    "refund",
+  ].includes(active);
+  const isStockActive = [
+    "stock-management",
+    "delivery-challan",
+    "return-challan",
+  ].includes(active);
 
   const moreItems: { key: StorePage; label: string; icon: string }[] = [
-    {
-      key: "delivery-challan",
-      label: "Delivery Challan",
-      icon: "local_shipping",
-    },
-    {
-      key: "return-challan",
-      label: "Return Challan",
-      icon: "assignment_return",
-    },
-    { key: "quotation", label: "Quotation", icon: "request_quote" },
-    { key: "sales-invoice", label: "Sales Invoice", icon: "receipt_long" },
+    { key: "payments", label: "Payments", icon: "payments" },
+    { key: "reports", label: "Reports", icon: "bar_chart" },
     { key: "sales-return", label: "Sales Return", icon: "assignment_return" },
     { key: "credit-notes", label: "Credit Notes", icon: "request_quote" },
     { key: "receipt", label: "Receipt", icon: "receipt" },
     { key: "refund", label: "Refund", icon: "currency_exchange" },
-    { key: "attendance", label: "Attendance", icon: "badge" },
-    { key: "reports", label: "Reports", icon: "bar_chart" },
   ];
 
   const go = (page: StorePage) => {
@@ -553,7 +544,7 @@ function FROMobileShell({
               onClick={() => go("dashboard")}
             />
             <MobileNavButton
-              active={active === "stock-management"}
+              active={isStockActive}
               icon="inventory_2"
               label="Stock"
               onClick={() => go("stock-management")}
@@ -626,11 +617,6 @@ function FRODesktopNav({
     { key: "attendance", label: "Visits", icon: "event_available" },
     { key: "expenses", label: "Expenses", icon: "receipt_long" },
     { key: "payments", label: "Payments", icon: "payments" },
-    { key: "farmers", label: "Farmers", icon: "groups" },
-    { key: "quotation", label: "Quotation", icon: "request_quote" },
-    { key: "sales-invoice", label: "Sales Invoice", icon: "receipt_long" },
-    { key: "delivery-challan", label: "Delivery Challan", icon: "local_shipping" },
-    { key: "return-challan", label: "Return Challan", icon: "assignment_return" },
     { key: "reports", label: "Reports", icon: "bar_chart" },
   ];
 
@@ -644,7 +630,18 @@ function FRODesktopNav({
           const isActive =
             active === item.key ||
             (item.key === "sales" &&
-              ["quotation", "sales-invoice", "sales-return", "credit-notes", "receipt", "refund"].includes(active));
+              [
+                "quotation",
+                "sales-invoice",
+                "sales-return",
+                "credit-notes",
+                "receipt",
+                "refund",
+              ].includes(active)) ||
+            (item.key === "stock-management" &&
+              ["delivery-challan", "return-challan"].includes(active)) ||
+            (item.key === "attendance" &&
+              ["farmers", "add-farmer", "farmer-profile"].includes(active));
           return (
             <button
               key={item.key}

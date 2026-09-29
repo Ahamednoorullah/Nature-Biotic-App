@@ -4,12 +4,14 @@ import { Card, Icon, EmptyState, Input, Select, Button } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getStorePurchasesFromCompanySales,
+  STORE_PURCHASE_STATUS_KEY,
+  storePurchaseStatusUpdatedEvent,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 
 type PurchaseStatus = "Dispatched" | "Received";
 
-const PURCHASE_STATUS_KEY = "nature-biotic-store-purchase-status-v1";
+const PURCHASE_STATUS_KEY = STORE_PURCHASE_STATUS_KEY;
 
 function getSavedStatuses(): Record<string, PurchaseStatus> {
   try {
@@ -23,6 +25,7 @@ function getSavedStatuses(): Record<string, PurchaseStatus> {
 function saveStatuses(statuses: Record<string, PurchaseStatus>) {
   try {
     localStorage.setItem(PURCHASE_STATUS_KEY, JSON.stringify(statuses));
+    window.dispatchEvent(new Event(storePurchaseStatusUpdatedEvent));
   } catch {}
 }
 
