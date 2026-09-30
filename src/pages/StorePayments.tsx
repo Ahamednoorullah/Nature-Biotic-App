@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
-import { Card, Button, Icon, EmptyState } from '@/components/ui';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { payments as allPayments, type Payment } from '@/lib/purchaseData';
+import { useState, useMemo, useEffect } from 'react';
+import { Card, Button, Icon, EmptyState, Select, Input } from '@/components/ui';
+import { formatCurrency, formatDate, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter } from '@/lib/format';
+import type { Payment } from '@/lib/purchaseData';
 import { createPortal } from 'react-dom';
 
 const vendors = ['Nature Biotic', 'Green Agro Suppliers', 'Sri Lakshmi Traders'];
@@ -13,15 +13,34 @@ const statusColor: Record<string, 'green' | 'amber'> = {
   Pending: 'amber',
 };
 
-export default function StorePayments({ storeId: _storeId }: { storeId: string }) {
+export default function StorePayments({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
   const [viewing, setViewing] = useState<Payment | null>(null);
+  const [records, setRecords] = useState<Payment[]>([]);
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`naturebiotic:purchase-payments:${storeId}`);
+      const saved = raw ? JSON.parse(raw) : [];
+      setRecords(Array.isArray(saved) ? saved : []);
+    } catch {
+      setRecords([]);
+    }
+  }, [storeId]);
+
+  const dated = useMemo(
+    () => records.filter((p) => matchesSimpleDate(p.date, dateFilter, customFrom, customTo)),
+    [records, dateFilter, customFrom, customTo],
+  );
 
   const filtered = useMemo(
     () =>
-      allPayments.filter((p) => {
+      dated.filter((p) => {
         const ms =
           p.paymentNo.toLowerCase().includes(search.toLowerCase()) ||
           p.vendor.toLowerCase().includes(search.toLowerCase()) ||
@@ -30,21 +49,41 @@ export default function StorePayments({ storeId: _storeId }: { storeId: string }
         const mm = methodFilter === 'all' || p.method === methodFilter;
         return ms && mv && mm;
       }),
-    [search, vendorFilter, methodFilter],
+    [dated, search, vendorFilter, methodFilter],
   );
 
-  const totalPayable = allPayments.reduce((s, p) => s + p.amount + p.balance, 0);
-  const paid = allPayments.reduce((s, p) => s + p.amount, 0);
-  const pending = allPayments.reduce((s, p) => s + p.balance, 0);
+  const totalPayable = dated.reduce((s, p) => s + p.amount + p.balance, 0);
+  const paid = dated.reduce((s, p) => s + p.amount, 0);
+  const pending = dated.reduce((s, p) => s + p.balance, 0);
   const today = new Date().toISOString().split('T')[0];
-  const paymentsToday = allPayments.filter((p) => p.date === today).length;
+  const paymentsToday = dated.filter((p) => p.date === today).length;
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Payments</h1>
-          <p className="text-slate-500 mt-1">Purchase payments made to vendors and suppliers.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">Payments</h1>
+          <p className="mt-1 text-slate-500">Purchase payments made to vendors and suppliers.</p>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
+          <div className="w-full sm:w-44">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+              options={simpleDateFilterOptions}
+            />
+          </div>
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full sm:w-40">
+                <Input label="From Date" type="date" value={customFrom} onChange={setCustomFrom} />
+              </div>
+              <div className="w-full sm:w-40">
+                <Input label="To Date" type="date" value={customTo} onChange={setCustomTo} />
+              </div>
+            </>
+          )}
         </div>
       </div>
 

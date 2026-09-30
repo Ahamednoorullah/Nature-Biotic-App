@@ -10,7 +10,7 @@ import {
   type Product,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter } from "@/lib/format";
 
 type AddedProduct = {
   amount: any;
@@ -44,7 +44,7 @@ type PurchaseOrderRow = {
   cgst: number;
   igst: number;
   total: number;
-  status: "Pending" | "Approved";
+  status: "Pending" | "Accepted" | "Approved";
   items: AddedProduct[];
   notes?: string;
 };
@@ -116,6 +116,16 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderRow | null>(
     null,
   );
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const visibleRows = useMemo(
+    () =>
+      rows.filter((row) =>
+        matchesSimpleDate(row.date, dateFilter, customFrom, customTo),
+      ),
+    [rows, dateFilter, customFrom, customTo],
+  );
 
   useEffect(() => {
     const syncProductMaster = () => {
@@ -149,8 +159,8 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
             storeId,
             row.poNo,
           );
-          return request?.status === "Approved"
-            ? { ...row, status: "Approved" }
+          return request?.status === "Approved" || row.status === "Approved"
+            ? { ...row, status: "Accepted" }
             : row;
         }),
       );
@@ -401,10 +411,40 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
           </p>
         </div>
 
-        <Button onClick={openForm}>
-          <Icon name="add" size={18} />
-          Create PO
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
+          <div className="w-full sm:w-44">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+              options={simpleDateFilterOptions}
+            />
+          </div>
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full sm:w-40">
+                <Input
+                  label="From Date"
+                  type="date"
+                  value={customFrom}
+                  onChange={setCustomFrom}
+                />
+              </div>
+              <div className="w-full sm:w-40">
+                <Input
+                  label="To Date"
+                  type="date"
+                  value={customTo}
+                  onChange={setCustomTo}
+                />
+              </div>
+            </>
+          )}
+          <Button onClick={openForm}>
+            <Icon name="add" size={18} />
+            Create PO
+          </Button>
+        </div>
       </div>
 
       {showCreate &&
@@ -750,7 +790,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {visibleRows.map((row, index) => (
               <tr
                 key={row.id}
                 onClick={() => setSelectedOrder(row)}
@@ -802,7 +842,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                 </td>
                 <td className="px-2 py-3 text-center">
                   <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === "Approved" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === "Accepted" || row.status === "Approved" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
                   >
                     {row.status}
                   </span>
@@ -917,6 +957,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                   </h2>
                   <span
                     className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
+                      selectedOrder.status === "Accepted" ||
                       selectedOrder.status === "Approved"
                         ? "bg-emerald-50 text-emerald-700"
                         : "bg-amber-50 text-amber-700"

@@ -186,9 +186,6 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
     });
   }, [invoices, search, dateFilter, customFrom, customTo]);
 
-  const totalValue = invoices.reduce((s: any, r: any) => s + r.total, 0);
-  const totalQty = invoices.reduce((s: any, r: any) => s + r.quantity, 0);
-
   const selectedInvoice = invoices.find(
     (invoice: any) => invoice.invoiceNo === selectedInvoiceNo,
   );
@@ -301,24 +298,6 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
           Nature Biotic company creates a sale for this store → it automatically
           appears here as a purchase.
         </p>
-      </div>
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <Summary
-          label="Purchase Bills"
-          value={String(invoices.length)}
-          icon="receipt_long"
-        />
-        <Summary
-          label="Purchased Quantity"
-          value={String(totalQty)}
-          icon="inventory_2"
-        />
-        <Summary
-          label="Purchase Value"
-          value={formatCurrency(totalValue)}
-          icon="payments"
-        />
       </div>
 
       <Card className="mb-5 p-4">
@@ -1296,9 +1275,7 @@ function Summary({
 }) {
   const content = (
     <div className="flex items-center justify-between gap-3">
-      <span className={icon ? "text-sm text-slate-500" : "text-slate-500"}>
-        {label}
-      </span>
+      <span className="text-slate-500">{label}</span>
       <span
         className={
           muted
@@ -1315,10 +1292,7 @@ function Summary({
     </div>
   );
 
-  if (!icon) {
-    // Round Off / Grand Total → no card border, just plain row
-    return content;
-  }
-
+  if (!icon) return content;
   return <Card className="p-4">{content}</Card>;
 }
+

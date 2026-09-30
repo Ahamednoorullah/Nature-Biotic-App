@@ -368,7 +368,7 @@ export default function CompanyPurchaseOrders() {
               placeholder="All Status"
               options={[
                 { value: "Pending", label: "Pending" },
-                { value: "Approved", label: "Approved" },
+                { value: "Approved", label: "Accepted" },
                 { value: "Rejected", label: "Rejected" },
               ]}
             />
@@ -512,7 +512,7 @@ export default function CompanyPurchaseOrders() {
                             : "bg-red-50 text-red-700"
                         }`}
                       >
-                        {row.status}
+                        {row.status === "Approved" ? "Accepted" : row.status}
                       </span>
                     )}
                   </td>
@@ -547,7 +547,7 @@ export default function CompanyPurchaseOrders() {
                             : "bg-amber-50 text-amber-700"
                       }`}
                     >
-                      {selected.status}
+                      {selected.status === "Approved" ? "Accepted" : selected.status}
                     </span>
                   </div>
                 </div>
@@ -671,7 +671,9 @@ export default function CompanyPurchaseOrders() {
               
                                     <span className="text-slate-500">Status</span>
                                     <span className="font-semibold text-slate-800">
-                                      {selected.status}
+                                      {selected.status === "Approved"
+                                        ? "Accepted"
+                                        : selected.status}
                                     </span>
                                   </div>
                                 </div>

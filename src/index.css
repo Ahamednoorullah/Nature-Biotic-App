@@ -204,6 +204,43 @@ body {
   animation: shimmer 1.6s infinite linear;
 }
 
+/* Store theme. Scoped to the store shell so company and FRO screens stay unchanged. */
+.nb-store-dark {
+  background: #020617;
+  color: #e2e8f0;
+}
+.nb-store-dark .bg-white,
+.nb-store-dark .bg-white\/80,
+.nb-store-dark .bg-white\/95 {
+  background-color: #0f172a;
+}
+.nb-store-dark .bg-slate-50,
+.nb-store-dark .bg-slate-50\/60,
+.nb-store-dark .bg-slate-50\/50 {
+  background-color: #020617;
+}
+.nb-store-dark .bg-slate-100 {
+  background-color: #1e293b;
+}
+.nb-store-dark .text-slate-800,
+.nb-store-dark .text-slate-700 {
+  color: #f8fafc;
+}
+.nb-store-dark .text-slate-600,
+.nb-store-dark .text-slate-500,
+.nb-store-dark .text-slate-400 {
+  color: #cbd5e1;
+}
+.nb-store-dark .border-slate-100,
+.nb-store-dark .border-slate-200,
+.nb-store-dark .border-slate-300 {
+  border-color: #334155;
+}
+.nb-store-dark .hover\:bg-slate-50:hover,
+.nb-store-dark .hover\:bg-slate-100:hover {
+  background-color: #1e293b;
+}
+
 /* Transitions */
 .transition-base {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);

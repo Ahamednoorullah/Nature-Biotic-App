@@ -134,22 +134,7 @@ export const debitNotes: DebitNote[] = Array.from({ length: 9 }, (_, i) => {
   };
 });
 
-export const payments: Payment[] = Array.from({ length: 12 }, (_, i) => {
-  const methods: PaymentMethod[] = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
-  const amount = 2000 + (i % 7) * 1500;
-  const balance = i % 2 === 0 ? 0 : 1500 + (i % 4) * 800;
-  return {
-    id: `pay${i}`,
-    paymentNo: `PAY-${String(301 + i)}`,
-    date: dateAgo(i),
-    vendor: vendors[i % vendors.length],
-    invoiceRef: `INV-${String(5001 + (i % purchases.length))}`,
-    method: methods[i % methods.length],
-    amount,
-    balance,
-    status: balance === 0 ? 'Paid' : 'Pending',
-  };
-});
+export const payments: Payment[] = [];
 
 export const expenses: Expense[] = Array.from({ length: 13 }, (_, i) => {
   const categories: ExpenseCategory[] = ['Transport', 'Electricity', 'Salary', 'Office Expense', 'Maintenance', 'Miscellaneous'];

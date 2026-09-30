@@ -79,17 +79,6 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [throughType, setThroughType] = useState<"Direct" | "Executive">(
-    "Direct",
-  );
-  const [executiveName, setExecutiveName] = useState("");
-
-  useEffect(() => {
-    if (isFRO) {
-      setThroughType("Executive");
-      setExecutiveName(user?.name ?? "");
-    }
-  }, [isFRO, user?.name]);
 
   function handleProfileUpload(file?: File) {
     if (!file) return;
@@ -292,13 +281,10 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
         landSize: Number(crop.landSize || 0),
       })),
       profileImage,
-      through: isFRO ? "Executive" : throughType,
-      executiveName: (isFRO
-        ? user?.name
-        : throughType === "Executive"
-          ? executiveName
-          : ""
-      ).trim(),
+      through: isFRO ? "Executive" : "Direct",
+      executiveName: isFRO ? (user?.name || "").trim() : "",
+      createdByStaffId: isFRO ? user?.staffId || user?.id : undefined,
+      createdByUserId: isFRO ? user?.id : undefined,
       cropType3: undefined,
       cropType2: undefined,
     } as any);
@@ -327,8 +313,6 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
       setFarms([]);
       setFarmLandSize("");
       setProfileImage("");
-      setThroughType(isFRO ? "Executive" : "Direct");
-      setExecutiveName(isFRO ? (user?.name ?? "") : "");
     }, 700);
   }
 
@@ -489,37 +473,13 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               icon="receipt_long"
             />
 
-            <Select
-              label="Through"
-              value={throughType}
-              onChange={(v) => {
-                if (isFRO) return;
-                setThroughType(v as "Direct" | "Executive");
-                if (v === "Direct") setExecutiveName("");
-              }}
-              options={[
-                { value: "Direct", label: "Direct" },
-                { value: "Executive", label: "Executive" },
-              ]}
-            />
-
-            {throughType === "Executive" && (
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  Executive Name<span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={isFRO ? (user?.name ?? "") : executiveName}
-                  onChange={
-                    isFRO ? undefined : (e) => setExecutiveName(e.target.value)
-                  }
-                  placeholder="Enter executive name"
-                  autoComplete="off"
-                  readOnly={isFRO}
-                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus ${isFRO ? "bg-slate-100 cursor-not-allowed" : "bg-white"}`}
-                />
-              </div>
+            {isFRO && (
+              <Input
+                label="Created By"
+                value={user?.name || ""}
+                onChange={() => {}}
+                readOnly
+              />
             )}
 
           </div>

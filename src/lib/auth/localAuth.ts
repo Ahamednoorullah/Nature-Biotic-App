@@ -358,3 +358,31 @@ export const localAuth: AuthAdapter = {
 export function getAuthAdapter(): AuthAdapter {
   return localAuth;
 }
+
+export async function changeAccountPassword(
+  accountId: string,
+  currentPassword: string,
+  nextPassword: string,
+) {
+  await ensureReady();
+  const account = readAccounts().find(
+    (row) => row.id === accountId && row.status === "active",
+  );
+  if (!account) return { error: "Account not found." };
+  const credential = readCredentials().find((row) => row.accountId === account.id);
+  if (
+    !credential ||
+    !(await verifyPassword(currentPassword, credential.salt, credential.hash))
+  ) {
+    return { error: "Current password is incorrect." };
+  }
+  if (nextPassword.trim().length < 6) {
+    return { error: "Password must be at least 6 characters." };
+  }
+  const hashed = await hashPassword(nextPassword);
+  writeCredentials([
+    ...readCredentials().filter((row) => row.accountId !== account.id),
+    { accountId: account.id, ...hashed },
+  ]);
+  return { error: null };
+}
