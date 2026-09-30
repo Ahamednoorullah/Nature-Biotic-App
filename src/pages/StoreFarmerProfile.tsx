@@ -96,25 +96,15 @@ export default function StoreFarmerProfile({
   const farmerNameKey = String(farmer.name || "")
     .trim()
     .toLowerCase();
-  const farmerPhoneKey = String(farmer.phone || "").replace(/\D/g, "");
 
   const liveInvoices = readStoreRows<any>(
     "nature-biotic-store-sales-invoices-v2",
-  ).filter((invoice: any) => {
-    const idMatch =
-      String(invoice.farmerId || "").trim() === String(farmerId).trim();
-
-    const nameMatch =
-      String(invoice.partyName || "")
-        .trim()
-        .toLowerCase() === farmerNameKey;
-
-    const phoneMatch =
-      farmerPhoneKey &&
-      String(invoice.farmerPhone || "").replace(/\D/g, "") === farmerPhoneKey;
-
-    return idMatch || nameMatch || phoneMatch;
-  });
+  ).filter(
+    (invoice: any) =>
+      String(invoice.farmerId || "").trim() === String(farmerId).trim() &&
+      invoice.id !== "store-sale-1" &&
+      String(invoice.invoiceNo || "").trim().toLowerCase() !== "nb-inv-2001",
+  );
 
   const liveReceipts = readStoreRows<any>(
     "nature-biotic-store-receipts-v3",
@@ -130,12 +120,7 @@ export default function StoreFarmerProfile({
     return idMatch || nameMatch;
   });
 
-  const oldPurchases = getPurchasesByFarmer(farmerId);
-
-  // Convert live invoice rows into the same purchase shape the existing UI expects.
-  const purchases =
-    liveInvoices.length > 0
-      ? liveInvoices.flatMap((invoice: any) => {
+  const purchases = liveInvoices.flatMap((invoice: any) => {
           const products = Array.isArray(invoice.products)
             ? invoice.products
             : [];
@@ -185,12 +170,37 @@ export default function StoreFarmerProfile({
               ? "Paid"
               : "Pending",
           }));
-        })
-      : oldPurchases;
+        });
 
-  // Existing Invoice tab expects the same purchase-row format, so keep the old UI
-  // untouched and feed it the real invoice-derived rows.
-  const invoices = purchases;
+  const invoices = liveInvoices.map((invoice: any) => {
+    const products = Array.isArray(invoice.products) ? invoice.products : [];
+    const productLabel = products.length
+      ? products
+          .map((item: any) =>
+            String(
+              item.product?.name || item.productName || item.product || "Product",
+            ),
+          )
+          .join(", ")
+      : "—";
+    const quantity = products.reduce(
+      (sum: number, item: any) => sum + Number(item.quantity ?? item.qty ?? 0),
+      0,
+    );
+    const paid = liveReceipts.some(
+      (receipt: any) =>
+        String(receipt.invoiceNo || "") === String(invoice.invoiceNo || ""),
+    );
+    return {
+      id: String(invoice.id || invoice.invoiceNo),
+      invoiceNo: String(invoice.invoiceNo || ""),
+      date: String(invoice.date || ""),
+      product: productLabel,
+      quantity,
+      amount: Number(invoice.amount || 0),
+      paymentStatus: paid ? "Paid" : "Pending",
+    };
+  });
 
   // Existing Payment Receipt tab keeps its old table UI and receives live receipts.
   const payments: ReturnType<typeof getPaymentsByFarmer> = liveReceipts.map(
@@ -316,7 +326,18 @@ export default function StoreFarmerProfile({
           />
         )}
         {tab === "purchases" && <PurchasesTab purchases={purchases} />}
-        {tab === "invoices" && <InvoicesTab invoices={invoices} />}
+        {tab === "invoices" && (
+          <InvoicesTab
+            invoices={invoices}
+            onOpen={(invoiceNo) => {
+              sessionStorage.setItem(
+                "nature-biotic-open-store-invoice",
+                JSON.stringify({ storeId: farmer.storeId, invoiceNo }),
+              );
+              goStorePage("sales-invoice");
+            }}
+          />
+        )}
         {tab === "product-history" && (
           <ProductHistoryTab purchases={purchases} isFro={isFro} />
         )}
@@ -383,6 +404,14 @@ function OverviewTab({
       value: `${totalLand || 0} acres`,
     },
     { icon: "grass", label: "Crops", value: cropNames },
+    {
+      icon: "account_circle",
+      label: farmer.through === "Executive" ? "Created By" : "Created Through",
+      value:
+        farmer.through === "Executive"
+          ? `${farmer.executiveName || "FRO"} · FRO`
+          : "Direct",
+    },
     {
       icon: "calendar_month",
       label: "Customer Since",
@@ -545,64 +574,98 @@ function PurchasesTab({
 
 function InvoicesTab({
   invoices,
+  onOpen,
 }: {
-  invoices: ReturnType<typeof getPurchasesByFarmer>;
+  invoices: {
+    id: string;
+    invoiceNo: string;
+    date: string;
+    product: string;
+    quantity: number;
+    amount: number;
+    paymentStatus: string;
+  }[];
+  onOpen: (invoiceNo: string) => void;
 }) {
   if (invoices.length === 0) {
     return (
       <Card className="p-0">
         <EmptyState
           icon="receipt_long"
-          title="No invoices"
-          description="No invoices have been generated for this farmer."
+          title="No invoices found."
+          description="No invoices found."
         />
       </Card>
     );
   }
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {invoices.map((inv) => (
-        <Card key={inv.id} className="p-5" hover>
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Invoice</p>
-              <p className="font-bold text-brand-600">{inv.invoiceNo}</p>
-            </div>
-            <Badge color={inv.paymentStatus === "Paid" ? "green" : "amber"}>
-              <span
-                className="w-1.5 h-1.5 rounded-full"
-                style={{ background: "currentColor" }}
-              />
-              {inv.paymentStatus}
-            </Badge>
-          </div>
-          <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Date</span>
-              <span className="text-slate-600 font-medium">
-                {formatDate(inv.date)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Product</span>
-              <span className="text-slate-700 font-semibold">
-                {inv.product}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Quantity</span>
-              <span className="text-slate-600 font-medium">{inv.quantity}</span>
-            </div>
-            <div className="flex justify-between pt-1.5 border-t border-slate-100">
-              <span className="text-slate-400">Amount</span>
-              <span className="font-bold text-slate-800">
-                {formatCurrency(inv.amount)}
-              </span>
-            </div>
-          </div>
-        </Card>
-      ))}
-    </div>
+    <Card className="overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[760px]">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+              <th className="text-left font-semibold px-5 py-3.5">S.No</th>
+              <th className="text-left font-semibold px-5 py-3.5">Invoice No</th>
+              <th className="text-left font-semibold px-5 py-3.5">Date</th>
+              <th className="text-left font-semibold px-5 py-3.5">Product</th>
+              <th className="text-right font-semibold px-5 py-3.5">Quantity</th>
+              <th className="text-right font-semibold px-5 py-3.5">Amount</th>
+              <th className="text-center font-semibold px-5 py-3.5">
+                Payment Status
+              </th>
+              <th className="text-center font-semibold px-5 py-3.5">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {invoices.map((inv, index) => (
+              <tr
+                key={inv.id}
+                onClick={() => onOpen(inv.invoiceNo)}
+                className="cursor-pointer hover:bg-slate-50/50 transition-base"
+              >
+                <td className="px-5 py-3.5 text-slate-500">{index + 1}</td>
+                <td className="px-5 py-3.5 font-semibold text-brand-600">
+                  {inv.invoiceNo}
+                </td>
+                <td className="px-5 py-3.5 text-slate-600">
+                  {formatDate(inv.date)}
+                </td>
+                <td className="px-5 py-3.5 font-semibold text-slate-700">
+                  {inv.product}
+                </td>
+                <td className="px-5 py-3.5 text-right text-slate-600">
+                  {inv.quantity}
+                </td>
+                <td className="px-5 py-3.5 text-right font-bold text-slate-800">
+                  {formatCurrency(inv.amount)}
+                </td>
+                <td className="px-5 py-3.5 text-center">
+                  <Badge color={inv.paymentStatus === "Paid" ? "green" : "amber"}>
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: "currentColor" }}
+                    />
+                    {inv.paymentStatus}
+                  </Badge>
+                </td>
+                <td className="px-5 py-3.5 text-center">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpen(inv.invoiceNo);
+                    }}
+                    className="font-semibold text-brand-600 hover:text-brand-700"
+                  >
+                    View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 

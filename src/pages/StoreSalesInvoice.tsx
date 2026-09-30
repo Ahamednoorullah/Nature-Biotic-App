@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
+import {
+  formatCurrency,
+  matchesSimpleDate,
+  simpleDateFilterOptions,
+  type SimpleDateFilter,
+} from "@/lib/format";
 import {
   products as allProducts,
   getStore,
@@ -9,6 +14,8 @@ import {
   getFROStockByExecutive,
   getStoreAvailableQty,
   reduceFROStock,
+  nextStoreDocumentNo,
+  rememberStoreDocumentNo,
   type Product,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
@@ -31,6 +38,7 @@ type SaleRow = {
   farmerAcre?: string;
   placeOfSupply?: string;
   executiveName?: string;
+  createdByStaffId?: string;
   withoutTax: number;
   sgst: number;
   cgst: number;
@@ -72,22 +80,12 @@ type AddedRow = {
 
 const STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
-const initialRows: SaleRow[] = [
-  {
-    id: "store-sale-1",
-    date: "17/08/26",
-    invoiceNo: "nb-inv-2001",
-    through: "Direct",
-    partyName: "Murugan",
-    withoutTax: 2232,
-    sgst: 133.92,
-    cgst: 133.92,
-    igst: 0,
-    amount: 2499.84,
-    products: [],
-    notes: "",
-  },
-];
+function isSampleSale(row: { id?: string; invoiceNo?: string }) {
+  return (
+    row.id === "store-sale-1" ||
+    String(row.invoiceNo || "").trim().toLowerCase() === "nb-inv-2001"
+  );
+}
 
 function emptyEntry(): EntryForm {
   return {
@@ -140,19 +138,51 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [rows, setRows] = useState<SaleRow[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? JSON.parse(saved) : initialRows;
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed.filter((row) => !isSampleSale(row)) : [];
     } catch {
-      return initialRows;
+      return [];
     }
   });
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRow | null>(null);
+  const openedInvoice = useRef(false);
   useEffect(() => {
     if (selectedSale) {
       setInvoiceNotes(selectedSale.notes || "");
     }
   }, [selectedSale]);
+
+  useEffect(() => {
+    const cleaned = rows.filter((row) => !isSampleSale(row));
+    if (cleaned.length === rows.length) return;
+    setRows(cleaned);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(cleaned));
+    } catch {
+      // The list still hides the sample invoice.
+    }
+  }, [rows, storageKey]);
+
+  useEffect(() => {
+    if (openedInvoice.current) return;
+    const raw = sessionStorage.getItem("nature-biotic-open-store-invoice");
+    if (!raw) return;
+    sessionStorage.removeItem("nature-biotic-open-store-invoice");
+    openedInvoice.current = true;
+    try {
+      const target = JSON.parse(raw) as { storeId?: string; invoiceNo?: string };
+      if (target.storeId !== storeId || !target.invoiceNo) return;
+      const match = rows.find((row) => row.invoiceNo === target.invoiceNo);
+      if (match) setSelectedSale(match);
+    } catch {
+      // Ignore a stale invoice request.
+    }
+  }, [rows, storeId]);
 
   useEffect(() => {
     if (isFRO) {
@@ -216,11 +246,31 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const visibleRows = useMemo(() => {
     if (!isFRO) return rows;
 
+    const staffKey = String(user?.staffId || user?.id || "");
     const normalizedFroName = froName.toLowerCase();
-    return rows.filter(
-      (row) => row.executiveName?.trim().toLowerCase() === normalizedFroName,
+    return rows.filter((row) => {
+      if (row.createdByStaffId && staffKey) {
+        return String(row.createdByStaffId) === staffKey;
+      }
+      return row.executiveName?.trim().toLowerCase() === normalizedFroName;
+    });
+  }, [rows, isFRO, froName, user?.staffId, user?.id]);
+
+  const listedRows = useMemo(
+    () =>
+      visibleRows.filter((row) =>
+        matchesSimpleDate(row.date, dateFilter, customFrom, customTo),
+      ),
+    [visibleRows, dateFilter, customFrom, customTo],
+  );
+
+  function nextInvoiceNo(current = rows) {
+    return nextStoreDocumentNo(
+      store?.code || "ST",
+      "INV",
+      current.map((row) => row.invoiceNo),
     );
-  }, [rows, isFRO, froName]);
+  }
    const storePurchaseRows = useMemo(
     () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
     [storeId, stockVersion],
@@ -462,7 +512,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
   function resetForm() {
     setSaleDate(new Date().toISOString().split("T")[0]);
-    setInvoiceNo("");
+    setInvoiceNo(nextInvoiceNo());
     setThrough(isFRO ? "Executive" : "Direct");
     setPartyName("");
     setFarmerId("");
@@ -498,11 +548,13 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
     savingSale.current = true;
     try {
+    const saleThrough: SaleType = isFRO ? "Executive" : "Direct";
+    const allocatedNo = nextInvoiceNo();
     const row: SaleRow = {
       id: `store-sale-${Date.now()}`,
       date: formatDateInput(saleDate),
-      invoiceNo: invoiceNo.trim(),
-      through,
+      invoiceNo: allocatedNo,
+      through: saleThrough,
       partyName: partyName.trim(),
       farmerId,
       farmerPhone,
@@ -510,8 +562,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       farmerCrop,
       farmerAcre,
       placeOfSupply,
-      executiveName:
-        through === "Executive" ? (isFRO ? froName : executiveName.trim()) : "",
+      createdByStaffId: isFRO ? user?.staffId || user?.id : undefined,
+      executiveName: saleThrough === "Executive" ? froName : "",
       withoutTax: totals.withoutTax,
       sgst: totals.sgst,
       cgst: totals.cgst,
@@ -523,6 +575,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
     const next = [row, ...rows];
     setRows(next);
+    rememberStoreDocumentNo(store?.code || "ST", "INV", allocatedNo);
 
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
@@ -573,15 +626,45 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
             </p>
           </div>
 
-          <Button
-            onClick={() => {
-              resetForm();
-              setShowCreate(true);
-            }}
-          >
-            <Icon name="add" size={18} />
-            Create Sale
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+            <div className="w-full sm:w-44">
+              <Select
+                label="Date Filter"
+                value={dateFilter}
+                onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+                options={simpleDateFilterOptions}
+              />
+            </div>
+            {dateFilter === "custom" && (
+              <>
+                <div className="w-full sm:w-40">
+                  <Input
+                    label="From Date"
+                    type="date"
+                    value={customFrom}
+                    onChange={setCustomFrom}
+                  />
+                </div>
+                <div className="w-full sm:w-40">
+                  <Input
+                    label="To Date"
+                    type="date"
+                    value={customTo}
+                    onChange={setCustomTo}
+                  />
+                </div>
+              </>
+            )}
+            <Button
+              onClick={() => {
+                resetForm();
+                setShowCreate(true);
+              }}
+            >
+              <Icon name="add" size={18} />
+              Create Sale
+            </Button>
+          </div>
         </div>
       ) : !showCreate && !selectedSale ? (
         <div className="mb-4 flex items-center justify-between">
@@ -754,7 +837,16 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
               </thead>
 
               <tbody>
-                {visibleRows.map((r, i) => (
+                {listedRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={12}
+                      className="px-4 py-10 text-center text-sm text-slate-400"
+                    >
+                      No sales invoices found.
+                    </td>
+                  </tr>
+                ) : listedRows.map((r, i) => (
                   <tr
                     key={r.id}
                     onClick={() => setSelectedSale(r)}
@@ -810,13 +902,13 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
           </div>
 
           <div className="block md:hidden">
-            {visibleRows.length === 0 ? (
+            {listedRows.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-slate-400">
                 No sales invoices found.
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {visibleRows.map((r, i) => (
+                {listedRows.map((r, i) => (
                   <button
                     key={r.id}
                     type="button"
@@ -2159,24 +2251,17 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     <Input
                       label="Invoice Number"
                       value={invoiceNo}
-                      onChange={setInvoiceNo}
-                      placeholder="e.g. SAI-INV-0001"
+                      onChange={() => {}}
+                      readOnly
                       required
                     />
 
                     {!isFRO && (
-                      <Select
+                      <Input
                         label="Sale Type"
-                        value={through}
-                        onChange={(value) => {
-                          setThrough(value as SaleType);
-                          setEntry(emptyEntry());
-                          setAdded([]);
-                        }}
-                        options={[
-                          { value: "Direct", label: "Direct" },
-                          { value: "Executive", label: "Executive" },
-                        ]}
+                        value="Direct"
+                        onChange={() => {}}
+                        readOnly
                       />
                     )}
 
@@ -2651,24 +2736,17 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       <Input
                         label="Invoice Number"
                         value={invoiceNo}
-                        onChange={setInvoiceNo}
-                        placeholder="e.g. SAI-INV-0001"
+                        onChange={() => {}}
+                        readOnly
                         required
                       />
 
                       {!isFRO && (
-                        <Select
+                        <Input
                           label="Sale Type"
-                          value={through}
-                          onChange={(value) => {
-                            setThrough(value as SaleType);
-                            setEntry(emptyEntry());
-                            setAdded([]);
-                          }}
-                          options={[
-                            { value: "Direct", label: "Direct" },
-                            { value: "Executive", label: "Executive" },
-                          ]}
+                          value="Direct"
+                          onChange={() => {}}
+                          readOnly
                         />
                       )}
 

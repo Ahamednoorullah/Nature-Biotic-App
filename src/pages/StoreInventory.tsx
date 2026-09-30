@@ -327,6 +327,21 @@ export function buildInventoryRows(
   return Array.from(productMap.values());
 }
 
+export function getStoreOverviewStockValue(storeId: string) {
+  return buildInventoryRows(
+    storeId,
+    getStorePurchasesFromCompanySales(storeId),
+  ).reduce(
+    (sum, product) =>
+      sum +
+      product.packSizes.reduce(
+        (packSum, pack) => packSum + Number(pack.stockValue || 0),
+        0,
+      ),
+    0,
+  );
+}
+
 type WarningPopupType =
   | "low-stock"
   | "expiry"

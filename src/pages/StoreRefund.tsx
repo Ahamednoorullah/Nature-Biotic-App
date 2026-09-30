@@ -1,8 +1,19 @@
 import { ReactNode, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
-import { getFarmersByStore, getStore } from "@/lib/data";
+import {
+  formatCurrency,
+  formatDate,
+  matchesSimpleDate,
+  simpleDateFilterOptions,
+  type SimpleDateFilter,
+} from "@/lib/format";
+import {
+  getFarmersByStore,
+  getStore,
+  nextStoreDocumentNo,
+  rememberStoreDocumentNo,
+} from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 
@@ -187,23 +198,38 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     );
   }, [rows, isFRO, user?.name]);
 
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-
-    if (!q) return scopedRows;
-
-    return scopedRows.filter(
-      (row) =>
-        row.refundNo.toLowerCase().includes(q) ||
-        row.farmerName.toLowerCase().includes(q) ||
-        row.referenceNo.toLowerCase().includes(q) ||
-        row.reason.toLowerCase().includes(q),
+    const searched = !q
+      ? scopedRows
+      : scopedRows.filter(
+          (row) =>
+            row.refundNo.toLowerCase().includes(q) ||
+            row.farmerName.toLowerCase().includes(q) ||
+            row.referenceNo.toLowerCase().includes(q) ||
+            row.reason.toLowerCase().includes(q),
+        );
+    if (isFRO) return searched;
+    return searched.filter((row) =>
+      matchesSimpleDate(row.date, dateFilter, customFrom, customTo),
     );
-  }, [scopedRows, search]);
+  }, [scopedRows, search, isFRO, dateFilter, customFrom, customTo]);
+
+  function nextRefundNo(current = rows) {
+    return nextStoreDocumentNo(
+      getStore(storeId)?.code || "ST",
+      "REF",
+      current.map((row) => row.refundNo),
+    );
+  }
 
   function resetForm() {
     setDate(new Date().toISOString().split("T")[0]);
-    setRefundNo("");
+    setRefundNo(nextRefundNo());
     setReferenceNo("");
     setInvoiceAmount(0);
     setReason("");
@@ -228,10 +254,11 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   function createRefund() {
     if (!canCreate || !selectedInvoice) return;
 
+    const allocatedNo = nextRefundNo();
     const row: RefundRow = {
       id: `refund-${Date.now()}`,
       date,
-      refundNo: refundNo.trim(),
+      refundNo: allocatedNo,
       farmerId: selectedInvoice.farmerId || "",
       farmerName: selectedInvoice.partyName || "Farmer",
       phone: selectedInvoice.farmerPhone || selectedFarmer?.phone || "",
@@ -251,6 +278,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     };
 
     saveRows([row, ...rows]);
+    rememberStoreDocumentNo(getStore(storeId)?.code || "ST", "REF", allocatedNo);
     closeForm();
   }
 
@@ -290,7 +318,10 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
           {isFRO ? (
             <button
               type="button"
-              onClick={() => setShowCreate(true)}
+              onClick={() => {
+                resetForm();
+                setShowCreate(true);
+              }}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm hover:bg-brand-800"
               aria-label="Create Refund"
               title="Create Refund"
@@ -298,10 +329,45 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
               <Icon name="add" size={21} />
             </button>
           ) : (
-            <Button onClick={() => setShowCreate(true)}>
-              <Icon name="add" size={18} />
-              Create Refund
-            </Button>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+              <div className="w-full sm:w-44">
+                <Select
+                  label="Date Filter"
+                  value={dateFilter}
+                  onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+                  options={simpleDateFilterOptions}
+                />
+              </div>
+              {dateFilter === "custom" && (
+                <>
+                  <div className="w-full sm:w-40">
+                    <Input
+                      label="From Date"
+                      type="date"
+                      value={customFrom}
+                      onChange={setCustomFrom}
+                    />
+                  </div>
+                  <div className="w-full sm:w-40">
+                    <Input
+                      label="To Date"
+                      type="date"
+                      value={customTo}
+                      onChange={setCustomTo}
+                    />
+                  </div>
+                </>
+              )}
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setShowCreate(true);
+                }}
+              >
+                <Icon name="add" size={18} />
+                Create Refund
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -556,8 +622,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   <Input
                     label="Refund No"
                     value={refundNo}
-                    onChange={setRefundNo}
-                    placeholder="e.g. REF-102"
+                    onChange={() => {}}
+                    readOnly
                     required
                   />
 
@@ -1084,7 +1150,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
           <div className="max-h-[calc(100vh-290px)] overflow-y-auto py-5">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               <Input label="Date" type="date" value={date} onChange={setDate} required />
-              <Input label="Refund No" value={refundNo} onChange={setRefundNo} placeholder="e.g. REF-102" required />
+              <Input label="Refund No" value={refundNo} onChange={() => {}} readOnly required />
               <Select
                 label="Invoice Number"
                 value={referenceNo}

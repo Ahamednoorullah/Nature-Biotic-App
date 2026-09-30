@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter } from "@/lib/format";
 import {
   addStoreApprovalRequest,
+  getStore,
   getStoreApprovalRequest,
+  isStorePurchaseReceived,
   storeApprovalRequestsUpdatedEvent,
   stores,
   getStorePurchasesFromCompanySales,
@@ -81,57 +83,56 @@ const reasons = [
   "Other",
 ].map((value) => ({ value, label: value }));
 
-const initialRows: PurchaseReturnRow[] = [
-  {
-    id: "pr-1",
-    returnNo: "PR-0001",
-    date: "2026-08-18",
-    purchaseRef: "NB-INV-2001",
-    supplier: "Nature Biotic",
-    placeOfReturn: "Rajapalayam",
-    beforeDiscount: 2500,
-    discountAmount: 0,
-    taxableAmount: 2500,
-    withoutTax: 2500,
-    sgst: 150,
-    cgst: 150,
-    igst: 0,
-    total: 2800,
-    reason: "Damaged Product",
-    status: "Pending",
-    items: [
-      {
-        id: "pr-1-item-1",
-        product: "Electra",
-        packSize: "250 ml",
-        batchNo: "BAT-001",
-        expiryDate: "2027-06-30",
-        soldQuantity: 10,
-        quantity: 10,
-        price: 250,
-        reason: "Damaged Product",
-        beforeDiscount: 2500,
-        discountPercent: 0,
-        discountAmount: 0,
-        taxableAmount: 2500,
-        withoutTax: 2500,
-        sgst: 150,
-        cgst: 150,
-        igst: 0,
-        total: 2800,
-      },
-    ],
-  },
-];
+const PURCHASE_RETURN_SEQUENCE_KEY = "nature-biotic-purchase-return-sequence-v1";
+export const purchaseReturnsUpdatedEvent = "nature-biotic-purchase-returns-updated";
+
+function isSamplePurchaseReturn(row: PurchaseReturnRow) {
+  return row.id === "pr-1" || row.returnNo === "PR-0001";
+}
+
+function nextPurchaseReturnNo(storeCode: string, rows: PurchaseReturnRow[]) {
+  const prefix = `${storeCode}-PR-`;
+  let highest = 0;
+  rows.forEach((row) => {
+    const match = String(row.returnNo || "")
+      .trim()
+      .match(new RegExp(`^${prefix}(\\d+)$`, "i"));
+    if (match) highest = Math.max(highest, Number(match[1]));
+  });
+  try {
+    const saved = JSON.parse(localStorage.getItem(PURCHASE_RETURN_SEQUENCE_KEY) || "{}");
+    const marked = Number(saved?.[storeCode] || 0);
+    if (marked > highest) highest = marked;
+  } catch {
+    // Numbering still continues from saved purchase returns.
+  }
+  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
+}
+
+function rememberPurchaseReturnNo(storeCode: string, returnNo: string) {
+  const match = returnNo.match(/-PR-(\d+)$/i);
+  if (!match) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(PURCHASE_RETURN_SEQUENCE_KEY) || "{}");
+    const next = Math.max(Number(saved?.[storeCode] || 0), Number(match[1]));
+    localStorage.setItem(
+      PURCHASE_RETURN_SEQUENCE_KEY,
+      JSON.stringify({ ...saved, [storeCode]: next }),
+    );
+  } catch {
+    // The saved purchase return still keeps its number.
+  }
+}
 
 export default function StoreReturnStock({ storeId }: { storeId: string }) {
   const storageKey = `naturebiotic:purchase-returns:${storeId}`;
   const [rows, setRows] = useState<PurchaseReturnRow[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? (JSON.parse(saved) as PurchaseReturnRow[]) : initialRows;
+      const parsed = saved ? (JSON.parse(saved) as PurchaseReturnRow[]) : [];
+      return Array.isArray(parsed) ? parsed.filter((row) => !isSamplePurchaseReturn(row)) : [];
     } catch {
-      return initialRows;
+      return [];
     }
   });
   const [showCreate, setShowCreate] = useState(false);
@@ -175,7 +176,12 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
   const [purchaseRef, setPurchaseRef] = useState("");
   const [product, setProduct] = useState("");
   const [packSize, setPackSize] = useState("");
+  const [batchNo, setBatchNo] = useState("");
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [returnQtyError, setReturnQtyError] = useState("");
   const [reason, setReason] = useState("");
   const [added, setAdded] = useState<ReturnItem[]>([]);
 
@@ -185,7 +191,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     return sourceRows.map((row: any, index: number) => {
       const quantity = Number(row.quantity ?? row.qty ?? 0);
       const price = Number(
-        row.sellingPrice ??
+        row.rate ??
+          row.unitPrice ??
           row.price ??
           (quantity
             ? Number(row.beforeDiscount ?? row.withoutTax ?? 0) / quantity
@@ -245,16 +252,41 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     const unique = new Map<string, PurchaseInvoiceItem>();
 
     purchaseInvoices.forEach((item) => {
-      if (item.invoiceNo && !unique.has(item.invoiceNo)) {
-        unique.set(item.invoiceNo, item);
-      }
+      if (!item.invoiceNo || !isStorePurchaseReceived(item.invoiceNo)) return;
+      const returned = rows.reduce((sum, row) => {
+        if (row.purchaseRef !== item.invoiceNo) return sum;
+        return (
+          sum +
+          row.items
+            .filter(
+              (line) =>
+                line.product === item.product &&
+                line.packSize === item.packSize &&
+                line.batchNo === item.batchNo,
+            )
+            .reduce((lineSum, line) => lineSum + Number(line.quantity || 0), 0)
+        );
+      }, 0);
+      const purchased = purchaseInvoices.reduce((sum, line) => {
+        if (
+          line.invoiceNo !== item.invoiceNo ||
+          line.product !== item.product ||
+          line.packSize !== item.packSize ||
+          line.batchNo !== item.batchNo
+        ) {
+          return sum;
+        }
+        return sum + Number(line.quantity || 0);
+      }, 0);
+      if (purchased - returned <= 0) return;
+      if (!unique.has(item.invoiceNo)) unique.set(item.invoiceNo, item);
     });
 
     return Array.from(unique.values()).map((item) => ({
       value: item.invoiceNo,
       label: `${item.invoiceNo}${item.date ? ` - ${formatSimpleDate(item.date)}` : ""}`,
     }));
-  }, [purchaseInvoices]);
+  }, [purchaseInvoices, rows]);
 
   const selectedInvoiceItems = useMemo(
     () =>
@@ -264,8 +296,55 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     [purchaseInvoices, purchaseRef],
   );
 
+  const productChoices = useMemo(() => {
+    const names = new Set<string>();
+    selectedInvoiceItems.forEach((item) => {
+      if (item.product) names.add(item.product);
+    });
+    return Array.from(names);
+  }, [selectedInvoiceItems]);
+
+  const sizeChoices = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          selectedInvoiceItems
+            .filter((item) => item.product === product)
+            .map((item) => item.packSize),
+        ),
+      ),
+    [selectedInvoiceItems, product],
+  );
+
+  const batchChoices = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          selectedInvoiceItems
+            .filter((item) => item.product === product && item.packSize === packSize)
+            .map((item) => item.batchNo),
+        ),
+      ),
+    [selectedInvoiceItems, product, packSize],
+  );
+
+  useEffect(() => {
+    if (sizeChoices.length === 1 && packSize !== sizeChoices[0]) {
+      setPackSize(sizeChoices[0]);
+    }
+  }, [sizeChoices, packSize]);
+
+  useEffect(() => {
+    if (batchChoices.length === 1 && batchNo !== batchChoices[0]) {
+      setBatchNo(batchChoices[0]);
+    }
+  }, [batchChoices, batchNo]);
+
   const selectedInvoiceItem = selectedInvoiceItems.find(
-    (item) => item.id === product,
+    (item) =>
+      item.product === product &&
+      item.packSize === packSize &&
+      item.batchNo === batchNo,
   );
 
   const selectedProduct = selectedInvoiceItem;
@@ -289,13 +368,11 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     }
 
     const soldQty = Math.max(1, Number(selectedProduct.quantity || 0));
-    const perUnitBeforeDiscount =
-      (selectedProduct.price * soldQty) / soldQty;
-
-    const beforeDiscount = perUnitBeforeDiscount * qty;
+    const beforeDiscount = Number(selectedProduct.price || 0) * qty;
     const discountPercent = Number(selectedProduct.discountPercent || 0);
-    const discountAmount =
-      (beforeDiscount * discountPercent) / 100;
+    const discountAmount = discountPercent
+      ? (beforeDiscount * discountPercent) / 100
+      : (Number(selectedProduct.discountAmount || 0) * qty) / soldQty;
     const taxableAmount = Math.max(
       0,
       beforeDiscount - discountAmount,
@@ -304,23 +381,32 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
 
     const originalTaxable = Number(selectedProduct.taxableAmount || 0);
 
-    const sgstRate =
+    let sgstRate =
       selectedProduct.sgst > 0 && originalTaxable > 0
         ? selectedProduct.sgst / originalTaxable
         : 0;
-    const cgstRate =
+    let cgstRate =
       selectedProduct.cgst > 0 && originalTaxable > 0
         ? selectedProduct.cgst / originalTaxable
         : 0;
-    const igstRate =
+    let igstRate =
       selectedProduct.igst > 0 && originalTaxable > 0
         ? selectedProduct.igst / originalTaxable
         : 0;
+    if (
+      sgstRate + cgstRate + igstRate === 0 &&
+      Number(selectedProduct.taxPercent || 0) > 0
+    ) {
+      const half = Number(selectedProduct.taxPercent) / 200;
+      sgstRate = half;
+      cgstRate = half;
+    }
 
-    const sgst = taxableAmount * sgstRate;
-    const cgst = taxableAmount * cgstRate;
-    const igst = taxableAmount * igstRate;
-    const total = taxableAmount + sgst + cgst + igst;
+    const money = (value: number) => Math.round(value * 100) / 100;
+    const sgst = money(taxableAmount * sgstRate);
+    const cgst = money(taxableAmount * cgstRate);
+    const igst = money(taxableAmount * igstRate);
+    const total = money(taxableAmount + sgst + cgst + igst);
 
     return {
       beforeDiscount,
@@ -351,18 +437,103 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     [added],
   );
 
+  function purchasedQtyFor(
+    invoiceNo: string,
+    productName: string,
+    size: string,
+    batch: string,
+  ) {
+    return purchaseInvoices.reduce((sum, item) => {
+      if (
+        item.invoiceNo !== invoiceNo ||
+        item.product !== productName ||
+        item.packSize !== size ||
+        item.batchNo !== batch
+      ) {
+        return sum;
+      }
+      return sum + Number(item.quantity || 0);
+    }, 0);
+  }
+
+  function returnedQtyFor(
+    invoiceNo: string,
+    productName: string,
+    size: string,
+    batch: string,
+    pendingLines: ReturnItem[] = [],
+  ) {
+    return [...rows.flatMap((row) =>
+      row.purchaseRef === invoiceNo ? row.items : [],
+    ), ...pendingLines].reduce((sum, item) => {
+      if (
+        item.product !== productName ||
+        item.packSize !== size ||
+        item.batchNo !== batch
+      ) {
+        return sum;
+      }
+      return sum + Number(item.quantity || 0);
+    }, 0);
+  }
+
+  const purchasedQty = selectedProduct
+    ? purchasedQtyFor(
+        purchaseRef,
+        selectedProduct.product,
+        selectedProduct.packSize,
+        selectedProduct.batchNo,
+      )
+    : 0;
+  const alreadyReturned = selectedProduct
+    ? returnedQtyFor(
+        purchaseRef,
+        selectedProduct.product,
+        selectedProduct.packSize,
+        selectedProduct.batchNo,
+        added,
+      )
+    : 0;
+  const returnableQty = Math.max(0, purchasedQty - alreadyReturned);
+
   const canAdd =
     !!selectedProduct &&
     Number(quantity) > 0 &&
-    Number(quantity) <= Number(selectedProduct.quantity || 0) &&
+    Number(quantity) <= returnableQty &&
     !!reason &&
     price > 0;
 
   const canSave =
     date && returnNo.trim() && purchaseRef.trim() && added.length > 0;
 
+  function updateQuantity(value: string) {
+    if (value === "") {
+      setQuantity("");
+      setReturnQtyError("");
+      return;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric < 0) return;
+    if (selectedProduct && numeric > returnableQty) {
+      setQuantity(returnableQty > 0 ? String(returnableQty) : "");
+      setReturnQtyError(
+        "Return quantity cannot exceed the available returnable quantity.",
+      );
+      return;
+    }
+    setQuantity(value);
+    setReturnQtyError("");
+  }
+
   function addProduct() {
+    if (!selectedProduct || Number(quantity) > returnableQty) {
+      setReturnQtyError(
+        "Return quantity cannot exceed the available returnable quantity.",
+      );
+      return;
+    }
     if (!canAdd) return;
+    setReturnQtyError("");
 
     const item: ReturnItem = {
       id: `${Date.now()}-${selectedProduct.id}`,
@@ -387,6 +558,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
 
     setAdded((prev) => [...prev, item]);
     setProduct("");
+    setPackSize("");
+    setBatchNo("");
     setQuantity("");
     setReason("");
   }
@@ -400,13 +573,42 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     setReturnNo("");
     setPurchaseRef("");
     setProduct("");
+    setPackSize("");
+    setBatchNo("");
     setQuantity("");
+    setReturnQtyError("");
     setReason("");
     setAdded([]);
   }
 
+  function openForm() {
+    const storeCode = getStore(storeId)?.code || "ST";
+    setReturnNo(nextPurchaseReturnNo(storeCode, rows));
+    setDate(new Date().toISOString().split("T")[0]);
+    setShowCreate(true);
+  }
+
   function saveReturn() {
     if (!canSave) return;
+
+    const requested = new Map<string, number>();
+    added.forEach((item) => {
+      const key = `${item.product}||${item.packSize}||${item.batchNo}`;
+      requested.set(key, (requested.get(key) || 0) + Number(item.quantity || 0));
+    });
+    for (const [key, qty] of requested) {
+      const [productName, size, batch] = key.split("||");
+      const available =
+        purchasedQtyFor(purchaseRef.trim(), productName, size, batch) -
+        returnedQtyFor(purchaseRef.trim(), productName, size, batch);
+      if (qty < 1 || qty > available) {
+        setReturnQtyError(
+          "Return quantity cannot exceed the available returnable quantity.",
+        );
+        return;
+      }
+    }
+    setReturnQtyError("");
 
     const summaryReason = Array.from(
       new Set(added.map((item) => item.reason)),
@@ -433,6 +635,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     };
 
     setRows((prev) => [row, ...prev]);
+    rememberPurchaseReturnNo(getStore(storeId)?.code || "ST", row.returnNo);
+    window.dispatchEvent(new Event(purchaseReturnsUpdatedEvent));
     const store = stores.find((item) => item.id === storeId);
     addStoreApprovalRequest({
       id: `purchase-return-${storeId}-${row.returnNo}`,
@@ -525,35 +729,53 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
   return `${convert(rounded)} Rupees Only`;
 }
 
+  const visibleReturns = rows.filter((row) =>
+    matchesSimpleDate(row.date, dateFilter, customFrom, customTo),
+  );
+
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
-            Purchase Return
-          </h1>
-          <p className="mt-1 text-slate-500">
-            Return purchased products to Nature Biotic for damage, expiry, wrong
-            supply or other valid reasons.
-          </p>
-        </div>
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-800">
+          Purchase Return
+        </h1>
 
-        <Button onClick={() => setShowCreate(true)}>
-          <Icon name="add" size={18} />
-          Create Purchase Return
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
+          <div className="w-full sm:w-44">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+              options={simpleDateFilterOptions}
+            />
+          </div>
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full sm:w-40">
+                <Input label="From Date" type="date" value={customFrom} onChange={setCustomFrom} />
+              </div>
+              <div className="w-full sm:w-40">
+                <Input label="To Date" type="date" value={customTo} onChange={setCustomTo} />
+              </div>
+            </>
+          )}
+          <Button onClick={openForm}>
+            <Icon name="add" size={18} />
+            Create Purchase Return
+          </Button>
+        </div>
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <SummaryCard
           label="Total Returns"
-          value={String(rows.length)}
+          value={String(visibleReturns.length)}
           icon="assignment_return"
         />
         <SummaryCard
           label="Returned Qty"
           value={String(
-            rows.reduce(
+            visibleReturns.reduce(
               (sum, row) =>
                 sum +
                 row.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
@@ -564,12 +786,12 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
         />
         <SummaryCard
           label="Return Value"
-          value={formatCurrency(rows.reduce((sum, row) => sum + row.total, 0))}
+          value={formatCurrency(visibleReturns.reduce((sum, row) => sum + row.total, 0))}
           icon="payments"
         />
         <SummaryCard
           label="Pending"
-          value={String(rows.filter((row) => row.status === "Pending").length)}
+          value={String(visibleReturns.filter((row) => row.status === "Pending").length)}
           icon="pending"
         />
       </div>
@@ -614,8 +836,9 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                   <Input
                     label="Return No"
                     value={returnNo}
-                    onChange={setReturnNo}
-                    placeholder="e.g. PR-0002"
+                    onChange={() => {}}
+                    placeholder="SAI-PR-0001"
+                    readOnly
                     required
                   />
 
@@ -625,6 +848,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                     onChange={(value) => {
                       setPurchaseRef(value);
                       setProduct("");
+                      setPackSize("");
+                      setBatchNo("");
                       setQuantity("");
                       setReason("");
                       setAdded([]);
@@ -641,6 +866,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                       value={product}
                       onChange={(value) => {
                         setProduct(value);
+                        setPackSize("");
+                        setBatchNo("");
                         setQuantity("");
                         setReason("");
                       }}
@@ -649,27 +876,60 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                           ? "Select invoice product"
                           : "Select invoice first"
                       }
-                      options={selectedInvoiceItems.map((item) => ({
-                        value: item.id,
-                        label: `${item.product} - ${item.packSize}`,
+                      options={productChoices.map((name) => ({
+                        value: name,
+                        label: name,
                       }))}
                     />
 
-                    <Input
-                      label="Pack Size"
-                      value={selectedProduct?.packSize || ""}
-                      onChange={() => {}}
-                      placeholder="Auto"
-                      readOnly
-                    />
+                    {sizeChoices.length > 1 ? (
+                      <Select
+                        label="Pack Size"
+                        value={packSize}
+                        onChange={(value) => {
+                          setPackSize(value);
+                          setBatchNo("");
+                          setQuantity("");
+                        }}
+                        placeholder="Select size"
+                        options={sizeChoices.map((size) => ({
+                          value: size,
+                          label: size,
+                        }))}
+                      />
+                    ) : (
+                      <Input
+                        label="Pack Size"
+                        value={packSize}
+                        onChange={() => {}}
+                        placeholder="Auto"
+                        readOnly
+                      />
+                    )}
 
-                    <Input
-                      label="Batch ID"
-                      value={selectedProduct?.batchNo || ""}
-                      onChange={() => {}}
-                      placeholder="Auto"
-                      readOnly
-                    />
+                    {batchChoices.length > 1 ? (
+                      <Select
+                        label="Batch ID"
+                        value={batchNo}
+                        onChange={(value) => {
+                          setBatchNo(value);
+                          setQuantity("");
+                        }}
+                        placeholder="Select batch"
+                        options={batchChoices.map((batch) => ({
+                          value: batch,
+                          label: batch,
+                        }))}
+                      />
+                    ) : (
+                      <Input
+                        label="Batch ID"
+                        value={batchNo}
+                        onChange={() => {}}
+                        placeholder="Auto"
+                        readOnly
+                      />
+                    )}
 
                     <Input
                       label="Expiry Date"
@@ -687,8 +947,10 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                       label="Return Qty"
                       type="number"
                       value={quantity}
-                      onChange={setQuantity}
-                      placeholder="Qty"
+                      onChange={updateQuantity}
+                      placeholder={
+                        selectedProduct ? `Max ${returnableQty}` : "Qty"
+                      }
                     />
 
                     <Input
@@ -718,6 +980,11 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                       </Button>
                     </div>
                   </div>
+                  {returnQtyError && (
+                    <p className="mt-3 text-sm font-medium text-red-600">
+                      {returnQtyError}
+                    </p>
+                  )}
 
                   {selectedProduct && (
                     <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 md:grid-cols-4 xl:grid-cols-10">
@@ -1047,7 +1314,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
             </thead>
 
             <tbody>
-              {rows.map((row, index) => (
+              {visibleReturns.map((row, index) => (
                 <tr
                   key={row.id}
                   onClick={() => setSelectedReturn(row)}

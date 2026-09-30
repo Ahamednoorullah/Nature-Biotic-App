@@ -21,6 +21,7 @@ const navItems: { key: CompanyPage; label: string; icon: string }[] = [
     icon: "shopping_cart_checkout",
   },
   { key: "sales", label: "Sales ", icon: "point_of_sale" },
+  { key: "sales-return", label: "Sales Return", icon: "assignment_return" },
   { key: "expenses", label: "Expenses ", icon: "receipt_long" },
   { key: "credit-notes", label: "Credit Notes", icon: "undo" },
   { key: "receipts", label: "Receipts", icon: "receipt" },
@@ -49,7 +50,9 @@ export default function CompanyShell({
       setPendingApprovals(
         getStoreApprovalRequests().filter(
           (request) =>
-            request.type === "Purchase Order" && request.status === "Pending",
+            (request.type === "Purchase Order" ||
+              request.type === "Purchase Return") &&
+            request.status === "Pending",
         ),
       );
     refresh();
@@ -218,12 +221,18 @@ export default function CompanyShell({
                           type="button"
                           onClick={() => {
                             setOpenMenu(null);
-                            goCompany("purchase-orders");
+                            goCompany(
+                              request.type === "Purchase Return"
+                                ? "sales-return"
+                                : "purchase-orders",
+                            );
                           }}
                           className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50"
                         >
                           <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
-                            Purchase Order
+                            {request.type === "Purchase Return"
+                              ? "Sales Return Request"
+                              : "Purchase Order"}
                           </p>
                           <p className="mt-1 text-sm font-bold text-slate-800">
                             {request.referenceNo}
@@ -235,7 +244,9 @@ export default function CompanyShell({
                               : ""}
                           </p>
                           <p className="mt-1 text-xs font-semibold text-amber-700">
-                            Pending Acceptance
+                            {request.type === "Purchase Return"
+                              ? "Pending Approval"
+                              : "Pending Acceptance"}
                           </p>
                         </button>
                       ))}

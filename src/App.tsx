@@ -9,6 +9,7 @@ import CompanyDashboard from "@/pages/CompanyDashboard";
 import CompanyProducts from "@/pages/CompanyProducts";
 import CompanyStores from "@/pages/CompanyStores";
 import CompanySales from "@/pages/CompanySales";
+import CompanySalesReturn from "@/pages/CompanySalesReturn";
 import CompanyExpenses from "@/pages/CompanyExpenses";
 import CompanyPurchaseOrders from "@/pages/CompanyPurchaseOrders";
 import CompanyStaffManagement from "@/pages/CompanyStaffManagement";
@@ -55,14 +56,56 @@ import StoreAttendance from "@/pages/StoreAttendance";
 import ClosingStock from "@/pages/ClosingStock";
 import PhysicalStockEntry from "@/pages/PhysicalStockEntry";
 
+function homePath(role: string) {
+  if (role === "company_admin") return "/admin";
+  if (role === "fro") return "/fro";
+  return "/store";
+}
+
+function isOwnArea(role: string, path: string) {
+  if (role === "company_admin") {
+    return path === "/admin" || path === "/dashboard" || path.startsWith("/admin/");
+  }
+  if (role === "fro") return path === "/fro" || path.startsWith("/fro/");
+  return path === "/store" || path.startsWith("/store/");
+}
+
+function currentPath() {
+  const path = window.location.pathname.replace(/\/+$/, "");
+  return path || "/";
+}
+
 function AppContent() {
   const { user, loading } = useAuth();
-  const { route, goStore } = useNav();
+  const { route, goStore, goCompany } = useNav();
 
   const isStoreUser = user?.role === "store_admin";
   const isFROUser = user?.role === "fro";
   const isStoreScopedUser = isStoreUser || isFROUser;
   const ownStoreId = user?.storeId;
+
+  useEffect(() => {
+    const enforceLocation = () => {
+      if (loading) return;
+
+      const path = currentPath();
+      if (!user) {
+        if (path !== "/login") window.history.replaceState(null, "", "/login");
+        return;
+      }
+
+      const home = homePath(user.role);
+      if (path === "/" || path === "/login" || !isOwnArea(user.role, path)) {
+        window.history.replaceState(null, "", home);
+        if (user.role === "company_admin") goCompany("dashboard");
+        else if (user.storeId) goStore(user.storeId, "dashboard");
+      }
+    };
+
+    enforceLocation();
+    window.addEventListener("popstate", enforceLocation);
+    return () => window.removeEventListener("popstate", enforceLocation);
+  }, [user, loading, goCompany, goStore]);
 
   useEffect(() => {
     if (!user || !isStoreScopedUser || !user.storeId) {
@@ -131,6 +174,7 @@ function AppContent() {
         {route.page === "products" && <CompanyProducts />}
         {route.page === "stores" && <CompanyStores />}
         {route.page === "sales" && <CompanySales />}
+        {route.page === "sales-return" && <CompanySalesReturn />}
         {route.page === "expenses" && <CompanyExpenses />}
         {route.page === "purchase-orders" && <CompanyPurchaseOrders />}
         {route.page === "staff-management" && <CompanyStaffManagement />}

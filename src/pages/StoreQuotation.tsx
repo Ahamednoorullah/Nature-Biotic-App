@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
+import {
+  formatCurrency,
+  matchesSimpleDate,
+  type SimpleDateFilter,
+} from "@/lib/format";
 import { createPortal } from "react-dom";
 import {
   products as allProducts,
@@ -149,95 +153,36 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   const storeProducts = stockProducts;
 
   const [selectedQuotation, setSelectedQuotation] = useState<Row | null>(null);
-  const [rows, setRows] = useState<Row[]>([
-    {
-      id: "1",
-      date: "17/08/2026",
-      quotationNo: "QT-1001",
-      farmerId: "",
-      farmer: "Murugan",
-      phone: "9876543210",
-      village: "Rajapalayam",
-      crop: "Cotton",
-      acre: "4.5",
-      placeOfSupply: "Tamil Nadu",
-      remarks: "",
-      products: [
-        {
-          id: "qt-1001-p1",
-          product: "p0",
-          productName: "Electra",
-          pkgsize: "250 ml",
-          qty: "10",
-          rate: "820",
-          taxPercent: 0,
-          sgstPercent: 0,
-          cgstPercent: 0,
-          igstPercent: 0,
-        },
-      ],
-      withoutTax: 8200,
-      sgst: 0,
-      cgst: 0,
-      igst: 0,
-      roundOff: 0,
-      amount: 8200,
-      status: "Open",
-    },
-    {
-      id: "2",
-      date: "16/08/2026",
-      quotationNo: "QT-1000",
-      farmerId: "",
-      farmer: "Selvam",
-      phone: "9876543211",
-      village: "Seithur",
-      crop: "",
-      acre: "",
-      placeOfSupply: "Tamil Nadu",
-      remarks: "",
-      products: [
-        {
-          id: "qt-1000-p1",
-          product: "p1",
-          productName: "Astra",
-          pkgsize: "500 ml",
-          qty: "10",
-          rate: "560",
-          taxPercent: 0,
-          sgstPercent: 0,
-          cgstPercent: 0,
-          igstPercent: 0,
-        },
-      ],
-      withoutTax: 5600,
-      sgst: 0,
-      cgst: 0,
-      igst: 0,
-      roundOff: 0,
-      amount: 5600,
-      status: "Converted",
-    },
-  ]);
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [rows, setRows] = useState<Row[]>([]);
+
+  function withoutSampleQuotations(list: Row[]) {
+    return list.filter(
+      (row) =>
+        !(
+          (row.id === "1" && row.quotationNo === "QT-1001") ||
+          (row.id === "2" && row.quotationNo === "QT-1000")
+        ),
+    );
+  }
 
   // Keep quotations shared between FRO and Store views for the same store.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(quotationStorageKey);
-
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setRows(parsed);
-        }
-      } else {
-        window.localStorage.setItem(quotationStorageKey, JSON.stringify(rows));
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return;
+      const next = withoutSampleQuotations(parsed);
+      setRows(next);
+      if (next.length !== parsed.length) {
+        window.localStorage.setItem(quotationStorageKey, JSON.stringify(next));
       }
     } catch {
       // Keep the existing in-memory quotations if localStorage is unavailable.
     }
-    // quotationStorageKey is derived only from storeId.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
   useEffect(() => {
@@ -249,7 +194,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       try {
         const parsed = JSON.parse(event.newValue);
         if (Array.isArray(parsed)) {
-          setRows(parsed);
+          setRows(withoutSampleQuotations(parsed));
         }
       } catch {
         // Ignore malformed external storage updates.
@@ -275,6 +220,21 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         String(row.createdByStaffId || "") === String(user.staffId ?? user.id),
     );
   }, [rows, isFRO, user?.name, user?.staffId, user?.id]);
+
+  const quotationDateOptions: { value: SimpleDateFilter; label: string }[] = [
+    { value: "today", label: "Today" },
+    { value: "monthly", label: "Monthly" },
+    { value: "yearly", label: "Yearly" },
+    { value: "custom", label: "Custom Date" },
+  ];
+
+  const listedRows = useMemo(
+    () =>
+      visibleRows.filter((row) =>
+        matchesSimpleDate(row.date, dateFilter, customFrom, customTo),
+      ),
+    [visibleRows, dateFilter, customFrom, customTo],
+  );
 
   const [show, setShow] = useState(false);
 
@@ -1602,10 +1562,40 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             <Icon name="add" size={19} />
           </button>
         ) : (
-          <Button onClick={openQuotation}>
-            <Icon name="add" size={18} />
-            New Quotation
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+            <div className="w-full sm:w-44">
+              <Select
+                label="Date Filter"
+                value={dateFilter}
+                onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+                options={quotationDateOptions}
+              />
+            </div>
+            {dateFilter === "custom" && (
+              <>
+                <div className="w-full sm:w-40">
+                  <Input
+                    label="From Date"
+                    type="date"
+                    value={customFrom}
+                    onChange={setCustomFrom}
+                  />
+                </div>
+                <div className="w-full sm:w-40">
+                  <Input
+                    label="To Date"
+                    type="date"
+                    value={customTo}
+                    onChange={setCustomTo}
+                  />
+                </div>
+              </>
+            )}
+            <Button onClick={openQuotation}>
+              <Icon name="add" size={18} />
+              New Quotation
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1766,7 +1756,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.length === 0 ? (
+                  {listedRows.length === 0 ? (
                     <tr>
                       <td
                         colSpan={13}
@@ -1776,7 +1766,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                       </td>
                     </tr>
                   ) : (
-                    visibleRows.map((r, index) => (
+                    listedRows.map((r, index) => (
                       <tr
                         key={r.id}
                         onClick={() => setSelectedQuotation(r)}
@@ -1839,12 +1829,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
             {/* Mobile */}
             <div className="divide-y divide-slate-100 md:hidden">
-              {visibleRows.length === 0 ? (
+              {listedRows.length === 0 ? (
                 <div className="px-4 py-12 text-center text-sm text-slate-400">
                   No quotations found.
                 </div>
               ) : (
-                visibleRows.map((r, index) => (
+                listedRows.map((r, index) => (
                   <button
                     key={r.id}
                     type="button"

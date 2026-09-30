@@ -16,10 +16,16 @@ import {
 import { formatCurrency, formatDate, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
 import { getStorePurchasesFromCompanySales } from "@/lib/data";
-import { getFROStockTxnsByExecutive } from "@/lib/data";
+import { getFROStockTxnsByExecutive, getFROStockByExecutive, isStorePurchaseReceived } from "@/lib/data";
+import { getStoreOverviewStockValue } from "@/pages/StoreInventory";
 import { useAuth } from "@/context/AuthContext";
-
-type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
+import {
+  buildStoreDashboard,
+  inPeriod,
+  type ChannelSummary,
+  type DashboardDetail,
+  type DateFilter,
+} from "@/lib/storeDashboardMetrics";
 
 const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "today", label: "Today" },
@@ -29,70 +35,7 @@ const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "yearly", label: "Yearly" },
 ];
 
-function getFilterStartDate(filter: DateFilter): Date {
-  const now = new Date();
-  const start = new Date(now);
-
-  switch (filter) {
-    case "today":
-      start.setHours(0, 0, 0, 0);
-      return start;
-    case "weekly":
-      start.setDate(start.getDate() - 7);
-      return start;
-    case "monthly":
-      start.setMonth(start.getMonth() - 1);
-      return start;
-    case "quarterly":
-      start.setMonth(start.getMonth() - 3);
-      return start;
-    case "yearly":
-      start.setFullYear(start.getFullYear() - 1);
-      return start;
-  }
-}
-
-function getCalendarPeriodStart(filter: DateFilter): Date {
-  const now = new Date();
-
-  switch (filter) {
-    case "today": {
-      const s = new Date(now);
-      s.setHours(0, 0, 0, 0);
-      return s;
-    }
-
-    case "weekly": {
-      // Start of week = Monday
-      const s = new Date(now);
-      const day = s.getDay(); // 0=Sun, 1=Mon, ... 6=Sat
-      const diffToMonday = day === 0 ? 6 : day - 1;
-      s.setDate(s.getDate() - diffToMonday);
-      s.setHours(0, 0, 0, 0);
-      return s;
-    }
-
-    case "monthly": {
-      // Start of this calendar month
-      return new Date(now.getFullYear(), now.getMonth(), 1);
-    }
-
-    case "quarterly": {
-      // Calendar quarter: Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec
-      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
-      return new Date(now.getFullYear(), quarterStartMonth, 1);
-    }
-
-    case "yearly": {
-      // Financial year starting April 1
-      const fyStartYear =
-        now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-      return new Date(fyStartYear, 3, 1); // April = month index 3
-    }
-  }
-}
-
-type ExecKey = "ram" | "ajith" | "periya";
+type ExecKey = string;
 type ExecDetailType =
   | "sales"
   | "collection"
@@ -106,6 +49,7 @@ type DirectDetailSelection = DirectDetailType | null;
 
 type ExecDetailSelection = {
   execKey: ExecKey;
+  execName: string;
   type: ExecDetailType;
 } | null;
 
@@ -122,11 +66,6 @@ type ExecSummary = {
   topProduct: string;
 };
 
-const execNames: Record<ExecKey, string> = {
-  ram: "Ram Kumar",
-  ajith: "Ajith Kumar",
-  periya: "PeriyaSamy",
-};
 
 type FROHandover = {
   id: string;
@@ -141,694 +80,6 @@ type FROHandover = {
 };
 
 const FRO_HANDOVER_STORAGE_PREFIX = "nature-biotic-fro-handovers-v1";
-
-const execColors: Record<ExecKey, string> = {
-  ram: "from-emerald-400 to-emerald-600",
-  ajith: "from-blue-400 to-blue-600",
-  periya: "from-amber-400 to-amber-600",
-};
-
-type ExecTarget = {
-  sales: number;
-  farmers: number;
-  farms: number;
-  visits: number;
-};
-
-const execTargets: Record<ExecKey, Record<DateFilter, ExecTarget>> = {
-  ram: {
-    today: { sales: 30000, farmers: 50, farms: 35, visits: 10 },
-    weekly: { sales: 200000, farmers: 55, farms: 40, visits: 20 },
-    monthly: { sales: 600000, farmers: 65, farms: 45, visits: 40 },
-    quarterly: { sales: 1800000, farmers: 75, farms: 55, visits: 120 },
-    yearly: { sales: 7200000, farmers: 90, farms: 70, visits: 250 },
-  },
-  ajith: {
-    today: { sales: 30000, farmers: 50, farms: 35, visits: 10 },
-    weekly: { sales: 200000, farmers: 55, farms: 40, visits: 20 },
-    monthly: { sales: 600000, farmers: 65, farms: 45, visits: 40 },
-    quarterly: { sales: 1800000, farmers: 75, farms: 55, visits: 120 },
-    yearly: { sales: 7200000, farmers: 90, farms: 70, visits: 250 },
-  },
-  periya: {
-    today: { sales: 30000, farmers: 50, farms: 35, visits: 10 },
-    weekly: { sales: 200000, farmers: 55, farms: 40, visits: 20 },
-    monthly: { sales: 600000, farmers: 65, farms: 45, visits: 40 },
-    quarterly: { sales: 1800000, farmers: 75, farms: 55, visits: 120 },
-    yearly: { sales: 7200000, farmers: 90, farms: 70, visits: 250 },
-  },
-};
-
-const execDetailData: Record<
-  ExecKey,
-  {
-    sales: {
-      date: string;
-      invoiceNo: string;
-      farmer: string;
-      amount: number;
-    }[];
-    collection: {
-      date: string;
-      receiptNo: string;
-      farmer: string;
-      amount: number;
-    }[];
-    cash: { date: string; farmer: string; amount: number }[];
-    outstanding: {
-      date: string;
-      farmer: string;
-
-      village: string;
-      phone: string;
-      amount: number;
-    }[];
-  }
-> = {
-  ram: {
-    sales: [
-      {
-        date: "10 Aug 2026",
-        invoiceNo: "INV-RK-1042",
-        farmer: "Murugan",
-        amount: 6200,
-      },
-      {
-        date: "10 Aug 2026",
-        invoiceNo: "INV-RK-1041",
-        farmer: "Selvam",
-        amount: 4800,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-RK-1038",
-        farmer: "Kannan",
-        amount: 7500,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-RK-1036",
-        farmer: "Raja",
-        amount: 6000,
-      },
-    ],
-    collection: [
-      {
-        date: "10 Aug 2026",
-        receiptNo: "RCPT-RK-521",
-        farmer: "Murugan",
-        amount: 5200,
-      },
-      {
-        date: "10 Aug 2026",
-        receiptNo: "RCPT-RK-520",
-        farmer: "Selvam",
-        amount: 4300,
-      },
-      {
-        date: "09 Aug 2026",
-        receiptNo: "RCPT-RK-516",
-        farmer: "Kannan",
-        amount: 6900,
-      },
-      {
-        date: "09 Aug 2026",
-        receiptNo: "RCPT-RK-514",
-        farmer: "Raja",
-        amount: 5200,
-      },
-    ],
-    cash: [
-      { date: "10 Aug 2026", farmer: "Murugan", amount: 1200 },
-      { date: "10 Aug 2026", farmer: "Selvam", amount: 800 },
-      { date: "09 Aug 2026", farmer: "Kannan", amount: 900 },
-      { date: "09 Aug 2026", farmer: "Raja", amount: 500 },
-    ],
-    outstanding: [
-      {
-        date: "10 Aug 2026",
-        farmer: "Murugan",
-
-        village: "Seithur",
-        phone: "98765 43210",
-        amount: 900,
-      },
-      {
-        date: "09 Aug 2026",
-        farmer: "Selvam",
-
-        village: "Chatrapatti",
-        phone: "98765 43211",
-        amount: 700,
-      },
-      {
-        date: "08 Aug 2026",
-        farmer: "Kannan",
-
-        village: "Watrap",
-        phone: "98765 43212",
-        amount: 800,
-      },
-      {
-        date: "08 Aug 2026",
-        farmer: "Raja",
-
-        village: "Rajapalayam",
-        phone: "98765 43213",
-        amount: 500,
-      },
-    ],
-  },
-  ajith: {
-    sales: [
-      {
-        date: "10 Aug 2026",
-        invoiceNo: "INV-AK-842",
-        farmer: "Arun",
-        amount: 5400,
-      },
-      {
-        date: "10 Aug 2026",
-        invoiceNo: "INV-AK-840",
-        farmer: "Bala",
-        amount: 4600,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-AK-836",
-        farmer: "Suresh",
-        amount: 5100,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-AK-833",
-        farmer: "Muthu",
-        amount: 4700,
-      },
-    ],
-    collection: [
-      {
-        date: "10 Aug 2026",
-        receiptNo: "RCPT-AK-421",
-        farmer: "Arun",
-        amount: 4700,
-      },
-      {
-        date: "10 Aug 2026",
-        receiptNo: "RCPT-AK-419",
-        farmer: "Bala",
-        amount: 3900,
-      },
-      {
-        date: "09 Aug 2026",
-        receiptNo: "RCPT-AK-416",
-        farmer: "Suresh",
-        amount: 4500,
-      },
-      {
-        date: "09 Aug 2026",
-        receiptNo: "RCPT-AK-413",
-        farmer: "Muthu",
-        amount: 4100,
-      },
-    ],
-    cash: [
-      { date: "10 Aug 2026", farmer: "Arun", amount: 900 },
-      { date: "10 Aug 2026", farmer: "Bala", amount: 700 },
-      { date: "09 Aug 2026", farmer: "Suresh", amount: 650 },
-      { date: "09 Aug 2026", farmer: "Muthu", amount: 550 },
-    ],
-    outstanding: [
-      {
-        date: "10 Aug 2026",
-        farmer: "Arun",
-
-        village: "Srivilliputhur",
-        phone: "98765 43220",
-        amount: 700,
-      },
-      {
-        date: "09 Aug 2026",
-        farmer: "Bala",
-
-        village: "Mamsapuram",
-        phone: "98765 43221",
-        amount: 600,
-      },
-      {
-        date: "08 Aug 2026",
-        farmer: "Suresh",
-
-        village: "Koonampatti",
-        phone: "98765 43222",
-        amount: 800,
-      },
-      {
-        date: "08 Aug 2026",
-        farmer: "Muthu",
-
-        village: "Vathirairuppu",
-        phone: "98765 43223",
-        amount: 500,
-      },
-    ],
-  },
-  periya: {
-    sales: [
-      {
-        date: "10 Aug 2026",
-        invoiceNo: "INV-PS-742",
-        farmer: "Velu",
-        amount: 4900,
-      },
-      {
-        date: "10 Aug 2026",
-        invoiceNo: "INV-PS-740",
-        farmer: "Ganesan",
-        amount: 4200,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-PS-736",
-        farmer: "Ramesh",
-        amount: 4500,
-      },
-      {
-        date: "09 Aug 2026",
-        invoiceNo: "INV-PS-733",
-        farmer: "Saravanan",
-        amount: 4000,
-      },
-    ],
-    collection: [
-      {
-        date: "10 Aug 2026",
-        receiptNo: "RCPT-PS-321",
-        farmer: "Velu",
-        amount: 4300,
-      },
-      {
-        date: "10 Aug 2026",
-        receiptNo: "RCPT-PS-319",
-        farmer: "Ganesan",
-        amount: 3700,
-      },
-      {
-        date: "09 Aug 2026",
-        receiptNo: "RCPT-PS-316",
-        farmer: "Ramesh",
-        amount: 3900,
-      },
-      {
-        date: "09 Aug 2026",
-        receiptNo: "RCPT-PS-313",
-        farmer: "Saravanan",
-        amount: 3500,
-      },
-    ],
-    cash: [
-      { date: "10 Aug 2026", farmer: "Velu", amount: 700 },
-      { date: "10 Aug 2026", farmer: "Ganesan", amount: 600 },
-      { date: "09 Aug 2026", farmer: "Ramesh", amount: 600 },
-      { date: "09 Aug 2026", farmer: "Saravanan", amount: 500 },
-    ],
-    outstanding: [
-      {
-        date: "10 Aug 2026",
-        farmer: "Velu",
-
-        village: "Sivakasi",
-        phone: "98765 43230",
-        amount: 600,
-      },
-      {
-        date: "09 Aug 2026",
-        farmer: "Ganesan",
-
-        village: "Thiruthangal",
-        phone: "98765 43231",
-        amount: 500,
-      },
-      {
-        date: "08 Aug 2026",
-        farmer: "Ramesh",
-
-        village: "Sattur",
-        phone: "98765 43232",
-        amount: 600,
-      },
-      {
-        date: "08 Aug 2026",
-        farmer: "Saravanan",
-
-        village: "Vembakottai",
-        phone: "98765 43233",
-        amount: 500,
-      },
-    ],
-  },
-};
-
-const execData: Record<ExecKey, Record<DateFilter, ExecSummary>> = {
-  ram: {
-    today: {
-      sales: 24500,
-      collection: 21600,
-      collectionInHand: 3400,
-      outstanding: 2900,
-      farmers: 42,
-      farms: 31,
-      crops: 8,
-      visits: 18,
-      bestArea: "Rajapalayam",
-      topProduct: "Electra",
-    },
-    weekly: {
-      sales: 168400,
-      collection: 142800,
-      collectionInHand: 22800,
-      outstanding: 25600,
-      farmers: 46,
-      farms: 34,
-      crops: 10,
-      visits: 126,
-      bestArea: "Rajapalayam",
-      topProduct: "Electra",
-    },
-    monthly: {
-      sales: 485000,
-      collection: 412000,
-      collectionInHand: 64500,
-      outstanding: 73000,
-      farmers: 52,
-      farms: 38,
-      crops: 12,
-      visits: 542,
-      bestArea: "Rajapalayam",
-      topProduct: "Electra",
-    },
-    quarterly: {
-      sales: 1425000,
-      collection: 1186000,
-      collectionInHand: 184200,
-      outstanding: 239000,
-      farmers: 58,
-      farms: 42,
-      crops: 14,
-      visits: 1604,
-      bestArea: "Rajapalayam",
-      topProduct: "Electra",
-    },
-    yearly: {
-      sales: 5820000,
-      collection: 4740000,
-      collectionInHand: 726000,
-      outstanding: 1080000,
-      farmers: 64,
-      farms: 48,
-      crops: 16,
-      visits: 6580,
-      bestArea: "Rajapalayam",
-      topProduct: "Electra",
-    },
-  },
-  ajith: {
-    today: {
-      sales: 19800,
-      collection: 17200,
-      collectionInHand: 2800,
-      outstanding: 2600,
-      farmers: 36,
-      farms: 28,
-      crops: 7,
-      visits: 14,
-      bestArea: "Srivilliputhur",
-      topProduct: "Aalga",
-    },
-    weekly: {
-      sales: 132600,
-      collection: 110500,
-      collectionInHand: 18600,
-      outstanding: 22100,
-      farmers: 39,
-      farms: 30,
-      crops: 9,
-      visits: 98,
-      bestArea: "Srivilliputhur",
-      topProduct: "Aalga",
-    },
-    monthly: {
-      sales: 392000,
-      collection: 318000,
-      collectionInHand: 52400,
-      outstanding: 74000,
-      farmers: 44,
-      farms: 33,
-      crops: 11,
-      visits: 418,
-      bestArea: "Srivilliputhur",
-      topProduct: "Aalga",
-    },
-    quarterly: {
-      sales: 1148000,
-      collection: 942000,
-      collectionInHand: 148600,
-      outstanding: 206000,
-      farmers: 49,
-      farms: 36,
-      crops: 13,
-      visits: 1242,
-      bestArea: "Srivilliputhur",
-      topProduct: "Aalga",
-    },
-    yearly: {
-      sales: 4680000,
-      collection: 3820000,
-      collectionInHand: 584000,
-      outstanding: 860000,
-      farmers: 54,
-      farms: 41,
-      crops: 15,
-      visits: 5060,
-      bestArea: "Srivilliputhur",
-      topProduct: "Aalga",
-    },
-  },
-  periya: {
-    today: {
-      sales: 17600,
-      collection: 15400,
-      collectionInHand: 2400,
-      outstanding: 2200,
-      farmers: 31,
-      farms: 24,
-      crops: 6,
-      visits: 11,
-      bestArea: "Sivakasi",
-      topProduct: "Astra",
-    },
-    weekly: {
-      sales: 118200,
-      collection: 98600,
-      collectionInHand: 16200,
-      outstanding: 19600,
-      farmers: 34,
-      farms: 26,
-      crops: 8,
-      visits: 82,
-      bestArea: "Sivakasi",
-      topProduct: "Astra",
-    },
-    monthly: {
-      sales: 348000,
-      collection: 286000,
-      collectionInHand: 46800,
-      outstanding: 62000,
-      farmers: 38,
-      farms: 29,
-      crops: 10,
-      visits: 356,
-      bestArea: "Sivakasi",
-      topProduct: "Astra",
-    },
-    quarterly: {
-      sales: 1024000,
-      collection: 848000,
-      collectionInHand: 132400,
-      outstanding: 176000,
-      farmers: 42,
-      farms: 31,
-      crops: 12,
-      visits: 1068,
-      bestArea: "Sivakasi",
-      topProduct: "Astra",
-    },
-    yearly: {
-      sales: 4180000,
-      collection: 3420000,
-      collectionInHand: 518000,
-      outstanding: 760000,
-      farmers: 47,
-      farms: 35,
-      crops: 14,
-      visits: 4320,
-      bestArea: "Sivakasi",
-      topProduct: "Astra",
-    },
-  },
-};
-
-type KpiData = {
-  sales: number;
-  collection: number;
-  outstanding: number;
-  farmers: number;
-  farms: number;
-  crops: number;
-  trends: {
-    sales: string;
-    collection: string;
-    outstanding: string;
-    farmers: string;
-    farms: string;
-    crops: string;
-  };
-};
-
-const kpiData: Record<DateFilter, KpiData> = {
-  today: {
-    sales: 61900,
-    collection: 54200,
-    outstanding: 7700,
-    farmers: 142,
-    farms: 96,
-    crops: 38,
-    trends: {
-      sales: "+6.8% vs yesterday",
-      collection: "+4.2% vs yesterday",
-      outstanding: "-1.4% vs yesterday",
-      farmers: "+2 new today",
-      farms: "+1 new today",
-      crops: "38 active crops",
-    },
-  },
-  weekly: {
-    sales: 419200,
-    collection: 351900,
-    outstanding: 67300,
-    farmers: 148,
-    farms: 101,
-    crops: 42,
-    trends: {
-      sales: "+12.3% vs last week",
-      collection: "+9.1% vs last week",
-      outstanding: "-3.2% vs last week",
-      farmers: "+9 this week",
-      farms: "+5 this week",
-      crops: "+4 this week",
-    },
-  },
-  monthly: {
-    sales: 1225000,
-    collection: 1016000,
-    outstanding: 209000,
-    farmers: 156,
-    farms: 108,
-    crops: 47,
-    trends: {
-      sales: "+18.2% this month",
-      collection: "+14.6% this month",
-      outstanding: "-5.1% this month",
-      farmers: "+24 this month",
-      farms: "+12 this month",
-      crops: "+9 this month",
-    },
-  },
-  quarterly: {
-    sales: 3597000,
-    collection: 2976000,
-    outstanding: 621000,
-    farmers: 166,
-    farms: 117,
-    crops: 52,
-    trends: {
-      sales: "+22.4% this quarter",
-      collection: "+18.9% this quarter",
-      outstanding: "-7.8% this quarter",
-      farmers: "+38 this quarter",
-      farms: "+21 this quarter",
-      crops: "+14 this quarter",
-    },
-  },
-  yearly: {
-    sales: 14680000,
-    collection: 11980000,
-    outstanding: 2700000,
-    farmers: 184,
-    farms: 132,
-    crops: 58,
-    trends: {
-      sales: "+24.6% this year",
-      collection: "+21.3% this year",
-      outstanding: "-9.2% this year",
-      farmers: "+72 this year",
-      farms: "+48 this year",
-      crops: "+22 this year",
-    },
-  },
-};
-
-type DirectSalesSummary = {
-  sales: number;
-  collection: number;
-  outstanding: number;
-  farmers: number;
-  farms: number;
-  crops: number;
-};
-
-const directSalesData: Record<DateFilter, DirectSalesSummary> = {
-  today: {
-    sales: 18600,
-    collection: 15200,
-    outstanding: 3400,
-    farmers: 18,
-    farms: 12,
-    crops: 7,
-  },
-  weekly: {
-    sales: 124800,
-    collection: 103600,
-    outstanding: 21200,
-    farmers: 42,
-    farms: 31,
-    crops: 12,
-  },
-  monthly: {
-    sales: 368000,
-    collection: 301500,
-    outstanding: 66500,
-    farmers: 68,
-    farms: 49,
-    crops: 18,
-  },
-  quarterly: {
-    sales: 1085000,
-    collection: 886000,
-    outstanding: 199000,
-    farmers: 96,
-    farms: 72,
-    crops: 24,
-  },
-  yearly: {
-    sales: 4320000,
-    collection: 3520000,
-    outstanding: 800000,
-    farmers: 138,
-    farms: 104,
-    crops: 32,
-  },
-};
 
 type AggregatedStockRow = {
   productId: string;
@@ -880,46 +131,69 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const [showPendingHandovers, setShowPendingHandovers] = useState(false);
   const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
   const [directDetail, setDirectDetail] = useState<DirectDetailSelection>(null);
+  const [version, setVersion] = useState(0);
 
-  const data = useMemo(() => kpiData[dateFilter], [dateFilter]);
-  const directSales = useMemo(() => directSalesData[dateFilter], [dateFilter]);
+  useEffect(() => {
+    const refresh = () => setVersion((current) => current + 1);
+    const events = [
+      "nature-biotic-store-inventory-updated",
+      "nature-biotic-store-receipts-updated",
+      "nature-biotic-fro-visits-updated",
+      "nature-biotic-handover-updated",
+      "fro-sales-updated",
+      "farmer-purchases-updated",
+      "fro-stock-txns-updated",
+      "store-purchase-orders-updated",
+      "company-store-sales-updated",
+      "nature-biotic-store-purchase-status-updated",
+      "fro-stock-updated",
+      "fro-accepted-deliveries-updated",
+      "focus",
+    ];
+    events.forEach((event) => window.addEventListener(event, refresh));
+    return () => events.forEach((event) => window.removeEventListener(event, refresh));
+  }, []);
+
+  const dashboard = useMemo(
+    () => buildStoreDashboard(storeId, dateFilter),
+    [storeId, dateFilter, version],
+  );
+  const data = dashboard.overview;
+  const directSales = dashboard.direct;
+  const executives = dashboard.executives;
   const stockPurchases = useMemo(() => {
-    const startDate = getCalendarPeriodStart(dateFilter);
-    const allPurchases = getStorePurchasesFromCompanySales(storeId);
-
-    const filtered = allPurchases.filter((row) => {
-      const rowDate = new Date(row.date);
-      return rowDate >= startDate;
-    });
-
-    const totalValue = filtered.reduce(
-      (sum, row) => sum + Number(row.total || 0),
-      0,
-    );
-    const totalQty = filtered.reduce(
-      (sum, row) => sum + Number(row.quantity || 0),
-      0,
-    );
+    const received = getStorePurchasesFromCompanySales(storeId)
+      .filter((row) => isStorePurchaseReceived(row.invoiceNo))
+      .filter((row) => inPeriod(row.date, dateFilter))
+      .map((row) => {
+        const quantity = Math.max(0, Number(row.quantity || 0));
+        const rate = Number(row.unitPrice ?? row.rate ?? row.price ?? 0);
+        const amount = rate > 0 ? quantity * rate : Number(row.total || 0);
+        return { ...row, quantity, rate, total: amount };
+      });
 
     return {
-      rows: filtered.sort((a, b) => b.date.localeCompare(a.date)),
-      totalValue,
-      totalQty,
+      rows: received.sort((a, b) => String(b.date).localeCompare(String(a.date))),
+      totalValue: received.reduce((sum, row) => sum + Number(row.total || 0), 0),
+      totalQty: received.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
     };
-  }, [storeId, dateFilter]);
+  }, [storeId, dateFilter, version]);
+
+  const currentStockValue = useMemo(
+    () => getStoreOverviewStockValue(storeId),
+    [storeId, version],
+  );
 
     const execReceivedData = useMemo(() => {
-    const startDate = getCalendarPeriodStart(dateFilter);
     const result: Record<ExecKey, { qty: number; value: number }> = {} as any;
 
-    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
-      const name = execNames[key];
-      const allTxns = getFROStockTxnsByExecutive(storeId, name);
+    executives.forEach((officer) => {
+      const allTxns = getFROStockTxnsByExecutive(storeId, officer.name);
       const deliveryTxns = allTxns.filter(
-        (t) => t.type === "Delivery" && new Date(t.date) >= startDate,
+        (t) => t.type === "Delivery" && inPeriod(t.date, dateFilter),
       );
 
-      result[key] = {
+      result[officer.id] = {
         qty: deliveryTxns.reduce((sum, t) => sum + t.qty, 0),
         value: deliveryTxns.reduce(
           (sum, t) => sum + t.qty * t.unitValue,
@@ -929,10 +203,9 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     });
 
     return result;
-  }, [storeId, dateFilter]);
+  }, [storeId, dateFilter, executives]);
 
   const execStockData = useMemo(() => {
-    const startDate = getFilterStartDate(dateFilter);
     const result: Record<
       ExecKey,
       {
@@ -951,51 +224,22 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       }
     > = {} as any;
 
-    function aggregate(txns: ReturnType<typeof getFROStockTxnsByExecutive>) {
-      const map = new Map<string, AggregatedStockRow>();
-      txns.forEach((t) => {
-        const k = `${t.productId}|${t.packSize}|${t.batchNo}`;
-        const existing = map.get(k);
-        if (existing) {
-          existing.qty += t.qty;
-        } else {
-          map.set(k, {
-            productId: t.productId,
-            productName: t.productName,
-            packSize: t.packSize,
-            batchNo: t.batchNo,
-            expiryDate: t.expiryDate,
-            unitValue: t.unitValue,
-            qty: t.qty,
-          });
-        }
-      });
-      return Array.from(map.values());
-    }
-
-    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
-      const name = execNames[key];
-      const allTxns = getFROStockTxnsByExecutive(storeId, name);
-      const filteredTxns = allTxns.filter((t) => new Date(t.date) >= startDate);
-
-      // Delivery only (stock IN from store)
-      const deliveryTxns = filteredTxns.filter((t) => t.type === "Delivery");
-      const deliveryRows = aggregate(deliveryTxns).filter((r) => r.qty > 0);
-
-      // Sales only (FRO → Farmer)
-      const saleTxns = filteredTxns.filter((t) => t.type === "Sale");
-      const salesRows = aggregate(
-        saleTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
-      ).filter((r) => r.qty > 0);
-
-      // Returns only (FRO → store)
-      const returnTxns = filteredTxns.filter((t) => t.type === "Return");
-      const returnRows = aggregate(
-        returnTxns.map((t) => ({ ...t, qty: Math.abs(t.qty) })),
-      ).filter((r) => r.qty > 0);
-
-      // Balance = Delivery − Sale − Return (net of ALL txn types in period)
-      const balanceRows = aggregate(filteredTxns).filter((r) => r.qty > 0);
+    executives.forEach((officer) => {
+      const key = officer.id;
+      const balanceRows = getFROStockByExecutive(storeId, officer.name).map(
+        (row) => ({
+          productId: row.productId,
+          productName: row.productName,
+          packSize: row.packSize,
+          batchNo: row.batchNo,
+          expiryDate: row.expiryDate,
+          unitValue: Number(row.unitValue || 0),
+          qty: Math.max(0, Number(row.currentQty || 0)),
+        }),
+      );
+      const deliveryRows: AggregatedStockRow[] = [];
+      const salesRows: AggregatedStockRow[] = [];
+      const returnRows: AggregatedStockRow[] = [];
 
       result[key] = {
         deliveryRows,
@@ -1023,19 +267,19 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     });
 
     return result;
-  }, [storeId, dateFilter]);
+  }, [storeId, executives, version]);
 
   const pendingByExecutive = useMemo(() => {
     const map: Partial<Record<ExecKey, FROHandover[]>> = {};
-    (Object.keys(execNames) as ExecKey[]).forEach((key) => {
-      map[key] = pendingHandovers.filter(
+    executives.forEach((officer) => {
+      map[officer.id] = pendingHandovers.filter(
         (handover) =>
           handover.handedOverBy?.trim().toLowerCase() ===
-          execNames[key].trim().toLowerCase(),
+          officer.name.trim().toLowerCase(),
       );
     });
     return map;
-  }, [pendingHandovers]);
+  }, [pendingHandovers, executives]);
 
   function acceptHandover(handoverId: string) {
     try {
@@ -1097,42 +341,42 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             value={formatCurrency(data.sales)}
             icon="payments"
             color="brand"
-            trend={data.trends.sales}
+            trend=""
           />
           <BusinessOverviewCard
             label="Collection"
             value={formatCurrency(data.collection)}
             icon="account_balance_wallet"
             color="blue"
-            trend={data.trends.collection}
+            trend=""
           />
           <BusinessOverviewCard
             label="Outstanding"
             value={formatCurrency(data.outstanding)}
             icon="receipt_long"
             color="amber"
-            trend={data.trends.outstanding}
+            trend=""
           />
           <BusinessOverviewCard
             label="Farmers"
             value={String(data.farmers)}
             icon="groups"
             color="purple"
-            trend={data.trends.farmers}
+            trend=""
           />
           <BusinessOverviewCard
             label="Farms"
             value={String(data.farms)}
             icon="agriculture"
             color="brand"
-            trend={data.trends.farms}
+            trend=""
           />
           <BusinessOverviewCard
             label="Crops"
             value={String(data.crops)}
             icon="spa"
             color="blue"
-            trend={data.trends.crops}
+            trend=""
           />
         </div>
       </div>
@@ -1181,13 +425,13 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             value={formatCurrency(stockPurchases.totalValue)}
             icon="local_shipping"
             color="brand"
+            onClick={() => setDirectDetail("stocks")}
           />
           <DirectSalesCard
             label="Current Stocks"
-            value={formatCurrency(stockPurchases.totalValue)}
+            value={formatCurrency(currentStockValue)}
             icon="inventory_2"
             color="blue"
-            onClick={() => setDirectDetail("stocks")}
           />
         </div>
       </div>
@@ -1212,22 +456,25 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
           Executive Summary
         </h2>
         <div className="space-y-3">
-          {(Object.keys(execNames) as ExecKey[]).map((key) => {
-            const e = execData[key][dateFilter];
-            const target = execTargets[key][dateFilter];
+          {executives.map((officer) => {
+            const key = officer.id;
+            const e = officer;
+            const target = officer.target;
+            const received = execReceivedData[key] || { qty: 0, value: 0 };
+            const stock = execStockData[key];
             return (
               <Card key={key} className="p-4">
                 <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${execColors[key]} flex items-center justify-center text-white font-bold text-sm shrink-0`}
+                      className={`w-10 h-10 rounded-xl bg-gradient-to-br ${officer.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}
                     >
-                      {initials(execNames[key])}
+                      {initials(officer.name)}
                     </div>
 
                     <div className="min-w-0">
                       <h3 className="font-bold text-slate-800 text-base leading-tight truncate">
-                        {execNames[key]}
+                        {officer.name}
                       </h3>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-xs text-slate-400">
@@ -1281,7 +528,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     value={formatCurrency(e.sales)}
                     color="text-brand-600"
                     onClick={() =>
-                      setExecDetail({ execKey: key, type: "sales" })
+                      setExecDetail({
+                        execKey: key,
+                        execName: officer.name,
+                        type: "sales",
+                      })
                     }
                   />
                   <ExecField
@@ -1290,7 +541,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     value={formatCurrency(e.collection)}
                     color="text-blue-600"
                     onClick={() =>
-                      setExecDetail({ execKey: key, type: "collection" })
+                      setExecDetail({
+                        execKey: key,
+                        execName: officer.name,
+                        type: "collection",
+                      })
                     }
                   />
                   <ExecField
@@ -1299,7 +554,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     value={formatCurrency(e.collectionInHand)}
                     color="text-emerald-600"
                     onClick={() =>
-                      setExecDetail({ execKey: key, type: "cash" })
+                      setExecDetail({
+                        execKey: key,
+                        execName: officer.name,
+                        type: "cash",
+                      })
                     }
                   />
                   <ExecField
@@ -1308,13 +567,17 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     value={formatCurrency(e.outstanding)}
                     color="text-amber-600"
                     onClick={() =>
-                      setExecDetail({ execKey: key, type: "outstanding" })
+                      setExecDetail({
+                        execKey: key,
+                        execName: officer.name,
+                        type: "outstanding",
+                      })
                     }
                   />
                   <ExecField
                     icon="local_shipping"
                     label="Total Received"
-                    value={String(execReceivedData[key].qty)}
+                    value={String(received.qty)}
                     color="text-teal-600"
                   />
                   <ExecField
@@ -1340,9 +603,15 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   <ExecField
                     icon="inventory_2"
                     label="Stocks in Hand"
-                    value={formatCurrency(execStockData[key].balanceTotalValue)}
+                    value={formatCurrency(stock?.balanceTotalValue || 0)}
                     color="text-indigo-600"
-                    onClick={() => setExecDetail({ execKey: key, type: "stocks" })}
+                    onClick={() =>
+                      setExecDetail({
+                        execKey: key,
+                        execName: officer.name,
+                        type: "stocks",
+                      })
+                    }
                   />
                 </div>
               </Card>
@@ -1366,7 +635,33 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         createPortal(
           <ExecutiveDetailModal
             selection={execDetail}
-            stockData={execStockData[execDetail.execKey]}
+            rows={
+              executives.find((officer) => officer.id === execDetail.execKey)?.[
+                execDetail.type === "sales"
+                  ? "salesRows"
+                  : execDetail.type === "collection"
+                    ? "collectionRows"
+                    : execDetail.type === "cash"
+                      ? "cashRows"
+                      : "outstandingRows"
+              ] || []
+            }
+            stockData={
+              execStockData[execDetail.execKey] || {
+                deliveryRows: [],
+                salesRows: [],
+                returnRows: [],
+                balanceRows: [],
+                deliveryTotalQty: 0,
+                deliveryTotalValue: 0,
+                salesTotalQty: 0,
+                salesTotalValue: 0,
+                returnTotalQty: 0,
+                returnTotalValue: 0,
+                balanceTotalQty: 0,
+                balanceTotalValue: 0,
+              }
+            }
             onClose={() => setExecDetail(null)}
           />,
           document.body,
@@ -1587,7 +882,7 @@ function DirectSalesDetailModal({
 }: {
   type: DirectDetailType;
   dateFilter: DateFilter;
-  summary: DirectSalesSummary;
+  summary: ChannelSummary;
   stockRows: ReturnType<typeof getStorePurchasesFromCompanySales>;
   stockTotalValue: number;
   storeName: string;
@@ -1726,7 +1021,6 @@ function DirectSalesDetailModal({
     );
   }
 
-  // ---- SALES / COLLECTION / OUTSTANDING: existing dummy-data behavior unchanged ----
   const titles: Record<Exclude<DirectDetailType, "stocks">, string> = {
     sales: "Direct Sales Details",
     collection: "Direct Collection Details",
@@ -1739,38 +1033,19 @@ function DirectSalesDetailModal({
     outstanding: "receipt_long",
   };
 
+  const detailRows =
+    type === "sales"
+      ? summary.salesRows
+      : type === "collection"
+        ? summary.collectionRows
+        : summary.outstandingRows;
+
   const totalValue =
     type === "sales"
       ? summary.sales
       : type === "collection"
         ? summary.collection
         : summary.outstanding;
-
-  const splitAmount = (total: number, ratios: number[]) => {
-    let used = 0;
-    return ratios.map((ratio, index) => {
-      if (index === ratios.length - 1) return Math.max(0, total - used);
-      const amount = Math.round(total * ratio);
-      used += amount;
-      return amount;
-    });
-  };
-
-  const farmers = ["Murugan", "Selvam", "Kannan", "Raja"];
-  const saleAmounts = splitAmount(summary.sales, [0.34, 0.28, 0.22, 0.16]);
-  const collectionAmounts = splitAmount(
-    summary.collection,
-    [0.36, 0.27, 0.21, 0.16],
-  );
-  const outstandingAmounts = splitAmount(
-    summary.outstanding,
-    [0.38, 0.27, 0.2, 0.15],
-  );
-
-  const displayDates =
-    dateFilter === "today"
-      ? ["24 Aug 2026", "24 Aug 2026", "24 Aug 2026", "24 Aug 2026"]
-      : ["24 Aug 2026", "22 Aug 2026", "20 Aug 2026", "18 Aug 2026"];
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
@@ -1847,88 +1122,30 @@ function DirectSalesDetailModal({
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {farmers.map((farmer, index) => {
-                if (type === "sales") {
-                  return (
-                    <tr
-                      key={`direct-sale-${index}`}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-3 text-center text-slate-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {displayDates[index]}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-700">
-                        {`SAI-INV-${String(1201 + index).padStart(4, "0")}`}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                      <td className="px-4 py-3 text-slate-600">Direct</td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-800">
-                        {formatCurrency(saleAmounts[index])}
-                      </td>
-                    </tr>
-                  );
-                }
-
-                if (type === "collection") {
-                  const methods = ["Cash", "UPI", "Cash", "Bank"];
-                  return (
-                    <tr
-                      key={`direct-collection-${index}`}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-3 text-center text-slate-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {displayDates[index]}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-700">
-                        {`SAI-RCP-${String(501 + index).padStart(4, "0")}`}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {methods[index]}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-800">
-                        {formatCurrency(collectionAmounts[index])}
-                      </td>
-                    </tr>
-                  );
-                }
-
-                const ageing = [
-                  "0-30 Days",
-                  "0-30 Days",
-                  "31-60 Days",
-                  "61-90 Days",
-                ];
-                return (
-                  <tr
-                    key={`direct-outstanding-${index}`}
-                    className="hover:bg-slate-50"
-                  >
-                    <td className="px-4 py-3 text-center text-slate-500">
-                      {index + 1}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {displayDates[index]}
-                    </td>
+              {detailRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                    No records in this period.
+                  </td>
+                </tr>
+              ) : (
+                detailRows.map((row, index) => (
+                  <tr key={`${row.invoiceNo}-${row.receiptNo}-${index}`} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.date}</td>
                     <td className="px-4 py-3 font-semibold text-slate-700">
-                      {`SAI-INV-${String(1181 + index).padStart(4, "0")}`}
+                      {type === "collection" ? row.receiptNo : row.invoiceNo}
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{farmer}</td>
-                    <td className="px-4 py-3 text-center text-slate-600">
-                      {ageing[index]}
+                    <td className="px-4 py-3 text-slate-700">{row.farmer}</td>
+                    <td className={`px-4 py-3 text-slate-600 ${type === "outstanding" ? "text-center" : ""}`}>
+                      {type === "sales" ? row.method : type === "collection" ? row.method : row.ageing}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-amber-700">
-                      {formatCurrency(outstandingAmounts[index])}
+                    <td className={`px-4 py-3 text-right font-bold ${type === "outstanding" ? "text-amber-700" : "text-slate-800"}`}>
+                      {formatCurrency(row.amount)}
                     </td>
                   </tr>
-                );
-              })}
+                ))
+              )}
             </tbody>
 
             <tfoot>
@@ -2000,10 +1217,12 @@ function BusinessOverviewCard({
 
 function ExecutiveDetailModal({
   selection,
+  rows,
   stockData,
   onClose,
 }: {
   selection: Exclude<ExecDetailSelection, null>;
+  rows: DashboardDetail[];
   stockData: {
     deliveryRows: AggregatedStockRow[];
     salesRows: AggregatedStockRow[];
@@ -2020,7 +1239,7 @@ function ExecutiveDetailModal({
   };
   onClose: () => void;
 }) {
-  const { execKey, type } = selection;
+  const { execName, type } = selection;
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -2053,7 +1272,7 @@ function ExecutiveDetailModal({
               </div>
               <div>
                 <h3 className="font-bold text-slate-800">
-                  {execNames[execKey]} — Hand Stock
+                  {execName} — Hand Stock
                 </h3>
                 <p className="text-xs text-slate-500">
                   Current stock balance with this executive
@@ -2118,7 +1337,7 @@ function ExecutiveDetailModal({
                       colSpan={8}
                       className="px-4 py-10 text-center text-slate-400"
                     >
-                      No stock records in this period.
+                      No stock in hand.
                     </td>
                   </tr>
                 ) : (
@@ -2188,10 +1407,6 @@ function ExecutiveDetailModal({
     );
   }
 
-  // ...rest of the function stays EXACTLY as it already is (sales/collection/cash/outstanding table) — no change needed below this point
-
-  // ---- SALES / COLLECTION / CASH / OUTSTANDING: existing dummy-data behavior unchanged ----
-  const rows = execDetailData[execKey][type];
   const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
   return (
@@ -2204,7 +1419,7 @@ function ExecutiveDetailModal({
             </div>
             <div>
               <h3 className="font-bold text-slate-800">
-                {execNames[execKey]} — {titles[type]}
+                {execName} — {titles[type]}
               </h3>
               <p className="text-xs text-slate-500">
                 Detailed activity for the selected executive
@@ -2262,67 +1477,38 @@ function ExecutiveDetailModal({
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {type === "sales" &&
-                (rows as typeof execDetailData.ram.sales).map((row) => (
-                  <tr key={row.invoiceNo} className="hover:bg-slate-50">
-                    <td className="px-5 py-3 text-slate-600">{row.date}</td>
-                    <td className="px-5 py-3 font-semibold text-slate-700">
-                      {row.invoiceNo}
-                    </td>
-                    <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-                    <td className="px-5 py-3 text-right font-bold text-slate-800">
-                      {formatCurrency(row.amount)}
-                    </td>
-                  </tr>
-                ))}
-
-              {type === "collection" &&
-                (rows as typeof execDetailData.ram.collection).map((row) => (
-                  <tr key={row.receiptNo} className="hover:bg-slate-50">
-                    <td className="px-5 py-3 text-slate-600">{row.date}</td>
-                    <td className="px-5 py-3 font-semibold text-slate-700">
-                      {row.receiptNo}
-                    </td>
-                    <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-                    <td className="px-5 py-3 text-right font-bold text-slate-800">
-                      {formatCurrency(row.amount)}
-                    </td>
-                  </tr>
-                ))}
-
-              {type === "cash" &&
-                (rows as typeof execDetailData.ram.cash).map((row, index) => (
-                  <tr
-                    key={`${row.farmer}-${index}`}
-                    className="hover:bg-slate-50"
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={type === "outstanding" ? 5 : type === "cash" ? 3 : 4}
+                    className="px-5 py-10 text-center text-slate-400"
                   >
+                    No records in this period.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row, index) => (
+                  <tr key={`${row.invoiceNo}-${row.receiptNo}-${index}`} className="hover:bg-slate-50">
                     <td className="px-5 py-3 text-slate-600">{row.date}</td>
+                    {type === "sales" && (
+                      <td className="px-5 py-3 font-semibold text-slate-700">{row.invoiceNo}</td>
+                    )}
+                    {type === "collection" && (
+                      <td className="px-5 py-3 font-semibold text-slate-700">{row.receiptNo}</td>
+                    )}
                     <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-                    <td className="px-5 py-3 text-right font-bold text-slate-800">
+                    {type === "outstanding" && (
+                      <>
+                        <td className="px-5 py-3 text-slate-600">{row.village || "-"}</td>
+                        <td className="px-5 py-3 text-slate-600">{row.phone || "-"}</td>
+                      </>
+                    )}
+                    <td className={`px-5 py-3 text-right font-bold ${type === "outstanding" ? "text-amber-700" : "text-slate-800"}`}>
                       {formatCurrency(row.amount)}
                     </td>
                   </tr>
-                ))}
-
-              {type === "outstanding" &&
-                (rows as typeof execDetailData.ram.outstanding).map(
-                  (row, index) => (
-                    <tr
-                      key={`${row.farmer}-${index}`}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-5 py-3 text-slate-600">{row.date}</td>
-                      <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
-                      <td className="px-5 py-3 text-slate-600">
-                        {row.village}
-                      </td>
-                      <td className="px-5 py-3 text-slate-600">{row.phone}</td>
-                      <td className="px-5 py-3 text-right font-bold text-amber-700">
-                        {formatCurrency(row.amount)}
-                      </td>
-                    </tr>
-                  ),
-                )}
+                ))
+              )}
             </tbody>
 
             <tfoot className="sticky bottom-0 z-10">

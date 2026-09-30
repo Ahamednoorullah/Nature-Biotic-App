@@ -117,6 +117,8 @@ export type Farmer = {
   village: string;
   through?: "Direct" | "Executive";
   executiveName?: string;
+  createdByStaffId?: string;
+  createdByUserId?: string;
   landmark: string;
   district: string;
   state: string;
@@ -979,15 +981,11 @@ export function getCompanyStoreSales(): CompanyStoreSaleRecord[] {
     const rows = saved ? JSON.parse(saved) : [];
     if (!Array.isArray(rows)) return [];
 
+    localStorage.removeItem(APPROVED_PO_RECEIPTS_KEY);
     const purchaseOrders = rows.filter(isPurchaseOrderSale);
     const sales = rows.filter((row) => !isPurchaseOrderSale(row));
     if (purchaseOrders.length > 0) {
-      const existing = readApprovedPurchaseOrders();
-      const seen = new Set(existing.map((row) => row.id));
-      saveApprovedPurchaseOrders([
-        ...purchaseOrders.filter((row) => !seen.has(row.id)),
-        ...existing,
-      ]);
+      // A purchase-order number stored as a sale is not an invoice. Drop it.
       localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(sales));
     }
     return sales;
@@ -1052,6 +1050,61 @@ export function nextReceiptNumber() {
   return `RCP-${String(highest + 1).padStart(4, "0")}`;
 }
 
+const STORE_DOCUMENT_SEQUENCE_KEY = "nature-biotic-store-document-sequence-v1";
+
+export function nextStoreDocumentNo(
+  storeCode: string,
+  kind: string,
+  existing: string[],
+) {
+  const code = String(storeCode || "ST").trim() || "ST";
+  const prefix = `${code}-${kind}-`;
+  const pattern = new RegExp(
+    `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)$`,
+    "i",
+  );
+  let highest = 0;
+  existing.forEach((value) => {
+    const match = String(value || "").trim().match(pattern);
+    if (match) highest = Math.max(highest, Number(match[1]));
+  });
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(STORE_DOCUMENT_SEQUENCE_KEY) || "{}",
+    );
+    const marked = Number(saved?.[`${code}:${kind}`] || 0);
+    if (marked > highest) highest = marked;
+  } catch {
+    // Numbering still continues from the saved documents.
+  }
+  return `${prefix}${String(highest + 1).padStart(4, "0")}`;
+}
+
+export function rememberStoreDocumentNo(
+  storeCode: string,
+  kind: string,
+  documentNo: string,
+) {
+  const code = String(storeCode || "ST").trim() || "ST";
+  const match = String(documentNo || "")
+    .trim()
+    .match(new RegExp(`-${kind}-(\\d+)$`, "i"));
+  if (!match || typeof window === "undefined") return;
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(STORE_DOCUMENT_SEQUENCE_KEY) || "{}",
+    );
+    const key = `${code}:${kind}`;
+    const next = Math.max(Number(saved?.[key] || 0), Number(match[1]));
+    localStorage.setItem(
+      STORE_DOCUMENT_SEQUENCE_KEY,
+      JSON.stringify({ ...saved, [key]: next }),
+    );
+  } catch {
+    // The saved document still keeps its number.
+  }
+}
+
 export function commitReceiptNumber(receiptNo: string) {
   if (typeof window === "undefined") return;
   const value = receiptSequenceValue(receiptNo);
@@ -1074,71 +1127,17 @@ function purchaseItemName(item: any) {
 }
 
 export function syncApprovedPurchaseOrderToSales(
-  storeId: string,
-  storeName: string,
-  poNo: string,
-  poDate: string,
-  items: any[],
-  storeLocation: string,
-  placeOfSupply: string,
+  _storeId: string,
+  _storeName: string,
+  _poNo: string,
+  _poDate: string,
+  _items: any[],
+  _storeLocation: string,
+  _placeOfSupply: string,
 ) {
-  getCompanyStoreSales();
-  const existing = readApprovedPurchaseOrders();
-
-  // A purchase order stays a purchase order. Acceptance must not create a sale.
-  const alreadySynced = existing.some((row) => row.invoiceNo === poNo);
-  if (alreadySynced) return existing;
-
-  const newRows: CompanyStoreSaleRecord[] = (items || []).map((item, i) => {
-    const quantity = Math.max(0, Number(item?.quantity ?? item?.qty ?? 0));
-    const price = Number(item?.price ?? item?.sellingPrice ?? item?.rate ?? 0);
-    const withoutTax = Number(item?.withoutTax ?? quantity * price);
-    const sgst = Number(item?.sgst ?? 0);
-    const cgst = Number(item?.cgst ?? 0);
-    const igst = Number(item?.igst ?? 0);
-    const total = Number(item?.total ?? item?.rowTotal ?? withoutTax + sgst + cgst + igst);
-    const packSize = String(item?.packSize || item?.pkgsize || "").trim();
-    return {
-      id: `po-receipt-${poNo}-${i}`,
-      invoiceNo: poNo,
-      date: poDate,
-      storeId,
-      storeName,
-      storeLocation,
-      placeOfSupply,
-      product: purchaseItemName(item),
-      productId: String(item?.productId || ""),
-      packSize,
-      pkgsize: packSize,
-      batchNo: String(item?.batchNo || ""),
-      expiryDate: String(item?.expiryDate || ""),
-      quantity,
-      rate: price,
-      withoutTax,
-      taxAmount: sgst + cgst + igst,
-      sgst,
-      cgst,
-      igst,
-      total,
-      returnAmount: 0,
-      unitPrice: price,
-      beforeDiscount: withoutTax,
-      price: total,
-      discountAmount: Number(item?.discountAmount ?? 0),
-      discountPercent: Number(item?.discountPercent ?? 0),
-      taxableAmount: withoutTax,
-    };
-  }).filter((row) => row.product && row.quantity > 0);
-
-  const merged = [...newRows, ...existing];
-  saveApprovedPurchaseOrders(merged);
-
-  const sales = getCompanyStoreSales().filter((row) => row.invoiceNo !== poNo);
-  try {
-    localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(sales));
-    window.dispatchEvent(new Event("company-store-sales-updated"));
-  } catch {}
-  return merged;
+  // Acceptance changes purchase-order status only.
+  // It must not create a company sale or a store purchase bill.
+  return getCompanyStoreSales();
 }
 
 export function approveStorePurchaseOrder(requestId: string) {
@@ -1159,21 +1158,12 @@ export function approveStorePurchaseOrder(requestId: string) {
         ? orders.find((item: any) => item?.poNo === request.referenceNo)
         : null;
       if (po) {
-        syncApprovedPurchaseOrderToSales(
-          request.storeId,
-          request.storeName,
-          po.poNo,
-          po.date,
-          po.items || [],
-          stores.find((store) => store.id === request.storeId)?.location || "",
-          "Tamil Nadu",
-        );
         localStorage.setItem(
           key,
           JSON.stringify(
             orders.map((item: any) =>
               item?.poNo === request.referenceNo
-                ? { ...item, status: "Approved" }
+                ? { ...item, status: "Accepted" }
                 : item,
             ),
           ),
@@ -1187,13 +1177,31 @@ export function approveStorePurchaseOrder(requestId: string) {
 }
 
 export function getStorePurchasesFromCompanySales(storeId: string) {
-  const invoices = getCompanyStoreSales().filter(
-    (sale) => sale.storeId === storeId,
-  );
-  const acceptedOrders = readApprovedPurchaseOrders().filter(
-    (order) => order.storeId === storeId,
-  );
-  return [...acceptedOrders, ...invoices];
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem(APPROVED_PO_RECEIPTS_KEY);
+    } catch {}
+  }
+  return getCompanyStoreSales().filter((sale) => sale.storeId === storeId);
+}
+
+export const STORE_PURCHASE_STATUS_KEY = "nature-biotic-store-purchase-status-v1";
+export const storePurchaseStatusUpdatedEvent =
+  "nature-biotic-store-purchase-status-updated";
+
+export function getStorePurchaseStatuses(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STORE_PURCHASE_STATUS_KEY);
+    const statuses = raw ? JSON.parse(raw) : {};
+    return statuses && typeof statuses === "object" ? statuses : {};
+  } catch {
+    return {};
+  }
+}
+
+export function isStorePurchaseReceived(invoiceNo: string) {
+  return getStorePurchaseStatuses()[String(invoiceNo || "")] === "Received";
 }
 
 export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
@@ -2522,7 +2530,7 @@ export function getCompanyAvailableQty(
     )
     .reduce((sum, product) => sum + Math.max(0, Number(product.stock || 0)), 0);
 
-  const soldFromInvoices = getCompanyStoreSales().reduce((sum, sale) => {
+  const sold = getCompanyStoreSales().reduce((sum, sale) => {
     return (
       sum +
       (sameSize({
@@ -2534,22 +2542,6 @@ export function getCompanyAvailableQty(
         : 0)
     );
   }, 0);
-  const soldFromPurchaseOrders = readApprovedPurchaseOrders().reduce(
-    (sum, order) => {
-      return (
-        sum +
-        (sameSize({
-          productId: order.productId,
-          productName: order.product,
-          packSize: order.packSize || order.pkgsize,
-        })
-          ? Math.max(0, Number(order.quantity || 0))
-          : 0)
-      );
-    },
-    0,
-  );
-  const sold = soldFromInvoices + soldFromPurchaseOrders;
 
   const returned = getCompanyCreditNoteSyncRecords().reduce((sum, row) => {
     if (row.status !== "Approved") return sum;

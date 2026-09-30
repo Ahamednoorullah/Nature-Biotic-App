@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Card, Button, Icon, EmptyState } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
-import { expenses as allExpenses, type Expense } from "@/lib/purchaseData";
+import { Card, Button, Icon, EmptyState, Input, Select } from "@/components/ui";
+import { formatCurrency, formatDate, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter } from "@/lib/format";
+import type { Expense } from "@/lib/purchaseData";
 import { staff as staffList } from "@/lib/data";
+import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { useAuth } from "@/context/AuthContext";
 
 const categories = [
@@ -47,6 +48,14 @@ const readJSON = <T,>(key: string, fallback: T): T => {
   }
 };
 
+const isSampleExpense = (expense: Expense) =>
+  /^exp\d+$/.test(String(expense.id || ""));
+
+const readStoredExpenses = (): Expense[] =>
+  readJSON<Expense[]>(EXPENSE_STORAGE_KEY, []).filter(
+    (expense) => !isSampleExpense(expense),
+  );
+
 const getNextExpenseNo = (expenses: Expense[]) => {
   const highestNo = expenses.reduce((highest, expense) => {
     const number = Number(String(expense.expenseNo).match(/\d+/)?.[0] ?? 0);
@@ -77,9 +86,10 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
     [storeId],
   );
 
-  const [expenses, setExpenses] = useState<Expense[]>(() =>
-    readJSON(EXPENSE_STORAGE_KEY, allExpenses),
-  );
+  const [expenses, setExpenses] = useState<Expense[]>(readStoredExpenses);
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [cashRequests, setCashRequests] = useState<CashReceivedRequest[]>(() =>
     readJSON(cashKey, []),
   );
@@ -105,7 +115,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
   const [cashRemarks, setCashRemarks] = useState("");
 
   const loadSharedData = () => {
-    setExpenses(readJSON(EXPENSE_STORAGE_KEY, allExpenses));
+    setExpenses(readStoredExpenses());
     setCashRequests(readJSON(cashKey, []));
   };
 
@@ -135,9 +145,28 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
     );
   }, [expenses, isFRO, user?.name]);
 
+  const froNames = useMemo(() => {
+    const names = new Set<string>();
+    staffList.forEach((member) => {
+      if (member.storeId !== storeId || member.status === "Inactive") return;
+      if (roleForStaffDesignation(member.designation) !== "fro") return;
+      const name = member.name.trim().toLowerCase();
+      if (name) names.add(name);
+    });
+    return names;
+  }, [storeId]);
+
+  const datedExpenses = useMemo(
+    () =>
+      scopedExpenses.filter((expense) =>
+        matchesSimpleDate(expense.date, dateFilter, customFrom, customTo),
+      ),
+    [scopedExpenses, dateFilter, customFrom, customTo],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return scopedExpenses.filter((e) => {
+    return datedExpenses.filter((e) => {
       const matchesSearch =
         !q ||
         String(e.expenseNo || "")
@@ -151,16 +180,17 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
         categoryFilter === "all" || e.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });
-  }, [scopedExpenses, search, categoryFilter]);
+  }, [datedExpenses, search, categoryFilter]);
 
-  const totalExpenses = scopedExpenses.reduce(
-    (s, e) => s + Number(e.amount || 0),
-    0,
-  );
-  const today = new Date().toISOString().split("T")[0];
-  const todayExpenses = scopedExpenses
-    .filter((e) => e.date === today)
-    .reduce((s, e) => s + Number(e.amount || 0), 0);
+  const isFROEntry = (expense: Expense) =>
+    froNames.has(String(expense.enteredBy || "").trim().toLowerCase());
+  const froExpenses = datedExpenses
+    .filter(isFROEntry)
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const storeExpenses = datedExpenses
+    .filter((expense) => !isFROEntry(expense))
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const totalExpenses = froExpenses + storeExpenses;
 
   const pendingRequests = isFRO
     ? []
@@ -253,7 +283,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Expenses
@@ -262,6 +292,35 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
             Track all store-level expenses and FRO cash requests.
           </p>
         </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
+          <div className="w-full sm:w-44">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+              options={simpleDateFilterOptions}
+            />
+          </div>
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full sm:w-40">
+                <Input
+                  label="From Date"
+                  type="date"
+                  value={customFrom}
+                  onChange={setCustomFrom}
+                />
+              </div>
+              <div className="w-full sm:w-40">
+                <Input
+                  label="To Date"
+                  type="date"
+                  value={customTo}
+                  onChange={setCustomTo}
+                />
+              </div>
+            </>
+          )}
         {!isFRO && (
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
@@ -279,6 +338,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
             </Button>
           </div>
         )}
+        </div>
       </div>
 
       {!isFRO && pendingRequests.length > 0 && (
@@ -330,23 +390,11 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
           value={totalExpenses}
           icon="receipt_long"
         />
-        <Stat title="Today Expenses" value={todayExpenses} icon="today" />
-        <Stat
-          title="Monthly Expenses"
-          value={scopedExpenses
-            .filter(
-              (e) =>
-                e.date >=
-                new Date(Date.now() - 30 * 86400000)
-                  .toISOString()
-                  .split("T")[0],
-            )
-            .reduce((s, e) => s + Number(e.amount || 0), 0)}
-          icon="calendar_month"
-        />
+        <Stat title="FRO Expenses" value={froExpenses} icon="today" />
+        <Stat title="Store Expenses" value={storeExpenses} icon="calendar_month" />
         <Stat
           title="No of Entries"
-          value={scopedExpenses.length}
+          value={datedExpenses.length}
           icon="format_list_numbered"
           isCount
         />

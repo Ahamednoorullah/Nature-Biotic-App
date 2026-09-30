@@ -3,10 +3,10 @@ import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
-  commitReceiptNumber,
   getFarmersByStore,
   getStore,
-  nextReceiptNumber,
+  nextStoreDocumentNo,
+  rememberStoreDocumentNo,
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
@@ -222,9 +222,17 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     amountReceived > 0 &&
     amountReceived <= outstandingBefore;
 
+  function allocateReceiptNo() {
+    return nextStoreDocumentNo(
+      getStore(storeId)?.code || "ST",
+      "RCP",
+      createdReceipts.map((row) => row.receiptNo),
+    );
+  }
+
   function resetCreateForm() {
     setReceiptDate(new Date().toISOString().split("T")[0]);
-    setReceiptNo(nextReceiptNumber());
+    setReceiptNo(allocateReceiptNo());
     setInvoiceNo("");
     setMethod("");
     setInvoiceAmount(0);
@@ -275,7 +283,11 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
         return;
       }
 
-      const allocatedNo = nextReceiptNumber();
+      const allocatedNo = nextStoreDocumentNo(
+        getStore(storeId)?.code || "ST",
+        "RCP",
+        latest.map((row) => row.receiptNo),
+      );
       if (
         latest.some(
           (receipt) =>
@@ -310,7 +322,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
       const next = [newReceipt, ...latest];
       localStorage.setItem(storageKey, JSON.stringify(next));
-      commitReceiptNumber(allocatedNo);
+      rememberStoreDocumentNo(getStore(storeId)?.code || "ST", "RCP", allocatedNo);
       window.dispatchEvent(new Event("nature-biotic-store-receipts-updated"));
       setCreatedReceipts(next);
       closeCreateForm();
@@ -379,7 +391,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
         r.invoiceNo.toLowerCase().includes(q);
 
       const matchesFarmer =
-        farmerFilter === "all" || r.farmerId === farmerFilter;
+        (isFRO ? farmerFilter === "all" || r.farmerId === farmerFilter : true);
 
       return matchesSearch && matchesFarmer && matchesDate(r.date);
     });
@@ -865,27 +877,6 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                 />
               </div>
 
-              <div className="w-full xl:w-[175px] xl:shrink-0">
-                <Select
-                  label="Farmer"
-                  value={farmerFilter}
-                  onChange={setFarmerFilter}
-                  placeholder="All Farmers"
-                  options={(isFRO && user?.name
-                    ? farmers.filter(
-                        (farmer) =>
-                          String(farmer.executiveName || "")
-                            .trim()
-                            .toLowerCase() === user.name.trim().toLowerCase(),
-                      )
-                    : farmers
-                  ).map((farmer) => ({
-                    value: farmer.id,
-                    label: farmer.name,
-                  }))}
-                />
-              </div>
-
               <div className="w-full xl:w-[155px] xl:shrink-0">
                 <Select
                   label="Date Filter"
@@ -935,7 +926,6 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
               )}
 
               {(search ||
-                farmerFilter !== "all" ||
                 dateFilter !== "all" ||
                 customFrom ||
                 customTo) && (

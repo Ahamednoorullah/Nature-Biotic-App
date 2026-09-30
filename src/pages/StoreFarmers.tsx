@@ -11,7 +11,6 @@ import {
   Button,
   Input,
   Select,
-  Modal,
   EmptyState,
   StatCard,
   Icon,
@@ -39,8 +38,6 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
   );
   const [search, setSearch] = useState("");
   const [cropFilter, setCropFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [showImport, setShowImport] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -50,13 +47,18 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
   const visibleFarmers = useMemo(
     () =>
       isFRO
-        ? farmers.filter(
-            (f) =>
+        ? farmers.filter((f) => {
+            const staffKey = String(user?.staffId || user?.id || "");
+            if (f.createdByStaffId && staffKey) {
+              return String(f.createdByStaffId) === staffKey;
+            }
+            return (
               (f.executiveName || "").trim().toLowerCase() ===
-              (user?.name || "").trim().toLowerCase(),
-          )
+              (user?.name || "").trim().toLowerCase()
+            );
+          })
         : farmers,
-    [farmers, isFRO, user?.name],
+    [farmers, isFRO, user?.name, user?.staffId, user?.id],
   );
 
   const filtered = useMemo(
@@ -68,10 +70,9 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
           f.phone.includes(search) ||
           farmerAddress.includes(search.toLowerCase());
         const mc = cropFilter === "all" || f.cropType === cropFilter;
-        const mst = statusFilter === "all" || f.status === statusFilter;
-        return ms && mc && mst;
+        return ms && mc;
       }),
-    [visibleFarmers, search, cropFilter, statusFilter],
+    [visibleFarmers, search, cropFilter],
   );
 
   const totalFarmers = visibleFarmers.length;
@@ -88,6 +89,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
     setExporting(true);
     setTimeout(() => setExporting(false), 800);
   }
+
   const [deleteTarget, setDeleteTarget] = useState<Farmer | null>(null);
 
   function handleDelete() {
@@ -264,30 +266,6 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                 options={cropTypes.map((c) => ({ value: c, label: c }))}
               />
             </div>
-            <div className="w-full sm:w-40">
-              <Select
-                value={statusFilter}
-                onChange={setStatusFilter}
-                placeholder="All Status"
-                options={[
-                  { value: "Active", label: "Active" },
-                  { value: "Inactive", label: "Inactive" },
-                ]}
-              />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              onClick={handleExport}
-              disabled={exporting}
-            >
-              <Icon name="download" size={18} />{" "}
-              {exporting ? "Exporting..." : "Export"}
-            </Button>
-            <Button variant="secondary" onClick={() => setShowImport(true)}>
-              <Icon name="upload" size={18} /> Import
-            </Button>
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between text-sm">
@@ -296,12 +274,11 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
             <span className="font-bold text-slate-700">{filtered.length}</span>{" "}
             of {visibleFarmers.length} farmers
           </p>
-          {(search || cropFilter !== "all" || statusFilter !== "all") && (
+          {(search || cropFilter !== "all") && (
             <button
               onClick={() => {
                 setSearch("");
                 setCropFilter("all");
-                setStatusFilter("all");
               }}
               className="text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1"
             >
@@ -571,44 +548,6 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
           </div>
         </Card>
       )}
-
-      {/* Import modal */}
-      <Modal
-        open={showImport}
-        onClose={() => setShowImport(false)}
-        title="Import Farmers"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowImport(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => setShowImport(false)} disabled>
-              Import
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center hover:border-brand-400 transition-base cursor-pointer">
-            <div className="w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-4">
-              <Icon name="cloud_upload" size={32} className="text-brand-600" />
-            </div>
-            <p className="font-semibold text-slate-700">
-              Drop your CSV file here
-            </p>
-            <p className="text-sm text-slate-400 mt-1">
-              or click to browse — supports .csv, .xlsx
-            </p>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Icon name="info" size={18} className="text-slate-400" />
-            Download the template format to ensure correct column mapping.
-          </div>
-          <Button variant="secondary" className="w-full">
-            <Icon name="download" size={18} /> Download Template
-          </Button>
-        </div>
-      </Modal>
 
       {/* Delete Farmer */}
       {deleteTarget &&

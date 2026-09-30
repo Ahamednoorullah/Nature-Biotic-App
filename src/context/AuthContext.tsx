@@ -35,20 +35,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    const applySession = () => {
+      if (cancelled) return;
+      setUser(auth.getSession());
+    };
     auth
       .ensureReady()
-      .then(() => {
-        if (cancelled) return;
-        setUser(auth.getSession());
-      })
+      .then(applySession)
       .catch(() => {
         if (!cancelled) setUser(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
+    const onSessionChange = () => {
+      if (!cancelled) setUser(auth.getSession());
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) onSessionChange();
+    };
+    window.addEventListener("popstate", onSessionChange);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("storage", onSessionChange);
     return () => {
       cancelled = true;
+      window.removeEventListener("popstate", onSessionChange);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("storage", onSessionChange);
     };
   }, [auth]);
 
@@ -78,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = () => {
     void auth.signOut();
     setUser(null);
+    window.history.replaceState(null, "", "/login");
   };
 
   return (

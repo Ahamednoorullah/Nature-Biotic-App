@@ -2,12 +2,19 @@ import { useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
+import {
+  formatCurrency,
+  matchesSimpleDate,
+  simpleDateFilterOptions,
+  type SimpleDateFilter,
+} from "@/lib/format";
 import { createPortal } from "react-dom";
 import {
   products as allProducts,
   getStore,
   increaseFROStock,
+  nextStoreDocumentNo,
+  rememberStoreDocumentNo,
   type Product,
 } from "@/lib/data";
 
@@ -152,6 +159,9 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   });
 
   const [showCreate, setShowCreate] = useState(false);
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [selectedReturn, setSelectedReturn] = useState<SalesReturnRow | null>(
     null,
   );
@@ -169,6 +179,22 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
         : rows,
     [rows, isFRO, froName],
   );
+
+  const listedRows = useMemo(
+    () =>
+      visibleRows.filter((row) =>
+        matchesSimpleDate(row.date, dateFilter, customFrom, customTo),
+      ),
+    [visibleRows, dateFilter, customFrom, customTo],
+  );
+
+  function nextReturnNo(current = rows) {
+    return nextStoreDocumentNo(
+      store?.code || "ST",
+      "SR",
+      current.map((row) => row.returnNo),
+    );
+  }
 
   const saleInvoices = useMemo<StoredSaleInvoice[]>(() => {
     try {
@@ -461,7 +487,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
   function resetForm() {
     setDate(new Date().toISOString().split("T")[0]);
-    setReturnNo("");
+    setReturnNo(nextReturnNo());
     setInvoiceNo("");
     setThrough(isFRO ? "Executive" : "Direct");
     setPartyName("");
@@ -492,10 +518,11 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   function saveReturn() {
     if (!canSave) return;
 
+    const allocatedNo = nextReturnNo();
     const next: SalesReturnRow = {
       id: `sr-${Date.now()}`,
       date,
-      returnNo: returnNo.trim(),
+      returnNo: allocatedNo,
       invoiceNo: invoiceNo.trim(),
       through: isFRO ? "Executive" : through,
       partyName: partyName.trim(),
@@ -524,6 +551,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
     try {
       localStorage.setItem(storageKey, JSON.stringify(updated));
+      rememberStoreDocumentNo(store?.code || "ST", "SR", allocatedNo);
     } catch {}
 
     if (next.through === "Executive" && next.executiveName && next.executiveName !== "-") {
@@ -599,10 +627,45 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               Direct and executive sales return records.
             </p>
           </div>
-          <Button onClick={() => setShowCreate(true)}>
-            <Icon name="add" size={18} />
-            Create Sales Return
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+            <div className="w-full sm:w-44">
+              <Select
+                label="Date Filter"
+                value={dateFilter}
+                onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+                options={simpleDateFilterOptions}
+              />
+            </div>
+            {dateFilter === "custom" && (
+              <>
+                <div className="w-full sm:w-40">
+                  <Input
+                    label="From Date"
+                    type="date"
+                    value={customFrom}
+                    onChange={setCustomFrom}
+                  />
+                </div>
+                <div className="w-full sm:w-40">
+                  <Input
+                    label="To Date"
+                    type="date"
+                    value={customTo}
+                    onChange={setCustomTo}
+                  />
+                </div>
+              </>
+            )}
+            <Button
+              onClick={() => {
+                resetForm();
+                setShowCreate(true);
+              }}
+            >
+              <Icon name="add" size={18} />
+              Create Sales Return
+            </Button>
+          </div>
         </div>
       )}
 
@@ -695,7 +758,13 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
           </thead>
 
           <tbody>
-            {visibleRows.map((row, index) => (
+            {listedRows.length === 0 ? (
+              <tr>
+                <td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-400">
+                  No sales returns found.
+                </td>
+              </tr>
+            ) : listedRows.map((row, index) => (
               <tr
                 key={row.id}
                 onClick={() => setSelectedReturn(row)}
@@ -800,7 +869,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
         </Card>
       ) : (
         <div className="space-y-3 md:hidden">
-          {visibleRows.length === 0 ? <Card className="p-6 text-center text-sm text-slate-500">No sales returns found.</Card> : visibleRows.map((row, index) => (
+          {listedRows.length === 0 ? <Card className="p-6 text-center text-sm text-slate-500">No sales returns found.</Card> : listedRows.map((row, index) => (
             <button key={row.id} type="button" onClick={() => setSelectedReturn(row)} className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Return #{index + 1}</p><p className="mt-1 text-base font-bold text-slate-800">{row.returnNo}</p><p className="mt-1 text-xs text-slate-500">{dateDisplay(row.date)}</p></div>
@@ -892,8 +961,8 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                     <Input
                       label="Return No"
                       value={returnNo}
-                      onChange={setReturnNo}
-                      placeholder="e.g. SR-0002"
+                      onChange={() => {}}
+                      readOnly
                       required
                     />
                     <Select

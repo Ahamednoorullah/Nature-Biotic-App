@@ -4,12 +4,14 @@ import { Card, Icon, EmptyState, Input, Select, Button } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   getStorePurchasesFromCompanySales,
+  STORE_PURCHASE_STATUS_KEY,
+  storePurchaseStatusUpdatedEvent,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 
 type PurchaseStatus = "Dispatched" | "Received";
 
-const PURCHASE_STATUS_KEY = "nature-biotic-store-purchase-status-v1";
+const PURCHASE_STATUS_KEY = STORE_PURCHASE_STATUS_KEY;
 
 function getSavedStatuses(): Record<string, PurchaseStatus> {
   try {
@@ -23,6 +25,7 @@ function getSavedStatuses(): Record<string, PurchaseStatus> {
 function saveStatuses(statuses: Record<string, PurchaseStatus>) {
   try {
     localStorage.setItem(PURCHASE_STATUS_KEY, JSON.stringify(statuses));
+    window.dispatchEvent(new Event(storePurchaseStatusUpdatedEvent));
   } catch {}
 }
 
@@ -183,9 +186,6 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
     });
   }, [invoices, search, dateFilter, customFrom, customTo]);
 
-  const totalValue = invoices.reduce((s: any, r: any) => s + r.total, 0);
-  const totalQty = invoices.reduce((s: any, r: any) => s + r.quantity, 0);
-
   const selectedInvoice = invoices.find(
     (invoice: any) => invoice.invoiceNo === selectedInvoiceNo,
   );
@@ -298,24 +298,6 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
           Nature Biotic company creates a sale for this store → it automatically
           appears here as a purchase.
         </p>
-      </div>
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <Summary
-          label="Purchase Bills"
-          value={String(invoices.length)}
-          icon="receipt_long"
-        />
-        <Summary
-          label="Purchased Quantity"
-          value={String(totalQty)}
-          icon="inventory_2"
-        />
-        <Summary
-          label="Purchase Value"
-          value={formatCurrency(totalValue)}
-          icon="payments"
-        />
       </div>
 
       <Card className="mb-5 p-4">
@@ -1293,9 +1275,7 @@ function Summary({
 }) {
   const content = (
     <div className="flex items-center justify-between gap-3">
-      <span className={icon ? "text-sm text-slate-500" : "text-slate-500"}>
-        {label}
-      </span>
+      <span className="text-slate-500">{label}</span>
       <span
         className={
           muted
@@ -1312,10 +1292,7 @@ function Summary({
     </div>
   );
 
-  if (!icon) {
-    // Round Off / Grand Total → no card border, just plain row
-    return content;
-  }
-
+  if (!icon) return content;
   return <Card className="p-4">{content}</Card>;
 }
+

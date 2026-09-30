@@ -1,10 +1,13 @@
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon, EmptyState, Input, Select } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter } from "@/lib/format";
+import { purchaseReturnsUpdatedEvent } from "@/pages/StorePurchaseReturn";
 import {
   getStoreDebitNotesFromCompanyCredits,
   approveCompanyCreditNotes,
+  getStoreApprovalRequest,
+  storeApprovalRequestsUpdatedEvent,
   type CompanyCreditNoteSyncRecord,
 } from "@/lib/data";
 
@@ -153,9 +156,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState("");
   const [vendorFilter, setVendorFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState<
-    "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
-  >("all");
+  const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [selectedDebitNoteNo, setSelectedDebitNoteNo] = useState<string | null>(
@@ -165,15 +166,75 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
 
   useEffect(() => {
     const refresh = () => {
-      setAllNotes(mapSyncRows(getStoreDebitNotesFromCompanyCredits(storeId)));
+      let purchaseReturns: DebitNote[] = [];
+      try {
+        const raw = localStorage.getItem(`naturebiotic:purchase-returns:${storeId}`);
+        const saved = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(saved)) {
+          purchaseReturns = saved
+            .filter((row) => row?.id !== "pr-1" && row?.returnNo !== "PR-0001")
+            .flatMap((row) => {
+              const request = getStoreApprovalRequest(
+                "Purchase Return",
+                storeId,
+                row.returnNo,
+              );
+              const status =
+                request?.status === "Approved" || row.status === "Approved"
+                  ? "Approved"
+                  : "Pending";
+              return (Array.isArray(row.items) ? row.items : []).map((item: any) => ({
+                unit: "",
+                size: item.packSize || "",
+                pkgsize: item.packSize || "",
+                packSize: item.packSize || "",
+                total: Number(item.total || 0),
+                amount: Number(item.taxableAmount || 0),
+                sellingPrice: Number(item.price || 0),
+                id: `${row.id}-${item.id}`,
+                debitNoteNo: row.returnNo,
+                date: row.date,
+                vendor: "Nature Biotic",
+                purchaseRef: row.purchaseRef,
+                product: item.product || "-",
+                batchNo: item.batchNo || "-",
+                expiryDate: item.expiryDate || "",
+                quantity: Number(item.quantity || 0),
+                reason: item.reason || row.reason || "Purchase Return",
+                placeOfReturn: row.placeOfReturn || "-",
+                unitPrice: Number(item.price || 0),
+                beforeDiscount: Number(item.beforeDiscount || 0),
+                discountPercent: Number(item.discountPercent || 0),
+                discountAmount: Number(item.discountAmount || 0),
+                taxableAmount: Number(item.taxableAmount || 0),
+                withoutTax: Number(item.withoutTax || item.taxableAmount || 0),
+                sgst: Number(item.sgst || 0),
+                cgst: Number(item.cgst || 0),
+                igst: Number(item.igst || 0),
+                returnAmount: Number(item.total || 0),
+                status,
+              }));
+            });
+        }
+      } catch {
+        purchaseReturns = [];
+      }
+      setAllNotes([
+        ...purchaseReturns,
+        ...mapSyncRows(getStoreDebitNotesFromCompanyCredits(storeId)),
+      ]);
     };
 
     refresh();
     window.addEventListener("company-credit-note-sync-updated", refresh);
+    window.addEventListener(purchaseReturnsUpdatedEvent, refresh);
+    window.addEventListener(storeApprovalRequestsUpdatedEvent, refresh);
     window.addEventListener("focus", refresh);
 
     return () => {
       window.removeEventListener("company-credit-note-sync-updated", refresh);
+      window.removeEventListener(purchaseReturnsUpdatedEvent, refresh);
+      window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
       window.removeEventListener("focus", refresh);
     };
   }, [storeId]);
@@ -183,50 +244,8 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     const today = new Date();
     const normalize = (value: string) => new Date(`${value}T00:00:00`);
 
-    const matchesDate = (value: string) => {
-      const rowDate = normalize(value);
-
-      if (dateFilter === "all") return true;
-
-      if (dateFilter === "today") {
-        return (
-          rowDate.getFullYear() === today.getFullYear() &&
-          rowDate.getMonth() === today.getMonth() &&
-          rowDate.getDate() === today.getDate()
-        );
-      }
-
-      if (dateFilter === "monthly") {
-        return (
-          rowDate.getFullYear() === today.getFullYear() &&
-          rowDate.getMonth() === today.getMonth()
-        );
-      }
-
-      if (dateFilter === "quarterly") {
-        return (
-          rowDate.getFullYear() === today.getFullYear() &&
-          Math.floor(rowDate.getMonth() / 3) ===
-            Math.floor(today.getMonth() / 3)
-        );
-      }
-
-      if (dateFilter === "yearly") {
-        return rowDate.getFullYear() === today.getFullYear();
-      }
-
-      if (dateFilter === "custom") {
-        if (!customFrom && !customTo) return true;
-
-        const from = customFrom ? normalize(customFrom) : null;
-        const to = customTo ? normalize(customTo) : null;
-
-        if (from && rowDate < from) return false;
-        if (to && rowDate > to) return false;
-      }
-
-      return true;
-    };
+    const matchesDate = (value: string) =>
+      matchesSimpleDate(value, dateFilter, customFrom, customTo);
 
     return allNotes.filter((n) => {
       const matchesSearch =
@@ -306,12 +325,21 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     return map;
   }, [allNotes]);
 
-  const totalNotes = allGroupedNotes.size;
-  const totalReturnValue = allNotes.reduce((s, n) => s + n.returnAmount, 0);
-  const pending = Array.from(allGroupedNotes.values()).filter((items) =>
+  const datedNotes = allNotes.filter((note) =>
+    matchesSimpleDate(note.date, dateFilter, customFrom, customTo),
+  );
+  const datedGroups = new Map<string, DebitNote[]>();
+  datedNotes.forEach((note) => {
+    const list = datedGroups.get(note.debitNoteNo) ?? [];
+    list.push(note);
+    datedGroups.set(note.debitNoteNo, list);
+  });
+  const totalNotes = datedGroups.size;
+  const totalReturnValue = datedNotes.reduce((s, n) => s + n.returnAmount, 0);
+  const pending = Array.from(datedGroups.values()).filter((items) =>
     items.some((item) => item.status === "Pending"),
   ).length;
-  const approved = Array.from(allGroupedNotes.values()).filter((items) =>
+  const approved = Array.from(datedGroups.values()).filter((items) =>
     items.every((item) => item.status === "Approved"),
   ).length;
 
@@ -443,14 +471,34 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Debit Notes
           </h1>
-          <p className="text-slate-500 mt-1">
+          <p className="mt-1 text-slate-500">
             Purchase return notes raised against vendors.
           </p>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
+          <div className="w-full sm:w-44">
+            <Select
+              label="Date Filter"
+              value={dateFilter}
+              onChange={(value) => setDateFilter(value as SimpleDateFilter)}
+              options={simpleDateFilterOptions}
+            />
+          </div>
+          {dateFilter === "custom" && (
+            <>
+              <div className="w-full sm:w-40">
+                <Input label="From Date" type="date" value={customFrom} onChange={setCustomFrom} />
+              </div>
+              <div className="w-full sm:w-40">
+                <Input label="To Date" type="date" value={customTo} onChange={setCustomTo} />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -558,58 +606,10 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
             />
           </div>
 
-          <div className="w-full xl:w-[155px] xl:shrink-0">
-            <Select
-              label="Date Filter"
-              value={dateFilter}
-              onChange={(value) =>
-                setDateFilter(
-                  value as
-                    | "all"
-                    | "today"
-                    | "monthly"
-                    | "quarterly"
-                    | "yearly"
-                    | "custom",
-                )
-              }
-              options={[
-                { value: "all", label: "All Dates" },
-                { value: "today", label: "Today" },
-                { value: "monthly", label: "Monthly" },
-                { value: "quarterly", label: "Quarterly" },
-                { value: "yearly", label: "Yearly" },
-                { value: "custom", label: "Custom Date" },
-              ]}
-            />
-          </div>
-
-          {dateFilter === "custom" && (
-            <>
-              <div className="w-full xl:w-[140px] xl:shrink-0">
-                <Input
-                  label="From"
-                  type="date"
-                  value={customFrom}
-                  onChange={setCustomFrom}
-                />
-              </div>
-
-              <div className="w-full xl:w-[140px] xl:shrink-0">
-                <Input
-                  label="To"
-                  type="date"
-                  value={customTo}
-                  onChange={setCustomTo}
-                />
-              </div>
-            </>
-          )}
-
           {(search ||
             vendorFilter !== "all" ||
             statusFilter !== "all" ||
-            dateFilter !== "all" ||
+            dateFilter !== "monthly" ||
             customFrom ||
             customTo) && (
             <Button
@@ -619,7 +619,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                 setSearch("");
                 setVendorFilter("all");
                 setStatusFilter("all");
-                setDateFilter("all");
+                setDateFilter("monthly");
                 setCustomFrom("");
                 setCustomTo("");
               }}
