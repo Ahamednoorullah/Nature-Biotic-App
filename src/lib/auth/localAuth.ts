@@ -138,7 +138,7 @@ function toUser(account: AuthAccount): AuthUser {
   };
 }
 
-function readSession(): AuthUser | null {
+function readStoredSession(): AuthUser | null {
   const local = readJson<AuthUser | null>(SESSION_KEY, null);
   if (local?.id) return local;
   try {
@@ -147,6 +147,21 @@ function readSession(): AuthUser | null {
   } catch {
     return null;
   }
+}
+
+function readSession(): AuthUser | null {
+  const stored = readStoredSession();
+  if (!stored?.id || !stored.role) return null;
+
+  const account = readAccounts().find(
+    (row) => row.id === stored.id && row.status === "active",
+  );
+  if (!account || account.role !== stored.role) {
+    clearSession();
+    return null;
+  }
+
+  return toUser(account);
 }
 
 function writeSession(user: AuthUser, remember: boolean) {
