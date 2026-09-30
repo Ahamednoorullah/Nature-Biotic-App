@@ -3,13 +3,8 @@ import { createPortal } from "react-dom";
 import { Card, Button, Icon, Select, Input } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { products as allProducts } from "@/lib/data";
-import {
-  getStorePurchasesFromCompanySales,
-  getFROStockTxnsByExecutive,
-} from "@/lib/data";
+import { computeClosingStock, liveStoreStock } from "./ClosingStock";
 
-const EXECUTIVE_NAMES = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
-const SALES_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 const PHYSICAL_STORAGE_KEY = "nature-biotic-physical-stock-entries-v1";
 
 type EntryRow = {
@@ -32,50 +27,6 @@ type SavedEntry = {
   isMatch: boolean;
 };
 
-function computeCurrentClosingStock(storeId: string) {
-  const asOfDate = new Date();
-  let totalQty = 0;
-  let totalValue = 0;
-
-  const purchases = getStorePurchasesFromCompanySales(storeId) || [];
-  purchases.forEach((row: any) => {
-    if (new Date(row.date) > asOfDate) return;
-    totalQty += Number(row.quantity || 0);
-    totalValue += Number(row.total || 0);
-  });
-
-  EXECUTIVE_NAMES.forEach((name) => {
-    const txns = getFROStockTxnsByExecutive(storeId, name) || [];
-    txns.forEach((t: any) => {
-      if (new Date(t.date) > asOfDate) return;
-      const lineValue = Math.abs(t.qty) * Number(t.unitValue || 0);
-      if (t.type === "Delivery") {
-        totalQty -= Math.abs(t.qty);
-        totalValue -= lineValue;
-      } else if (t.type === "Return") {
-        totalQty += Math.abs(t.qty);
-        totalValue += lineValue;
-      }
-    });
-  });
-
-  try {
-    const raw = localStorage.getItem(`${SALES_STORAGE_KEY}:${storeId}`);
-    const sales = raw ? JSON.parse(raw) : [];
-    sales.forEach((sale: any) => {
-      if (sale.through !== "Direct") return;
-      (sale.products || []).forEach((p: any) => {
-        totalQty -= Number(p.quantity || 0);
-        totalValue -= Number(p.rowTotal || 0);
-      });
-    });
-  } catch {
-    // ignore
-  }
-
-  return { totalQty, totalValue };
-}
-
 function emptyRow(): EntryRow {
   return {
     key: `${Date.now()}-${Math.random()}`,
@@ -87,9 +38,33 @@ function emptyRow(): EntryRow {
   };
 }
 
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// System stock for the selected date = same logic as Closing Stock
+// (Store Stock only, Hand Stock is not counted)
+function systemTotalsFor(storeId: string, dateISO: string) {
+  const [y, m, d] = (dateISO || "").split("-").map(Number);
+  const now = new Date();
+  const endOfDay = y && m && d ? new Date(y, m - 1, d, 23, 59, 59) : now;
+  const isToday = endOfDay.toDateString() === now.toDateString();
+
+  const items = isToday
+    ? liveStoreStock(storeId)
+    : computeClosingStock(storeId, endOfDay).breakdown;
+
+  return {
+    totalQty: items.reduce((s, b) => s + b.qty, 0),
+    totalValue: items.reduce((s, b) => s + b.value, 0),
+  };
+}
+
 export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
   const storageKey = `${PHYSICAL_STORAGE_KEY}:${storeId}`;
   const [selectedEntry, setSelectedEntry] = useState<SavedEntry | null>(null);
+  const [entryDate, setEntryDate] = useState(todayISO());
 
   const [savedEntries, setSavedEntries] = useState<SavedEntry[]>(() => {
     try {
@@ -129,7 +104,9 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
   }
 
   function removeRow(key: string) {
-    setRows((prev) => (prev.length > 1 ? prev.filter((r) => r.key !== key) : prev));
+    setRows((prev) =>
+      prev.length > 1 ? prev.filter((r) => r.key !== key) : prev,
+    );
   }
 
   const enteredTotalQty = rows.reduce((s, r) => s + Number(r.qty || 0), 0);
@@ -138,45 +115,41 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
     0,
   );
 
-  function submitEntry() {
-    const validRows = rows.filter((r) => r.productId && r.qty > 0);
+  const { totalQty: systemQty, totalValue: systemValue } = systemTotalsFor(
+    storeId,
+    entryDate,
+  );
+
+  const submitEvent = () => {
+    const validRows = rows.filter(
+      (row) => row.productId || row.qty > 0 || row.unitPrice > 0,
+    );
     if (validRows.length === 0) return;
 
-    const { totalQty: systemQty, totalValue: systemValue } =
-      computeCurrentClosingStock(storeId);
-
-    const totalQty = validRows.reduce((s, r) => s + Number(r.qty || 0), 0);
-    const totalValue = validRows.reduce(
-      (s, r) => s + Number(r.qty || 0) * Number(r.unitPrice || 0),
-      0,
-    );
-
-    const entry: SavedEntry = {
-      id: `physical-${Date.now()}`,
-      date: new Date().toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
+    const result: SavedEntry = {
+      id: `${Date.now()}`,
+      date: entryDate,
       rows: validRows,
-      totalQty,
-      totalValue,
+      totalQty: enteredTotalQty,
+      totalValue: enteredTotalValue,
       systemQty,
       systemValue,
-      isMatch: totalQty === systemQty && totalValue === systemValue,
+      isMatch:
+        enteredTotalQty === systemQty &&
+        Math.round(enteredTotalValue) === Math.round(systemValue),
     };
 
-    const next = [entry, ...savedEntries];
+    const next = [result, ...savedEntries];
+    setLastResult(result);
     setSavedEntries(next);
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {}
+    } catch {
+      // ignore
+    }
+  };
 
-    setLastResult(entry);
-    setRows([emptyRow()]);
-  }
-
-    return (
+  return (
     <div>
       <style>{`
         @media print {
@@ -207,10 +180,23 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
           the calculated closing stock.
         </p>
       </div>
+
       <Card className="p-4 mb-6">
         <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-800">
           Enter Physical Stock
         </h4>
+
+        <div className="mb-4 max-w-[220px]">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Date
+            <input
+              type="date"
+              value={entryDate}
+              onChange={(e) => setEntryDate(e.target.value)}
+              className="mt-1 block h-[42px] w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-700"
+            />
+          </label>
+        </div>
 
         <div className="space-y-3">
           {rows.map((row) => (
@@ -278,14 +264,14 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
             </span>
           </div>
 
-          <Button onClick={submitEntry}>
+          <Button onClick={submitEvent}>
             <Icon name="check_circle" size={18} />
             Submit & Verify
           </Button>
         </div>
       </Card>
 
-    {lastResult && (
+      {lastResult && (
         <Card
           className={`physical-stock-print p-5 mb-6 border-2 ${
             lastResult.isMatch
@@ -293,7 +279,7 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
               : "border-red-200 bg-red-50/50"
           }`}
         >
-        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <Icon
               name={lastResult.isMatch ? "check_circle" : "error"}
               size={28}
@@ -318,7 +304,7 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
             </div>
           </div>
         </Card>
-    )}
+      )}
 
       <Card className="overflow-hidden p-0">
         <table className="w-full table-fixed border-collapse text-sm">
@@ -355,7 +341,7 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
                 </td>
               </tr>
             ) : (
-                savedEntries.map((entry, i) => (
+              savedEntries.map((entry, i) => (
                 <tr
                   key={entry.id}
                   onClick={() => setSelectedEntry(entry)}
@@ -397,7 +383,7 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
             )}
           </tbody>
         </table>
-            </Card>
+      </Card>
 
       {selectedEntry &&
         createPortal(
@@ -486,7 +472,10 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
               </div>
 
               <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
-                <Button variant="secondary" onClick={() => setSelectedEntry(null)}>
+                <Button
+                  variant="secondary"
+                  onClick={() => setSelectedEntry(null)}
+                >
                   Close
                 </Button>
               </div>
