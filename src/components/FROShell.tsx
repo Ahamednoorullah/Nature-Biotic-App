@@ -130,6 +130,8 @@ function FROMobileShell({
       "nature-biotic-store-inventory-updated",
       "nature-biotic-fro-stock-return-updated",
       "nature-biotic-handover-updated",
+      "nature-biotic-cash-received-updated",
+      "nature-biotic-expense-updated",
       "nature-biotic-delivery-challan-updated",
       "focus",
     ];

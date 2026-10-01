@@ -1,4 +1,5 @@
 import { attachAccountLink } from "@/lib/data";
+import { getPasswordResetMailer } from "@/lib/auth/passwordResetMailer";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { roleLabel } from "@/lib/auth/roles";
 import type {
@@ -6,6 +7,7 @@ import type {
   AuthAdapter,
   AuthUser,
   CreateAccountInput,
+  PasswordResetRequestResult,
   SignInResult,
   UpdateAccountInput,
   UserRole,
@@ -14,11 +16,19 @@ import type {
 const ACCOUNT_KEY = "nature-biotic-auth-accounts-v1";
 const CREDENTIAL_KEY = "nature-biotic-auth-credentials-v1";
 const SESSION_KEY = "nature-biotic-auth-session-v1";
+const RESET_KEY = "nature-biotic-auth-password-resets-v1";
+const RESET_TTL_MS = 30 * 60 * 1000;
 
 type CredentialRecord = {
   accountId: string;
   salt: string;
   hash: string;
+};
+
+type PasswordResetRecord = {
+  accountId: string;
+  tokenHash: string;
+  expiresAt: number;
 };
 
 type SeedAccount = {
@@ -265,8 +275,8 @@ async function completePasswordSetup(
   if (account.passwordSet) {
     return signIn(email, password, remember);
   }
-  if (password.trim().length < 6) {
-    return { user: null, error: "Password must be at least 6 characters." };
+  if (password.length < 8) {
+    return { user: null, error: "Password must be at least 8 characters." };
   }
   const hashed = await hashPassword(password);
   const credentials = readCredentials().filter((row) => row.accountId !== account.id);
@@ -344,6 +354,87 @@ async function updateAccount(input: UpdateAccountInput) {
   return { account: next, error: null };
 }
 
+function readResets() {
+  return readJson<PasswordResetRecord[]>(RESET_KEY, []).filter(
+    (row) => row.expiresAt > Date.now(),
+  );
+}
+
+function writeResets(rows: PasswordResetRecord[]) {
+  writeJson(
+    RESET_KEY,
+    rows.filter((row) => row.expiresAt > Date.now()),
+  );
+}
+
+async function hashResetToken(token: string) {
+  const bits = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(token),
+  );
+  let binary = "";
+  new Uint8Array(bits).forEach((value) => {
+    binary += String.fromCharCode(value);
+  });
+  return btoa(binary);
+}
+
+async function requestPasswordReset(
+  email: string,
+): Promise<PasswordResetRequestResult> {
+  await ensureReady();
+  if (!isValidEmail(email)) return { status: "invalid_email" };
+  const account = findActiveByEmail(email);
+  if (!account || !account.passwordSet) return { status: "not_found" };
+
+  const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
+  const tokenHash = await hashResetToken(token);
+  writeResets([
+    ...readResets().filter((row) => row.accountId !== account.id),
+    { accountId: account.id, tokenHash, expiresAt: Date.now() + RESET_TTL_MS },
+  ]);
+
+  const mailer = getPasswordResetMailer();
+  if (!mailer) return { status: "email_not_configured", token };
+
+  const resetUrl = `${window.location.origin}/login?reset=${encodeURIComponent(token)}`;
+  try {
+    await mailer.sendResetLink({ to: account.email, resetUrl });
+  } catch {
+    writeResets(readResets().filter((row) => row.accountId !== account.id));
+    return { status: "send_failed" };
+  }
+  return { status: "sent" };
+}
+
+async function completePasswordReset(token: string, password: string) {
+  await ensureReady();
+  if (password.length < 8) {
+    return { error: "Password must be at least 8 characters." };
+  }
+  const tokenHash = await hashResetToken(token);
+  const reset = readResets().find((row) => row.tokenHash === tokenHash);
+  if (!reset) return { error: "This reset link is invalid or has expired." };
+
+  const account = readAccounts().find(
+    (row) => row.id === reset.accountId && row.status === "active",
+  );
+  if (!account) return { error: "This reset link is invalid or has expired." };
+
+  const hashed = await hashPassword(password);
+  writeCredentials([
+    ...readCredentials().filter((row) => row.accountId !== account.id),
+    { accountId: account.id, ...hashed },
+  ]);
+  writeAccounts(
+    readAccounts().map((row) =>
+      row.id === account.id ? { ...row, passwordSet: true } : row,
+    ),
+  );
+  writeResets(readResets().filter((row) => row.accountId !== account.id));
+  return { error: null };
+}
+
 async function disableAccount(accountId: string) {
   await ensureReady();
   writeAccounts(
@@ -362,6 +453,8 @@ export const localAuth: AuthAdapter = {
   },
   signIn,
   completePasswordSetup,
+  requestPasswordReset,
+  completePasswordReset,
   async signOut() {
     clearSession();
   },

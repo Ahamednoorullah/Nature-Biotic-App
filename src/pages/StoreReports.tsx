@@ -9,6 +9,11 @@ import {
 import { buildInventoryRows } from "@/pages/StoreInventory";
 import { useAuth } from "@/context/AuthContext";
 import { Card, EmptyState } from "@/components/ui";
+import {
+  CategoryDonut,
+  HorizontalBars,
+  TrendBars,
+} from "@/components/ReportCharts";
 import { Icon } from "@/components/ui";
 import {
   formatCurrency,
@@ -182,6 +187,10 @@ function StoreReportView({ storeId }: { storeId: string }) {
     let salesValue = 0;
     let outstanding = 0;
     let quantitySold = 0;
+    let directSales = 0;
+    let executiveSales = 0;
+    const salesByDate = new Map<string, number>();
+    const outstandingByDate = new Map<string, number>();
     const productSales = new Map<string, { qty: number; value: number }>();
     const farmerSales = new Map<string, { sales: number; collection: number; outstanding: number }>();
     periodSales.forEach((invoice) => {
@@ -200,6 +209,12 @@ function StoreReportView({ storeId }: { storeId: string }) {
         current.value += money(product.rowTotal || product.total || product.amount);
         productSales.set(name, current);
       });
+      const day = formatDate(String(invoice.date || "")) || "Undated";
+      salesByDate.set(day, (salesByDate.get(day) || 0) + net);
+      outstandingByDate.set(day, (outstandingByDate.get(day) || 0) + due);
+      const through = String(invoice.through || "Direct").toLowerCase();
+      if (through === "direct") directSales += net;
+      else executiveSales += net;
       const farmer = String(invoice.partyName || "Customer");
       const current = farmerSales.get(farmer) || { sales: 0, collection: 0, outstanding: 0 };
       current.sales += net;
@@ -208,7 +223,12 @@ function StoreReportView({ storeId }: { storeId: string }) {
     });
 
     const periodReceipts = receipts.filter((row) => dated(row.date));
+    const collectionByDate = new Map<string, number>();
     const collection = periodReceipts.reduce((sum, row) => sum + money(row.amount), 0);
+    periodReceipts.forEach((row) => {
+      const day = formatDate(String(row.date || "")) || "Undated";
+      collectionByDate.set(day, (collectionByDate.get(day) || 0) + money(row.amount));
+    });
     periodReceipts.forEach((row) => {
       const farmer = String(row.farmerName || row.partyName || "Customer");
       const current = farmerSales.get(farmer) || { sales: 0, collection: 0, outstanding: 0 };
@@ -265,6 +285,36 @@ function StoreReportView({ storeId }: { storeId: string }) {
       stockValue: stockRows.reduce((sum, row) => sum + money(row.value), 0),
       stockQty: stockRows.reduce((sum, row) => sum + money(row.quantity), 0),
       expenseTotal: periodExpenses.reduce((sum, row) => sum + money(row.amount), 0),
+      directSales,
+      executiveSales,
+      salesTrend: Array.from(salesByDate.entries()).map(([label, value]) => ({ label, value })),
+      collectionTrend: Array.from(collectionByDate.entries()).map(([label, value]) => ({
+        label,
+        value,
+      })),
+      outstandingTrend: Array.from(outstandingByDate.entries()).map(([label, value]) => ({
+        label,
+        value,
+      })),
+      salesCompare: Array.from(salesByDate.keys()).map((label) => ({
+        label,
+        sales: salesByDate.get(label) || 0,
+        collection: collectionByDate.get(label) || 0,
+      })),
+      productChart: Array.from(productSales.entries()).map(([label, value]) => ({
+        label,
+        value: value.value,
+      })),
+      stockChart: stockRows
+        .filter((row) => money(row.value) > 0 || money(row.quantity) > 0)
+        .map((row) => ({
+          label: `${row.product} ${row.size}`.trim(),
+          value: money(row.value),
+        })),
+      farmerChart: Array.from(farmerSales.entries()).map(([label, value]) => ({
+        label,
+        value: value.sales,
+      })),
       farmerCount: farmers.length,
       activeFarmers: farmers.filter((farmer) => farmer.status === "Active").length,
       salesRows: periodSales.map((row) => [
@@ -409,6 +459,37 @@ function StoreReportView({ storeId }: { storeId: string }) {
         </Card>
       </div>
 
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Sales trend" points={report.salesTrend} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Collection trend" points={report.collectionTrend} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Outstanding" points={report.outstandingTrend} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <CategoryDonut
+            title="Direct sales vs executive sales"
+            points={[
+              { label: "Direct", value: report.directSales },
+              { label: "Executive", value: report.executiveSales },
+            ]}
+          />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <CategoryDonut title="Product-wise sales" points={report.productChart} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <HorizontalBars title="Current stock" points={report.stockChart} />
+          <p className="mt-2 text-xs text-slate-500">Current stock is not limited by the date filter.</p>
+        </Card>
+        <Card className="min-w-0 p-5 xl:col-span-2">
+          <HorizontalBars title="Farmer sales" points={report.farmerChart} />
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <ReportTable title="Sales" icon="receipt_long" headers={["Invoice", "Date", "Farmer", "Through", "Value"]} rows={report.salesRows} />
         <ReportTable title="Product-wise sales" icon="inventory_2" headers={["Product", "Quantity", "Value"]} rows={report.productRows} />
@@ -471,21 +552,90 @@ function StoreReportView({ storeId }: { storeId: string }) {
 
 function FroReportView({ storeId, name }: { storeId: string; name: string }) {
   const froName = name.trim().toLowerCase();
+  const [filter, setFilter] = useState<SimpleDateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const refresh = () => setVersion((current) => current + 1);
+    const events = [
+      "focus",
+      "fro-sales-updated",
+      "nature-biotic-store-receipts-updated",
+      "nature-biotic-handover-updated",
+      "nature-biotic-delivery-challan-updated",
+      "nature-biotic-cash-received-updated",
+      "nature-biotic-fro-stock-return-updated",
+      "nature-biotic-expense-updated",
+      "nature-biotic-fro-visits-updated",
+    ];
+    events.forEach((event) => window.addEventListener(event, refresh));
+    return () => events.forEach((event) => window.removeEventListener(event, refresh));
+  }, []);
   const report = useMemo(() => {
+    const dated = (value: unknown) =>
+      matchesSimpleDate(String(value || ""), filter, customFrom, customTo);
     const sales = readRows(`nature-biotic-store-sales-invoices-v2:${storeId}`).filter(
-      (row) => sameName(row.executiveName, froName),
+      (row) => sameName(row.executiveName, froName) && dated(row.date),
     );
     const collections = readRows(`nature-biotic-store-receipts-v3:${storeId}`).filter(
-      (row) => sameName(row.receivedBy, froName),
+      (row) => sameName(row.receivedBy, froName) && dated(row.date),
     );
     const returns = readRows(`nature-biotic-store-sales-returns-v2:${storeId}`).filter(
-      (row) => sameName(row.executiveName, froName),
+      (row) => sameName(row.executiveName, froName) && dated(row.date),
     );
-    const expenses = readRows("naturebiotic_shared_expenses").filter((row) =>
-      sameName(row.enteredBy, froName),
+    const expenses = readRows("naturebiotic_shared_expenses").filter(
+      (row) =>
+        sameName(row.enteredBy, froName) &&
+        !/^exp\d+$/.test(String(row.id || "")) &&
+        dated(row.date),
     );
     const stock = getFROStockByExecutive(storeId, name);
+    const salesByDate = new Map<string, number>();
+    const outstandingByDate = new Map<string, number>();
+    const productSales = new Map<string, number>();
+    const paid = new Map<string, number>();
+    collections.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || row.billNo || "").trim().toLowerCase();
+      if (!invoiceNo || invoiceNo === "-") return;
+      paid.set(invoiceNo, (paid.get(invoiceNo) || 0) + Number(row.amount || 0));
+    });
+    let outstanding = 0;
+    sales.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      const amount = Number(row.amount || 0);
+      const due = Math.max(amount - (paid.get(invoiceNo) || 0), 0);
+      outstanding += due;
+      const day = formatDate(String(row.date || "")) || "Undated";
+      salesByDate.set(day, (salesByDate.get(day) || 0) + amount);
+      outstandingByDate.set(day, (outstandingByDate.get(day) || 0) + due);
+      const products = Array.isArray(row.products) ? row.products : [];
+      products.forEach((product: any) => {
+        const productName = String(
+          product.product?.name || product.productName || product.name || "Product",
+        );
+        productSales.set(
+          productName,
+          (productSales.get(productName) || 0) +
+            Number(product.rowTotal || product.total || product.amount || 0),
+        );
+      });
+    });
+    const collectionByDate = new Map<string, number>();
+    collections.forEach((row) => {
+      const day = formatDate(String(row.date || "")) || "Undated";
+      collectionByDate.set(day, (collectionByDate.get(day) || 0) + Number(row.amount || 0));
+    });
+    const expenseCategories = new Map<string, number>();
+    expenses.forEach((row) => {
+      const category = String(row.category || "Other");
+      expenseCategories.set(
+        category,
+        (expenseCategories.get(category) || 0) + Number(row.amount || 0),
+      );
+    });
     let visits = 0;
+    const visitsByDate = new Map<string, number>();
     try {
       for (let index = 0; index < localStorage.length; index += 1) {
         const key = localStorage.key(index) || "";
@@ -496,23 +646,35 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
           )
             .trim()
             .toLowerCase();
-          if (owner === froName) visits += 1;
+          const visitDate = row.date || row.visitDate;
+          if (owner !== froName || !dated(visitDate)) return;
+          visits += 1;
+          const day = formatDate(String(visitDate || "")) || "Undated";
+          visitsByDate.set(day, (visitsByDate.get(day) || 0) + 1);
         });
       }
     } catch {
       visits = 0;
     }
-    const paid = new Map<string, number>();
-    collections.forEach((row) => {
-      const invoiceNo = String(row.invoiceNo || row.billNo || "").trim().toLowerCase();
-      if (!invoiceNo || invoiceNo === "-") return;
-      paid.set(invoiceNo, (paid.get(invoiceNo) || 0) + Number(row.amount || 0));
-    });
-    const outstanding = sales.reduce((sum, row) => {
-      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
-      const due = Math.max(Number(row.amount || 0) - (paid.get(invoiceNo) || 0), 0);
-      return sum + due;
-    }, 0);
+    const farmers = getStoredFarmers().filter(
+      (farmer) =>
+        farmer.storeId === storeId &&
+        sameName(farmer.executiveName, froName) &&
+        dated(farmer.joinedDate),
+    );
+    const handovers = readRows(`nature-biotic-fro-handovers-v1:${storeId}`).filter(
+      (row) => sameName(row.handedOverBy, froName) && dated(row.date),
+    );
+    const deliveries = readRows(`nature-biotic-store-delivery-challans-v2:${storeId}`).filter(
+      (row) => sameName(row.executive, froName) && dated(row.date),
+    );
+    const stockReturns = readRows(
+      `nature-biotic-fro-stock-return-requests-v1:${froName}`,
+    ).filter((row) => dated(row.date));
+    const qtyOf = (items: unknown) =>
+      Array.isArray(items)
+        ? items.reduce((sum, item) => sum + Number(item?.qty || item?.quantity || 0), 0)
+        : 0;
     return {
       sales,
       salesTotal: sales.reduce((sum, row) => sum + Number(row.amount || 0), 0),
@@ -525,8 +687,27 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
         0,
       ),
       visits,
+      farmers: farmers.length,
+      handoverTotal: handovers.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+      stockReceived: deliveries.reduce((sum, row) => sum + qtyOf(row.items), 0),
+      stockReturned: stockReturns.reduce((sum, row) => sum + qtyOf(row.items), 0),
+      salesTrend: Array.from(salesByDate.entries()).map(([label, value]) => ({ label, value })),
+      collectionTrend: Array.from(collectionByDate.entries()).map(([label, value]) => ({
+        label,
+        value,
+      })),
+      outstandingTrend: Array.from(outstandingByDate.entries()).map(([label, value]) => ({
+        label,
+        value,
+      })),
+      visitTrend: Array.from(visitsByDate.entries()).map(([label, value]) => ({ label, value })),
+      productChart: Array.from(productSales.entries()).map(([label, value]) => ({ label, value })),
+      expenseChart: Array.from(expenseCategories.entries()).map(([label, value]) => ({
+        label,
+        value,
+      })),
     };
-  }, [storeId, froName, name]);
+  }, [storeId, froName, name, filter, customFrom, customTo, version]);
 
   const cards = [
     ["Sales", report.salesTotal],
@@ -534,15 +715,55 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
     ["Outstanding", report.outstanding],
     ["Sales Return", report.returns],
     ["Expenses", report.expenses],
-    ["Hand Stock", report.stockValue],
+    ["Hand stock (current)", report.stockValue],
+    ["Cash handover", report.handoverTotal],
   ] as const;
 
   return (
     <div className="min-w-0">
-      <div className="mb-5">
-        <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">Reports</h1>
-        <p className="mt-1 text-sm text-slate-500">Your sales, collection, stock and expenses.</p>
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">Reports</h1>
+          <p className="mt-1 text-sm text-slate-500">Your sales, collection, stock and expenses.</p>
+        </div>
+        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
+          {simpleDateFilterOptions.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setFilter(tab.value)}
+              className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
+                filter === tab.value
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {filter === "custom" && (
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row">
+          <label className="text-sm text-slate-600">
+            From
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(event) => setCustomFrom(event.target.value)}
+              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
+            />
+          </label>
+          <label className="text-sm text-slate-600">
+            To
+            <input
+              type="date"
+              value={customTo}
+              onChange={(event) => setCustomTo(event.target.value)}
+              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
+            />
+          </label>
+        </div>
+      )}
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
         {cards.map(([label, value]) => (
           <Card key={label} className="p-4 sm:p-5">
@@ -554,6 +775,58 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
           <p className="text-sm font-medium text-slate-500">Visits</p>
           <p className="mt-1 text-lg font-bold text-slate-800 sm:text-2xl">{report.visits}</p>
         </Card>
+        <Card className="p-4 sm:p-5">
+          <p className="text-sm font-medium text-slate-500">Farmers added</p>
+          <p className="mt-1 text-lg font-bold text-slate-800 sm:text-2xl">{report.farmers}</p>
+        </Card>
+        <Card className="p-4 sm:p-5">
+          <p className="text-sm font-medium text-slate-500">Stock received</p>
+          <p className="mt-1 text-lg font-bold text-slate-800 sm:text-2xl">{report.stockReceived}</p>
+        </Card>
+        <Card className="p-4 sm:p-5">
+          <p className="text-sm font-medium text-slate-500">Stock returned</p>
+          <p className="mt-1 text-lg font-bold text-slate-800 sm:text-2xl">{report.stockReturned}</p>
+        </Card>
+      </div>
+      <div className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Sales trend" points={report.salesTrend} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Collection trend" points={report.collectionTrend} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Outstanding" points={report.outstandingTrend} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <TrendBars title="Visits" points={report.visitTrend} format="count" />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <CategoryDonut title="Sales by product" points={report.productChart} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <CategoryDonut title="Expense summary" points={report.expenseChart} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <HorizontalBars
+            title="Cash handover"
+            points={
+              report.handoverTotal > 0
+                ? [{ label: "Handed over", value: report.handoverTotal }]
+                : []
+            }
+          />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <HorizontalBars
+            title="Stock received and returned"
+            points={[
+              { label: "Received", value: report.stockReceived },
+              { label: "Returned", value: report.stockReturned },
+            ]}
+            format="count"
+          />
+        </Card>
       </div>
       <Card className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
@@ -561,7 +834,7 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
           <h2 className="font-bold text-slate-800">My Sales</h2>
         </div>
         {report.sales.length === 0 ? (
-          <EmptyState icon="receipt_long" title="No sales" />
+          <EmptyState icon="receipt_long" title="No data available for this period." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[320px] text-sm">

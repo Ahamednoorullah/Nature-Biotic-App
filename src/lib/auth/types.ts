@@ -58,6 +58,13 @@ export type SignInResult = {
   needsPasswordSetup?: boolean;
 };
 
+export type PasswordResetRequestResult =
+  | { status: "invalid_email" }
+  | { status: "not_found" }
+  | { status: "sent" }
+  | { status: "email_not_configured"; token: string }
+  | { status: "send_failed" };
+
 /**
  * Replace `localAuth` with a Supabase adapter that implements this interface.
  * Store and staff screens should call these methods, not a vendor SDK.
@@ -75,6 +82,11 @@ export interface AuthAdapter {
     password: string,
     remember?: boolean,
   ): Promise<SignInResult>;
+  requestPasswordReset(email: string): Promise<PasswordResetRequestResult>;
+  completePasswordReset(
+    token: string,
+    password: string,
+  ): Promise<{ error: string | null }>;
   signOut(): Promise<void>;
   createAccount(
     input: CreateAccountInput,

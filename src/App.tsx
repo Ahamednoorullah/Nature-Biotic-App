@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { NavProvider, useNav } from "@/context/NavContext";
 import { canAccessStorePage } from "@/lib/access";
@@ -83,6 +83,13 @@ function AppContent() {
   const isFROUser = user?.role === "fro";
   const isStoreScopedUser = isStoreUser || isFROUser;
   const ownStoreId = user?.storeId;
+
+  useLayoutEffect(() => {
+    if (loading || user) return;
+    if (currentPath() !== "/login") {
+      window.history.replaceState(null, "", "/login");
+    }
+  }, [loading, user]);
 
   useEffect(() => {
     const enforceLocation = () => {

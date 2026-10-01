@@ -3,6 +3,7 @@ import {
   getCompanyCreditNoteSyncRecords,
   getFinalCompanyStoreSales,
   getStaffByStore,
+  getStore,
   getStoreApprovalRequests,
   getStorePurchaseStatuses,
 } from "@/lib/data";
@@ -344,6 +345,19 @@ function samePerson(value: unknown, name: string) {
   return String(value || "").trim().toLowerCase() === name;
 }
 
+function lineSummary(items: unknown) {
+  if (!Array.isArray(items) || items.length === 0) return "";
+  return items
+    .slice(0, 3)
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      const product = String(row.product || row.productName || "Product");
+      const qty = Number(row.qty || row.quantity || 0);
+      return qty ? `${product} × ${qty}` : product;
+    })
+    .join(", ");
+}
+
 /** Store notifications that belong to one FRO. Store-wide notices stay on the Store panel. */
 export function getFroNotifications(
   storeId: string,
@@ -401,6 +415,125 @@ export function getFroNotifications(
           at: timeValue(row.date),
           sourceDate: row.date,
           page: "receipt",
+        }),
+      );
+    });
+
+  const storeName = getStore(storeId)?.name || "Store";
+  const deliveries = new Map<string, any>();
+  [
+    ...readArray(`nature-biotic-store-delivery-challans-v2:${storeId}`),
+    ...readArray(`nature-biotic-fro-pending-deliveries-v1:${name}`),
+  ].forEach((row) => {
+    if (!samePerson(row?.executive, name)) return;
+    const key = String(row.id || row.sdNo || "");
+    if (!key) return;
+    deliveries.set(key, row);
+  });
+  deliveries.forEach((row) => {
+    const pending = String(row.status || "pending") !== "accepted";
+    const summary = lineSummary(row.items);
+    items.push(
+      note({
+        id: `fro-delivery:${storeId}:${row.id || row.sdNo}`,
+        title: pending
+          ? `New stock delivery received from ${storeName}.`
+          : `Stock delivery from ${storeName} accepted.`,
+        description: [storeName, row.sdNo, formatDate(String(row.date || "")), summary]
+          .filter(Boolean)
+          .join(" · "),
+        status: pending ? "Pending" : "Accepted",
+        tone: pending ? "pending" : "accepted",
+        icon: "local_shipping",
+        at: timeValue(row.date, row.createdAt),
+        sourceDate: row.date,
+        page: "stock-management",
+      }),
+    );
+  });
+
+  readArray(`nature-biotic-fro-stock-return-requests-v1:${name}`)
+    .filter((row) => row?.rcNo && samePerson(row.froName, name))
+    .forEach((row) => {
+      const pending = String(row.status || "pending") !== "accepted";
+      const summary = lineSummary(row.items);
+      items.push(
+        note({
+          id: `fro-stock-return:${storeId}:${row.id || row.rcNo}`,
+          title: pending
+            ? "Stock return is pending for acceptance."
+            : "Stock return accepted.",
+          description: [
+            storeName,
+            row.rcNo,
+            formatDate(String(row.date || "")),
+            summary,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          status: pending ? "Pending" : "Accepted",
+          tone: pending ? "pending" : "accepted",
+          icon: "assignment_return",
+          at: timeValue(row.date, row.createdAt),
+          sourceDate: row.date,
+          page: "stock-management",
+        }),
+      );
+    });
+
+  readArray(`nature-biotic-fro-handovers-v1:${storeId}`)
+    .filter((row) => samePerson(row?.handedOverBy, name))
+    .forEach((row) => {
+      const pending = row.status === "pending";
+      items.push(
+        note({
+          id: `fro-handover:${storeId}:${row.id}`,
+          title: pending
+            ? "Cash handover is pending acceptance."
+            : "Cash handover accepted.",
+          description: [
+            storeName,
+            row.id,
+            formatCurrency(Number(row.amount || 0)),
+            formatDate(String(row.date || "")),
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          status: pending ? "Pending" : "Accepted",
+          tone: pending ? "pending" : "accepted",
+          icon: "account_balance_wallet",
+          at: timeValue(row.date, row.acceptedAt),
+          sourceDate: row.date,
+          page: "payments",
+        }),
+      );
+    });
+
+  readArray(`nature-biotic-fro-cash-received-v1:${storeId}`)
+    .filter((row) => samePerson(row?.requestedFor, name))
+    .forEach((row) => {
+      const pending = String(row.status || "pending") !== "accepted";
+      items.push(
+        note({
+          id: `fro-cash:${storeId}:${row.id}`,
+          title: pending
+            ? "Money receipt is pending acceptance."
+            : "Money receipt accepted.",
+          description: [
+            storeName,
+            row.id,
+            formatCurrency(Number(row.amount || 0)),
+            row.method || row.category,
+            formatDate(String(row.date || "")),
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          status: pending ? "Pending" : "Accepted",
+          tone: pending ? "pending" : "accepted",
+          icon: "savings",
+          at: timeValue(row.date, row.acceptedAt),
+          sourceDate: row.date,
+          page: "expenses",
         }),
       );
     });

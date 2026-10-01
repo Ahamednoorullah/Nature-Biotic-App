@@ -5,17 +5,15 @@ import {
   stores as allStores,
 } from "@/lib/data";
 import { Card, Icon } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { CategoryDonut, CompareBars, HorizontalBars, TrendBars } from "@/components/ReportCharts";
+import {
+  formatCurrency,
+  formatDate,
+  simpleDateFilterOptions,
+  type SimpleDateFilter,
+} from "@/lib/format";
 
-type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
-
-const filterTabs: { key: DateFilter; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "weekly", label: "Weekly" },
-  { key: "monthly", label: "Monthly" },
-  { key: "quarterly", label: "Quarterly" },
-  { key: "yearly", label: "Yearly" },
-];
+type DateFilter = SimpleDateFilter;
 
 const STORE_SALES_KEY = "nature-biotic-store-sales-invoices-v2";
 const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
@@ -66,7 +64,12 @@ function parseTxnDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function periodBounds(filter: DateFilter) {
+function periodBounds(filter: DateFilter, from = "", to = "") {
+  if (filter === "custom") {
+    const start = from ? new Date(`${from}T00:00:00`) : new Date(8640000000000000);
+    const end = to ? new Date(`${to}T23:59:59.999`) : new Date(0);
+    return { start, end };
+  }
   const now = new Date();
   const end = new Date(
     now.getFullYear(),
@@ -101,14 +104,14 @@ function periodBounds(filter: DateFilter) {
   return { start, end };
 }
 
-function inPeriod(value: unknown, filter: DateFilter) {
+function inPeriod(value: unknown, filter: DateFilter, from = "", to = "") {
   const date = parseTxnDate(value);
   if (!date) return false;
-  const { start, end } = periodBounds(filter);
+  const { start, end } = periodBounds(filter, from, to);
   return date >= start && date <= end;
 }
 
-function buildReport(filter: DateFilter) {
+function buildReport(filter: DateFilter, from = "", to = "") {
   const companyInvoices = new Map<
     string,
     { date: string; storeId: string; storeName: string; total: number }
@@ -152,14 +155,14 @@ function buildReport(filter: DateFilter) {
   let companySales = 0;
   let companyOutstanding = 0;
   companyInvoices.forEach((invoice, key) => {
-    if (!inPeriod(invoice.date, filter)) return;
+    if (!inPeriod(invoice.date, filter, from, to)) return;
     const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
     companySales += net;
     companyOutstanding += Math.max(0, net - (companyPaid.get(key) || 0));
   });
 
   const companyCollection = companyReceipts.reduce((sum, receipt) => {
-    return inPeriod(receipt.date, filter) ? sum + money(receipt.amount) : sum;
+    return inPeriod(receipt.date, filter, from, to) ? sum + money(receipt.amount) : sum;
   }, 0);
 
   const storeBooks = allStores.map((store) => {
@@ -188,7 +191,7 @@ function buildReport(filter: DateFilter) {
       let sales = 0;
       let outstanding = 0;
       invoices.forEach((invoice) => {
-        if (!inPeriod(invoice.date, filter)) return;
+        if (!inPeriod(invoice.date, filter, from, to)) return;
         const invoiceNo = String(invoice.invoiceNo || "").trim().toLowerCase();
         const net = Math.max(
           0,
@@ -198,18 +201,36 @@ function buildReport(filter: DateFilter) {
         outstanding += Math.max(0, net - (paid.get(invoiceNo) || 0));
       });
       const collection = receipts.reduce((sum, receipt) => {
-        return inPeriod(receipt.date, filter) ? sum + money(receipt.amount) : sum;
+        return inPeriod(receipt.date, filter, from, to) ? sum + money(receipt.amount) : sum;
       }, 0);
       return { id: store.id, name: store.name, sales, collection, outstanding };
     },
   );
+
+  const companyByStore = new Map<string, { sales: number; outstanding: number }>();
+  companyInvoices.forEach((invoice, key) => {
+    if (!inPeriod(invoice.date, filter, from, to)) return;
+    const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
+    const current = companyByStore.get(invoice.storeId) || { sales: 0, outstanding: 0 };
+    current.sales += net;
+    current.outstanding += Math.max(0, net - (companyPaid.get(key) || 0));
+    companyByStore.set(invoice.storeId, current);
+  });
+  const storeComparison = storeRows.map((store) => {
+    const company = companyByStore.get(store.id) || { sales: 0, outstanding: 0 };
+    return {
+      name: store.name,
+      sales: store.sales + company.sales,
+      outstanding: store.outstanding + company.outstanding,
+    };
+  });
 
   const marketSales = storeRows.reduce((sum, row) => sum + row.sales, 0);
   const marketCollection = storeRows.reduce((sum, row) => sum + row.collection, 0);
   const marketOutstanding = storeRows.reduce((sum, row) => sum + row.outstanding, 0);
 
   const expenses = readRows(COMPANY_EXPENSE_KEY).filter((row) =>
-    inPeriod(row.date, filter),
+    inPeriod(row.date, filter, from, to),
   );
   const expenseTotal = expenses.reduce((sum, row) => sum + money(row.amount), 0);
   const expenseCategories = new Map<string, number>();
@@ -221,7 +242,7 @@ function buildReport(filter: DateFilter) {
     );
   });
 
-  const { start, end } = periodBounds(filter);
+  const { start, end } = periodBounds(filter, from, to);
   const buckets: { label: string; sales: number; collection: number }[] = [];
   const cursor = new Date(start);
   const monthly = filter === "quarterly" || filter === "yearly";
@@ -232,7 +253,9 @@ function buildReport(filter: DateFilter) {
     else bucketEnd.setDate(bucketEnd.getDate() + 1);
     const label = monthly
       ? bucketStart.toLocaleString("en-IN", { month: "short" })
-      : formatDate(bucketStart.toISOString().slice(0, 10));
+      : formatDate(
+          `${bucketStart.getFullYear()}-${String(bucketStart.getMonth() + 1).padStart(2, "0")}-${String(bucketStart.getDate()).padStart(2, "0")}`,
+        );
     const inBucket = (value: unknown) => {
       const date = parseTxnDate(value);
       return !!date && date >= bucketStart && date < bucketEnd && date <= end;
@@ -268,6 +291,29 @@ function buildReport(filter: DateFilter) {
     if (buckets.length > 40) break;
   }
 
+  const productSales = new Map<string, number>();
+  getFinalCompanyStoreSales().forEach((line) => {
+    if (!inPeriod(line.date, filter, from, to)) return;
+    const name = String(line.product || "Product");
+    productSales.set(name, (productSales.get(name) || 0) + money(line.total));
+  });
+  storeBooks.forEach(({ invoices }) => {
+    invoices.forEach((invoice) => {
+      if (!inPeriod(invoice.date, filter, from, to)) return;
+      const products = Array.isArray(invoice.products) ? invoice.products : [];
+      products.forEach((product: any) => {
+        const name = String(
+          product?.product?.name || product?.productName || product?.name || "Product",
+        );
+        productSales.set(
+          name,
+          (productSales.get(name) || 0) +
+            money(product?.rowTotal || product?.total || product?.amount),
+        );
+      });
+    });
+  });
+
   return {
     companySales,
     marketSales,
@@ -283,12 +329,19 @@ function buildReport(filter: DateFilter) {
       ([name, value]) => ({ name, value }),
     ),
     storeRows,
+    storeComparison,
     buckets,
+    productRows: Array.from(productSales.entries()).map(([name, value]) => ({
+      name,
+      value,
+    })),
   };
 }
 
 export default function CompanyReports() {
   const [filter, setFilter] = useState<DateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -309,7 +362,10 @@ export default function CompanyReports() {
     };
   }, []);
 
-  const report = useMemo(() => buildReport(filter), [filter, version]);
+  const report = useMemo(
+    () => buildReport(filter, customFrom, customTo),
+    [filter, customFrom, customTo, version],
+  );
   const hasActivity =
     report.sales > 0 ||
     report.collection > 0 ||
@@ -327,13 +383,13 @@ export default function CompanyReports() {
             Company and market performance from saved transactions.
           </p>
         </div>
-        <div className="flex gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
-          {filterTabs.map((tab) => (
+        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
+          {simpleDateFilterOptions.map((tab) => (
             <button
-              key={tab.key}
-              onClick={() => setFilter(tab.key)}
+              key={tab.value}
+              onClick={() => setFilter(tab.value)}
               className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
-                filter === tab.key
+                filter === tab.value
                   ? "bg-brand-600 text-white shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
               }`}
@@ -343,6 +399,29 @@ export default function CompanyReports() {
           ))}
         </div>
       </div>
+
+      {filter === "custom" && (
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row">
+          <label className="text-sm text-slate-600">
+            From
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(event) => setCustomFrom(event.target.value)}
+              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
+            />
+          </label>
+          <label className="text-sm text-slate-600">
+            To
+            <input
+              type="date"
+              value={customTo}
+              onChange={(event) => setCustomTo(event.target.value)}
+              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
+            />
+          </label>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Summary
@@ -366,8 +445,7 @@ export default function CompanyReports() {
       {!hasActivity ? (
         <Card className="p-8 text-center">
           <Icon name="bar_chart" size={28} className="mx-auto text-slate-300" />
-          <p className="mt-3 font-semibold text-slate-700">No transactions in this period</p>
-          <p className="mt-1 text-sm text-slate-500">Sales, collection, and expenses are {formatCurrency(0)}.</p>
+          <p className="mt-3 font-semibold text-slate-700">No data available for this period.</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -450,9 +528,7 @@ export default function CompanyReports() {
           <Card className="p-5 xl:col-span-2">
             <h2 className="font-bold text-slate-800">Expenses by category</h2>
             {report.expenseCategories.length === 0 ? (
-              <p className="mt-4 text-sm text-slate-500">
-                No company expenses in this period. Total {formatCurrency(0)}.
-              </p>
+              <p className="mt-4 text-sm text-slate-500">No data available for this period.</p>
             ) : (
               <BarList title="" rows={report.expenseCategories.map((row) => ({
                 label: row.name,
@@ -462,6 +538,57 @@ export default function CompanyReports() {
           </Card>
         </div>
       )}
+
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card className="min-w-0 p-5">
+          <TrendBars
+            title="Sales trend"
+            points={report.buckets.map((bucket) => ({
+              label: bucket.label,
+              value: bucket.sales,
+            }))}
+          />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <TrendBars
+            title="Collection trend"
+            points={report.buckets.map((bucket) => ({
+              label: bucket.label,
+              value: bucket.collection,
+            }))}
+          />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <CompareBars title="Sales vs collection" points={report.buckets} />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <HorizontalBars
+            title="Outstanding by store"
+            points={report.storeComparison.map((store) => ({
+              label: store.name,
+              value: store.outstanding,
+            }))}
+          />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <HorizontalBars
+            title="Store-wise sales"
+            points={report.storeComparison.map((store) => ({
+              label: store.name,
+              value: store.sales,
+            }))}
+          />
+        </Card>
+        <Card className="min-w-0 p-5">
+          <CategoryDonut
+            title="Product-wise sales"
+            points={report.productRows.map((row) => ({
+              label: row.name,
+              value: row.value,
+            }))}
+          />
+        </Card>
+      </div>
     </div>
   );
 }
@@ -501,7 +628,7 @@ function TrendChart({
       buckets.length <= 12,
   );
   if (visible.every((bucket) => bucket.sales === 0 && bucket.collection === 0)) {
-    return <p className="mt-6 text-sm text-slate-500">No dated sales or receipts in this period.</p>;
+    return <p className="mt-6 text-sm text-slate-500">No data available for this period.</p>;
   }
   return (
     <div className="mt-5">
@@ -540,7 +667,7 @@ function Donut({
 }) {
   const total = parts.reduce((sum, part) => sum + part.value, 0);
   if (total <= 0) {
-    return <p className="mt-6 text-sm text-slate-500">No sales in this period.</p>;
+    return <p className="mt-6 text-sm text-slate-500">No data available for this period.</p>;
   }
   let offset = 0;
   const circles = parts.map((part) => {
@@ -587,12 +714,21 @@ function BarList({
   title: string;
   rows: { label: string; value: number }[];
 }) {
-  const max = Math.max(1, ...rows.map((row) => row.value));
+  const active = rows.filter((row) => row.value > 0);
+  const max = Math.max(1, ...active.map((row) => row.value));
+  if (active.length === 0) {
+    return (
+      <div>
+        {title && <p className="mb-3 text-sm font-semibold text-slate-700">{title}</p>}
+        <p className="text-sm text-slate-500">No data available for this period.</p>
+      </div>
+    );
+  }
   return (
     <div>
       {title && <p className="mb-3 text-sm font-semibold text-slate-700">{title}</p>}
       <div className="space-y-3">
-        {rows.map((row) => (
+        {active.map((row) => (
           <div key={row.label}>
             <div className="mb-1 flex justify-between gap-3 text-xs text-slate-500">
               <span className="truncate">{row.label}</span>

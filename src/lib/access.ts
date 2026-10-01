@@ -22,6 +22,7 @@ export function isStoreAdmin(user: AuthUser | null | undefined): boolean {
  */
 const FRO_ALLOWED_PAGES = new Set<StorePage>([
   "dashboard",
+  "payments",
   "stock-management",
   "delivery-challan",
   "return-challan",

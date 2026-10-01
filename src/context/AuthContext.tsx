@@ -6,7 +6,11 @@ import {
   type ReactNode,
 } from "react";
 import { getAuthAdapter } from "@/lib/auth/localAuth";
-import type { AuthUser, UserRole } from "@/lib/auth/types";
+import type {
+  AuthUser,
+  PasswordResetRequestResult,
+  UserRole,
+} from "@/lib/auth/types";
 
 export type { AuthUser, UserRole };
 
@@ -22,6 +26,11 @@ type AuthContextValue = {
     email: string,
     password: string,
     remember?: boolean,
+  ) => Promise<{ error: string | null }>;
+  requestPasswordReset: (email: string) => Promise<PasswordResetRequestResult>;
+  completePasswordReset: (
+    token: string,
+    password: string,
   ) => Promise<{ error: string | null }>;
   signOut: () => void;
 };
@@ -89,6 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: result.error };
   };
 
+  const requestPasswordReset = (email: string) =>
+    auth.requestPasswordReset(email);
+
+  const completePasswordReset = (token: string, password: string) =>
+    auth.completePasswordReset(token, password);
+
   const signOut = () => {
     void auth.signOut();
     setUser(null);
@@ -97,7 +112,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, signIn, completePasswordSetup, signOut }}
+      value={{
+        user,
+        loading,
+        signIn,
+        completePasswordSetup,
+        requestPasswordReset,
+        completePasswordReset,
+        signOut,
+      }}
     >
       {children}
     </AuthContext.Provider>
