@@ -1344,7 +1344,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
           <div
             className={`fixed z-[10020] ${
               isFRO
-                ? "inset-x-0 bottom-0 top-14 flex overflow-hidden bg-white"
+                ? "inset-x-0 top-[68px] bottom-[4.75rem] flex overflow-hidden bg-slate-50 lg:bottom-0 lg:left-64"
                 : "inset-0 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
             }`}
           >

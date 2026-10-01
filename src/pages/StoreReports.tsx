@@ -1,10 +1,33 @@
 import { useMemo } from 'react';
-import { getBillsByStore, getProductsByStore, getFarmersByStore } from '@/lib/data';
+import { getBillsByStore, getFROStockByExecutive, getProductsByStore, getFarmersByStore } from '@/lib/data';
+import { useAuth } from '@/context/AuthContext';
 import { Card, Badge, EmptyState } from '@/components/ui';
 import { Icon } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/format';
 
+function readRows(key: string) {
+  try {
+    const raw = localStorage.getItem(key);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function sameName(value: unknown, name: string) {
+  return String(value || "").trim().toLowerCase() === name;
+}
+
 export default function StoreReports({ storeId }: { storeId: string }) {
+  const { user } = useAuth();
+  if (user?.role === "fro") {
+    return <FroReportView storeId={storeId} name={user.name} />;
+  }
+  return <StoreReportView storeId={storeId} />;
+}
+
+function StoreReportView({ storeId }: { storeId: string }) {
   const bills = useMemo(() => getBillsByStore(storeId), [storeId]);
   const products = useMemo(() => getProductsByStore(storeId), [storeId]);
   const farmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
@@ -119,6 +142,130 @@ export default function StoreReports({ storeId }: { storeId: string }) {
                     <td className="px-5 py-3.5 text-right text-slate-600">{b.items.length}</td>
                     <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{formatCurrency(b.total)}</td>
                     <td className="px-5 py-3.5 text-center"><Badge color={b.paymentStatus === 'Paid' ? 'green' : 'amber'}>{b.paymentStatus}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function FroReportView({ storeId, name }: { storeId: string; name: string }) {
+  const froName = name.trim().toLowerCase();
+  const report = useMemo(() => {
+    const sales = readRows(`nature-biotic-store-sales-invoices-v2:${storeId}`).filter(
+      (row) => sameName(row.executiveName, froName),
+    );
+    const collections = readRows(`nature-biotic-store-receipts-v3:${storeId}`).filter(
+      (row) => sameName(row.receivedBy, froName),
+    );
+    const returns = readRows(`nature-biotic-store-sales-returns-v2:${storeId}`).filter(
+      (row) => sameName(row.executiveName, froName),
+    );
+    const expenses = readRows("naturebiotic_shared_expenses").filter((row) =>
+      sameName(row.enteredBy, froName),
+    );
+    const stock = getFROStockByExecutive(storeId, name);
+    let visits = 0;
+    try {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index) || "";
+        if (!/visit/i.test(key)) continue;
+        readRows(key).forEach((row) => {
+          const owner = String(
+            row.executiveName ?? row.froName ?? row.createdBy ?? row.userName ?? "",
+          )
+            .trim()
+            .toLowerCase();
+          if (owner === froName) visits += 1;
+        });
+      }
+    } catch {
+      visits = 0;
+    }
+    const paid = new Map<string, number>();
+    collections.forEach((row) => {
+      const invoiceNo = String(row.invoiceNo || row.billNo || "").trim().toLowerCase();
+      if (!invoiceNo || invoiceNo === "-") return;
+      paid.set(invoiceNo, (paid.get(invoiceNo) || 0) + Number(row.amount || 0));
+    });
+    const outstanding = sales.reduce((sum, row) => {
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      const due = Math.max(Number(row.amount || 0) - (paid.get(invoiceNo) || 0), 0);
+      return sum + due;
+    }, 0);
+    return {
+      sales,
+      salesTotal: sales.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+      collection: collections.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+      outstanding,
+      returns: returns.reduce((sum, row) => sum + Number(row.total || 0), 0),
+      expenses: expenses.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+      stockValue: stock.reduce(
+        (sum, row) => sum + Number(row.currentQty || 0) * Number(row.unitValue || 0),
+        0,
+      ),
+      visits,
+    };
+  }, [storeId, froName, name]);
+
+  const cards = [
+    ["Sales", report.salesTotal],
+    ["Collection", report.collection],
+    ["Outstanding", report.outstanding],
+    ["Sales Return", report.returns],
+    ["Expenses", report.expenses],
+    ["Hand Stock", report.stockValue],
+  ] as const;
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-5">
+        <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">Reports</h1>
+        <p className="mt-1 text-sm text-slate-500">Your sales, collection, stock and expenses.</p>
+      </div>
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
+        {cards.map(([label, value]) => (
+          <Card key={label} className="p-4 sm:p-5">
+            <p className="text-sm font-medium text-slate-500">{label}</p>
+            <p className="mt-1 text-lg font-bold text-slate-800 sm:text-2xl">{formatCurrency(value)}</p>
+          </Card>
+        ))}
+        <Card className="p-4 sm:p-5">
+          <p className="text-sm font-medium text-slate-500">Visits</p>
+          <p className="mt-1 text-lg font-bold text-slate-800 sm:text-2xl">{report.visits}</p>
+        </Card>
+      </div>
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+          <Icon name="receipt_long" size={22} className="text-brand-600" />
+          <h2 className="font-bold text-slate-800">My Sales</h2>
+        </div>
+        {report.sales.length === 0 ? (
+          <EmptyState icon="receipt_long" title="No sales" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[320px] text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                  <th className="px-4 py-3 text-left font-semibold">Invoice</th>
+                  <th className="px-4 py-3 text-left font-semibold">Date</th>
+                  <th className="px-4 py-3 text-left font-semibold">Farmer</th>
+                  <th className="px-4 py-3 text-right font-semibold">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {report.sales.map((row) => (
+                  <tr key={String(row.id || row.invoiceNo)}>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{row.invoiceNo || "-"}</td>
+                    <td className="px-4 py-3 text-slate-600">{row.date ? formatDate(String(row.date)) : "-"}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-700">{row.partyName || "-"}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-700">
+                      {formatCurrency(Number(row.amount || 0))}
+                    </td>
                   </tr>
                 ))}
               </tbody>

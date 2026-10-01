@@ -339,3 +339,78 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
     })
     .sort((a, b) => b.at - a.at);
 }
+
+function samePerson(value: unknown, name: string) {
+  return String(value || "").trim().toLowerCase() === name;
+}
+
+/** Store notifications that belong to one FRO. Store-wide notices stay on the Store panel. */
+export function getFroNotifications(
+  storeId: string,
+  froName: string,
+  staffId = "",
+): StoreNotification[] {
+  const name = String(froName || "").trim().toLowerCase();
+  if (!storeId || !name) return [];
+  const staff = String(staffId || "").trim();
+  const items = getStoreNotifications(storeId).filter((item) => {
+    const description = item.description.trim().toLowerCase();
+    return (
+      description.startsWith(`${name} ·`) || description.startsWith(`${name} `)
+    );
+  });
+
+  readArray(`nature-biotic-store-sales-returns-v2:${storeId}`)
+    .filter(
+      (row) =>
+        row?.returnNo &&
+        (samePerson(row.executiveName, name) ||
+          (staff && String(row.createdByStaffId || "") === staff)),
+    )
+    .forEach((row) => {
+      items.push(
+        note({
+          id: `fro-sales-return:${storeId}:${row.returnNo}`,
+          title: "Sales Return",
+          description: `${row.executiveName || froName} · ${row.returnNo} · ${formatCurrency(
+            Number(row.total || 0),
+          )}`,
+          status: "Recorded",
+          tone: "neutral",
+          icon: "assignment_return",
+          at: timeValue(row.date),
+          sourceDate: row.date,
+          page: "sales-return",
+        }),
+      );
+    });
+
+  readArray(`nature-biotic-store-receipts-v3:${storeId}`)
+    .filter((row) => row?.receiptNo && samePerson(row.receivedBy, name))
+    .forEach((row) => {
+      items.push(
+        note({
+          id: `fro-receipt:${storeId}:${row.receiptNo}`,
+          title: "Collection",
+          description: `${row.receivedBy || froName} · ${row.receiptNo} · ${formatCurrency(
+            Number(row.amount || 0),
+          )}`,
+          status: "Received",
+          tone: "accepted",
+          icon: "payments",
+          at: timeValue(row.date),
+          sourceDate: row.date,
+          page: "receipt",
+        }),
+      );
+    });
+
+  const seen = new Set<string>();
+  return items
+    .filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .sort((a, b) => b.at - a.at);
+}
