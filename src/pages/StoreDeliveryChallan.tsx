@@ -199,13 +199,10 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       );
       if (purchasedQty <= 0) return;
 
-      const unitValue = Number(
-        purchase.unitPrice ??
-          purchase.rate ??
-          purchase.price ??
-          product.sellingPrice ??
-          0,
-      );
+      // Always use the company-declared selling price, never the purchase price
+      const unitValue = Number(product.sellingPrice ?? 0);
+
+      
       const key = [
         productId,
         packSize.toLowerCase(),
