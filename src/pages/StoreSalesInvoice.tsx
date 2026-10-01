@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
+  formatDate,
   matchesSimpleDate,
   simpleDateFilterOptions,
   type SimpleDateFilter,
@@ -21,6 +22,21 @@ import {
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { StoreInvoiceBillModal } from "@/components/StoreInvoiceBillModal";
+import { CommonDocumentBill } from "@/components/CommonDocumentBill";
+import {
+  FroDocumentActions,
+} from "@/components/FroDocumentActions";
+import {
+  detailedShareMessage,
+  farmerContactText,
+} from "@/lib/whatsappShare";
+import {
+  DOCUMENT_PDF_WIDTH_PX,
+  documentPdfFileName,
+  printDocumentPdf,
+  shareDocumentPdf,
+} from "@/lib/documentPdf";
 
 type SaleType = "Direct" | "Executive";
 
@@ -108,32 +124,12 @@ function formatDateInput(value: string) {
 
 export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const { user } = useAuth();
-  const { goStorePage } = useNav();
+  const { goStorePage, goFarmerProfile } = useNav();
   const isFRO = user?.role === "fro";
   const froName = user?.name?.trim() || "";
   const storageKey = `${STORAGE_KEY}:${storeId}`;
   const store = getStore(storeId);
-
-  const storeAny = store as any;
-  const paymentBank = {
-    accountName:
-      storeAny?.bankAccountName || storeAny?.accountName || store?.name || "-",
-    accountNo: storeAny?.bankAccountNo || storeAny?.accountNo || "-",
-    ifsc: storeAny?.bankIfsc || storeAny?.ifsc || "-",
-    bankName: storeAny?.bankName || "-",
-    branch: storeAny?.bankBranch || storeAny?.branch || "-",
-    upiId: storeAny?.upiId || storeAny?.bankUpiId || "-",
-  };
-
-  function buildPaymentQrUrl(payableTotal: number, invoiceNo: string): string {
-    const paymentUrl = new URL("upi://pay");
-    paymentUrl.searchParams.set("pa", paymentBank.upiId);
-    paymentUrl.searchParams.set("pn", paymentBank.accountName);
-    paymentUrl.searchParams.set("am", payableTotal.toFixed(2));
-    paymentUrl.searchParams.set("cu", "INR");
-    paymentUrl.searchParams.set("tn", `Invoice ${invoiceNo}`);
-    return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(paymentUrl.toString())}`;
-  }
+  const storeFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
 
   const [rows, setRows] = useState<SaleRow[]>(() => {
     try {
@@ -151,11 +147,22 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleRow | null>(null);
   const openedInvoice = useRef(false);
-  useEffect(() => {
-    if (selectedSale) {
-      setInvoiceNotes(selectedSale.notes || "");
+  const invoiceReturn = useRef<{ from?: string; farmerId?: string } | null>(
+    null,
+  );
+
+  function closeSelectedInvoice() {
+    const back = invoiceReturn.current;
+    invoiceReturn.current = null;
+    setSelectedSale(null);
+    if (back?.from === "farmer-details" && back.farmerId) {
+      sessionStorage.setItem(
+        "nature-biotic-farmer-profile-tab",
+        JSON.stringify({ farmerId: back.farmerId, tab: "invoices" }),
+      );
+      goFarmerProfile(back.farmerId);
     }
-  }, [selectedSale]);
+  }
 
   useEffect(() => {
     const cleaned = rows.filter((row) => !isSampleSale(row));
@@ -175,8 +182,19 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     sessionStorage.removeItem("nature-biotic-open-store-invoice");
     openedInvoice.current = true;
     try {
-      const target = JSON.parse(raw) as { storeId?: string; invoiceNo?: string };
+      const target = JSON.parse(raw) as {
+        storeId?: string;
+        invoiceNo?: string;
+        from?: string;
+        farmerId?: string;
+      };
       if (target.storeId !== storeId || !target.invoiceNo) return;
+      if (target.from === "farmer-details" && target.farmerId) {
+        invoiceReturn.current = {
+          from: target.from,
+          farmerId: target.farmerId,
+        };
+      }
       const match = rows.find((row) => row.invoiceNo === target.invoiceNo);
       if (match) setSelectedSale(match);
     } catch {
@@ -227,7 +245,6 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const [executiveName, setExecutiveName] = useState(froName);
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
-  const [invoiceNotes, setInvoiceNotes] = useState("");
 
   const registeredFarmers = useMemo(() => {
     const storeFarmers = getFarmersByStore(storeId);
@@ -615,6 +632,17 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     added.length > 0 &&
     (through === "Direct" || !!executiveName.trim());
 
+  const selectedSaleContact = farmerContactText(
+    storeFarmers.find((farmer) => farmer.id === selectedSale?.farmerId),
+    {
+      name: selectedSale?.partyName,
+      village: selectedSale?.farmerVillage,
+      phone: selectedSale?.farmerPhone,
+    },
+  );
+  const invoiceSheetRef = useRef<HTMLDivElement>(null);
+  const sharingInvoice = useRef(false);
+
   return (
     <div>
       {!isFRO ? (
@@ -732,7 +760,16 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     </td>
                   </tr>
                 ) : (
-                  visibleRows.map((r, i) => (
+                  visibleRows.map((r, i) => {
+                    const contact = farmerContactText(
+                      storeFarmers.find((farmer) => farmer.id === r.farmerId),
+                      {
+                        name: r.partyName,
+                        village: r.farmerVillage,
+                        phone: r.farmerPhone,
+                      },
+                    );
+                    return (
                     <tr
                       key={r.id}
                       onClick={() => setSelectedSale(r)}
@@ -746,20 +783,21 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       </td>
                       <td className="border-l border-slate-100 px-2 py-3 text-left">
                         <p className="truncate text-xs font-bold text-slate-800">
-                          {r.partyName}
+                          {contact.name}
                         </p>
                         <p className="truncate text-[10px] text-slate-500">
-                          {r.farmerVillage || "-"}
+                          {contact.village}
                         </p>
                         <p className="truncate text-[9px] text-slate-400">
-                          {r.farmerPhone || "-"}
+                          {contact.phone}
                         </p>
                       </td>
                       <td className="border-l border-slate-100 px-2 py-3 text-right font-bold tabular-nums text-brand-700">
                         {formatCurrency(r.amount)}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -966,1250 +1004,239 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       )}
 
       {selectedSale && isFRO && (
-        <div className="w-full bg-slate-50">
-          <div className="flex min-h-[calc(100vh-120px)] w-full flex-col overflow-hidden rounded-xl bg-white">
-            <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
-              <button
-                type="button"
-                onClick={() => setSelectedSale(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                aria-label="Back"
-              >
-                <Icon name="arrow_back" size={19} />
-              </button>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-brand-700">
-                  Sales Invoice
+        <div className="min-h-full w-full max-w-full overflow-x-hidden bg-slate-50">
+          <div className="mb-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={closeSelectedInvoice}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label="Back"
+            >
+              <Icon name="arrow_back" size={19} />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold text-slate-800 sm:text-2xl">
+                Sales Invoice
+              </h1>
+              <p className="mt-0.5 truncate text-sm text-slate-500">
+                {selectedSale.invoiceNo} · {formatDate(selectedSale.date)}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Farmer Details
                 </p>
-                <h2 className="mt-0.5 truncate text-lg font-bold text-slate-800">
-                  {selectedSale.invoiceNo}
-                </h2>
-                <p className="mt-0.5 text-[10px] text-slate-400">
-                  {selectedSale.date}
+                <p className="mt-1.5 break-words text-sm font-extrabold text-slate-800">
+                  {selectedSaleContact.name}
+                </p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">
+                  {selectedSaleContact.village}
+                </p>
+                <p className="mt-0.5 break-words text-xs text-slate-500">
+                  {selectedSaleContact.phone}
                 </p>
               </div>
-            </div>
-            {/* <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-brand-700">
-                    Sales Invoice
-                  </p>
-                  <h2 className="mt-0.5 truncate text-lg font-bold text-slate-800">
-                    {selectedSale.invoiceNo}
-                  </h2>
-                  <p className="mt-0.5 text-[10px] text-slate-400">
-                    {selectedSale.date}
-                  </p>
-                </div>
-              </div> */}
-
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              <div className="space-y-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
-                        Farmer Details
-                      </p>
-                      <p className="mt-1 truncate text-xs font-extrabold text-slate-900">
-                        {selectedSale.partyName}
-                      </p>
-                      <p className="truncate text-[10px] text-slate-500">
-                        {selectedSale.farmerVillage || "-"}
-                      </p>
-                      <p className="truncate text-[10px] text-slate-500">
-                        {selectedSale.farmerPhone || "-"}
-                      </p>
-                    </div>
-
-                    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
-                        Farm Details
-                      </p>
-                      <div className="mt-1.5 space-y-1 text-[10px]">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-slate-400">Crop</span>
-                          <span className="truncate font-semibold text-slate-700">
-                            {selectedSale.farmerCrop || "-"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-slate-400">Acre</span>
-                          <span className="truncate font-semibold text-slate-700">
-                            {selectedSale.farmerAcre || "-"}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-slate-400">Place</span>
-                          <span className="truncate font-semibold text-slate-700">
-                            {selectedSale.placeOfSupply || "-"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                        Products
-                      </p>
-                      <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
-                        {selectedSale.products.length} item(s)
-                      </p>
-                    </div>
-                    <span className="text-sm font-extrabold tabular-nums text-brand-700">
-                      {formatCurrency(selectedSale.amount)}
-                    </span>
-                  </div>
-
-                  {selectedSale.products.length > 0 ? (
-                    <table className="w-full table-fixed border-collapse text-[11px]">
-                      <thead>
-                        <tr className="bg-slate-50 text-[9px] uppercase tracking-wide text-slate-400">
-                          <th className="w-[13%] px-2 py-2 text-center font-bold">
-                            S.No
-                          </th>
-                          <th className="w-[49%] px-2 py-2 text-left font-bold">
-                            Product
-                          </th>
-                          <th className="w-[15%] px-2 py-2 text-center font-bold">
-                            Qty
-                          </th>
-                          <th className="w-[23%] px-2 py-2 text-right font-bold">
-                            Value
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {selectedSale.products.map((item, index) => (
-                          <tr key={item.key}>
-                            <td className="px-2 py-2.5 text-center text-slate-500">
-                              {index + 1}
-                            </td>
-                            <td className="min-w-0 px-2 py-2.5 text-left">
-                              <p className="truncate font-semibold text-slate-800">
-                                {item.product?.name || "Product"}
-                              </p>
-                              <p className="truncate text-[10px] text-slate-500">
-                                {item.pkgsize || item.packSize || "-"}
-                              </p>
-                            </td>
-                            <td className="px-2 py-2.5 text-center font-medium text-slate-700">
-                              {item.quantity}
-                            </td>
-                            <td className="px-2 py-2.5 text-right font-bold tabular-nums text-slate-800">
-                              {formatCurrency(item.rowTotal)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div className="px-3 py-8 text-center text-xs text-slate-400">
-                      Product details are not available for this invoice.
-                    </div>
-                  )}
-                </div>
-
-                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                  <div className="px-3 py-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                      Invoice Summary
+              <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                  Farm Details
+                </p>
+                <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  <div>
+                    <span className="text-slate-400">Crop</span>
+                    <p className="font-semibold text-slate-700">
+                      {selectedSale.farmerCrop || "-"}
                     </p>
                   </div>
-
-                  <div className="px-3 pb-3">
-                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                      <div className="space-y-2 text-[12px]">
-                        <SummaryRow
-                          label="Without Tax"
-                          value={formatCurrency(selectedSale.withoutTax)}
-                        />
-                        <SummaryRow
-                          label="SGST"
-                          value={formatCurrency(selectedSale.sgst)}
-                        />
-                        <SummaryRow
-                          label="CGST"
-                          value={formatCurrency(selectedSale.cgst)}
-                        />
-                        <SummaryRow
-                          label="IGST"
-                          value={formatCurrency(selectedSale.igst)}
-                        />
-
-                        <div className="border-t border-slate-200 pt-2.5">
-                          <SummaryRow
-                            label="Grand Total"
-                            value={formatCurrency(selectedSale.amount)}
-                            bold
-                          />
-                        </div>
-                      </div>
-                    </div>
+                  <div>
+                    <span className="text-slate-400">Acre</span>
+                    <p className="font-semibold text-slate-700">
+                      {selectedSale.farmerAcre || "-"}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-400">Place</span>
+                    <p className="font-semibold text-slate-700">
+                      {selectedSale.placeOfSupply || "Tamil Nadu"}
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-slate-200 bg-slate-50 px-3 py-2.5">
-              <Button
-                variant="secondary"
-                onClick={() => setSelectedSale(null)}
-                className="w-full"
-              >
-                Back to Sales Invoices
-              </Button>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-3 sm:px-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Products
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {selectedSale.products.length} item(s)
+                  </p>
+                </div>
+                <p className="text-sm font-extrabold text-brand-700">
+                  {formatCurrency(selectedSale.amount)}
+                </p>
+              </div>
+              <div className="w-full overflow-x-auto">
+                <table className="w-full min-w-[280px] table-fixed border-collapse text-[11px] sm:text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-[9px] uppercase tracking-wide text-slate-500 sm:text-[10px]">
+                      <th className="w-[12%] px-2 py-2.5 text-center font-semibold">
+                        S.No
+                      </th>
+                      <th className="w-[48%] px-2 py-2.5 text-left font-semibold">
+                        Product
+                      </th>
+                      <th className="w-[16%] px-1 py-2.5 text-center font-semibold">
+                        Qty
+                      </th>
+                      <th className="w-[24%] px-2 py-2.5 text-right font-semibold">
+                        Value
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedSale.products.length > 0 ? (
+                      selectedSale.products.map((item, index) => (
+                        <tr key={item.key}>
+                          <td className="px-2 py-3 text-center text-slate-500">
+                            {index + 1}
+                          </td>
+                          <td className="min-w-0 px-2 py-3">
+                            <p className="break-words font-semibold leading-4 text-slate-800">
+                              {item.product?.name || "Product"}
+                            </p>
+                            <p className="mt-0.5 break-words text-[10px] text-slate-500">
+                              {item.pkgsize || item.packSize || "-"}
+                            </p>
+                          </td>
+                          <td className="px-1 py-3 text-center font-medium text-slate-700">
+                            {item.quantity}
+                          </td>
+                          <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                            {formatCurrency(item.rowTotal)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="px-3 py-8 text-center text-xs text-slate-400"
+                        >
+                          Product details are not available for this invoice.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                Invoice Summary
+              </p>
+              <div className="mt-3 space-y-2 text-sm">
+                <SummaryRow
+                  label="Without Tax"
+                  value={formatCurrency(selectedSale.withoutTax)}
+                />
+                <SummaryRow
+                  label="SGST"
+                  value={formatCurrency(selectedSale.sgst)}
+                />
+                <SummaryRow
+                  label="CGST"
+                  value={formatCurrency(selectedSale.cgst)}
+                />
+                <SummaryRow
+                  label="IGST"
+                  value={formatCurrency(selectedSale.igst)}
+                />
+                <div className="border-t border-slate-200 pt-2">
+                  <SummaryRow
+                    label="Grand Total"
+                    value={formatCurrency(selectedSale.amount)}
+                    bold
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <FroDocumentActions
+              onWhatsApp={() => {
+                void shareDocumentPdf({
+                  sheet: invoiceSheetRef.current,
+                  phone: selectedSaleContact.phone,
+                  fileName: documentPdfFileName(selectedSale.invoiceNo),
+                  lock: sharingInvoice,
+                  message: detailedShareMessage({
+                    farmerName: selectedSaleContact.name,
+                    intro: "Please find your Sales Invoice details.",
+                    numberLabel: "Invoice No",
+                    number: selectedSale.invoiceNo,
+                    date: formatDate(selectedSale.date),
+                    lines: (selectedSale.products || []).map((item) => ({
+                      name: item.product?.name || "-",
+                      packSize: item.pkgsize || item.packSize || "-",
+                      qty: item.quantity,
+                      rate: formatCurrency(item.sellingPrice),
+                      amount: formatCurrency(item.rowTotal),
+                    })),
+                    lineAmountLabel: "Amount",
+                    totalLabel: "Grand Total",
+                    total: formatCurrency(selectedSale.amount),
+                    storeName: store?.name || "Nature Biotic",
+                  }),
+                });
+              }}
+              onPrint={() => {
+                void printDocumentPdf(invoiceSheetRef.current);
+              }}
+              onClose={closeSelectedInvoice}
+            />
+            {createPortal(
+              <div
+                ref={invoiceSheetRef}
+                className="document-pdf-sheet"
+                aria-hidden="true"
+                style={{
+                  position: "fixed",
+                  left: -2400,
+                  top: 0,
+                  width: DOCUMENT_PDF_WIDTH_PX,
+                  background: "#fff",
+                  pointerEvents: "none",
+                }}
+              >
+                <CommonDocumentBill
+                  documentType="salesInvoice"
+                  storeId={storeId}
+                  sale={selectedSale}
+                  notes={selectedSale.notes || ""}
+                  documentMode
+                />
+              </div>,
+              document.body,
+            )}
           </div>
         </div>
       )}
 
-      {selectedSale &&
-        !isFRO &&
-        createPortal(
-          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-            <style>{`
-              @media print {
-
-                @page {
-                  size: A4 landscape;
-                  margin: 5mm;
-                }
-
-                html,
-                body {
-                  width: 100% !important;
-                  height: auto !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  overflow: visible !important;
-                }
-
-                body {
-                  -webkit-print-color-adjust: exact !important;
-                  print-color-adjust: exact !important;
-                }
-
-                body * {
-                  visibility: hidden !important;
-                }
-
-                .store-invoice-print,
-                .store-invoice-print * {
-                  visibility: visible !important;
-                }
-
-                .store-invoice-print {
-                  position: relative !important;
-
-                  /* Actual resize instead of transform */
-                  zoom: 0.82 !important;
-
-                  width: 121.95% !important;
-                  max-width: none !important;
-
-                  height: auto !important;
-                  max-height: none !important;
-
-                  margin: 0 !important;
-                  padding: 0 !important;
-
-                  left: 0 !important;
-                  top: 0 !important;
-
-                  overflow: visible !important;
-
-                  border-radius: 0 !important;
-                  box-shadow: none !important;
-                  background: #fff !important;
-
-                  /* IMPORTANT */
-                  transform: none !important;
-                  transform-origin: initial !important;
-                }
-
-                .store-invoice-screen-only,
-                .store-invoice-print-hide,
-                .store-purchase-screen-only {
-                  display: none !important;
-                }
-
-                .store-invoice-print-only {
-                  display: block !important;
-                }
-
-                .store-invoice-desktop-view {
-                  display: block !important;
-                }
-
-                .store-invoice-mobile-view {
-                  display: none !important;
-                }
-
-                .store-invoice-print table {
-                  page-break-inside: auto !important;
-                }
-
-                .store-invoice-print tr {
-                  page-break-inside: avoid !important;
-                  page-break-after: auto !important;
-                }
-
-                .store-invoice-print-footer-block {
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
-                }
-              }
-            `}</style>
-
-            <div className="store-invoice-print flex max-h-[94vh] w-[98vw] max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="store-invoice-screen-only flex items-center justify-between border-b border-slate-200 px-6 py-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-brand-700">
-                    Tax Invoice
-                  </p>
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">
-                    {selectedSale.invoiceNo}
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSale(null)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
-                >
-                  <Icon name="close" size={20} />
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                <div className="store-invoice-mobile-view md:hidden">
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-brand-700">
-                            Tax Invoice
-                          </p>
-                          <p className="mt-1 text-lg font-extrabold text-slate-900">
-                            {selectedSale.invoiceNo}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-700">
-                          {selectedSale.through}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <DetailField label="Date" value={selectedSale.date} />
-                        <DetailField
-                          label="Executive"
-                          value={selectedSale.executiveName || "-"}
-                        />
-                        <DetailField
-                          label="Farmer"
-                          value={selectedSale.partyName}
-                        />
-                        <DetailField
-                          label="Phone"
-                          value={selectedSale.farmerPhone || "-"}
-                        />
-                        <DetailField
-                          label="Village"
-                          value={selectedSale.farmerVillage || "-"}
-                        />
-                        <DetailField
-                          label="Place of Supply"
-                          value={selectedSale.placeOfSupply || "Tamil Nadu"}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                        Farmer Details
-                      </p>
-                      <div className="mt-3 grid grid-cols-2 gap-3">
-                        <DetailField
-                          label="Name"
-                          value={selectedSale.partyName}
-                        />
-                        <DetailField
-                          label="Contact"
-                          value={selectedSale.farmerPhone || "-"}
-                        />
-                        <DetailField
-                          label="Village"
-                          value={selectedSale.farmerVillage || "-"}
-                        />
-                        <DetailField
-                          label="Crop"
-                          value={selectedSale.farmerCrop || "-"}
-                        />
-                        <DetailField
-                          label="Acre"
-                          value={selectedSale.farmerAcre || "-"}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
-                      <div className="mb-3 flex items-center justify-between">
-                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                          Products
-                        </p>
-                        <span className="text-[10px] font-semibold text-slate-400">
-                          {selectedSale.products.length} item(s)
-                        </span>
-                      </div>
-
-                      {selectedSale.products.length ? (
-                        <div className="space-y-3">
-                          {selectedSale.products.map((item, index) => (
-                            <div
-                              key={item.key}
-                              className="rounded-lg bg-slate-50 p-3"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-[10px] font-semibold text-slate-400">
-                                    Product {index + 1}
-                                  </p>
-                                  <p className="mt-0.5 truncate text-sm font-bold text-slate-800">
-                                    {item.product?.name || "Product"}
-                                  </p>
-                                </div>
-                                <p className="shrink-0 text-sm font-extrabold text-slate-900">
-                                  {formatCurrency(item.rowTotal)}
-                                </p>
-                              </div>
-                              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
-                                <DetailField
-                                  label="Pkg Size"
-                                  value={item.pkgsize || item.packSize || "-"}
-                                />
-                                <DetailField
-                                  label="Batch No"
-                                  value={item.batchNo || "-"}
-                                />
-                                <DetailField
-                                  label="Expiry"
-                                  value={item.expiryDate || "-"}
-                                />
-                                <DetailField
-                                  label="Qty"
-                                  value={String(item.quantity)}
-                                />
-                                <DetailField
-                                  label="Unit Price"
-                                  value={formatCurrency(item.sellingPrice)}
-                                />
-                                <DetailField
-                                  label="Discount"
-                                  value={formatCurrency(item.discount)}
-                                />
-                                <DetailField
-                                  label="Tax"
-                                  value={formatCurrency(item.taxAmount)}
-                                />
-                                <DetailField
-                                  label="Taxable"
-                                  value={formatCurrency(item.withoutTax)}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="py-6 text-center text-xs text-slate-400">
-                          No product details available.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="space-y-2 text-sm">
-                        <SummaryRow
-                          label="Without Tax"
-                          value={formatCurrency(selectedSale.withoutTax)}
-                        />
-                        <SummaryRow
-                          label="SGST"
-                          value={formatCurrency(selectedSale.sgst)}
-                        />
-                        <SummaryRow
-                          label="CGST"
-                          value={formatCurrency(selectedSale.cgst)}
-                        />
-                        <SummaryRow
-                          label="IGST"
-                          value={formatCurrency(selectedSale.igst)}
-                        />
-                        <div className="border-t border-slate-200 pt-3">
-                          <SummaryRow
-                            label="Grand Total"
-                            value={formatCurrency(selectedSale.amount)}
-                            bold
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="store-invoice-desktop-view hidden md:block">
-                  <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-                    <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                      <div className="border-r border-slate-300 p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden bg-white">
-                            <img
-                              src="/logo_NB.webp"
-                              alt="Nature Biotic"
-                              className="max-h-14 max-w-full object-contain"
-                            />
-                          </div>
-                          <div className="leading-tight">
-                            <h3 className="text-base font-extrabold tracking-wide text-slate-900">
-                              {store?.name || "SAIRAM AGRI INPUT"}
-                            </h3>
-                            <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-700">
-                              {store?.address ||
-                                store?.location ||
-                                "Rajapalayam, Tamil Nadu"}
-                            </p>
-                            <p className="mt-1 text-[10px] text-slate-600">
-                              GSTIN: {store?.gst || "-"}
-                            </p>
-                            <p className="text-[10px] text-slate-600">
-                              Contact: {store?.phone || "-"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-center p-3">
-                        <div className="text-center">
-                          <h2 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
-                            TAX INVOICE
-                          </h2>
-                          {/* <p className="mt-1 text-[10px] text-slate-500">
-                          Store to Farmer
-                        </p> */}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 border-b border-slate-300 text-[9px] leading-4">
-                      <div className="border-r border-slate-300 p-3">
-                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                          Billing Address
-                        </p>
-                        <p className="font-bold text-slate-900">
-                          {selectedSale.partyName}
-                        </p>
-                        <p className="mt-1 text-slate-600">
-                          {selectedSale.farmerVillage || "-"}
-                        </p>
-                        <p className="text-slate-600">
-                          Contact: {selectedSale.farmerPhone || "-"}
-                        </p>
-                        <p className="text-slate-600">
-                          Crop / Acre:{" "}
-                          {[
-                            selectedSale.farmerCrop,
-                            selectedSale.farmerAcre
-                              ? `${selectedSale.farmerAcre} Acre`
-                              : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" / ") || "-"}
-                        </p>
-                      </div>
-
-                      <div className="border-r border-slate-300 p-3">
-                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                          Delivery Address
-                        </p>
-                        <p className="font-bold text-slate-900">
-                          {selectedSale.partyName}
-                        </p>
-                        <p className="mt-1 text-slate-600">
-                          {selectedSale.farmerVillage || "-"}
-                        </p>
-                        <p className="mt-1 text-slate-600">
-                          Place of Supply:{" "}
-                          {selectedSale.placeOfSupply || "Tamil Nadu"}
-                        </p>
-                      </div>
-
-                      <div className="p-3">
-                        <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                          Invoice Details
-                        </p>
-                        <div className="grid grid-cols-[92px_1fr] gap-y-1">
-                          <span className="text-slate-500">Invoice No</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedSale.invoiceNo}
-                          </span>
-                          <span className="text-slate-500">Date</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedSale.date}
-                          </span>
-                          <span className="text-slate-500">Through</span>
-                          <span className="font-semibold text-slate-800">
-                            {selectedSale.through}
-                          </span>
-                          {selectedSale.through === "Executive" && (
-                            <>
-                              <span className="text-slate-500">Executive</span>
-                              <span className="font-semibold text-slate-800">
-                                {selectedSale.executiveName || "-"}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="w-full overflow-x-auto">
-                      <table className="w-full border-collapse text-[8.5px] xl:text-[9px]">
-                        <thead>
-                          <tr className="border-b border-slate-400 bg-slate-50 text-slate-700">
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              S.No
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Product
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              HSN Code
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              PKG Size
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Batch No
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Exp Date
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Qty
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Unit Price
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Before Discount
-                            </th>
-                            <th
-                              colSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Discount
-                            </th>
-                            <th
-                              rowSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              Taxable (₹)
-                            </th>
-                            <th
-                              colSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              CGST
-                            </th>
-                            <th
-                              colSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              SGST (₹)
-                            </th>
-                            <th
-                              colSpan={2}
-                              className="border-r border-slate-300 px-1 py-1.5 text-center"
-                            >
-                              IGST (₹)
-                            </th>
-                            <th rowSpan={2} className="px-1 py-1.5 text-center">
-                              Line Total
-                            </th>
-                          </tr>
-                          <tr className="border-b border-slate-400 bg-slate-50 text-slate-600">
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              %
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Amt
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Rate %
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Amount
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Rate %
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Amount
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Rate %
-                            </th>
-                            <th className="border-r border-slate-300 px-1 py-1 text-center">
-                              Amount
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedSale.products.length > 0 ? (
-                            selectedSale.products.map((item, index) => {
-                              const beforeDiscount =
-                                Number(item.quantity || 0) *
-                                Number(item.sellingPrice || 0);
-                              const discountAmount = Number(item.discount || 0);
-                              const discountPercent =
-                                beforeDiscount > 0
-                                  ? (discountAmount / beforeDiscount) * 100
-                                  : 0;
-                              const isTamilNadu =
-                                (selectedSale.placeOfSupply || "Tamil Nadu") ===
-                                "Tamil Nadu";
-                              const cgstRate = isTamilNadu
-                                ? Number(item.taxPercent || 0) / 2
-                                : 0;
-                              const sgstRate = isTamilNadu
-                                ? Number(item.taxPercent || 0) / 2
-                                : 0;
-                              const igstRate = !isTamilNadu
-                                ? Number(item.taxPercent || 0)
-                                : 0;
-                              const cgstAmt = isTamilNadu
-                                ? Number(item.taxAmount || 0) / 2
-                                : 0;
-                              const sgstAmt = isTamilNadu
-                                ? Number(item.taxAmount || 0) / 2
-                                : 0;
-                              const igstAmt = !isTamilNadu
-                                ? Number(item.taxAmount || 0)
-                                : 0;
-
-                              return (
-                                <tr key={item.key} className="border-slate-300">
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                    {index + 1}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 font-semibold">
-                                    {item.product?.name || "Product"}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                    {item.hsn || "-"}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                    {item.pkgsize || item.packSize || "-"}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                    {item.batchNo || "-"}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                    {item.expiryDate || "-"}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-center">
-                                    {item.quantity}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {formatCurrency(item.sellingPrice)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">
-                                    {formatCurrency(beforeDiscount)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {discountPercent.toFixed(2)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {formatCurrency(discountAmount)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right font-semibold">
-                                    {formatCurrency(item.withoutTax)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {cgstRate.toFixed(2)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {formatCurrency(cgstAmt)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {sgstRate.toFixed(2)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {formatCurrency(sgstAmt)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {igstRate.toFixed(2)}
-                                  </td>
-                                  <td className="border-r border-slate-300 px-1 py-1.5 text-right">
-                                    {formatCurrency(igstAmt)}
-                                  </td>
-                                  <td className="px-1 py-1.5 text-right font-bold">
-                                    {formatCurrency(item.rowTotal)}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td
-                                colSpan={19}
-                                className="px-4 py-8 text-center text-slate-400"
-                              >
-                                Product-level details are not available for this
-                                old sample invoice.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-
-                        {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
-                        {(() => {
-                          const MIN_ROWS = 10;
-                          const fillerCount = Math.max(
-                            0,
-                            MIN_ROWS - selectedSale.products.length,
-                          );
-                          const columnCount = 19;
-
-                          return Array.from({ length: fillerCount }).map(
-                            (_, i) => (
-                              <tr key={`filler-${i}`}>
-                                {Array.from({ length: columnCount }).map(
-                                  (_, colIdx) => (
-                                    <td
-                                      key={colIdx}
-                                      className={`px-1 py-1.5 ${
-                                        colIdx < columnCount - 1
-                                          ? "border-r border-slate-300"
-                                          : ""
-                                      }`}
-                                    >
-                                      &nbsp;
-                                    </td>
-                                  ),
-                                )}
-                              </tr>
-                            ),
-                          );
-                        })()}
-
-                        <tfoot>
-                          {(() => {
-                            const products = selectedSale.products || [];
-
-                            const totalQty = products.reduce(
-                              (sum, item) => sum + Number(item.quantity || 0),
-                              0,
-                            );
-
-                            const totalBeforeDiscount = products.reduce(
-                              (sum, item) =>
-                                sum +
-                                Number(item.quantity || 0) *
-                                  Number(item.sellingPrice || 0),
-                              0,
-                            );
-
-                            const totalDiscount = products.reduce(
-                              (sum, item) => sum + Number(item.discount || 0),
-                              0,
-                            );
-
-                            const totalTaxable = products.reduce(
-                              (sum, item) => sum + Number(item.withoutTax || 0),
-                              0,
-                            );
-
-                            const isTamilNadu =
-                              (selectedSale.placeOfSupply || "Tamil Nadu") ===
-                              "Tamil Nadu";
-
-                            const totalCGST = isTamilNadu
-                              ? products.reduce(
-                                  (sum, item) =>
-                                    sum + Number(item.taxAmount || 0) / 2,
-                                  0,
-                                )
-                              : 0;
-
-                            const totalSGST = isTamilNadu
-                              ? products.reduce(
-                                  (sum, item) =>
-                                    sum + Number(item.taxAmount || 0) / 2,
-                                  0,
-                                )
-                              : 0;
-
-                            const totalIGST = !isTamilNadu
-                              ? products.reduce(
-                                  (sum, item) =>
-                                    sum + Number(item.taxAmount || 0),
-                                  0,
-                                )
-                              : 0;
-
-                            const totalLine = products.reduce(
-                              (sum, item) => sum + Number(item.rowTotal || 0),
-                              0,
-                            );
-
-                            return (
-                              <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                                {/* S.No + Product + HSN + PKG + Batch + Exp Date */}
-                                <td
-                                  colSpan={6}
-                                  className="border-r border-slate-300 px-1 py-2 text-center"
-                                >
-                                  TOTAL
-                                </td>
-
-                                {/* Qty */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-center">
-                                  {totalQty}
-                                </td>
-
-                                {/* Unit Price */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  -
-                                </td>
-
-                                {/* Before Discount */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  {formatCurrency(totalBeforeDiscount)}
-                                </td>
-
-                                {/* Discount % */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  -
-                                </td>
-
-                                {/* Discount Amount */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  {formatCurrency(totalDiscount)}
-                                </td>
-
-                                {/* Taxable */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  {formatCurrency(totalTaxable)}
-                                </td>
-
-                                {/* CGST Rate */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  -
-                                </td>
-
-                                {/* CGST Amount */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  {formatCurrency(totalCGST)}
-                                </td>
-
-                                {/* SGST Rate */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  -
-                                </td>
-
-                                {/* SGST Amount */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  {formatCurrency(totalSGST)}
-                                </td>
-
-                                {/* IGST Rate */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  -
-                                </td>
-
-                                {/* IGST Amount */}
-                                <td className="border-r border-slate-300 px-1 py-2 text-right">
-                                  {formatCurrency(totalIGST)}
-                                </td>
-
-                                {/* Line Total */}
-                                <td className="px-1 py-2 text-right font-extrabold">
-                                  {formatCurrency(totalLine)}
-                                </td>
-                              </tr>
-                            );
-                          })()}
-                        </tfoot>
-                      </table>
-                    </div>
-
-                    {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
-                    <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
-                      <div className="border-r border-slate-300 p-2.5 flex items-center">
-                        {(() => {
-                          const grandTotal = selectedSale.products.length
-                            ? selectedSale.products.reduce(
-                                (sum, row) => sum + Number(row.rowTotal || 0),
-                                0,
-                              )
-                            : Number(selectedSale.amount || 0);
-
-                          const roundedTotal = Math.round(grandTotal);
-
-                          return (
-                            <p className="text-[10px] font-semibold text-slate-700">
-                              Amount in Words :{" "}
-                              <span className="font-bold text-slate-900">
-                                {numberToWords(roundedTotal)}
-                              </span>
-                            </p>
-                          );
-                        })()}
-                      </div>
-
-                      <div className="space-y-1 p-2.5 text-[11px]">
-                        <SummaryRow
-                          label="Round Off"
-                          value={formatCurrency(
-                            (selectedSale.products.length
-                              ? selectedSale.products.reduce(
-                                  (sum, row) => sum + Number(row.rowTotal || 0),
-                                  0,
-                                )
-                              : Number(selectedSale.amount || 0)) -
-                              (selectedSale.products.length
-                                ? selectedSale.products.reduce(
-                                    (sum, row) =>
-                                      sum +
-                                      Number(row.withoutTax || 0) +
-                                      Number(row.sgst || 0) +
-                                      Number(row.cgst || 0) +
-                                      Number(row.igst || 0),
-                                    0,
-                                  )
-                                : Number(selectedSale.withoutTax || 0) +
-                                  Number(selectedSale.sgst || 0) +
-                                  Number(selectedSale.cgst || 0) +
-                                  Number(selectedSale.igst || 0)),
-                          )}
-                          muted
-                        />
-
-                        <div className="border-t border-slate-300 pt-1.5">
-                          <SummaryRow
-                            label="Grand Total"
-                            value={formatCurrency(
-                              selectedSale.products.length
-                                ? selectedSale.products.reduce(
-                                    (sum, row) =>
-                                      sum + Number(row.rowTotal || 0),
-                                    0,
-                                  )
-                                : Number(selectedSale.amount || 0),
-                            )}
-                            bold
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Row 2: Notes (left) + Authorised Signatory (right) */}
-                    <div className="invoice-print-footer-block grid grid-cols-[1fr_300px] border-t border-slate-300">
-                      <div className="border-r border-slate-300 min-w-0 p-2">
-                        {/* NOTES */}
-                        <div className="flex flex-col justify-end border-slate-300 p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                            Notes
-                          </p>
-
-                          {(() => {
-                            const defaultNotes = `Purchase return raised by ${
-                              selectedSale?.placeOfSupply ?? "this store"
-                            } to Nature Biotic.`;
-
-                            return (
-                              <>
-                                {/* Screen - Editable Notes */}
-                                <textarea
-                                  value={invoiceNotes}
-                                  onChange={(e) =>
-                                    setInvoiceNotes(e.target.value)
-                                  }
-                                  rows={2}
-                                  placeholder="Enter notes..."
-                                  className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                                />
-
-                                {/* Print - Show edited notes */}
-                                <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                                  {invoiceNotes || defaultNotes}
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </div>
-
-                        {(() => {
-                          const exactTotal = selectedSale.products.length
-                            ? selectedSale.products.reduce(
-                                (sum, row) => sum + Number(row.rowTotal || 0),
-                                0,
-                              )
-                            : Number(selectedSale.amount || 0);
-                          const payableTotal = Math.round(exactTotal);
-
-                          return (
-                            <div className="mt-1.5">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                Payment Details
-                              </p>
-
-                              <div className="mt-1.5 flex flex-wrap items-center gap-x-6 gap-y-2">
-                                <div className="text-[8.5px] leading-4 text-slate-600">
-                                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                                    <span className="whitespace-nowrap">
-                                      <span className="text-slate-500">
-                                        Account Name :{" "}
-                                      </span>
-                                      <span className="font-bold text-slate-800">
-                                        {paymentBank.accountName}
-                                      </span>
-                                    </span>
-                                    <span className="text-slate-300">|</span>
-                                    <span className="whitespace-nowrap">
-                                      <span className="text-slate-500">
-                                        Account No :{" "}
-                                      </span>
-                                      <span className="font-semibold text-slate-800">
-                                        {paymentBank.accountNo}
-                                      </span>
-                                    </span>
-                                    <span className="text-slate-300">|</span>
-                                    <span className="whitespace-nowrap">
-                                      <span className="text-slate-500">
-                                        IFSC Code :{" "}
-                                      </span>
-                                      <span className="font-semibold text-slate-800">
-                                        {paymentBank.ifsc}
-                                      </span>
-                                    </span>
-                                    <span className="text-slate-300">|</span>
-                                    <span className="whitespace-nowrap">
-                                      <span className="text-slate-500">
-                                        Bank Name :{" "}
-                                      </span>
-                                      <span className="font-semibold text-slate-800">
-                                        {paymentBank.bankName}
-                                      </span>
-                                    </span>
-                                    <span className="text-slate-300">|</span>
-                                    <span className="whitespace-nowrap">
-                                      <span className="text-slate-500">
-                                        Branch :{" "}
-                                      </span>
-                                      <span className="font-semibold text-slate-800">
-                                        {paymentBank.branch}
-                                      </span>
-                                    </span>
-                                    <span className="text-slate-300">|</span>
-                                    <span className="whitespace-nowrap">
-                                      <span className="text-slate-500">
-                                        UPI ID :{" "}
-                                      </span>
-                                      <span className="font-semibold text-slate-800">
-                                        {paymentBank.upiId}
-                                      </span>
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                  <div className="rounded-lg border border-slate-300 bg-white p-1.5">
-                                    <img
-                                      src={buildPaymentQrUrl(
-                                        payableTotal,
-                                        selectedSale.invoiceNo,
-                                      )}
-                                      alt={`UPI QR for ${formatCurrency(payableTotal)}`}
-                                      className="h-[70px] w-[70px] object-contain"
-                                    />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-[8px] font-bold uppercase tracking-wide text-slate-500">
-                                      Scan QR to Pay
-                                    </p>
-                                    <p className="mt-0.5 text-xs font-extrabold text-slate-900">
-                                      {formatCurrency(payableTotal)}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      <div className="p-2 text-center flex flex-col justify-end">
-                        <div className="h-12 border-b border-slate-300" />
-                        <p className="mt-2 text-xs font-semibold text-slate-500">
-                          Authorised Signatory
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="store-invoice-screen-only flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:justify-end sm:px-6 sm:py-3">
-                <Button
-                  variant="secondary"
-                  onClick={() => setSelectedSale(null)}
-                  className="w-full sm:w-auto"
-                >
-                  Close
-                </Button>
-                <Button
-                  onClick={() => window.print()}
-                  className="w-full sm:w-auto"
-                >
-                  <Icon name="print" size={18} />
-                  Print Invoice
-                </Button>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+      {selectedSale && !isFRO && (
+        <StoreInvoiceBillModal
+          storeId={storeId}
+          sale={selectedSale}
+          onClose={closeSelectedInvoice}
+        />
+      )}
 
       {showCreate &&
         (isFRO ? (
@@ -3199,83 +2226,6 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function numberToWords(num: number): string {
-  const ones = [
-    "",
-    "One",
-    "Two",
-    "Three",
-    "Four",
-    "Five",
-    "Six",
-    "Seven",
-    "Eight",
-    "Nine",
-    "Ten",
-    "Eleven",
-    "Twelve",
-    "Thirteen",
-    "Fourteen",
-    "Fifteen",
-    "Sixteen",
-    "Seventeen",
-    "Eighteen",
-    "Nineteen",
-  ];
-
-  const tens = [
-    "",
-    "",
-    "Twenty",
-    "Thirty",
-    "Forty",
-    "Fifty",
-    "Sixty",
-    "Seventy",
-    "Eighty",
-    "Ninety",
-  ];
-
-  function convert(n: number): string {
-    if (n < 20) return ones[n];
-    if (n < 100) {
-      return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-    }
-    if (n < 1000) {
-      return (
-        ones[Math.floor(n / 100)] +
-        " Hundred" +
-        (n % 100 ? " " + convert(n % 100) : "")
-      );
-    }
-    if (n < 100000) {
-      return (
-        convert(Math.floor(n / 1000)) +
-        " Thousand" +
-        (n % 1000 ? " " + convert(n % 1000) : "")
-      );
-    }
-    if (n < 10000000) {
-      return (
-        convert(Math.floor(n / 100000)) +
-        " Lakh" +
-        (n % 100000 ? " " + convert(n % 100000) : "")
-      );
-    }
-
-    return (
-      convert(Math.floor(n / 10000000)) +
-      " Crore" +
-      (n % 10000000 ? " " + convert(n % 10000000) : "")
-    );
-  }
-
-  const rounded = Math.round(Number(num) || 0);
-
-  if (rounded === 0) return "Zero Rupees Only";
-
-  return `${convert(rounded)} Rupees Only`;
-}
 
 function SummaryRow({
   label,

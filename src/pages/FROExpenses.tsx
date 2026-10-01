@@ -51,6 +51,7 @@ const expenseCategories = [
   "Fuel",
   "Accommodation",
   "Transport",
+  "Driver",
   "Other",
 ];
 const paymentMethods = ["Cash", "UPI", "Bank Transfer", "Cheque"];

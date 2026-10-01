@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
@@ -6,14 +6,32 @@ import {
   type SimpleDateFilter,
 } from "@/lib/format";
 import { createPortal } from "react-dom";
+import { QuotationBill } from "@/components/QuotationBill";
 import {
   products as allProducts,
   getFarmersByStore,
+  getStore,
   getStorePurchasesFromCompanySales,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import {
+  FroDocumentActions,
+} from "@/components/FroDocumentActions";
+import {
+  documentShareMessage,
+  detailedShareMessage,
+  farmerContactText,
+  openWhatsAppShare,
+} from "@/lib/whatsappShare";
+import {
+  DOCUMENT_PDF_WIDTH_PX,
+  documentPdfFileName,
+  documentPrintStyle,
+  printDocumentPdf,
+  shareDocumentPdf,
+} from "@/lib/documentPdf";
 
 type ProductRow = {
   id: string;
@@ -60,8 +78,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
   const quotationStorageKey = `nature-biotic-quotations-${storeId}`;
 
+  const storeFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
   const registeredFarmers = useMemo(() => {
-    const farmers = getFarmersByStore(storeId);
+    const farmers = storeFarmers;
 
     if (!isFRO || !user?.name) {
       return farmers;
@@ -76,7 +95,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
           .trim()
           .toLowerCase() === loggedInName,
     );
-  }, [storeId, isFRO, user?.name]);
+  }, [storeFarmers, isFRO, user?.name]);
 
   const storePurchaseRows = useMemo(
     () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
@@ -299,6 +318,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   // Remarks
   const [remarks, setRemarks] = useState("");
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
+  const quotationBillRef = useRef<HTMLDivElement>(null);
+  const sharingQuotation = useRef(false);
 
   // Tax
 
@@ -605,89 +626,65 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     return "Mix";
   }
 
-  function numberToWords(num: number): string {
-    const ones = [
-      "",
-      "One",
-      "Two",
-      "Three",
-      "Four",
-      "Five",
-      "Six",
-      "Seven",
-      "Eight",
-      "Nine",
-      "Ten",
-      "Eleven",
-      "Twelve",
-      "Thirteen",
-      "Fourteen",
-      "Fifteen",
-      "Sixteen",
-      "Seventeen",
-      "Eighteen",
-      "Nineteen",
-    ];
-
-    const tens = [
-      "",
-      "",
-      "Twenty",
-      "Thirty",
-      "Forty",
-      "Fifty",
-      "Sixty",
-      "Seventy",
-      "Eighty",
-      "Ninety",
-    ];
-
-    function convert(n: number): string {
-      if (n < 20) return ones[n];
-      if (n < 100) {
-        return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-      }
-      if (n < 1000) {
-        return (
-          ones[Math.floor(n / 100)] +
-          " Hundred" +
-          (n % 100 ? " " + convert(n % 100) : "")
-        );
-      }
-      if (n < 100000) {
-        return (
-          convert(Math.floor(n / 1000)) +
-          " Thousand" +
-          (n % 1000 ? " " + convert(n % 1000) : "")
-        );
-      }
-      if (n < 10000000) {
-        return (
-          convert(Math.floor(n / 100000)) +
-          " Lakh" +
-          (n % 100000 ? " " + convert(n % 100000) : "")
-        );
-      }
-
-      return (
-        convert(Math.floor(n / 10000000)) +
-        " Crore" +
-        (n % 10000000 ? " " + convert(n % 10000000) : "")
-      );
-    }
-
-    const rounded = Math.round(Number(num) || 0);
-
-    if (rounded === 0) return "Zero Rupees Only";
-
-    return `${convert(rounded)} Rupees Only`;
-  }
-
   if (isFRO && selectedQuotation) {
     const quotation = selectedQuotation;
+    const contact = farmerContactText(
+      storeFarmers.find((row) => row.id === quotation.farmerId),
+      {
+        name: quotation.farmer,
+        village: quotation.village,
+        phone: quotation.phone,
+      },
+    );
+    const storeName = getStore(storeId)?.name || "Nature Biotic";
+    const billQuotation = {
+      ...quotation,
+      farmer: contact.name,
+      village: contact.village,
+      phone: contact.phone,
+    };
+
+    async function shareOnWhatsApp() {
+      await shareDocumentPdf({
+        sheet: quotationBillRef.current,
+        phone: contact.phone,
+        fileName: documentPdfFileName(quotation.quotationNo),
+        message: detailedShareMessage({
+          farmerName: contact.name,
+          intro: "Please find your quotation details.",
+          numberLabel: "Quotation No",
+          number: quotation.quotationNo,
+          date: formatDate(quotation.date),
+          lines: (quotation.products || []).map((item) => {
+            const qty = Number(item.qty || 0);
+            const rate = Number(item.rate || 0);
+            const base = qty * rate;
+            const tax =
+              (base *
+                (Number(item.sgstPercent || 0) +
+                  Number(item.cgstPercent || 0) +
+                  Number(item.igstPercent || 0))) /
+              100;
+            return {
+              name: item.productName,
+              packSize: item.pkgsize,
+              qty: item.qty,
+              rate: formatCurrency(rate),
+              amount: formatCurrency(base + tax),
+            };
+          }),
+          lineAmountLabel: "Amount",
+          totalLabel: (quotation.products || []).length > 1 ? "Grand Total" : "Total",
+          total: formatCurrency(quotation.amount),
+          storeName,
+        }),
+        lock: sharingQuotation,
+      });
+    }
 
     return (
       <div className="min-h-full bg-slate-50">
+        <style>{documentPrintStyle}</style>
         <div className="mb-5 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -714,10 +711,10 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                 Farmer Details
               </p>
               <p className="mt-1.5 text-sm font-extrabold text-slate-800">
-                {quotation.farmer || "-"}
+                {contact.name}
               </p>
-              <p className="mt-0.5 text-xs text-slate-500">{quotation.village || "-"}</p>
-              <p className="mt-0.5 text-xs text-slate-500">{quotation.phone || "-"}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{contact.village}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{contact.phone}</p>
             </Card>
 
             <Card className="min-w-0 p-3 sm:p-4">
@@ -791,6 +788,37 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             </div>
           </Card>
         </div>
+        <FroDocumentActions
+          onWhatsApp={() => {
+            void shareOnWhatsApp();
+          }}
+          onPrint={() => {
+            void printDocumentPdf(quotationBillRef.current);
+          }}
+          onClose={() => setSelectedQuotation(null)}
+        />
+        {createPortal(
+          <div
+            ref={quotationBillRef}
+            className="quotation-pdf-sheet"
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              left: -2400,
+              top: 0,
+              width: DOCUMENT_PDF_WIDTH_PX,
+              background: "#fff",
+              pointerEvents: "none",
+            }}
+          >
+            <QuotationBill
+              quotation={billQuotation}
+              notes={quotation.remarks || ""}
+              documentMode
+            />
+          </div>,
+          document.body,
+        )}
       </div>
     );
   }
@@ -1516,6 +1544,27 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             </div>
           </Card>
         </div>
+        <FroDocumentActions
+          onWhatsApp={() => {
+            const farmer = getFarmersByStore(storeId).find(
+              (row) => row.id === quotation.farmerId,
+            );
+            const sent = openWhatsAppShare(
+              farmer?.phone || quotation.phone || "",
+              documentShareMessage({
+                kind: "Quotation",
+                farmerName: farmer?.name || quotation.farmer || "Farmer",
+                numberLabel: "Quotation No",
+                number: quotation.quotationNo,
+                date: formatDate(quotation.date),
+                amount: formatCurrency(quotation.amount),
+              }),
+            );
+            if (sent) window.setTimeout(() => window.print(), 400);
+          }}
+          onPrint={() => window.print()}
+          onClose={() => setSelectedQuotation(null)}
+        />
       </div>
     );
   }
@@ -1631,7 +1680,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     </td>
                   </tr>
                 ) : (
-                  visibleRows.map((r, index) => (
+                  visibleRows.map((r, index) => {
+                    const contact = farmerContactText(
+                      storeFarmers.find((farmer) => farmer.id === r.farmerId),
+                      { name: r.farmer, village: r.village, phone: r.phone },
+                    );
+                    return (
                     <tr
                       key={r.id}
                       onClick={() => setSelectedQuotation(r)}
@@ -1645,20 +1699,21 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                       </td>
                       <td className="border-r border-slate-100 px-2 py-2.5 text-left min-w-0">
                         <p className="font-semibold text-slate-800 break-words leading-4">
-                          {r.farmer || "-"}
+                          {contact.name}
                         </p>
                         <p className="mt-0.5 text-[9px] sm:text-xs text-slate-500 break-words leading-3.5">
-                          {r.village || "-"}
+                          {contact.village}
                         </p>
                         <p className="mt-0.5 text-[9px] sm:text-xs text-slate-400 break-all leading-3.5">
-                          {r.phone || "-"}
+                          {contact.phone}
                         </p>
                       </td>
                       <td className="px-1.5 py-2.5 text-right font-bold tabular-nums text-brand-700 whitespace-nowrap">
                         {formatCurrency(r.amount)}
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -2798,482 +2853,11 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   )}
                 </div>
 
-                <div className="quotation-desktop-detail min-h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                    <div className="border-r border-slate-300 px-6 py-3">
-                      <div className="flex items-start gap-4">
-                        <div className="flex h-16 w-24 shrink-0 items-center justify-center">
-                          <img
-                            src="/logo_NB.webp"
-                            alt="Nature Biotic"
-                            className="max-h-14 max-w-full object-contain"
-                          />
-                        </div>
-
-                        <div>
-                          <h3 className="text-lg font-extrabold tracking-wide text-slate-900">
-                            SAIRAM AGRI INPUTS
-                          </h3>
-                          <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
-                            Rajapalayam, Tamil Nadu
-                          </p>
-                          <p className="text-[10px] text-slate-600">
-                            Nature Biotic Store
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-center px-4 py-3">
-                      <div className="text-center">
-                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
-                          Quotation
-                        </h3>
-                        {/* <p className="mt-1 text-[10px] text-slate-500">
-                          Farmer Product Quotation
-                        </p> */}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
-                    <div className="border-r border-slate-300 px-3 py-2.5">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Farmer Details
-                      </p>
-                      <p className="font-bold text-slate-900">
-                        {selectedQuotation.farmer}
-                      </p>
-                      <p className="text-slate-600">
-                        {selectedQuotation.village || "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        Contact: {selectedQuotation.phone || "-"}
-                      </p>
-                    </div>
-
-                    <div className="border-r border-slate-300 px-3 py-2.5">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Farm Details
-                      </p>
-                      <p className="text-slate-600">
-                        Crop:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedQuotation.crop || "-"}
-                        </span>
-                      </p>
-                      <p className="text-slate-600">
-                        Acre:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedQuotation.acre || "-"}
-                        </span>
-                      </p>
-                      <p className="text-slate-600">
-                        Place of Supply:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedQuotation.placeOfSupply || "-"}
-                        </span>
-                      </p>
-                    </div>
-
-                    <div className="px-3 py-2.5">
-                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
-                        Quotation Details
-                      </p>
-                      <div className="grid grid-cols-[110px_1fr] gap-y-0.5">
-                        <span className="text-slate-500">Quotation No</span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedQuotation.quotationNo}
-                        </span>
-
-                        <span className="text-slate-500">Date</span>
-                        <span className="font-semibold text-slate-800">
-                          {formatDate(selectedQuotation.date)}
-                        </span>
-
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="w-full overflow-hidden">
-                    <table className="w-full table-fixed border-collapse text-[10px]">
-                      <thead>
-                        <tr className="border-b border-slate-300 bg-slate-50 uppercase tracking-wide text-slate-600">
-                          <th
-                            rowSpan={2}
-                            className="w-[4%] border-r border-slate-300 px-2 py-2 text-center"
-                          >
-                            S.No
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[18%] border-r border-slate-300 px-2 py-2 text-left"
-                          >
-                            Product
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-center"
-                          >
-                            Pkg Size
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[5%] border-r border-slate-300 px-2 py-2 text-center"
-                          >
-                            Qty
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[8%] border-r border-slate-300 px-2 py-2 text-right"
-                          >
-                            Rate
-                          </th>
-                          <th
-                            rowSpan={2}
-                            className="w-[10%] border-r border-slate-300 px-2 py-2 text-right"
-                          >
-                            Without Tax
-                          </th>
-
-                          <th
-                            colSpan={2}
-                            className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            SGST
-                          </th>
-                          <th
-                            colSpan={2}
-                            className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            CGST
-                          </th>
-                          <th
-                            colSpan={2}
-                            className="w-[10%] border-r border-slate-300 px-1 py-1.5 text-center"
-                          >
-                            IGST
-                          </th>
-
-                          <th
-                            rowSpan={2}
-                            className="w-[11%] px-2 py-2 text-right"
-                          >
-                            Line Total
-                          </th>
-                        </tr>
-
-                        <tr className="border-b border-slate-300 bg-slate-50 text-[10px] text-slate-500">
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">
-                            Amt
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">
-                            Amt
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-center">
-                            %
-                          </th>
-                          <th className="border-r border-slate-300 px-1 py-1 text-right">
-                            Amt
-                          </th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {(selectedQuotation.products || []).map(
-                          (item, index) => {
-                            const withoutTax =
-                              Number(item.qty || 0) * Number(item.rate || 0);
-
-                            const sgstAmount =
-                              (withoutTax * Number(item.sgstPercent || 0)) /
-                              100;
-                            const cgstAmount =
-                              (withoutTax * Number(item.cgstPercent || 0)) /
-                              100;
-                            const igstAmount =
-                              (withoutTax * Number(item.igstPercent || 0)) /
-                              100;
-
-                            const lineTotal =
-                              withoutTax + sgstAmount + cgstAmount + igstAmount;
-
-                            return (
-                              <tr key={item.id} className="border-slate-300">
-                                <td className="border-r border-slate-300 px-2 py-2 text-center">
-                                  {index + 1}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 font-semibold text-slate-800">
-                                  {item.productName || "-"}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-center">
-                                  {item.pkgsize}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-center font-semibold">
-                                  {item.qty}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                  {formatCurrency(Number(item.rate || 0))}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                  {formatCurrency(withoutTax)}
-                                </td>
-
-                                <td className="border-r border-slate-300 px-1 py-2 text-center">
-                                  {Number(item.sgstPercent || 0).toFixed(2)}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                  {formatCurrency(sgstAmount)}
-                                </td>
-
-                                <td className="border-r border-slate-300 px-1 py-2 text-center">
-                                  {Number(item.cgstPercent || 0).toFixed(2)}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                  {formatCurrency(cgstAmount)}
-                                </td>
-
-                                <td className="border-r border-slate-300 px-1 py-2 text-center">
-                                  {Number(item.igstPercent || 0).toFixed(2)}
-                                </td>
-                                <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                  {formatCurrency(igstAmount)}
-                                </td>
-
-                                <td className="px-2 py-2 text-right font-bold text-slate-800">
-                                  {formatCurrency(lineTotal)}
-                                </td>
-                              </tr>
-                            );
-                          },
-                        )}
-                      </tbody>
-
-                      {/* NEW: filler empty rows to extend the column borders like the sample invoice */}
-                      {(() => {
-                        const MIN_ROWS = 10;
-                        const fillerCount = Math.max(
-                          0,
-                          MIN_ROWS - selectedQuotation.products.length,
-                        );
-                        const columnCount = 13;
-
-                        return Array.from({ length: fillerCount }).map(
-                          (_, i) => (
-                            <tr key={`filler-${i}`}>
-                              {Array.from({ length: columnCount }).map(
-                                (_, colIdx) => (
-                                  <td
-                                    key={colIdx}
-                                    className={`px-1 py-1.5 ${
-                                      colIdx < columnCount - 1
-                                        ? "border-r border-slate-300"
-                                        : ""
-                                    }`}
-                                  >
-                                    &nbsp;
-                                  </td>
-                                ),
-                              )}
-                            </tr>
-                          ),
-                        );
-                      })()}
-
-                      <tfoot>
-                        {(() => {
-                          const items = selectedQuotation.products || [];
-
-                          const totalQty = items.reduce(
-                            (sum, item) => sum + Number(item.qty || 0),
-                            0,
-                          );
-
-                          const totalWithoutTax = items.reduce(
-                            (sum, item) =>
-                              sum +
-                              Number(item.qty || 0) * Number(item.rate || 0),
-                            0,
-                          );
-
-                          const totalSgst = items.reduce((sum, item) => {
-                            const wt =
-                              Number(item.qty || 0) * Number(item.rate || 0);
-                            return (
-                              sum + (wt * Number(item.sgstPercent || 0)) / 100
-                            );
-                          }, 0);
-
-                          const totalCgst = items.reduce((sum, item) => {
-                            const wt =
-                              Number(item.qty || 0) * Number(item.rate || 0);
-                            return (
-                              sum + (wt * Number(item.cgstPercent || 0)) / 100
-                            );
-                          }, 0);
-
-                          const totalIgst = items.reduce((sum, item) => {
-                            const wt =
-                              Number(item.qty || 0) * Number(item.rate || 0);
-                            return (
-                              sum + (wt * Number(item.igstPercent || 0)) / 100
-                            );
-                          }, 0);
-
-                          const totalLine =
-                            totalWithoutTax + totalSgst + totalCgst + totalIgst;
-
-                          return (
-                            <tr className="border-t-2 border-slate-400 bg-slate-50 font-bold text-slate-900">
-                              <td
-                                colSpan={3}
-                                className="border-r border-slate-300 px-2 py-2 text-center"
-                              >
-                                Total
-                              </td>
-                              <td className="border-r border-slate-300 px-2 py-2 text-center">
-                                {totalQty}
-                              </td>
-                              <td className="border-r border-slate-300 px-2 py-2" />
-                              <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                {formatCurrency(totalWithoutTax)}
-                              </td>
-                              <td className="border-r border-slate-300 px-1 py-2" />
-                              <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                {formatCurrency(totalSgst)}
-                              </td>
-                              <td className="border-r border-slate-300 px-1 py-2" />
-                              <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                {formatCurrency(totalCgst)}
-                              </td>
-                              <td className="border-r border-slate-300 px-1 py-2" />
-                              <td className="border-r border-slate-300 px-2 py-2 text-right">
-                                {formatCurrency(totalIgst)}
-                              </td>
-                              <td className="px-2 py-2 text-right">
-                                {formatCurrency(totalLine)}
-                              </td>
-                            </tr>
-                          );
-                        })()}
-                      </tfoot>
-                    </table>
-                  </div>
-
-                  {/* ROW 1: Amount in Words (left, bottom-aligned) + breakdown/Round Off/Grand Total (right) */}
-                  <div className="grid grid-cols-[1fr_320px] border-t border-slate-300">
-                    <div className="flex flex-col justify-end border-r border-slate-300 p-2.5">
-                      <p className="text-[10px] font-semibold text-slate-700">
-                        Amount in Words :{" "}
-                        <span className="font-bold text-slate-900">
-                          {numberToWords(selectedQuotation.amount)}
-                        </span>
-                      </p>
-                    </div>
-
-                    <div className="space-y-1 p-2.5 text-[11px]">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Without Tax</span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.withoutTax)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">SGST</span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.sgst)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">CGST</span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.cgst)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">IGST</span>
-                        <span className="font-semibold text-slate-700">
-                          {formatCurrency(selectedQuotation.igst)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
-                        <span className="text-slate-500">Round Off</span>
-                        <span className="font-semibold text-slate-500">
-                          {formatCurrency(selectedQuotation.roundOff)}
-                        </span>
-                      </div>
-
-                      <div className="border-t border-slate-300 pt-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="font-bold text-slate-800">
-                            Grand Total
-                          </span>
-                          <span className="text-lg font-bold text-slate-900">
-                            {formatCurrency(selectedQuotation.amount)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
-                  <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
-                    {/* NOTES */}
-                    <div className="flex flex-col justify-end border-r border-slate-300 p-4">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                        Notes
-                      </p>
-
-                      {(() => {
-                        const defaultNotes = `Purchase order raised by ${
-                          selectedQuotation?.placeOfSupply ?? "this store"
-                        } to Nature Biotic.`;
-
-                        return (
-                          <>
-                            {/* Screen - Editable Notes */}
-                            <textarea
-                              value={purchaseOrderNotes}
-                              onChange={(e) =>
-                                setPurchaseOrderNotes(e.target.value)
-                              }
-                              rows={2}
-                              placeholder="Enter notes..."
-                              className="po-print-hide mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs leading-5 text-slate-600 focus:border-brand-500 focus:outline-none"
-                            />
-
-                            {/* Print - Show edited notes */}
-                            <p className="po-print-only mt-1.5 hidden whitespace-pre-line text-xs text-slate-500">
-                              {purchaseOrderNotes.trim()
-                                ? purchaseOrderNotes
-                                : defaultNotes}
-                            </p>
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* AUTHORISED SIGNATORY */}
-                    <div className="flex items-end justify-center p-3">
-                      <div className="w-full text-center">
-                        <div className="border-b border-slate-300" />
-                        <p className="mt-1.5 text-xs font-semibold text-slate-500">
-                          Authorised Signatory
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <QuotationBill
+                  quotation={selectedQuotation}
+                  notes={purchaseOrderNotes}
+                  onNotesChange={setPurchaseOrderNotes}
+                />
               </div>
 
               <div className="quotation-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">

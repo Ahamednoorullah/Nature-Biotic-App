@@ -8,7 +8,7 @@ import {
   EmptyState,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
 import {
   stores,
   products as allProducts,
@@ -626,83 +626,6 @@ export default function StoreCreditNotes({
       <p className="text-xs font-semibold text-slate-700">{value}</p>
     </div>
   );
-  function numberToWords(num: number): string {
-    const ones = [
-      "",
-      "One",
-      "Two",
-      "Three",
-      "Four",
-      "Five",
-      "Six",
-      "Seven",
-      "Eight",
-      "Nine",
-      "Ten",
-      "Eleven",
-      "Twelve",
-      "Thirteen",
-      "Fourteen",
-      "Fifteen",
-      "Sixteen",
-      "Seventeen",
-      "Eighteen",
-      "Nineteen",
-    ];
-
-    const tens = [
-      "",
-      "",
-      "Twenty",
-      "Thirty",
-      "Forty",
-      "Fifty",
-      "Sixty",
-      "Seventy",
-      "Eighty",
-      "Ninety",
-    ];
-
-    function convert(n: number): string {
-      if (n < 20) return ones[n];
-      if (n < 100) {
-        return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-      }
-      if (n < 1000) {
-        return (
-          ones[Math.floor(n / 100)] +
-          " Hundred" +
-          (n % 100 ? " " + convert(n % 100) : "")
-        );
-      }
-      if (n < 100000) {
-        return (
-          convert(Math.floor(n / 1000)) +
-          " Thousand" +
-          (n % 1000 ? " " + convert(n % 1000) : "")
-        );
-      }
-      if (n < 10000000) {
-        return (
-          convert(Math.floor(n / 100000)) +
-          " Lakh" +
-          (n % 100000 ? " " + convert(n % 100000) : "")
-        );
-      }
-
-      return (
-        convert(Math.floor(n / 10000000)) +
-        " Crore" +
-        (n % 10000000 ? " " + convert(n % 10000000) : "")
-      );
-    }
-
-    const rounded = Math.round(Number(num) || 0);
-
-    if (rounded === 0) return "Zero Rupees Only";
-
-    return `${convert(rounded)} Rupees Only`;
-  }
   const SummaryRow = ({ label, value, muted }: any) => (
     <div className="flex items-center justify-between">
       <span className={muted ? "text-slate-500" : "text-slate-700"}>

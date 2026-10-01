@@ -5,37 +5,31 @@ import { Card, Icon } from "@/components/ui";
 const salesCards = [
   {
     label: "Quotation",
-    value: "12",
     icon: "request_quote",
     tone: "bg-emerald-50 text-emerald-700",
   },
   {
     label: "Sales Invoice",
-    value: "24",
     icon: "receipt_long",
     tone: "bg-blue-50 text-blue-700",
   },
   {
     label: "Sales Return",
-    value: "3",
     icon: "assignment_return",
     tone: "bg-amber-50 text-amber-700",
   },
   {
     label: "Receipt",
-    value: "18",
     icon: "receipt",
     tone: "bg-purple-50 text-purple-700",
   },
   {
     label: "Refund",
-    value: "2",
     icon: "currency_exchange",
     tone: "bg-rose-50 text-rose-700",
   },
   {
     label: "Payment",
-    value: "₹18,500",
     icon: "payments",
     tone: "bg-green-50 text-green-700",
   },

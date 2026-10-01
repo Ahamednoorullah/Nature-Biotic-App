@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
+  formatDate,
   matchesSimpleDate,
   simpleDateFilterOptions,
   type SimpleDateFilter,
@@ -12,11 +13,28 @@ import { createPortal } from "react-dom";
 import {
   products as allProducts,
   getStore,
+  getFarmersByStore,
   increaseFROStock,
   nextStoreDocumentNo,
   rememberStoreDocumentNo,
   type Product,
 } from "@/lib/data";
+import {
+  FroDocumentActions,
+} from "@/components/FroDocumentActions";
+import { CommonDocumentBill } from "@/components/CommonDocumentBill";
+import { salesReturnToDocument } from "@/lib/documentModel";
+import {
+  DOCUMENT_PDF_WIDTH_PX,
+  documentPdfFileName,
+  documentPrintStyle,
+  printDocumentPdf,
+  shareDocumentPdf,
+} from "@/lib/documentPdf";
+import {
+  detailedShareMessage,
+  farmerContactText,
+} from "@/lib/whatsappShare";
 
 
 type SaleType = "Direct" | "Executive";
@@ -51,6 +69,7 @@ type SalesReturnRow = {
   invoiceNo: string;
   through: SaleType;
   partyName: string;
+  farmerId?: string;
   farmerPhone?: string;
   farmerVillage?: string;
   farmerCrop?: string;
@@ -166,6 +185,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     null,
   );
   const store = getStore(storeId);
+  const storeFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
 
   // FRO users can see and create returns only for invoices created by themselves.
   const visibleRows = useMemo(
@@ -338,83 +358,6 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       return;
     }
 
-    function numberToWords(num: number): string {
-      const ones = [
-        "",
-        "One",
-        "Two",
-        "Three",
-        "Four",
-        "Five",
-        "Six",
-        "Seven",
-        "Eight",
-        "Nine",
-        "Ten",
-        "Eleven",
-        "Twelve",
-        "Thirteen",
-        "Fourteen",
-        "Fifteen",
-        "Sixteen",
-        "Seventeen",
-        "Eighteen",
-        "Nineteen",
-      ];
-
-      const tens = [
-        "",
-        "",
-        "Twenty",
-        "Thirty",
-        "Forty",
-        "Fifty",
-        "Sixty",
-        "Seventy",
-        "Eighty",
-        "Ninety",
-      ];
-
-      function convert(n: number): string {
-        if (n < 20) return ones[n];
-        if (n < 100) {
-          return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
-        }
-        if (n < 1000) {
-          return (
-            ones[Math.floor(n / 100)] +
-            " Hundred" +
-            (n % 100 ? " " + convert(n % 100) : "")
-          );
-        }
-        if (n < 100000) {
-          return (
-            convert(Math.floor(n / 1000)) +
-            " Thousand" +
-            (n % 1000 ? " " + convert(n % 1000) : "")
-          );
-        }
-        if (n < 10000000) {
-          return (
-            convert(Math.floor(n / 100000)) +
-            " Lakh" +
-            (n % 100000 ? " " + convert(n % 100000) : "")
-          );
-        }
-
-        return (
-          convert(Math.floor(n / 10000000)) +
-          " Crore" +
-          (n % 10000000 ? " " + convert(n % 10000000) : "")
-        );
-      }
-
-      const rounded = Math.round(Number(num) || 0);
-
-      if (rounded === 0) return "Zero Rupees Only";
-
-      return `${convert(rounded)} Rupees Only`;
-    }
 
     const alreadyReturned = items
       .filter(
@@ -526,6 +469,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       invoiceNo: invoiceNo.trim(),
       through: isFRO ? "Executive" : through,
       partyName: partyName.trim(),
+      farmerId: selectedInvoice?.farmerId || "",
       farmerPhone,
       farmerVillage,
       farmerCrop,
@@ -576,10 +520,55 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     closeForm();
   }
 
-  function numberToWords(roundedTotal: any): import("react").ReactNode {
-    throw new Error("Function not implemented.");
-  }
 
+  const selectedReturnContact = farmerContactText(
+    storeFarmers.find((row) => row.id === selectedReturn?.farmerId),
+    {
+      name: selectedReturn?.partyName,
+      village: selectedReturn?.farmerVillage,
+      phone: selectedReturn?.farmerPhone,
+    },
+  );
+  const returnSheetRef = useRef<HTMLDivElement>(null);
+  const sharingReturn = useRef(false);
+  const selectedReturnFarmer = storeFarmers.find(
+    (row) => row.id === selectedReturn?.farmerId,
+  );
+  const returnDocument = selectedReturn
+    ? salesReturnToDocument({
+        returnNo: selectedReturn.returnNo,
+        date: selectedReturn.date,
+        invoiceNo: selectedReturn.invoiceNo,
+        farmerName: selectedReturnContact.name,
+        village: selectedReturnContact.village,
+        phone: selectedReturnContact.phone,
+        address: selectedReturnFarmer?.farmAddress,
+        through: selectedReturn.through,
+        executiveName: selectedReturn.executiveName,
+        withoutTax: selectedReturn.withoutTax,
+        sgst: selectedReturn.sgst,
+        cgst: selectedReturn.cgst,
+        igst: selectedReturn.igst,
+        total: selectedReturn.total,
+        lines: (selectedReturn.items || []).map((item) => ({
+          id: item.key,
+          productName: item.product?.name,
+          hsn: item.product?.hsnCode,
+          pkgSize: item.packSize,
+          batchNo: item.batchNo,
+          quantity: item.quantity,
+          rate: item.price,
+          discount: item.discountAmount,
+          taxable: item.withoutTax,
+          taxPercent: item.taxPercent,
+          taxAmount: item.taxAmount,
+          sgst: item.sgst,
+          cgst: item.cgst,
+          igst: item.igst,
+          lineTotal: item.total,
+        })),
+      })
+    : null;
 
   return (
     <div>
@@ -849,20 +838,30 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
               <tbody className="divide-y divide-slate-100">
                 {visibleRows.length === 0 ? (
                   <tr><td colSpan={4} className="px-3 py-10 text-center text-xs text-slate-400">No sales returns found.</td></tr>
-                ) : visibleRows.map((row, index) => (
+                ) : visibleRows.map((row, index) => {
+                  const contact = farmerContactText(
+                    storeFarmers.find((farmer) => farmer.id === row.farmerId),
+                    {
+                      name: row.partyName,
+                      village: row.farmerVillage,
+                      phone: row.farmerPhone,
+                    },
+                  );
+                  return (
                   <tr key={row.id} onClick={() => setSelectedReturn(row)} className="cursor-pointer transition hover:bg-brand-50/40">
                     <td className="border-r border-slate-100 px-1.5 py-3 text-center font-medium text-slate-500">{index + 1}</td>
                     <td className="border-r border-slate-100 px-1.5 py-3 text-center align-top whitespace-nowrap text-slate-600">
                       {dateDisplay(row.date)}
                     </td>
                     <td className="border-r border-slate-100 px-2 py-3 text-left align-top">
-                      <p className="truncate font-semibold text-slate-800">{row.partyName || "-"}</p>
-                      <p className="mt-0.5 truncate text-[10px] text-slate-500">{row.farmerVillage || "-"}</p>
-                      <p className="mt-0.5 truncate text-[9px] text-slate-400">{row.farmerPhone || "-"}</p>
+                      <p className="truncate font-semibold text-slate-800">{contact.name}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-slate-500">{contact.village}</p>
+                      <p className="mt-0.5 truncate text-[9px] text-slate-400">{contact.phone}</p>
                     </td>
                     <td className="px-2 py-3 text-right align-top font-bold tabular-nums text-emerald-700">{formatCurrency(row.total)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1380,13 +1379,8 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
             {/* FRO mobile-friendly view: use a compact card layout like the quotation view.
                 The formal invoice/print layout below remains unchanged for Store Admin. */}
             {isFRO && (
-              <div
-                className={`flex flex-col overflow-hidden bg-white ${
-                  isFRO
-                    ? "h-full w-full"
-                    : "max-h-[94vh] w-[calc(100vw-1rem)] max-w-[560px] rounded-2xl shadow-2xl sm:w-[560px]"
-                }`}
-              >
+              <div className="flex h-full w-full flex-col overflow-hidden bg-white">
+                <style>{documentPrintStyle}</style>
                 <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
                   <button
                     type="button"
@@ -1415,9 +1409,9 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                       <div className="grid grid-cols-2 gap-2">
                         <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
                           <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Farmer Details</p>
-                          <p className="mt-1.5 truncate text-xs font-bold text-slate-800">{selectedReturn.partyName || "-"}</p>
-                          <p className="mt-0.5 truncate text-[10px] text-slate-500">{selectedReturn.farmerVillage || "-"}</p>
-                          <p className="truncate text-[10px] text-slate-500">{selectedReturn.farmerPhone || "-"}</p>
+                          <p className="mt-1.5 truncate text-xs font-bold text-slate-800">{selectedReturnContact.name}</p>
+                          <p className="mt-0.5 truncate text-[10px] text-slate-500">{selectedReturnContact.village}</p>
+                          <p className="truncate text-[10px] text-slate-500">{selectedReturnContact.phone}</p>
                         </div>
                         <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-3">
                           <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Farm Details</p>
@@ -1453,7 +1447,62 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                     </section>
                   </div>
                 </div>
-                <div className="border-t border-slate-200 bg-white p-3"><button type="button" onClick={() => setSelectedReturn(null)} className="w-full rounded-lg border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Back</button></div>
+                <FroDocumentActions
+                  onWhatsApp={() => {
+                    if (!returnDocument || !selectedReturn) return;
+                    void shareDocumentPdf({
+                      sheet: returnSheetRef.current,
+                      phone: selectedReturnContact.phone,
+                      fileName: documentPdfFileName(selectedReturn.returnNo),
+                      lock: sharingReturn,
+                      message: detailedShareMessage({
+                        farmerName: selectedReturnContact.name,
+                        intro: "Please find your Sales Return details.",
+                        numberLabel: "Return No",
+                        number: selectedReturn.returnNo,
+                        date: formatDate(selectedReturn.date),
+                        lines: (selectedReturn.items || []).map((item) => ({
+                          name: item.product?.name || "-",
+                          packSize: item.packSize || "-",
+                          qty: item.quantity,
+                          rate: formatCurrency(item.price),
+                          amount: formatCurrency(item.total),
+                        })),
+                        lineAmountLabel: "Return Amount",
+                        totalLabel: "Total Return Value",
+                        total: formatCurrency(selectedReturn.total),
+                        storeName: store?.name || "Nature Biotic",
+                      }),
+                    });
+                  }}
+                  onPrint={() => {
+                    void printDocumentPdf(returnSheetRef.current);
+                  }}
+                  onClose={() => setSelectedReturn(null)}
+                />
+                {returnDocument &&
+                  createPortal(
+                    <div
+                      ref={returnSheetRef}
+                      className="document-pdf-sheet"
+                      aria-hidden="true"
+                      style={{
+                        position: "fixed",
+                        left: -2400,
+                        top: 0,
+                        width: DOCUMENT_PDF_WIDTH_PX,
+                        background: "#fff",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <CommonDocumentBill
+                        documentType="salesReturn"
+                        data={returnDocument}
+                        documentMode
+                      />
+                    </div>,
+                    document.body,
+                  )}
               </div>
             )}
 

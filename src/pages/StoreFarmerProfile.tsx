@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { StoreInvoiceBillModal } from "@/components/StoreInvoiceBillModal";
 import {
   getFarmerById,
   getPurchasesByFarmer,
@@ -59,7 +60,21 @@ export default function StoreFarmerProfile({
   const { goStorePage } = useNav();
   const { user } = useAuth();
   const isFro = user?.role === "fro";
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() => {
+    try {
+      const raw = sessionStorage.getItem("nature-biotic-farmer-profile-tab");
+      if (!raw) return "overview";
+      const saved = JSON.parse(raw) as { farmerId?: string; tab?: string };
+      if (saved.farmerId === farmerId && saved.tab === "invoices") {
+        sessionStorage.removeItem("nature-biotic-farmer-profile-tab");
+        return "invoices";
+      }
+    } catch {
+      // Keep the default overview tab.
+    }
+    return "overview";
+  });
+  const [openInvoice, setOpenInvoice] = useState<any | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [, setRefresh] = useState(0);
   const farmer = getFarmerById(farmerId);
@@ -330,11 +345,27 @@ export default function StoreFarmerProfile({
           <InvoicesTab
             invoices={invoices}
             onOpen={(invoiceNo) => {
-              sessionStorage.setItem(
-                "nature-biotic-open-store-invoice",
-                JSON.stringify({ storeId: farmer.storeId, invoiceNo }),
+              const match = liveInvoices.find(
+                (invoice: { invoiceNo?: string }) =>
+                  String(invoice.invoiceNo || "") === invoiceNo,
               );
-              goStorePage("sales-invoice");
+              if (!match) return;
+              if (isFro) {
+                sessionStorage.setItem(
+                  "nature-biotic-open-store-invoice",
+                  JSON.stringify({
+                    storeId: farmer.storeId,
+                    invoiceNo,
+                    from: "farmer-details",
+                    farmerId,
+                    tab: "invoices",
+                  }),
+                );
+                goStorePage("sales-invoice");
+                return;
+              }
+              setTab("invoices");
+              setOpenInvoice(match);
             }}
           />
         )}
@@ -353,6 +384,13 @@ export default function StoreFarmerProfile({
           setRefresh((value) => value + 1);
         }}
       />
+      {openInvoice && (
+        <StoreInvoiceBillModal
+          storeId={farmer.storeId || _storeId}
+          sale={openInvoice}
+          onClose={() => setOpenInvoice(null)}
+        />
+      )}
     </div>
   );
 }
