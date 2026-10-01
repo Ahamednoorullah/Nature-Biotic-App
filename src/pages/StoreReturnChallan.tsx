@@ -250,6 +250,16 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       currentStock = [];
     }
 
+    function getSellingPrice(item: { productId?: string; product?: string }) {
+  const p = (allProducts as any[]).find(
+    (x: any) =>
+      (item.productId && String(x.id) === String(item.productId)) ||
+      String(x.name || "").trim().toLowerCase() ===
+        String(item.product || "").trim().toLowerCase(),
+  );
+  return Number(p?.sellingPrice ?? 0);
+}
+
     const resolvedItems = request.items.map((item) => {
       const productName = String(item.product || "")
         .trim()
@@ -279,6 +289,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
         ...item,
         productId: String(stockRow?.productId || item.productId || ""),
         availableQty: Number(stockRow?.currentQty || 0),
+        unitValue: getSellingPrice({ productId: stockRow?.productId || item.productId, product: item.product }) || Number(item.unitValue || 0),
       };
     });
 
@@ -1144,11 +1155,9 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
                               <td className="px-2 py-3">
                                 <Input
-                                  type="number"
                                   value={item.unitValue}
-                                  onChange={(value) =>
-                                    updateItem(index, "unitValue", value)
-                                  }
+                                  onChange={() => {}}
+                                  readOnly
                                   placeholder="₹"
                                 />
                               </td>

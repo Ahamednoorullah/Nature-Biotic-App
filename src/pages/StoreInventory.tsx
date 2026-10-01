@@ -13,6 +13,8 @@ import {
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 
+
+
 // type StockRow = {
 //   id: string;
 //   name: string;
@@ -98,7 +100,17 @@ function getStockWarnings(pack: PackSizeStock) {
   };
 }
 
-function buildInventoryRows(
+// Only purchases on/after this date are real data. Older ones are dummy.
+export const REAL_DATA_START = "2026-09-28"; 
+
+export function getRealPurchases(storeId: string): CompanyStoreSaleRecord[] {
+  const start = new Date(`${REAL_DATA_START}T00:00:00`);
+  return (getStorePurchasesFromCompanySales(storeId) || []).filter(
+    (p: any) => new Date(p.date) >= start,
+  );
+}
+
+export function buildInventoryRows(
   storeId: string,
   purchases: CompanyStoreSaleRecord[],
 ): StockRow[] {
@@ -112,8 +124,6 @@ function buildInventoryRows(
     ]),
   );
 
-  // Company Product master -> "Limit Stock" is stored as minStock.
-  // Match by Product + Pack Size first, then fall back to Product name.
   const productLimitByNameAndSize = new Map(
     products.map((product) => [
       `${product.name.trim().toLowerCase()}::${product.size.trim().toLowerCase()}`,
@@ -128,11 +138,7 @@ function buildInventoryRows(
     ]),
   );
 
-  // Keep the latest sale date for each product. The current Bill model does
-  // not contain batch/pack information, so sales are used only for the
-  // product-level "Last Sale" warning.
   const lastSaleByProduct = new Map<string, string>();
-
   bills.forEach((bill) => {
     bill.items.forEach((item) => {
       const key = item.name.trim().toLowerCase();
@@ -143,9 +149,6 @@ function buildInventoryRows(
     });
   });
 
-  // One inventory row is created for each Product + Pack Size + Batch.
-  // Quantity comes only from the store purchase records, so products that
-  // were never purchased by this store do not appear here.
   const grouped = new Map<
     string,
     {
@@ -170,7 +173,6 @@ function buildInventoryRows(
     if (!productName) return;
 
     const packSize = String(purchase.packSize || purchase.pkgsize || "").trim();
-
     const batchNo = String(purchase.batchNo || "").trim();
     const expiryDate = String(purchase.expiryDate || "").trim();
 
@@ -187,18 +189,15 @@ function buildInventoryRows(
     const productMaster =
       products.find(
         (product: any) =>
-          String(product.name || "")
-            .trim()
-            .toLowerCase() === productName.toLowerCase() &&
-          String(product.size || "")
-            .trim()
-            .toLowerCase() === packSize.toLowerCase(),
+          String(product.name || "").trim().toLowerCase() ===
+            productName.toLowerCase() &&
+          String(product.size || "").trim().toLowerCase() ===
+            packSize.toLowerCase(),
       ) ||
       products.find(
         (product: any) =>
-          String(product.name || "")
-            .trim()
-            .toLowerCase() === productName.toLowerCase(),
+          String(product.name || "").trim().toLowerCase() ===
+          productName.toLowerCase(),
       );
 
     const resolvedProductId = String(
@@ -206,11 +205,14 @@ function buildInventoryRows(
     );
 
     const purchaseUnitPrice = Number(
-    purchase.unitPrice ?? purchase.rate ?? purchase.price ?? 0,
-  );
-  const masterSellingPrice = Number(productMaster?.sellingPrice ?? 0);
-  const unitPrice =
-    masterSellingPrice > 0 ? masterSellingPrice : purchaseUnitPrice;
+      (purchase as any).unitPrice ??
+        (purchase as any).rate ??
+        (purchase as any).price ??
+        0,
+    );
+    const masterSellingPrice = Number(productMaster?.sellingPrice ?? 0);
+    const unitPrice =
+      masterSellingPrice > 0 ? masterSellingPrice : purchaseUnitPrice;
 
     const key = [
       productName.toLowerCase(),
@@ -226,49 +228,32 @@ function buildInventoryRows(
       if (!existing.productId && resolvedProductId) {
         existing.productId = resolvedProductId;
       }
-
       if ((!existing.expiryDate || existing.expiryDate === "-") && expiryDate) {
         existing.expiryDate = expiryDate;
       }
-
       if ((!existing.batchNo || existing.batchNo === "-") && batchNo) {
         existing.batchNo = batchNo;
       }
-
-      // Keep the product master's configured limit stock.
       if (configuredLimit > 0) {
         existing.lowStockLimit = configuredLimit;
       }
-
       if (unitPrice > 0) {
         existing.unitPrice = unitPrice;
       }
     } else {
-
-      const adjMaster =
-      products.find(
-        (p: any) =>
-          String(p.name || "").trim().toLowerCase() === productName.toLowerCase() &&
-          String(p.size || "").trim().toLowerCase() === packSize.toLowerCase(),
-      ) ||
-      products.find(
-        (p: any) =>
-          String(p.name || "").trim().toLowerCase() === productName.toLowerCase(),
-      );
-    const adjUnitPrice = Number(adjMaster?.sellingPrice ?? 0);
-
       grouped.set(key, {
         id: String(purchase.id || key),
         productId: resolvedProductId,
-        productType: productTypeByName.get(productName.toLowerCase()) || "Product",
+        productType:
+          productTypeByName.get(productName.toLowerCase()) || "Product",
         productName,
         packSize: packSize || "-",
         batchNo: batchNo || "-",
         expiryDate: expiryDate || "-",
         quantity: purchasedQuantity,
         handQuantity: 0,
-        stockValue: purchasedQuantity * adjUnitPrice,
-        unitPrice: adjUnitPrice,
+        stockValue: purchasedQuantity * unitPrice,
+        unitPrice,
         lowStockLimit: configuredLimit,
         lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
       });
@@ -296,52 +281,7 @@ function buildInventoryRows(
       (existing.quantity + existing.handQuantity) * (existing.unitPrice || 0);
   });
 
-  getStoreStockAdjustments(storeId).forEach((adjustment) => {
-    const productName = String(adjustment.productName || "").trim();
-    const packSize = String(adjustment.packSize || "").trim();
-    const batchNo = String(adjustment.batchNo || "").trim();
-    const key = [
-      productName.toLowerCase(),
-      packSize.toLowerCase(),
-      batchNo.toLowerCase(),
-    ].join("::");
-    if (grouped.has(key) || !productName) return;
-    const available = getStoreAvailableQty(
-      storeId,
-      adjustment.productId,
-      packSize,
-      batchNo,
-      productName,
-    );
-    const hand = getFROHandQty(
-      storeId,
-      adjustment.productId,
-      packSize,
-      batchNo,
-      productName,
-    );
-    if (available <= 0 && hand <= 0) return;
-    grouped.set(key, {
-      id: adjustment.id,
-      productId: adjustment.productId,
-      productType: productTypeByName.get(productName.toLowerCase()) || "Product",
-      productName,
-      packSize: packSize || "-",
-      batchNo: batchNo || "-",
-      expiryDate: "-",
-      quantity: available,
-      handQuantity: hand,
-      stockValue: 0,
-      unitPrice: 0,
-      lowStockLimit:
-        productLimitByNameAndSize.get(
-          `${productName.toLowerCase()}::${packSize.toLowerCase()}`,
-        ) ??
-        productLimitByName.get(productName.toLowerCase()) ??
-        0,
-      lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
-    });
-  });
+ 
 
   Array.from(grouped.entries()).forEach(([key, existing]) => {
     if (existing.quantity <= 0 && existing.handQuantity <= 0) {
@@ -355,10 +295,8 @@ function buildInventoryRows(
     .sort((a, b) => {
       const productCompare = a.productName.localeCompare(b.productName);
       if (productCompare !== 0) return productCompare;
-
       const packCompare = a.packSize.localeCompare(b.packSize);
       if (packCompare !== 0) return packCompare;
-
       return a.batchNo.localeCompare(b.batchNo);
     })
     .forEach((item) => {
@@ -379,9 +317,7 @@ function buildInventoryRows(
         expiryDate: item.expiryDate,
         lastSaleDate: item.lastSaleDate,
         availableStock: item.quantity,
-        // Accepted FRO deliveries move from Store Stock to Hand Stock.
         stockInHand: item.handQuantity,
-        // Hand stock is populated from accepted FRO deliveries above.
         stockValue: Math.round(item.stockValue),
         unitPrice: item.unitPrice > 0 ? Math.round(item.unitPrice) : undefined,
         lowStockLimit: item.lowStockLimit,
@@ -435,14 +371,14 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
   const [warningPopup, setWarningPopup] = useState<WarningPopupType | null>(
     null,
   );
-  const [purchases, setPurchases] = useState<CompanyStoreSaleRecord[]>(() =>
-    getStorePurchasesFromCompanySales(storeId),
+    const [purchases, setPurchases] = useState<CompanyStoreSaleRecord[]>(() =>
+    getRealPurchases(storeId),
   );
   const [inventoryVersion, setInventoryVersion] = useState(0);
 
   useEffect(() => {
     const refresh = () => {
-      setPurchases(getStorePurchasesFromCompanySales(storeId));
+      setPurchases(getRealPurchases(storeId));
       setInventoryVersion((v) => v + 1);
     };
 
@@ -480,7 +416,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
 
   // Inventory is now built only from the purchases made by this store,
   // then adjusted by accepted Delivery/Return ledgers.
-  const rows = useMemo(
+    const rows = useMemo(
     () => buildInventoryRows(storeId, purchases),
     [storeId, purchases, inventoryVersion],
   );
@@ -1095,3 +1031,5 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
     </div>
   );
 }
+
+
