@@ -1,6 +1,74 @@
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { openWhatsAppShare, shareableWhatsAppPhone } from "@/lib/whatsappShare";
+
+type PdfDocument = {
+  addImage: (
+    imageData: string,
+    format: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => void;
+  addPage: () => void;
+  output: (type: "blob") => Blob;
+};
+
+type JsPdfConstructor = new (options: {
+  orientation: "landscape";
+  unit: "mm";
+  format: "a4";
+}) => PdfDocument;
+
+type Html2Canvas = (
+  element: HTMLElement,
+  options: Record<string, unknown>,
+) => Promise<HTMLCanvasElement>;
+
+declare global {
+  interface Window {
+    html2canvas?: Html2Canvas;
+    jspdf?: { jsPDF: JsPdfConstructor };
+  }
+}
+
+let html2canvasPromise: Promise<Html2Canvas> | undefined;
+let jsPdfPromise: Promise<JsPdfConstructor> | undefined;
+
+function loadJsPdf(): Promise<JsPdfConstructor> {
+  if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (!jsPdfPromise) {
+    jsPdfPromise = new Promise<JsPdfConstructor>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src =
+        "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+      script.onload = () => {
+        if (window.jspdf?.jsPDF) resolve(window.jspdf.jsPDF);
+        else reject(new Error("jsPDF failed to load"));
+      };
+      script.onerror = () => reject(new Error("jsPDF failed to load"));
+      document.head.appendChild(script);
+    });
+  }
+  return jsPdfPromise;
+}
+
+function loadHtml2Canvas(): Promise<Html2Canvas> {
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  if (!html2canvasPromise) {
+    html2canvasPromise = new Promise<Html2Canvas>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src =
+        "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+      script.onload = () => {
+        if (window.html2canvas) resolve(window.html2canvas);
+        else reject(new Error("html2canvas failed to load"));
+      };
+      script.onerror = () => reject(new Error("html2canvas failed to load"));
+      document.head.appendChild(script);
+    });
+  }
+  return html2canvasPromise;
+}
 
 /** A4 landscape width at 96dpi. The quotation columns were designed for this width. */
 export const DOCUMENT_PDF_WIDTH_PX = 1122;
@@ -107,6 +175,8 @@ function pageStarts(
 
 async function renderDocumentPdf(element: HTMLElement) {
   await waitForImages(element);
+  const html2canvas = await loadHtml2Canvas();
+  const JsPDF = await loadJsPdf();
   const canvas = await html2canvas(element, {
     scale: 2,
     backgroundColor: "#ffffff",
@@ -118,7 +188,7 @@ async function renderDocumentPdf(element: HTMLElement) {
     windowHeight: element.scrollHeight,
   });
 
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pdf = new JsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const contentWidth = PAGE_WIDTH_MM - MARGIN_MM * 2;
   const contentHeight = PAGE_HEIGHT_MM - MARGIN_MM * 2;
   const naturalHeight = (canvas.height / canvas.width) * contentWidth;
