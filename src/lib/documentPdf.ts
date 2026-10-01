@@ -307,6 +307,134 @@ export async function printDocumentPdf(element: HTMLElement | null) {
   }, 60000);
 }
 
+type TablePdf = {
+  setFont: (font: string, style?: string) => void;
+  setFontSize: (size: number) => void;
+  setTextColor: (red: number, green: number, blue: number) => void;
+  text: (
+    value: string,
+    x: number,
+    y: number,
+    options?: { align?: "left" | "right" | "center" },
+  ) => void;
+  line: (x1: number, y1: number, x2: number, y2: number) => void;
+  addPage: () => void;
+  save: (fileName: string) => void;
+};
+
+export async function downloadDataTablePdf(input: {
+  fileName: string;
+  heading: string;
+  title: string;
+  storeName: string;
+  generatedOn: string;
+  headers: string[];
+  rows: string[][];
+  aligns?: Array<"left" | "right" | "center">;
+  total?: string[];
+}) {
+  const JsPDF = await loadJsPdf();
+  const pdf = new JsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: "a4",
+  }) as unknown as TablePdf;
+  const margin = 8;
+  const pageWidth = 297;
+  const pageHeight = 210;
+  const width = pageWidth - margin * 2;
+  const weights = input.headers.map((header) => Math.max(header.length, 6));
+  input.rows.forEach((row) => {
+    row.forEach((cell, index) => {
+      weights[index] = Math.max(weights[index] || 6, String(cell).length);
+    });
+  });
+  const weightTotal = weights.reduce((sum, value) => sum + value, 0) || 1;
+  const columns = weights.map((value) => (value / weightTotal) * width);
+  const bottom = pageHeight - 10;
+
+  const paintHeader = () => {
+    pdf.setTextColor(15, 23, 42);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    pdf.text(input.heading, margin, 12);
+    pdf.setFontSize(11);
+    pdf.text(input.title, margin, 18);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text(input.storeName, margin, 23);
+    pdf.text(input.generatedOn, pageWidth - margin, 23, { align: "right" });
+    return 30;
+  };
+
+  const paintColumns = (top: number) => {
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.setTextColor(51, 65, 85);
+    let x = margin;
+    input.headers.forEach((header, index) => {
+      const align = input.aligns?.[index] || "left";
+      const textX =
+        align === "right"
+          ? x + columns[index] - 1
+          : align === "center"
+            ? x + columns[index] / 2
+            : x + 1;
+      pdf.text(header, textX, top, { align });
+      x += columns[index];
+    });
+    pdf.line(margin, top + 2, pageWidth - margin, top + 2);
+    return top + 7;
+  };
+
+  let y = paintColumns(paintHeader());
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8);
+  pdf.setTextColor(15, 23, 42);
+
+  const writeRow = (cells: string[], bold = false) => {
+    if (y > bottom) {
+      pdf.addPage();
+      y = paintColumns(paintHeader());
+      pdf.setFont("helvetica", bold ? "bold" : "normal");
+      pdf.setFontSize(8);
+      pdf.setTextColor(15, 23, 42);
+    }
+    pdf.setFont("helvetica", bold ? "bold" : "normal");
+    let x = margin;
+    cells.forEach((cell, index) => {
+      const align = input.aligns?.[index] || "left";
+      const textX =
+        align === "right"
+          ? x + columns[index] - 1
+          : align === "center"
+            ? x + columns[index] / 2
+            : x + 1;
+      const maxChars = Math.max(4, Math.floor(columns[index] / 1.7));
+      const value = String(cell || "");
+      const shown =
+        value.length > maxChars ? `${value.slice(0, maxChars - 3)}...` : value;
+      pdf.text(shown, textX, y, { align });
+      x += columns[index];
+    });
+    y += 5.5;
+  };
+
+  if (input.rows.length === 0) {
+    writeRow(["No products match your filters."]);
+  } else {
+    input.rows.forEach((row) => writeRow(row));
+    if (input.total) {
+      y += 1;
+      pdf.line(margin, y - 4, pageWidth - margin, y - 4);
+      writeRow(input.total, true);
+    }
+  }
+
+  pdf.save(input.fileName);
+}
+
 export async function shareDocumentPdf(input: {
   sheet: HTMLElement | null;
   phone: string;

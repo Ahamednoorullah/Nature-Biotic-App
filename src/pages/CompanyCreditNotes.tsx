@@ -14,7 +14,7 @@ import {
   adsdompanyCreditNoteSyncRecords,
   getCompanyCreditNoteSyncRecords,
   type CompanyCreditNoteSyncRecord,
-  getCompanyStoreSales,
+  getFinalCompanyStoreSales,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
@@ -209,7 +209,7 @@ export default function CompanyCreditNotes() {
   const [creditNoteNo, setCreditNoteNo] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [companySales, setCompanySales] = useState<CompanyStoreSaleRecord[]>(
-    () => getCompanyStoreSales(),
+    () => getFinalCompanyStoreSales(),
   );
   const [storeId, setStoreId] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
@@ -229,7 +229,7 @@ export default function CompanyCreditNotes() {
   const selectedStore = stores.find((s) => s.id === storeId);
 
   useEffect(() => {
-    const refresh = () => setCompanySales(getCompanyStoreSales());
+    const refresh = () => setCompanySales(getFinalCompanyStoreSales());
     window.addEventListener("company-store-sales-updated", refresh);
     window.addEventListener("focus", refresh);
     return () => {

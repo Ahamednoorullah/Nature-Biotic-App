@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getCompanyCreditNoteSyncRecords,
-  getCompanyStoreSales,
+  getFinalCompanyStoreSales,
   stores as allStores,
 } from "@/lib/data";
 import { Card, Icon } from "@/components/ui";
@@ -113,7 +113,7 @@ function buildReport(filter: DateFilter) {
     string,
     { date: string; storeId: string; storeName: string; total: number }
   >();
-  getCompanyStoreSales().forEach((line) => {
+  getFinalCompanyStoreSales().forEach((line) => {
     const invoiceNo = String(line.invoiceNo || "").trim();
     if (!invoiceNo) return;
     const key = `${line.storeId}|${invoiceNo.toLowerCase()}`;

@@ -5,7 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import {
   commitReceiptNumber,
   getCompanyCreditNoteSyncRecords,
-  getCompanyStoreSales,
+  getFinalCompanyStoreSales,
   nextReceiptNumber,
   stores,
 } from "@/lib/data";
@@ -88,7 +88,7 @@ export default function CompanyReceipts() {
       string,
       { invoiceNo: string; total: number; date: string }
     >();
-    getCompanyStoreSales()
+    getFinalCompanyStoreSales()
       .filter((sale) => sale.storeId === createStoreId)
       .forEach((sale) => {
         const invoiceNo = String(sale.invoiceNo || "").trim();

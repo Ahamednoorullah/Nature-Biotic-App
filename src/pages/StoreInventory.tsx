@@ -4,14 +4,18 @@ import {
   getBillsByStore,
   getProductsByStore,
   getStorePurchasesFromCompanySales,
+  isStorePurchaseReceived,
+  storePurchaseStatusUpdatedEvent,
   getStoreAvailableQty,
   getFROHandQty,
   getStoreStockAdjustments,
+  getStore,
   productCategories,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { downloadDataTablePdf } from "@/lib/documentPdf";
 
 
 
@@ -106,7 +110,8 @@ export const REAL_DATA_START = "2026-09-28";
 export function getRealPurchases(storeId: string): CompanyStoreSaleRecord[] {
   const start = new Date(`${REAL_DATA_START}T00:00:00`);
   return (getStorePurchasesFromCompanySales(storeId) || []).filter(
-    (p: any) => new Date(p.date) >= start,
+    (p: any) =>
+      new Date(p.date) >= start && isStorePurchaseReceived(p.invoiceNo),
   );
 }
 
@@ -328,10 +333,7 @@ export function buildInventoryRows(
 }
 
 export function getStoreOverviewStockValue(storeId: string) {
-  return buildInventoryRows(
-    storeId,
-    getStorePurchasesFromCompanySales(storeId),
-  ).reduce(
+  return buildInventoryRows(storeId, getRealPurchases(storeId)).reduce(
     (sum, product) =>
       sum +
       product.packSizes.reduce(
@@ -375,6 +377,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
     getRealPurchases(storeId),
   );
   const [inventoryVersion, setInventoryVersion] = useState(0);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
@@ -389,6 +392,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
     //   Delivery: FRO accepts -> Store Stock decreases / Hand Stock increases
     //   Return: Store accepts -> Hand Stock decreases / Store Stock increases
     window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener(storePurchaseStatusUpdatedEvent, refresh);
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
     window.addEventListener("fro-accepted-deliveries-updated", refresh);
     window.addEventListener(
@@ -400,6 +404,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
 
     return () => {
       window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener(storePurchaseStatusUpdatedEvent, refresh);
       window.removeEventListener(
         "nature-biotic-store-inventory-updated",
         refresh,
@@ -573,6 +578,95 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
               </div>
               <Button variant="secondary">
                 <Icon name="download" size={18} /> Export to Excel
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={pdfBusy}
+                onClick={() => {
+                  if (pdfBusy) return;
+                  setPdfBusy(true);
+                  const storeName = getStore(storeId)?.name || "Store";
+                  const today = new Date().toISOString().split("T")[0];
+                  const pdfRows = filteredRows.flatMap((product, productIndex) =>
+                    product.packSizes.map((pack) => {
+                      const totalStock = pack.availableStock + pack.stockInHand;
+                      const unitPrice =
+                        pack.unitPrice ??
+                        (totalStock > 0
+                          ? Math.round(pack.stockValue / totalStock)
+                          : 0);
+                      return [
+                        String(productIndex + 1),
+                        product.productType,
+                        product.productName,
+                        pack.packSize,
+                        formatCurrency(unitPrice).replace("₹", "Rs. "),
+                        pack.batchNo || "-",
+                        pack.expiryDate || "-",
+                        String(pack.availableStock),
+                        String(pack.stockInHand),
+                        String(totalStock),
+                        formatCurrency(pack.stockValue).replace("₹", "Rs. "),
+                      ];
+                    }),
+                  );
+                  downloadDataTablePdf({
+                    fileName: `${storeName.replace(/\s+/g, "-")}-stock-overview.pdf`,
+                    heading: "Nature Biotic",
+                    title: "Stock Overview",
+                    storeName,
+                    generatedOn: `Generated ${formatDate(today)}`,
+                    headers: [
+                      "S.No",
+                      "Product Type",
+                      "Product Name",
+                      "Pack Size",
+                      "Unit Price",
+                      "Batch No",
+                      "Expiry Date",
+                      "Store Stock",
+                      "Hand Stock",
+                      "Total Stock",
+                      "Stock Value",
+                    ],
+                    aligns: [
+                      "center",
+                      "left",
+                      "left",
+                      "left",
+                      "right",
+                      "left",
+                      "left",
+                      "center",
+                      "center",
+                      "center",
+                      "right",
+                    ],
+                    rows: pdfRows,
+                    total: [
+                      "",
+                      "",
+                      "",
+                      "",
+                      "",
+                      "",
+                      "Total",
+                      String(totals.availableStock),
+                      String(totals.stockInHand),
+                      String(totals.totalStock),
+                      formatCurrency(totals.stockValue).replace("₹", "Rs. "),
+                    ],
+                  })
+                    .catch(() => {
+                      window.alert(
+                        "The stock overview PDF could not be created. Please try again.",
+                      );
+                    })
+                    .finally(() => setPdfBusy(false));
+                }}
+              >
+                <Icon name="picture_as_pdf" size={18} />
+                {pdfBusy ? "Preparing PDF" : "Download PDF"}
               </Button>
             </div>
           </div>

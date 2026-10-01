@@ -1,7 +1,7 @@
 import type { StorePage } from "@/context/NavContext";
 import {
   getCompanyCreditNoteSyncRecords,
-  getCompanyStoreSales,
+  getFinalCompanyStoreSales,
   getStaffByStore,
   getStoreApprovalRequests,
   getStorePurchaseStatuses,
@@ -129,7 +129,7 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
     });
 
   const invoices = new Map<string, any[]>();
-  getCompanyStoreSales()
+  getFinalCompanyStoreSales()
     .filter((sale) => sale.storeId === storeId)
     .forEach((sale) => {
       const list = invoices.get(sale.invoiceNo) ?? [];

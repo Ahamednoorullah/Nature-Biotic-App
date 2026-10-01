@@ -4,9 +4,11 @@ import { createPortal } from "react-dom";
 import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
 import {
   getProductsByStore,
+  getStaffByStore,
   getStorePurchasesFromCompanySales,
   getStoreAvailableQty,
 } from "@/lib/data";
+import { roleForStaffDesignation } from "@/lib/auth/roles";
 
 type Item = {
   productId: string;
@@ -29,8 +31,6 @@ type Challan = {
   acceptedBy?: string;
   items: Item[];
 };
-
-const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 
 function emptyItems(): Item[] {
   return [
@@ -72,6 +72,23 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const [froFilter, setFroFilter] = useState("all");
 
   const [inventoryVersion, setInventoryVersion] = useState(0);
+  const storeExecutives = useMemo(
+    () =>
+      getStaffByStore(storeId)
+        .filter((member) => member.status !== "Inactive")
+        .filter(
+          (member) => roleForStaffDesignation(member.designation) === "fro",
+        )
+        .map((member) => member.name.trim())
+        .filter(Boolean),
+    [storeId],
+  );
+
+  useEffect(() => {
+    if (executive && !storeExecutives.includes(executive)) {
+      setExecutive("");
+    }
+  }, [executive, storeExecutives]);
 
   function isChallanAccepted(challan: Challan): boolean {
     // IMPORTANT: the Store table must depend on this delivery's own status.
@@ -401,6 +418,10 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
   function createChallan() {
     if (!canCreate) return;
+    if (!storeExecutives.includes(executive)) {
+      window.alert("Select an executive assigned to this store.");
+      return;
+    }
 
     const next: Challan = {
       id: String(Date.now()),
@@ -630,14 +651,28 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                     onChange={setDate}
                     required
                   />
-                  <Select
-                    label="Executive"
-                    value={executive}
-                    onChange={setExecutive}
-                    placeholder="Select executive"
-                    options={executives.map((x) => ({ value: x, label: x }))}
-                    required
-                  />
+                  <div>
+                    <Select
+                      label="Executive"
+                      value={storeExecutives.includes(executive) ? executive : ""}
+                      onChange={setExecutive}
+                      placeholder={
+                        storeExecutives.length
+                          ? "Select executive"
+                          : "No executives assigned to this store."
+                      }
+                      options={storeExecutives.map((name) => ({
+                        value: name,
+                        label: name,
+                      }))}
+                      required
+                    />
+                    {storeExecutives.length === 0 && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        No executives assigned to this store.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-6">

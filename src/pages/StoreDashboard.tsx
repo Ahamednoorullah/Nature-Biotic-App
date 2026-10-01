@@ -148,6 +148,8 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       "nature-biotic-store-purchase-status-updated",
       "fro-stock-updated",
       "fro-accepted-deliveries-updated",
+      "nature-biotic-store-stock-return-updated",
+      "nature-biotic-fro-stock-return-updated",
       "focus",
     ];
     events.forEach((event) => window.addEventListener(event, refresh));

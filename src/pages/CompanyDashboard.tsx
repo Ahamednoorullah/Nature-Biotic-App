@@ -5,7 +5,7 @@ import {
   updateStoreApprovalRequestStatus,
   approveStorePurchaseOrder,
   storeApprovalRequestsUpdatedEvent,
-  getCompanyStoreSales,
+  getFinalCompanyStoreSales,
   getCompanyCreditNoteSyncRecords,
   type StoreApprovalRequest,
 } from "@/lib/data";
@@ -166,7 +166,7 @@ function ageBucket(invoiceDate: Date | null) {
 }
 
 function buildAdminDashboard(filter: DateFilter) {
-  const companyLines = getCompanyStoreSales();
+  const companyLines = getFinalCompanyStoreSales();
   const companyInvoices = new Map<
     string,
     {

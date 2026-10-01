@@ -795,7 +795,7 @@ export default function CompanySales() {
     });
 
     setAdded(nextAdded);
-    setRemarks("");
+    setRemarks(header.notes || "");
     setSelectedInvoice(null);
     setIsPreviewMode(false);
     setShowCreate(true);
@@ -820,7 +820,57 @@ export default function CompanySales() {
   }
 
   function handleSaveDraft() {
-    // Draft save: keep form open, no-op persistence in this demo
+    if (editingInvoiceNo && invoiceIsLocked(editingInvoiceNo)) {
+      window.alert(
+        "This invoice has already been received by the store and can no longer be edited.",
+      );
+      return;
+    }
+
+    const number = invoiceNo.trim();
+    const editingFinal =
+      !!editingInvoiceNo &&
+      sales.some(
+        (row) =>
+          row.invoiceNo === editingInvoiceNo && row.saleStatus !== "Draft",
+      );
+    if (editingFinal) {
+      window.alert("A completed invoice cannot be saved as a draft.");
+      return;
+    }
+
+    const numberTaken = sales.some(
+      (row) =>
+        row.invoiceNo === number &&
+        row.saleStatus !== "Draft" &&
+        row.invoiceNo !== editingInvoiceNo,
+    );
+    if (numberTaken) {
+      window.alert("This invoice number is already saved.");
+      return;
+    }
+
+    const builtRows = buildFormRows();
+    if (!builtRows?.length) {
+      window.alert(
+        "Enter the store, invoice number, and at least one product before saving a draft.",
+      );
+      return;
+    }
+
+    const draftRows: SaleRow[] = builtRows.map((row, i) => ({
+      ...row,
+      saleStatus: "Draft",
+      id: `draft-${number}-${Date.now()}-${i}`,
+    }));
+    const remaining = sales.filter(
+      (row) => row.invoiceNo !== number && row.invoiceNo !== editingInvoiceNo,
+    );
+    const nextSales = [...draftRows, ...remaining];
+    setSales(nextSales);
+    saveCompanyStoreSales(nextSales);
+    resetForm();
+    setShowCreate(false);
   }
 
   function buildFarmerAddress(f: Farmer) {
@@ -863,8 +913,11 @@ export default function CompanySales() {
     if (!builtRows?.length) return;
 
     if (
-      !editingInvoiceNo &&
-      sales.some((row) => row.invoiceNo === invoiceNo.trim())
+      sales.some(
+        (row) =>
+          row.invoiceNo === invoiceNo.trim() &&
+          row.invoiceNo !== editingInvoiceNo,
+      )
     ) {
       window.alert("This invoice number is already saved.");
       return;
@@ -1127,14 +1180,25 @@ export default function CompanySales() {
                   return (
                     <tr
                       key={`${s.invoiceNo}-${s.storeId}-${s.date}`}
-                      onClick={() =>
+                      onClick={() => {
+                        if (s.saleStatus === "Draft") {
+                          openEditInvoice({
+                            header: s,
+                            rows: invoice.rows,
+                          });
+                          return;
+                        }
                         setSelectedInvoice({
                           invoiceNo: s.invoiceNo,
                           header: s,
                           rows: invoice.rows,
-                        })
+                        });
+                      }}
+                      title={
+                        s.saleStatus === "Draft"
+                          ? "Click to continue this draft"
+                          : "Click to view invoice"
                       }
-                      title="Click to view invoice"
                       className={`cursor-pointer border-b border-slate-100 ${
                         i % 2 === 0 ? "bg-white" : "bg-slate-50/60"
                       } hover:bg-brand-50/40 transition-base`}
@@ -1147,8 +1211,11 @@ export default function CompanySales() {
                         {formatDate(s.date)}
                       </td>
 
-                      <td className="px-1.5 py-3 text-center font-semibold text-slate-800 border-r border-slate-100 truncate">
-                        {s.invoiceNo}
+                      <td className="px-1.5 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
+                        <div className="truncate">{s.invoiceNo}</div>
+                        {s.saleStatus === "Draft" && (
+                          <Badge color="amber">Draft</Badge>
+                        )}
                       </td>
 
                       <td className="px-1.5 py-3 text-center text-slate-700 border-r border-slate-100 truncate">

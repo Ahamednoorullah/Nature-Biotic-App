@@ -938,6 +938,7 @@ export type CompanyStoreSaleRecord = {
   taxPercent?: number;
   discount?: number;
   productId?: string;
+  saleStatus?: "Draft" | "Final";
 };
 
 const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
@@ -1000,6 +1001,14 @@ export function saveCompanyStoreSales(rows: CompanyStoreSaleRecord[]) {
 
     window.dispatchEvent(new Event("company-store-sales-updated"));
   } catch {}
+}
+
+export function isFinalCompanyStoreSale(row: { saleStatus?: string }) {
+  return row?.saleStatus !== "Draft";
+}
+
+export function getFinalCompanyStoreSales(): CompanyStoreSaleRecord[] {
+  return getCompanyStoreSales().filter(isFinalCompanyStoreSale);
 }
 
 const RECEIPT_SEQUENCE_KEY = "nature-biotic-receipt-sequence-v1";
@@ -1182,7 +1191,7 @@ export function getStorePurchasesFromCompanySales(storeId: string) {
       localStorage.removeItem(APPROVED_PO_RECEIPTS_KEY);
     } catch {}
   }
-  return getCompanyStoreSales().filter((sale) => sale.storeId === storeId);
+  return getFinalCompanyStoreSales().filter((sale) => sale.storeId === storeId);
 }
 
 export const STORE_PURCHASE_STATUS_KEY = "nature-biotic-store-purchase-status-v1";
@@ -2397,6 +2406,7 @@ export function allocateStoreStockAdjustment(input: StoreStockAdjustmentRecord) 
 
   const batches = new Set<string>();
   getStorePurchasesFromCompanySales(input.storeId).forEach((purchase) => {
+    if (!isStorePurchaseReceived(String(purchase.invoiceNo || ""))) return;
     if (
       sameSize({
         productId: (purchase as any).productId,
@@ -2449,6 +2459,7 @@ export function getStoreAvailableQty(
   const target = { productId, productName, packSize, batchNo };
   const purchased = getStorePurchasesFromCompanySales(storeId).reduce(
     (sum, purchase) => {
+      if (!isStorePurchaseReceived(String(purchase.invoiceNo || ""))) return sum;
       const matches = stockVariantsMatch(
         {
           productId: String((purchase as any).productId || ""),
@@ -2530,7 +2541,7 @@ export function getCompanyAvailableQty(
     )
     .reduce((sum, product) => sum + Math.max(0, Number(product.stock || 0)), 0);
 
-  const sold = getCompanyStoreSales().reduce((sum, sale) => {
+  const sold = getFinalCompanyStoreSales().reduce((sum, sale) => {
     return (
       sum +
       (sameSize({
