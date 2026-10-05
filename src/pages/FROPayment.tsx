@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
+import {
+  froOwnsTransaction,
+  getFROCashPosition,
+  handoverBelongsToFro,
+} from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 
@@ -25,6 +30,7 @@ type Handover = {
   amount: number;
   method: string;
   handedOverBy: string;
+  createdByStaffId?: string;
   remarks?: string;
   status?: "pending" | "accepted";
   acceptedAt?: string;
@@ -62,12 +68,11 @@ export default function FROPayment({ storeId }: { storeId: string }) {
   const [handoverRemarks, setHandoverRemarks] = useState("");
 
   const froReceipts = useMemo(() => {
-    const froName = user?.name?.trim().toLowerCase();
-    if (!froName) return [];
-    return receipts.filter(
-      (receipt) => receipt.receivedBy?.trim().toLowerCase() === froName,
+    if (!user?.name && !user?.staffId) return [];
+    return receipts.filter((receipt) =>
+      froOwnsTransaction(receipt, user?.name || "", user?.staffId || user?.id),
     );
-  }, [receipts, user?.name]);
+  }, [receipts, user?.name, user?.staffId, user?.id]);
 
   const isSameDay = (value: string, selectedDate: string) => {
     const d = new Date(value);
@@ -101,12 +106,23 @@ export default function FROPayment({ storeId }: { storeId: string }) {
   );
 
   // Old records without a status are treated as accepted so existing data keeps working.
+  const ownedHandovers = useMemo(
+    () =>
+      handovers.filter((handover) =>
+        handoverBelongsToFro(handover, user?.name || "", [
+          user?.staffId,
+          user?.id,
+        ]),
+      ),
+    [handovers, user?.name, user?.staffId, user?.id],
+  );
+
   const acceptedHandovers = useMemo(
     () =>
-      handovers.filter(
+      ownedHandovers.filter(
         (handover) => !handover.status || handover.status === "accepted",
       ),
-    [handovers],
+    [ownedHandovers],
   );
 
   const filteredAcceptedHandovers = useMemo(
@@ -133,53 +149,40 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     [filteredAcceptedHandovers],
   );
 
-  const allCollectedAmount = useMemo(
+  const currentCashInHand = useMemo(
     () =>
-      froReceipts.reduce(
-        (sum, receipt) => sum + (Number(receipt.amount) || 0),
-        0,
-      ),
-    [froReceipts],
+      getFROCashPosition(storeId, user?.name || "", user?.staffId, user?.id)
+        .cashInHand,
+    [storeId, user?.name, user?.staffId, user?.id, receipts, handovers],
   );
-
-  const allHandedOverAmount = useMemo(
-    () =>
-      acceptedHandovers.reduce(
-        (sum, handover) => sum + (Number(handover.amount) || 0),
-        0,
-      ),
-    [acceptedHandovers],
-  );
-
-  const currentCashInHand = Math.max(
-    allCollectedAmount - allHandedOverAmount,
-    0,
-  );
-  // Cash in Hand stays at the collected balance until the store accepts a handover.
-  // Pending handovers are reserved so the same cash cannot be handed over twice.
-
-  const pendingReservedAmount = useMemo(
+  const froNameKey = (user?.name || "").trim().toLowerCase();
+  const pendingCashReserved = useMemo(
     () =>
       handovers
-        .filter(
-          (handover) =>
-            handover.status === "pending" &&
-            (!handover.handedOverBy ||
-              handover.handedOverBy.trim().toLowerCase() ===
-                (user?.name || "").trim().toLowerCase()),
-        )
+        .filter((handover) => {
+          if (handover.status !== "pending") return false;
+          if ((handover.method || "Cash") !== "Cash") return false;
+          return handoverBelongsToFro(handover, user?.name || "", [
+            user?.staffId,
+            user?.id,
+          ]);
+        })
         .reduce((sum, handover) => sum + (Number(handover.amount) || 0), 0),
-    [handovers, user?.name],
+    [handovers, froNameKey],
   );
-
-  const availableToHandover = Math.max(
-    currentCashInHand - pendingReservedAmount,
+  const cashAvailableForHandover = Math.max(
+    currentCashInHand - pendingCashReserved,
     0,
   );
-  const balanceAmount = currentCashInHand;
+  const cashHandover = handoverMethod === "Cash";
   const requestedAmount = Number(handoverAmount) || 0;
+  const handoverExceedsCash =
+    cashHandover && requestedAmount > cashAvailableForHandover;
   const canCreateHandover =
-    requestedAmount > 0 && requestedAmount <= availableToHandover && !!user?.name;
+    requestedAmount > 0 &&
+    !!user?.name &&
+    (!cashHandover || requestedAmount <= cashAvailableForHandover);
+  const balanceAmount = currentCashInHand;
 
   function loadPaymentData() {
     try {
@@ -202,11 +205,17 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-handover-updated", refresh);
+    window.addEventListener("nature-biotic-store-receipts-updated", refresh);
+    window.addEventListener("nature-biotic-store-refunds-updated", refresh);
+    window.addEventListener("nature-biotic-cash-received-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("nature-biotic-handover-updated", refresh);
+      window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
+      window.removeEventListener("nature-biotic-store-refunds-updated", refresh);
+      window.removeEventListener("nature-biotic-cash-received-updated", refresh);
     };
   }, [receiptStorageKey, handoverStorageKey]);
 
@@ -232,6 +241,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
       amount: requestedAmount,
       method: handoverMethod,
       handedOverBy: user.name,
+      createdByStaffId: user.staffId || user.id,
       remarks: handoverRemarks.trim() || undefined,
       status: "pending",
     };
@@ -345,7 +355,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
             </div>
 
             <div className="min-h-0 overflow-y-auto p-4 sm:p-5">
-              {handovers.filter((handover) =>
+              {ownedHandovers.filter((handover) =>
                 isInSelectedPeriod(handover.date),
               ).length === 0 ? (
                 <div className="py-10 text-center">
@@ -363,7 +373,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {handovers
+                  {ownedHandovers
                     .filter((handover) => isInSelectedPeriod(handover.date))
                     .map((handover) => (
                       <div
@@ -491,19 +501,20 @@ export default function FROPayment({ storeId }: { storeId: string }) {
                 <div className="sm:col-span-2 rounded-xl bg-emerald-50 px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-xs font-semibold text-emerald-700">
-                      Cash in Hand after request
+                      Cash in Hand
                     </span>
                     <span className="text-base font-extrabold text-emerald-800">
-                      {formatCurrency(
-                        Math.max(
-                          currentCashInHand - (Number(handoverAmount) || 0),
-                          0,
-                        ),
-                      )}
+                      {formatCurrency(currentCashInHand)}
                     </span>
                   </div>
+                  {handoverExceedsCash && (
+                    <p className="mt-1 text-[11px] font-semibold text-red-600">
+                      Handover cannot exceed available cash (
+                      {formatCurrency(cashAvailableForHandover)}).
+                    </p>
+                  )}
                   <p className="mt-1 text-[10px] text-emerald-600">
-                    Handover amount will be added after the Store accepts it.
+                    This handover stays pending. Cash in Hand changes only after the Store accepts it.
                   </p>
                 </div>
               </div>

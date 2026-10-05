@@ -3,6 +3,7 @@ import {
   getFarmersByStore,
   cropTypes,
   deleteFarmer,
+  settleLinkedFarmerAccounts,
   type Farmer,
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
@@ -36,12 +37,26 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
   const [farmers, setFarmers] = useState<Farmer[]>(() =>
     getFarmersByStore(storeId),
   );
+  const [accountsVersion, setAccountsVersion] = useState(0);
   const [search, setSearch] = useState("");
   const [cropFilter, setCropFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    setFarmers(getFarmersByStore(storeId));
+    const refresh = () => {
+      setFarmers(getFarmersByStore(storeId));
+      setAccountsVersion((value) => value + 1);
+    };
+    refresh();
+    const events = [
+      "focus",
+      "store-farmers-updated",
+      "nature-biotic-store-refunds-updated",
+      "nature-biotic-store-sales-updated",
+      "nature-biotic-store-receipts-updated",
+    ];
+    events.forEach((event) => window.addEventListener(event, refresh));
+    return () => events.forEach((event) => window.removeEventListener(event, refresh));
   }, [storeId]);
 
   const visibleFarmers = useMemo(
@@ -75,9 +90,37 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
     [visibleFarmers, search, cropFilter],
   );
 
+  const farmerBalances = useMemo(() => {
+    const read = (key: string) => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(`${key}:${storeId}`) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    };
+    return settleLinkedFarmerAccounts({
+      invoices: read("nature-biotic-store-sales-invoices-v2"),
+      receipts: read("nature-biotic-store-receipts-v3"),
+      returns: [
+        ...read("nature-biotic-store-sales-returns-v2"),
+        ...read("nature-biotic-store-credit-notes-v3"),
+      ],
+      refunds: read("nature-biotic-store-refunds-v2"),
+    }).farmers;
+  }, [storeId, accountsVersion]);
+  const balanceOf = (farmer: Farmer) =>
+    farmerBalances.find((row) => {
+      if (row.farmerId && row.farmerId === farmer.id) return true;
+      return (
+        !row.farmerId &&
+        row.farmerName.trim().toLowerCase() === farmer.name.trim().toLowerCase()
+      );
+    })?.outstanding || 0;
+
   const totalFarmers = visibleFarmers.length;
   const totalOutstanding = visibleFarmers.reduce(
-    (s, f) => s + f.outstanding,
+    (s, f) => s + balanceOf(f),
     0,
   );
   const totalPurchaseValue = visibleFarmers.reduce(
@@ -378,10 +421,10 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       <div className="rounded-xl bg-slate-50 px-3 py-2">
                         <p className="text-slate-400">Outstanding</p>
                         <p
-                          className={`font-bold mt-0.5 ${f.outstanding > 0 ? "text-amber-600" : "text-slate-500"}`}
+                          className={`font-bold mt-0.5 ${balanceOf(f) > 0 ? "text-amber-600" : "text-slate-500"}`}
                         >
-                          {f.outstanding > 0
-                            ? formatCurrency(f.outstanding)
+                          {balanceOf(f) > 0
+                            ? formatCurrency(balanceOf(f))
                             : "Clear"}
                         </p>
                       </div>
@@ -521,9 +564,9 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       </div>
                     </td>
                     <td className="px-3 py-3.5 text-center border-r border-slate-200">
-                      {f.outstanding > 0 ? (
+                      {balanceOf(f) > 0 ? (
                         <span className="font-bold text-amber-600">
-                          {formatCurrency(f.outstanding)}
+                          {formatCurrency(balanceOf(f))}
                         </span>
                       ) : (
                         <span className="text-slate-400">Clear</span>

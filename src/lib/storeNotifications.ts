@@ -104,30 +104,6 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
   if (!storeId) return [];
   const items: StoreNotification[] = [];
   const purchaseStatus = getStorePurchaseStatuses();
-  const fros = assignedFros(storeId);
-
-  getStoreApprovalRequests()
-    .filter(
-      (request) =>
-        request.type === "Purchase Order" &&
-        request.storeId === storeId &&
-        request.status === "Approved",
-    )
-    .forEach((request) => {
-      items.push(
-        note({
-          id: `po-accepted:${storeId}:${request.referenceNo}`,
-          title: "Purchase Order Accepted",
-          description: `${request.referenceNo} has been accepted by Nature Biotic.`,
-          status: "Accepted",
-          tone: "accepted",
-          icon: "shopping_cart_checkout",
-          at: timeValue(request.date, request.createdAt),
-          sourceDate: request.date,
-          page: "purchase-order",
-        }),
-      );
-    });
 
   const invoices = new Map<string, any[]>();
   getFinalCompanyStoreSales()
@@ -140,6 +116,7 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
   invoices.forEach((lines, invoiceNo) => {
     const amount = lines.reduce((sum, line) => sum + Number(line.total || 0), 0);
     const received = purchaseStatus[invoiceNo] === "Received";
+    if (received) return;
     const product = String(lines[0]?.product || "Invoice");
     const extra = lines.length > 1 ? ` +${lines.length - 1}` : "";
     items.push(
@@ -172,7 +149,8 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
     );
     const approved = lines.every((line) => line.status === "Approved");
     const rejected = lines.every((line) => line.status === "Rejected");
-    const status = approved ? "Approved" : rejected ? "Rejected" : "Pending";
+    if (approved || rejected) return;
+    const status = "Pending";
     items.push(
       note({
         id: `credit-note:${storeId}:${creditNoteNo}`,
@@ -188,30 +166,11 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
     );
   });
 
-  readArray("nature-biotic-company-receipts-v1")
-    .filter((row) => row?.storeId === storeId && row?.receiptNo)
-    .forEach((row) => {
-      items.push(
-        note({
-          id: `company-receipt:${storeId}:${row.receiptNo}`,
-          title: "Payment Received",
-          description: `${row.receiptNo} · ${formatCurrency(Number(row.amount || 0))}${
-            row.invoiceNo ? ` · ${row.invoiceNo}` : ""
-          }`,
-          status: "Received",
-          tone: "accepted",
-          icon: "payments",
-          at: timeValue(row.date),
-          sourceDate: row.date,
-          page: "purchases",
-        }),
-      );
-    });
-
   readScoped("nature-biotic-fro-stock-return-requests-v1", storeId)
     .filter((row) => row?.storeId === storeId && row?.id)
     .forEach((row) => {
-      const pending = row.status !== "accepted";
+      const statusName = String(row.status || "pending").toLowerCase();
+      if (statusName !== "pending") return;
       const qty = (Array.isArray(row.items) ? row.items : []).reduce(
         (sum: number, item: any) => sum + Number(item?.qty || 0),
         0,
@@ -220,12 +179,10 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
       items.push(
         note({
           id: `fro-return:${storeId}:${row.id}`,
-          title: pending
-            ? "FRO Stock Return Pending Acceptance"
-            : "FRO Stock Return",
+          title: "Stock Return Pending",
           description: `${row.froName || "FRO"} · ${row.rcNo || row.id} · ${product} · Qty ${qty}`,
-          status: pending ? "Pending" : "Accepted",
-          tone: pending ? "pending" : "accepted",
+          status: "Pending",
+          tone: "pending",
           icon: "assignment_return",
           at: timeValue(row.date, Date.parse(row.createdAt || "") || undefined),
           sourceDate: row.date,
@@ -234,102 +191,41 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
       );
     });
 
-  readArray(`nature-biotic-store-sales-invoices-v2:${storeId}`)
-    .filter(
-      (row) =>
-        row?.through === "Executive" &&
-        row?.invoiceNo &&
-        !isDummySale(row) &&
-        (!row.executiveName ||
-          fros.names.has(String(row.executiveName).trim().toLowerCase())),
-    )
-    .forEach((row) => {
-      items.push(
-        note({
-          id: `fro-sale:${storeId}:${row.invoiceNo}`,
-          title: "FRO Sale",
-          description: `${row.executiveName || "FRO"} · ${row.invoiceNo} · ${formatCurrency(
-            Number(row.amount || 0),
-          )}`,
-          status: "Recorded",
-          tone: "neutral",
-          icon: "point_of_sale",
-          at: timeValue(row.date),
-          sourceDate: row.date,
-          page: "sales-invoice",
-        }),
-      );
-    });
-
-  readArray(`nature-biotic-quotations-${storeId}`)
-    .filter((row) => {
-      if (!row?.quotationNo) return false;
-      const executive = String(row.executiveName || "").trim().toLowerCase();
-      return (
-        row.through === "Executive" ||
-        (executive && fros.names.has(executive)) ||
-        (row.createdByStaffId && fros.ids.has(String(row.createdByStaffId)))
-      );
-    })
-    .forEach((row) => {
-      items.push(
-        note({
-          id: `fro-quote:${storeId}:${row.quotationNo}`,
-          title: "New FRO Quotation",
-          description: `${row.executiveName || "FRO"} · ${row.quotationNo} · ${formatCurrency(
-            Number(row.amount || 0),
-          )}`,
-          status: String(row.status || "Open"),
-          tone: "neutral",
-          icon: "description",
-          at: timeValue(row.date),
-          sourceDate: row.date,
-          page: "quotation",
-        }),
-      );
-    });
-
   readArray(`nature-biotic-fro-handovers-v1:${storeId}`).forEach((row) => {
-    if (!row?.id) return;
-    const pending = row.status !== "accepted";
+    if (!row?.id || String(row.status || "").toLowerCase() !== "pending") return;
     items.push(
       note({
         id: `cash-handover:${storeId}:${row.id}`,
-        title: pending ? "Cash Handover Pending" : "Cash Handover",
+        title: "Cash Handover Pending",
         description: `${row.handedOverBy || "FRO"} · ${formatCurrency(
           Number(row.amount || 0),
         )}`,
-        status: pending ? "Pending" : "Accepted",
-        tone: pending ? "pending" : "accepted",
+        status: "Pending",
+        tone: "pending",
         icon: "payments",
-        at: timeValue(row.date, Date.parse(row.acceptedAt || "") || undefined),
+        at: timeValue(row.date),
         sourceDate: row.date,
         page: "dashboard",
       }),
     );
   });
 
-  readArray(`nature-biotic-store-delivery-challans-v2:${storeId}`)
-    .filter((row) => row?.status === "accepted" && row?.sdNo)
-    .forEach((row) => {
-      const qty = (Array.isArray(row.items) ? row.items : []).reduce(
-        (sum: number, item: any) => sum + Number(item?.qty || 0),
-        0,
-      );
-      items.push(
-        note({
-          id: `fro-delivery:${storeId}:${row.id || row.sdNo}`,
-          title: "FRO Stock Delivery",
-          description: `${row.executive || "FRO"} · ${row.sdNo} · Qty ${qty}`,
-          status: "Accepted",
-          tone: "accepted",
-          icon: "local_shipping",
-          at: timeValue(row.date, Date.parse(row.acceptedAt || "") || undefined),
-          sourceDate: row.date,
-          page: "delivery-challan",
-        }),
-      );
-    });
+  readArray(`nature-biotic-store-delivery-challans-v2:${storeId}`).forEach((row) => {
+    if (!row?.id || String(row.status || "").toLowerCase() !== "accepted") return;
+    items.push(
+      note({
+        id: `delivery-accepted:${storeId}:${row.id}`,
+        title: "Stock Delivery Accepted",
+        description: `${row.sdNo || "Delivery"} · ${row.executive || "FRO"} accepted.`,
+        status: "Accepted",
+        tone: "accepted",
+        icon: "local_shipping",
+        at: timeValue(row.acceptedAt || row.date, row.acceptedAt),
+        sourceDate: row.date,
+        page: "delivery-challan",
+      }),
+    );
+  });
 
   const seen = new Set<string>();
   return items
@@ -345,80 +241,15 @@ function samePerson(value: unknown, name: string) {
   return String(value || "").trim().toLowerCase() === name;
 }
 
-function lineSummary(items: unknown) {
-  if (!Array.isArray(items) || items.length === 0) return "";
-  return items
-    .slice(0, 3)
-    .map((item) => {
-      const row = item as Record<string, unknown>;
-      const product = String(row.product || row.productName || "Product");
-      const qty = Number(row.qty || row.quantity || 0);
-      return qty ? `${product} × ${qty}` : product;
-    })
-    .join(", ");
-}
-
-/** Store notifications that belong to one FRO. Store-wide notices stay on the Store panel. */
+/** Action and status items for one FRO. Ordinary store activity stays off this list. */
 export function getFroNotifications(
   storeId: string,
   froName: string,
-  staffId = "",
+  _staffId = "",
 ): StoreNotification[] {
   const name = String(froName || "").trim().toLowerCase();
   if (!storeId || !name) return [];
-  const staff = String(staffId || "").trim();
-  const items = getStoreNotifications(storeId).filter((item) => {
-    const description = item.description.trim().toLowerCase();
-    return (
-      description.startsWith(`${name} ·`) || description.startsWith(`${name} `)
-    );
-  });
-
-  readArray(`nature-biotic-store-sales-returns-v2:${storeId}`)
-    .filter(
-      (row) =>
-        row?.returnNo &&
-        (samePerson(row.executiveName, name) ||
-          (staff && String(row.createdByStaffId || "") === staff)),
-    )
-    .forEach((row) => {
-      items.push(
-        note({
-          id: `fro-sales-return:${storeId}:${row.returnNo}`,
-          title: "Sales Return",
-          description: `${row.executiveName || froName} · ${row.returnNo} · ${formatCurrency(
-            Number(row.total || 0),
-          )}`,
-          status: "Recorded",
-          tone: "neutral",
-          icon: "assignment_return",
-          at: timeValue(row.date),
-          sourceDate: row.date,
-          page: "sales-return",
-        }),
-      );
-    });
-
-  readArray(`nature-biotic-store-receipts-v3:${storeId}`)
-    .filter((row) => row?.receiptNo && samePerson(row.receivedBy, name))
-    .forEach((row) => {
-      items.push(
-        note({
-          id: `fro-receipt:${storeId}:${row.receiptNo}`,
-          title: "Collection",
-          description: `${row.receivedBy || froName} · ${row.receiptNo} · ${formatCurrency(
-            Number(row.amount || 0),
-          )}`,
-          status: "Received",
-          tone: "accepted",
-          icon: "payments",
-          at: timeValue(row.date),
-          sourceDate: row.date,
-          page: "receipt",
-        }),
-      );
-    });
-
+  const items: StoreNotification[] = [];
   const storeName = getStore(storeId)?.name || "Store";
   const deliveries = new Map<string, any>();
   [
@@ -428,22 +259,22 @@ export function getFroNotifications(
     if (!samePerson(row?.executive, name)) return;
     const key = String(row.id || row.sdNo || "");
     if (!key) return;
+    const existing = deliveries.get(key);
+    const incomingAccepted = String(row.status || "").toLowerCase() === "accepted";
+    const existingAccepted =
+      String(existing?.status || "").toLowerCase() === "accepted";
+    if (existingAccepted && !incomingAccepted) return;
     deliveries.set(key, row);
   });
   deliveries.forEach((row) => {
-    const pending = String(row.status || "pending") !== "accepted";
-    const summary = lineSummary(row.items);
+    if (String(row.status || "pending").toLowerCase() === "accepted") return;
     items.push(
       note({
         id: `fro-delivery:${storeId}:${row.id || row.sdNo}`,
-        title: pending
-          ? `New stock delivery received from ${storeName}.`
-          : `Stock delivery from ${storeName} accepted.`,
-        description: [storeName, row.sdNo, formatDate(String(row.date || "")), summary]
-          .filter(Boolean)
-          .join(" · "),
-        status: pending ? "Pending" : "Accepted",
-        tone: pending ? "pending" : "accepted",
+        title: "Stock Delivery Pending",
+        description: `${row.sdNo || "Delivery"} · Pending acceptance from FRO.`,
+        status: "Pending",
+        tone: "pending",
         icon: "local_shipping",
         at: timeValue(row.date, row.createdAt),
         sourceDate: row.date,
@@ -452,88 +283,67 @@ export function getFroNotifications(
     );
   });
 
-  readArray(`nature-biotic-fro-stock-return-requests-v1:${name}`)
-    .filter((row) => row?.rcNo && samePerson(row.froName, name))
+  readArray(`nature-biotic-fro-cash-received-v1:${storeId}`)
+    .filter((row) => samePerson(row?.requestedFor, name))
     .forEach((row) => {
-      const pending = String(row.status || "pending") !== "accepted";
-      const summary = lineSummary(row.items);
+      if (String(row.status || "pending").toLowerCase() === "accepted") return;
       items.push(
         note({
-          id: `fro-stock-return:${storeId}:${row.id || row.rcNo}`,
-          title: pending
-            ? "Stock return is pending for acceptance."
-            : "Stock return accepted.",
-          description: [
-            storeName,
-            row.rcNo,
-            formatDate(String(row.date || "")),
-            summary,
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          status: pending ? "Pending" : "Accepted",
-          tone: pending ? "pending" : "accepted",
-          icon: "assignment_return",
-          at: timeValue(row.date, row.createdAt),
+          id: `fro-cash:${storeId}:${row.id}`,
+          title: "Cash receipt pending",
+          description: `${storeName} · ${formatCurrency(Number(row.amount || 0))} · Pending acceptance from FRO.`,
+          status: "Pending",
+          tone: "pending",
+          icon: "savings",
+          at: timeValue(row.date, row.acceptedAt),
           sourceDate: row.date,
-          page: "stock-management",
+          page: "expenses",
         }),
       );
     });
 
   readArray(`nature-biotic-fro-handovers-v1:${storeId}`)
-    .filter((row) => samePerson(row?.handedOverBy, name))
+    .filter((row) => samePerson(row?.handedOverBy, name) && row?.id)
     .forEach((row) => {
-      const pending = row.status === "pending";
+      const statusName = String(row.status || "pending").toLowerCase();
+      if (statusName !== "pending" && statusName !== "accepted") return;
+      const accepted = statusName === "accepted";
       items.push(
         note({
-          id: `fro-handover:${storeId}:${row.id}`,
-          title: pending
-            ? "Cash handover is pending acceptance."
-            : "Cash handover accepted.",
-          description: [
-            storeName,
-            row.id,
-            formatCurrency(Number(row.amount || 0)),
-            formatDate(String(row.date || "")),
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          status: pending ? "Pending" : "Accepted",
-          tone: pending ? "pending" : "accepted",
-          icon: "account_balance_wallet",
-          at: timeValue(row.date, row.acceptedAt),
+          id: `fro-handover-${accepted ? "accepted" : "pending"}:${storeId}:${row.id}`,
+          title: accepted ? "Cash Handover Accepted" : "Cash Handover Pending",
+          description: accepted
+            ? `${storeName} accepted ${formatCurrency(Number(row.amount || 0))}.`
+            : `${formatCurrency(Number(row.amount || 0))} waiting for store acceptance.`,
+          status: accepted ? "Accepted" : "Pending",
+          tone: accepted ? "accepted" : "pending",
+          icon: "payments",
+          at: timeValue(row.date, Date.parse(row.acceptedAt || "") || undefined),
           sourceDate: row.date,
           page: "payments",
         }),
       );
     });
 
-  readArray(`nature-biotic-fro-cash-received-v1:${storeId}`)
-    .filter((row) => samePerson(row?.requestedFor, name))
+  readScoped("nature-biotic-fro-stock-return-requests-v1", storeId)
+    .filter((row) => samePerson(row?.froName, name) && row?.id)
     .forEach((row) => {
-      const pending = String(row.status || "pending") !== "accepted";
+      const statusName = String(row.status || "pending").toLowerCase();
+      if (statusName !== "pending" && statusName !== "accepted") return;
+      const accepted = statusName === "accepted";
       items.push(
         note({
-          id: `fro-cash:${storeId}:${row.id}`,
-          title: pending
-            ? "Money receipt is pending acceptance."
-            : "Money receipt accepted.",
-          description: [
-            storeName,
-            row.id,
-            formatCurrency(Number(row.amount || 0)),
-            row.method || row.category,
-            formatDate(String(row.date || "")),
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          status: pending ? "Pending" : "Accepted",
-          tone: pending ? "pending" : "accepted",
-          icon: "savings",
-          at: timeValue(row.date, row.acceptedAt),
+          id: `fro-return-${accepted ? "accepted" : "pending"}:${storeId}:${row.id}`,
+          title: accepted ? "Stock Return Accepted" : "Stock Return Pending",
+          description: accepted
+            ? `${row.rcNo || row.id} accepted by ${storeName}.`
+            : `${row.rcNo || row.id} waiting for store acceptance.`,
+          status: accepted ? "Accepted" : "Pending",
+          tone: accepted ? "accepted" : "pending",
+          icon: "assignment_return",
+          at: timeValue(row.date, Date.parse(row.acceptedAt || "") || undefined),
           sourceDate: row.date,
-          page: "expenses",
+          page: "stock-management",
         }),
       );
     });

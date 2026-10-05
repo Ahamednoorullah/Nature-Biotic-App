@@ -20,6 +20,7 @@ type ReturnLine = {
   approvalId: string;
   date: string;
   returnNo: string;
+  storeId: string;
   storeName: string;
   product: string;
   packSize: string;
@@ -61,6 +62,7 @@ function loadReturnLines(): ReturnLine[] {
         approvalId: request.id,
         date: returnDate,
         returnNo: request.referenceNo,
+        storeId: request.storeId,
         storeName: request.storeName,
         product: "-",
         packSize: "-",
@@ -81,6 +83,7 @@ function loadReturnLines(): ReturnLine[] {
         approvalId: request.id,
         date: returnDate,
         returnNo: request.referenceNo,
+        storeId: request.storeId,
         storeName: request.storeName,
         product: item.product || "-",
         packSize: item.packSize || "-",
@@ -298,11 +301,13 @@ export default function CompanySalesReturn() {
                     <td className="border-r border-slate-100 px-2 py-3 text-right font-semibold tabular-nums text-slate-800">
                       {formatCurrency(line.total)}
                     </td>
-                    <td
-                      className="px-2 py-3 text-center"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      {line.status === "Pending" ? (
+                    <td className="px-2 py-3 text-center">
+                      {line.status === "Pending" &&
+                      visibleLines.findIndex(
+                        (item) =>
+                          item.returnNo === line.returnNo &&
+                          item.storeId === line.storeId,
+                      ) === index ? (
                         <button
                           type="button"
                           onClick={() => accept(line.approvalId)}
@@ -315,7 +320,9 @@ export default function CompanySalesReturn() {
                           className={`rounded-full px-3 py-1 text-xs font-bold ${
                             line.status === "Approved"
                               ? "bg-emerald-50 text-emerald-700"
-                              : "bg-red-50 text-red-700"
+                              : line.status === "Pending"
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-red-50 text-red-700"
                           }`}
                         >
                           {line.status}

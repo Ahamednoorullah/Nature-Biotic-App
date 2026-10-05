@@ -139,9 +139,10 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       const qty = Number(row.quantity ?? row.qty ?? 0);
       if (qty <= 0) return;
 
-      const sellingPrice = Number(
-        row.sellingPrice ?? row.price ?? master?.sellingPrice ?? 0,
-      );
+      const masterSellingPrice = Number(master?.sellingPrice ?? 0);
+      const recordedSellingPrice = Number(row.sellingPrice ?? 0);
+      const sellingPrice =
+        masterSellingPrice > 0 ? masterSellingPrice : recordedSellingPrice;
 
       const taxPercentage = Number(
         row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
@@ -153,6 +154,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
       if (existing) {
         existing.availableQty += qty;
+        if (existing.sellingPrice <= 0 && sellingPrice > 0) {
+          existing.sellingPrice = sellingPrice;
+        }
       } else {
         unique.set(key, {
           key,

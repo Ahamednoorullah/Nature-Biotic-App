@@ -1,4 +1,11 @@
-import { getFarmersByStore, getStaffRecords, type Staff } from "@/lib/data";
+import {
+  getFarmersByStore,
+  getFROCashPosition,
+  getStaffRecords,
+  settleLinkedFarmerAccounts,
+  type Farmer,
+  type Staff,
+} from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { formatDate } from "@/lib/format";
 
@@ -52,7 +59,6 @@ const RETURN_KEY = "nature-biotic-store-sales-returns-v2";
 const CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
 const RECEIPT_KEY = "nature-biotic-store-receipts-v3";
 const VISIT_KEY = "nature-biotic-fro-visits-v1";
-const HANDOVER_KEY = "nature-biotic-fro-handovers-v1";
 
 const colors = [
   "from-emerald-400 to-emerald-600",
@@ -70,9 +76,31 @@ function readRows(key: string) {
   }
 }
 
+function uniqueRows(rows: any[]) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const id = String(row?.id || row?.receiptNo || row?.invoiceNo || row?.returnNo || row?.refundNo || "");
+    if (!id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 function money(value: unknown) {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function isVoidRefund(status: unknown) {
+  const value = String(status || "").trim().toLowerCase();
+  return (
+    value === "cancelled" ||
+    value === "canceled" ||
+    value === "rejected" ||
+    value === "void" ||
+    value === "invalid"
+  );
 }
 
 export function parseTxnDate(value: unknown): Date | null {
@@ -183,6 +211,46 @@ function isFieldOfficer(member: Staff) {
   return roleForStaffDesignation(member.designation || member.role || "") === "fro";
 }
 
+function periodFarmCropCounts(storeId: string, filter: DateFilter) {
+  let farms = 0;
+  let crops = 0;
+
+  getFarmersByStore(storeId).forEach((farmer) => {
+    const record = farmer as Farmer & {
+      farms?: Array<{ createdAt?: string; date?: string }>;
+    };
+    const farmList = Array.isArray(record.farms) ? record.farms : [];
+
+    if (farmList.length > 0) {
+      farmList.forEach((farm) => {
+        const farmDate = String(
+          farm.createdAt || farm.date || farmer.joinedDate || "",
+        );
+        if (inPeriod(farmDate, filter)) farms += 1;
+      });
+    } else if (farmer.farmAddress && inPeriod(farmer.joinedDate, filter)) {
+      farms += 1;
+    }
+
+    const cropRows = Array.isArray(farmer.crops) ? farmer.crops : [];
+    if (cropRows.length > 0) {
+      cropRows.forEach((crop) => {
+        const cropDate = String(
+          (crop as { createdAt?: string; date?: string }).createdAt ||
+            (crop as { date?: string }).date ||
+            farmer.joinedDate ||
+            "",
+        );
+        if (inPeriod(cropDate, filter)) crops += 1;
+      });
+    } else if (farmer.cropType && inPeriod(farmer.joinedDate, filter)) {
+      crops += 1;
+    }
+  });
+
+  return { farms, crops };
+}
+
 function farmerStats(storeId: string, farmerIds: Set<string>, farmerNames: Set<string>) {
   const farmers = getFarmersByStore(storeId).filter((farmer) => {
     if (farmerIds.has(String(farmer.id))) return true;
@@ -191,13 +259,17 @@ function farmerStats(storeId: string, farmerIds: Set<string>, farmerNames: Set<s
   const cropNames = new Set<string>();
   let farms = 0;
   farmers.forEach((farmer) => {
+    const farmList = (farmer as Farmer & { farms?: unknown[] }).farms;
+    if (Array.isArray(farmList) && farmList.length > 0) {
+      farms += farmList.length;
+    } else if (farmer.farmAddress) {
+      farms += 1;
+    }
     const crops = Array.isArray(farmer.crops) ? farmer.crops : [];
     if (crops.length === 0 && farmer.cropType) {
-      farms += 1;
       cropNames.add(String(farmer.cropType));
       return;
     }
-    farms += crops.length;
     crops.forEach((crop) => {
       if (crop.cropType) cropNames.add(String(crop.cropType));
     });
@@ -210,14 +282,14 @@ function farmerStats(storeId: string, farmerIds: Set<string>, farmerNames: Set<s
 }
 
 export function buildStoreDashboard(storeId: string, filter: DateFilter) {
-  const invoices = readRows(`${SALES_KEY}:${storeId}`).filter(
+  const invoices = uniqueRows(readRows(`${SALES_KEY}:${storeId}`)).filter(
     (row) => row.id !== "store-sale-1" && String(row.invoiceNo || "").toLowerCase() !== "nb-inv-2001",
   );
-  const returns = readRows(`${RETURN_KEY}:${storeId}`);
-  const credits = readRows(`${CREDIT_KEY}:${storeId}`);
-  const receipts = readRows(`${RECEIPT_KEY}:${storeId}`);
+  const returns = uniqueRows(readRows(`${RETURN_KEY}:${storeId}`));
+  const credits = uniqueRows(readRows(`${CREDIT_KEY}:${storeId}`));
+  const receipts = uniqueRows(readRows(`${RECEIPT_KEY}:${storeId}`));
+  const refunds = uniqueRows(readRows(`nature-biotic-store-refunds-v2:${storeId}`));
   const visits = readRows(`${VISIT_KEY}:${storeId}`);
-  const handovers = readRows(`${HANDOVER_KEY}:${storeId}`);
   const officers = getStaffRecords().filter(
     (member) => member.storeId === storeId && member.status !== "Inactive" && isFieldOfficer(member),
   );
@@ -349,6 +421,189 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
     });
   });
 
+  const resettle = (channel: ChannelSummary, officer?: Staff) => {
+    const owns = (row: any, invoice?: any) => {
+      const through = String(row?.through || invoice?.through || "").toLowerCase();
+      const matched =
+        through === "executive"
+          ? matchOfficer({
+              ...invoice,
+              ...row,
+              executiveName:
+                row?.executiveName || row?.receivedBy || invoice?.executiveName,
+              staffId: row?.staffId || row?.createdByStaffId || invoice?.staffId,
+            })
+          : undefined;
+      if (officer) return matched?.id === officer.id;
+      return through !== "executive";
+    };
+    const periodInvoices = invoices.filter(
+      (invoice) => inPeriod(invoice.date, filter) && owns(invoice),
+    );
+    const invoiceNos = new Set(
+      periodInvoices
+        .map((invoice) => String(invoice.invoiceNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const includedReturns = [...returns, ...credits].filter((row) => {
+      if (row.status === "Rejected") return false;
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      const invoice = invoiceByNo.get(invoiceNo);
+      if (!owns(row, invoice)) return false;
+      return inPeriod(row.date || row.returnDate, filter) || invoiceNos.has(invoiceNo);
+    });
+    const returnNos = new Set(
+      includedReturns
+        .map((row) => String(row.returnNo || row.creditNoteNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const includedReceipts = receipts.filter((row) => {
+      if (!inPeriod(row.date, filter)) return false;
+      const invoice = invoiceByNo.get(String(row.invoiceNo || "").trim().toLowerCase());
+      const receiptStaff = String(
+        row.createdByStaffId || row.staffId || row.froId || "",
+      );
+      if (receiptStaff || row.receivedBy) {
+        const receiptOfficer = matchOfficer({
+          staffId: receiptStaff,
+          createdByStaffId: receiptStaff,
+          executiveName: row.receivedBy,
+        });
+        return officer
+          ? receiptOfficer?.id === officer.id
+          : !receiptOfficer;
+      }
+      return owns(
+        { ...invoice, ...row, through: row.through || invoice?.through },
+        invoice,
+      );
+    });
+    const includedRefunds = refunds.filter((row) => {
+      if (isVoidRefund(row.status)) return false;
+      const salesReturn = [...returns, ...credits].find(
+        (item) =>
+          String(item.returnNo || item.creditNoteNo || "")
+            .trim()
+            .toLowerCase() === String(row.referenceNo || "").trim().toLowerCase(),
+      );
+      const invoice = invoiceByNo.get(
+        String(salesReturn?.invoiceNo || row.invoiceNo || "")
+          .trim()
+          .toLowerCase(),
+      );
+      const linked = returnNos.has(String(row.referenceNo || "").trim().toLowerCase());
+      if (!inPeriod(row.date, filter) && !linked) return false;
+      return owns(
+        {
+          ...row,
+          through: row.through || salesReturn?.through || invoice?.through,
+          executiveName:
+            row.executiveName ||
+            salesReturn?.executiveName ||
+            invoice?.executiveName,
+        },
+        invoice,
+      );
+    });
+    const settled = settleLinkedFarmerAccounts({
+      invoices: periodInvoices,
+      receipts: includedReceipts,
+      returns: includedReturns,
+      refunds: includedRefunds,
+      linkInvoices: invoices,
+      linkReturns: [...returns, ...credits],
+    });
+    const currentInvoices = invoices.filter((invoice) => owns(invoice));
+    const currentReturns = [...returns, ...credits].filter((row) => {
+      if (row.status === "Rejected") return false;
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      return owns(row, invoiceByNo.get(invoiceNo));
+    });
+    const currentReceipts = receipts.filter((row) => {
+      const invoice = invoiceByNo.get(String(row.invoiceNo || "").trim().toLowerCase());
+      const receiptStaff = String(
+        row.createdByStaffId || row.staffId || row.froId || "",
+      );
+      if (receiptStaff || row.receivedBy) {
+        const receiptOfficer = matchOfficer({
+          staffId: receiptStaff,
+          createdByStaffId: receiptStaff,
+          executiveName: row.receivedBy,
+        });
+        return officer
+          ? receiptOfficer?.id === officer.id
+          : !receiptOfficer;
+      }
+      return owns(
+        { ...invoice, ...row, through: row.through || invoice?.through },
+        invoice,
+      );
+    });
+    const currentRefunds = refunds.filter((row) => {
+      if (isVoidRefund(row.status)) return false;
+      const salesReturn = [...returns, ...credits].find(
+        (item) =>
+          String(item.returnNo || item.creditNoteNo || "")
+            .trim()
+            .toLowerCase() === String(row.referenceNo || "").trim().toLowerCase(),
+      );
+      const invoice = invoiceByNo.get(
+        String(salesReturn?.invoiceNo || row.invoiceNo || "")
+          .trim()
+          .toLowerCase(),
+      );
+      return owns(
+        {
+          ...row,
+          through: row.through || salesReturn?.through || invoice?.through,
+          executiveName:
+            row.executiveName ||
+            salesReturn?.executiveName ||
+            invoice?.executiveName,
+        },
+        invoice,
+      );
+    });
+    const current = settleLinkedFarmerAccounts({
+      invoices: currentInvoices,
+      receipts: currentReceipts,
+      returns: currentReturns,
+      refunds: currentRefunds,
+      linkInvoices: invoices,
+      linkReturns: [...returns, ...credits],
+    });
+    channel.sales = settled.sales;
+    channel.collection = settled.collection;
+    channel.outstanding = current.outstanding;
+    channel.outstandingRows = current.outstandingRows.map((row) => ({
+      date: "-",
+      invoiceNo: "",
+      receiptNo: "",
+      farmer: row.farmerName,
+      amount: row.amount,
+      method: "",
+      village: "-",
+      phone: "-",
+      ageing: "",
+    }));
+    settled.collectionAdjustments.forEach((row) => {
+      channel.collectionRows.push({
+        date: "-",
+        invoiceNo: "",
+        receiptNo: row.ref,
+        farmer: row.farmerName,
+        amount: row.amount,
+        method: "Refund",
+        village: "",
+        phone: "",
+        ageing: "",
+      });
+    });
+  };
+
+  resettle(direct);
+  officers.forEach((officer) => resettle(byOfficer.get(officer.id)!, officer));
+
   const directStats = farmerStats(storeId, directFarmerIds, directFarmerNames);
   direct.farmers = directStats.farmers;
   direct.farms = directStats.farms;
@@ -364,14 +619,6 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
       const visitId = String(visit.froId || visit.staffId || "");
       return visitName === nameKey || visitId === officer.id || visitId === officer.accountId;
     });
-    const handed = handovers
-      .filter(
-        (row) =>
-          row.status === "accepted" &&
-          String(row.handedOverBy || "").trim().toLowerCase() === nameKey &&
-          inPeriod(row.date || row.acceptedAt, filter),
-      )
-      .reduce((sum, row) => sum + money(row.amount), 0);
     const farmerIds = new Set<string>();
     const farmerNames = new Set<string>();
     channel.salesRows.forEach((row) => {
@@ -387,7 +634,7 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
       color: colors[index % colors.length],
       sales: channel.sales,
       collection: channel.collection,
-      collectionInHand: Math.max(0, channel.collection - handed),
+      collectionInHand: getFROCashPosition(storeId, officer.name, officer.id).cashInHand,
       outstanding: channel.outstanding,
       farmers: farmerNames.size,
       farms: stats.farms,
@@ -401,12 +648,23 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
       },
       salesRows: channel.salesRows,
       collectionRows: channel.collectionRows,
-      cashRows: channel.collectionRows.map((row) => ({ ...row })),
+      cashRows: getFROCashPosition(storeId, officer.name, officer.id).lines.map((line) => ({
+        date: displayDate(line.date),
+        invoiceNo: "",
+        receiptNo: line.ref,
+        farmer: line.party,
+        amount: line.amount,
+        method: "Cash",
+        village: "",
+        phone: "",
+        ageing: "",
+      })),
       outstandingRows: channel.outstandingRows,
     };
   });
 
   const overviewFarmers = farmerStats(storeId, allFarmerIds, allFarmerNames);
+  const recorded = periodFarmCropCounts(storeId, filter);
 
   return {
     overview: {
@@ -414,8 +672,8 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
       collection: direct.collection + executiveTotals.collection,
       outstanding: direct.outstanding + executiveTotals.outstanding,
       farmers: overviewFarmers.farmers,
-      farms: overviewFarmers.farms,
-      crops: overviewFarmers.crops,
+      farms: recorded.farms,
+      crops: recorded.crops,
       visits: visits.filter((visit) => inPeriod(visit.date, filter)).length,
     },
     direct,

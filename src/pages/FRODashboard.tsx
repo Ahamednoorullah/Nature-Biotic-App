@@ -5,7 +5,17 @@ import {
   getStore,
   getFROStockTxnsByExecutive,
   getFROStockByExecutive,
+  froOwnsTransaction,
+  getFROCashPosition,
+  settleLinkedFarmerAccounts,
 } from "@/lib/data";
+import {
+  attendanceUpdatedEvent,
+  checkInStaff,
+  checkOutStaff,
+  hasCheckedInToday,
+  hasCheckedOutToday,
+} from "@/pages/StoreAttendance";
 import { Card, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 
@@ -26,6 +36,17 @@ type Summary = {
   outstanding: number;
   visits: number;
 };
+
+function isVoidSale(status: string) {
+  const value = status.trim().toLowerCase();
+  return (
+    value === "cancelled" ||
+    value === "canceled" ||
+    value === "rejected" ||
+    value === "void" ||
+    value === "invalid"
+  );
+}
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -121,7 +142,17 @@ function readStorage<T>(key: string): T[] {
   try {
     const raw = localStorage.getItem(key);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    const rows = Array.isArray(parsed) ? parsed : [];
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      const id = String(
+        row?.id || row?.receiptNo || row?.returnNo || row?.refundNo || row?.invoiceNo || "",
+      );
+      if (!id) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
   } catch {
     return [];
   }
@@ -337,6 +368,11 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     window.addEventListener("nature-biotic-handover-updated", refresh);
     window.addEventListener("company-store-sales-updated", refresh);
     window.addEventListener("nature-biotic-cash-received-updated", refresh);
+    window.addEventListener("nature-biotic-store-sales-updated", refresh);
+    window.addEventListener("nature-biotic-store-receipts-updated", refresh);
+    window.addEventListener("nature-biotic-store-refunds-updated", refresh);
+    window.addEventListener("nature-biotic-store-inventory-updated", refresh);
+    window.addEventListener(attendanceUpdatedEvent, refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
@@ -349,6 +385,11 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
       window.removeEventListener("nature-biotic-handover-updated", refresh);
       window.removeEventListener("company-store-sales-updated", refresh);
       window.removeEventListener("nature-biotic-cash-received-updated", refresh);
+      window.removeEventListener("nature-biotic-store-sales-updated", refresh);
+      window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
+      window.removeEventListener("nature-biotic-store-refunds-updated", refresh);
+      window.removeEventListener("nature-biotic-store-inventory-updated", refresh);
+      window.removeEventListener(attendanceUpdatedEvent, refresh);
     };
   }, []);
 
@@ -367,52 +408,66 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   );
 
   const sales = useMemo(() => {
+    const staffKey = String(user.staffId || user.id || "");
     const rows = readStorage<any>(
       `nature-biotic-store-sales-invoices-v2:${storeId}`,
     );
     return rows
-      .filter(
-        (r) =>
+      .filter((r) => {
+        if (isVoidSale(String(r.status || ""))) return false;
+        const byName =
           String(r.executiveName || "")
             .trim()
-            .toLowerCase() === froName,
-      )
+            .toLowerCase() === froName;
+        const byStaff =
+          Boolean(r.createdByStaffId) &&
+          Boolean(staffKey) &&
+          String(r.createdByStaffId) === staffKey;
+        return byName || byStaff;
+      })
       .map((r) => ({
         rawDate: r.date || r.createdAt || "",
         date: dateLabel(String(r.date || r.createdAt || "")),
         invoiceNo: r.invoiceNo || "-",
+        farmerId: String(r.farmerId || ""),
         ...farmerContact(storeFarmers, r.farmerId, {
           name: r.partyName || "Farmer",
           village: r.farmerVillage,
           phone: r.farmerPhone,
         }),
         amount: Number(r.amount || 0),
+        status: String(r.status || ""),
       }));
-  }, [storeId, froName, storeFarmers, refresh]);
+  }, [storeId, froName, storeFarmers, refresh, user.staffId, user.id]);
 
   const collections = useMemo(() => {
     const rows = readStorage<any>(`nature-biotic-store-receipts-v3:${storeId}`);
     return rows
-      .filter(
-        (r) =>
-          String(r.receivedBy || "")
-            .trim()
-            .toLowerCase() === froName,
-      )
+      .filter((r) => {
+        if (isVoidSale(String(r.status || ""))) return false;
+        return froOwnsTransaction(
+          r,
+          user?.name || "",
+          user?.staffId || user?.id,
+        );
+      })
       .map((r) => ({
         rawDate: r.date || r.createdAt || "",
         date: dateLabel(String(r.date || r.createdAt || "")),
         receiptNo: r.receiptNo || "-",
         invoiceNo:
           String(r.invoiceNo || r.billNo || r.invoice || "").trim() || "-",
+        farmerId: String(r.farmerId || ""),
         ...farmerContact(storeFarmers, r.farmerId, {
           name: r.farmerName || "Farmer",
           village: r.village,
           phone: r.phone,
         }),
         amount: Number(r.amount || 0),
+        method: String(r.method || r.paymentMethod || ""),
+        status: String(r.status || ""),
       }));
-  }, [storeId, froName, storeFarmers, refresh]);
+  }, [storeId, froName, storeFarmers, refresh, user?.staffId, user?.id, user?.name]);
 
   const stockReceived = useMemo(() => {
     const challans = readStorage<any>(
@@ -423,7 +478,8 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
         (c) =>
           String(c.executive || "")
             .trim()
-            .toLowerCase() === froName,
+            .toLowerCase() === froName &&
+          String(c.status || "").toLowerCase() === "accepted",
       )
       .flatMap((c) =>
         (Array.isArray(c.items) ? c.items : []).map((item: any) => ({
@@ -454,14 +510,144 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   }, [storeId, froName]);
 
   const filteredSales = useMemo(
-    () => sales.filter((row) => inSelectedRange(row.rawDate, dateFilter)),
+    () =>
+      sales
+        .filter((row) => !isVoidSale(row.status))
+        .filter((row) => inSelectedRange(row.rawDate, dateFilter)),
     [sales, dateFilter],
   );
 
   const filteredCollections = useMemo(
-    () => collections.filter((row) => inSelectedRange(row.rawDate, dateFilter)),
+    () =>
+      collections
+        .filter((row) => !isVoidSale(row.status))
+        .filter((row) => inSelectedRange(row.rawDate, dateFilter)),
     [collections, dateFilter],
   );
+
+  const accountRows = useMemo(() => {
+    const staffKey = String(user.staffId || user.id || "");
+    const belongsToFro = (row: any) => {
+      const byName =
+        String(row?.executiveName || "")
+          .trim()
+          .toLowerCase() === froName;
+      const byStaff =
+        Boolean(row?.createdByStaffId || row?.staffId) &&
+        Boolean(staffKey) &&
+        String(row?.createdByStaffId || row?.staffId) === staffKey;
+      return byName || byStaff;
+    };
+    const returns = readStorage<any>(
+      `nature-biotic-store-sales-returns-v2:${storeId}`,
+    );
+    const refunds = readStorage<any>(
+      `nature-biotic-store-refunds-v2:${storeId}`,
+    );
+    const invoiceNos = new Set(
+      filteredSales
+        .map((row) => String(row.invoiceNo || "").trim().toLowerCase())
+        .filter((invoiceNo) => invoiceNo && invoiceNo !== "-"),
+    );
+    const froReturns = returns.filter((row) => {
+      const invoiceNo = String(row?.invoiceNo || "").trim().toLowerCase();
+      return belongsToFro(row) || invoiceNos.has(invoiceNo) || sales.some(
+        (invoice) =>
+          String(invoice.invoiceNo || "").trim().toLowerCase() === invoiceNo &&
+          invoiceNo !== "",
+      );
+    });
+    const periodReturns = froReturns.filter((row) => {
+      const invoiceNo = String(row?.invoiceNo || "").trim().toLowerCase();
+      return inSelectedRange(String(row?.date || ""), dateFilter) || invoiceNos.has(invoiceNo);
+    });
+    const returnNos = new Set(
+      periodReturns
+        .map((row) => String(row?.returnNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const periodRefunds = refunds.filter((row) => {
+      const reference = String(row?.referenceNo || "").trim().toLowerCase();
+      const linked = returnNos.has(reference);
+      if (!linked && !inSelectedRange(String(row?.date || ""), dateFilter)) return false;
+      const salesReturn = returns.find(
+        (item) => String(item?.returnNo || "").trim().toLowerCase() === reference,
+      );
+      return linked || belongsToFro(row) || belongsToFro(salesReturn);
+    });
+    const linkInvoices = sales.map((row) => ({
+      invoiceNo: row.invoiceNo,
+      farmerId: row.farmerId,
+      partyName: row.farmerName,
+    }));
+    const period = settleLinkedFarmerAccounts({
+      invoices: filteredSales.map((row) => ({
+        id: row.invoiceNo,
+        invoiceNo: row.invoiceNo,
+        farmerId: row.farmerId,
+        farmerName: row.farmerName,
+        amount: row.amount,
+        status: row.status,
+      })),
+      receipts: filteredCollections.map((row) => ({
+        id: row.receiptNo,
+        farmerId: row.farmerId,
+        farmerName: row.farmerName,
+        amount: row.amount,
+        status: row.status,
+      })),
+      returns: periodReturns,
+      refunds: periodRefunds,
+      linkInvoices,
+      linkReturns: froReturns,
+    });
+    const currentRefunds = refunds.filter((row) => {
+      const reference = String(row?.referenceNo || "").trim().toLowerCase();
+      const salesReturn = returns.find(
+        (item) => String(item?.returnNo || "").trim().toLowerCase() === reference,
+      );
+      const linked = froReturns.some(
+        (item) => String(item?.returnNo || "").trim().toLowerCase() === reference,
+      );
+      return linked || belongsToFro(row) || belongsToFro(salesReturn);
+    });
+    const current = settleLinkedFarmerAccounts({
+      invoices: sales.map((row) => ({
+        id: row.invoiceNo,
+        invoiceNo: row.invoiceNo,
+        farmerId: row.farmerId,
+        farmerName: row.farmerName,
+        amount: row.amount,
+        status: row.status,
+      })),
+      receipts: collections.map((row) => ({
+        id: row.receiptNo,
+        farmerId: row.farmerId,
+        farmerName: row.farmerName,
+        amount: row.amount,
+        status: row.status,
+      })),
+      returns: froReturns,
+      refunds: currentRefunds,
+      linkInvoices,
+      linkReturns: froReturns,
+    });
+    return { period, current };
+  }, [
+    filteredSales,
+    filteredCollections,
+    sales,
+    collections,
+    storeId,
+    froName,
+    dateFilter,
+    user.staffId,
+    user.id,
+    refresh,
+  ]);
+
+  const periodAccounts = accountRows.period;
+  const currentAccounts = accountRows.current;
 
   const filteredStockReceived = useMemo(
     () =>
@@ -469,45 +655,33 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     [stockReceived, dateFilter],
   );
 
-  const cashRows = collections.map((r) => ({
-    date: r.date,
-    receiptNo: r.receiptNo,
-    farmerName: r.farmerName,
-    village: r.village,
-    phone: r.phone,
-    amount: r.amount,
+  const cashPosition = useMemo(
+    () =>
+      getFROCashPosition(
+        storeId,
+        user?.name || "",
+        user?.staffId,
+        user?.id,
+      ),
+    [storeId, user?.name, user?.staffId, user?.id, refresh],
+  );
+
+  const cashRows = cashPosition.lines.map((row) => ({
+    date: dateLabel(row.date),
+    receiptNo: row.ref,
+    farmerName: row.party,
+    village: "",
+    phone: "",
+    amount: row.amount,
   }));
 
-  const receiptByInvoice = useMemo(() => {
-    const map = new Map<string, number>();
-    collections.forEach((receipt) => {
-      const invoiceNo = String(receipt.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      if (!invoiceNo || invoiceNo === "-") return;
-      map.set(
-        invoiceNo,
-        (map.get(invoiceNo) || 0) + Number(receipt.amount || 0),
-      );
-    });
-    return map;
-  }, [collections]);
-
-  const outstandingRows = sales
-    .map((r) => {
-      const invoiceNo = String(r.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      const paid = receiptByInvoice.get(invoiceNo) || 0;
-      return {
-        date: r.date,
-        farmerName: r.farmerName,
-        village: r.village,
-        phone: r.phone,
-        amount: Math.max(Number(r.amount || 0) - paid, 0),
-      };
-    })
-    .filter((r) => r.amount > 0);
+  const outstandingRows = currentAccounts.outstandingRows.map((row) => ({
+    date: "-",
+    farmerName: row.farmerName,
+    village: "-",
+    phone: "-",
+    amount: row.amount,
+  }));
 
   // Visit records are read from the existing visit-related localStorage data.
   // Multiple visit storage keys are supported so the dashboard does not depend
@@ -669,67 +843,12 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     [currentHandStock],
   );
 
-  // Cash in Hand, Outstanding, and Hand Stock are current balances.
-  // Today / Weekly / Monthly / Quarterly / Yearly do not change them.
-  const handovers = useMemo(
-    () =>
-      readStorage<any>(`nature-biotic-fro-handovers-v1:${storeId}`).filter(
-        (row) =>
-          (!row.handedOverBy ||
-            String(row.handedOverBy).trim().toLowerCase() === froName) &&
-          (!row.status || row.status === "accepted"),
-      ),
-    [storeId, froName, refresh],
-  );
-
-  const froExpenses = useMemo(
-    () =>
-      readStorage<any>("naturebiotic_shared_expenses").filter(
-        (row) =>
-          String(row.enteredBy || "")
-            .trim()
-            .toLowerCase() === froName,
-      ),
-    [froName, refresh],
-  );
-
-  const froRefunds = useMemo(
-    () => readStorage<any>(`nature-biotic-fro-cash-refunds-v1:${storeId}`),
-    [storeId, refresh],
-  );
-
-  const totalSales = filteredSales.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const totalCollection = filteredCollections.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const currentCollection = collections.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const totalOutstanding = outstandingRows.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const totalHandedOver = handovers.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const totalExpenses = froExpenses.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const totalRefunds = froRefunds.reduce(
-    (sum, row) => sum + Number(row.amount || 0),
-    0,
-  );
-  const cashInHand = Math.max(
-    currentCollection - totalHandedOver - totalExpenses - totalRefunds,
-    0,
-  );
+  // Sales and collection follow the selected date.
+  // Outstanding is the current unpaid balance and ignores the date filter.
+  const totalSales = periodAccounts.sales;
+  const totalCollection = periodAccounts.collection;
+  const totalOutstanding = currentAccounts.outstanding;
+  const cashInHand = cashPosition.cashInHand;
 
   const stockReceivedValue = filteredStockReceived.reduce(
     (sum, row) => sum + Number(row.value || 0),
@@ -829,6 +948,41 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-md px-3 pb-24 pt-3 sm:px-4 sm:pt-4 lg:max-w-none lg:px-0 lg:pb-0">
+      <div className="mb-3 flex justify-end gap-2">
+        <button
+          type="button"
+          disabled={hasCheckedInToday(storeId, user?.staffId || user?.id || "")}
+          onClick={() =>
+            checkInStaff(storeId, user?.staffId || user?.id || "")
+          }
+          className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white disabled:bg-emerald-50 disabled:text-emerald-700"
+        >
+          {hasCheckedInToday(storeId, user?.staffId || user?.id || "")
+            ? "Checked In"
+            : "Check In"}
+        </button>
+        <button
+          type="button"
+          disabled={
+            !hasCheckedInToday(storeId, user?.staffId || user?.id || "") ||
+            hasCheckedOutToday(storeId, user?.staffId || user?.id || "")
+          }
+          onClick={() =>
+            checkOutStaff(storeId, user?.staffId || user?.id || "")
+          }
+          className={`rounded-xl px-4 py-2 text-sm font-bold ${
+            hasCheckedOutToday(storeId, user?.staffId || user?.id || "")
+              ? "bg-emerald-50 text-emerald-700"
+              : hasCheckedInToday(storeId, user?.staffId || user?.id || "")
+                ? "bg-brand-600 text-white"
+                : "bg-slate-100 text-slate-400"
+          }`}
+        >
+          {hasCheckedOutToday(storeId, user?.staffId || user?.id || "")
+            ? "Checked Out"
+            : "Check Out"}
+        </button>
+      </div>
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
         <div className="flex flex-wrap">
           {filters.map((filter) => (

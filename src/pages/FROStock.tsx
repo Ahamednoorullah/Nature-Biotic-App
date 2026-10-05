@@ -6,6 +6,7 @@ import {
   addFROStock,
   getStoreAvailableQty,
   getFROStockByExecutive,
+  getProductsByStore,
   persistDeliveryChallanAccepted,
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
@@ -47,6 +48,14 @@ type ReturnRequestItem = {
   expiryDate: string;
   qty: number;
   unitValue: number;
+  reason?: string;
+};
+
+type ReturnLineDraft = {
+  key: string;
+  stockKey: string;
+  qty: string;
+  reason: string;
 };
 
 type ReturnRequest = {
@@ -56,6 +65,7 @@ type ReturnRequest = {
   storeId: string;
   froName: string;
   reason: string;
+  discount?: number;
   status: "pending" | "accepted";
   createdAt: string;
   acceptedAt?: string;
@@ -108,9 +118,10 @@ export default function FROStock() {
   const [selectedReturn, setSelectedReturn] = useState<ReturnRequest | null>(
     null,
   );
-  const [returnProductId, setReturnProductId] = useState("");
-  const [returnQty, setReturnQty] = useState("");
-  const [returnReason, setReturnReason] = useState("");
+  const [returnLines, setReturnLines] = useState<ReturnLineDraft[]>([
+    { key: "line-1", stockKey: "", qty: "", reason: "" },
+  ]);
+  const [returnDiscount, setReturnDiscount] = useState("");
   const [stockVersion, setStockVersion] = useState(0);
 
   const loasdhallans = () => {
@@ -320,9 +331,8 @@ export default function FROStock() {
   );
 
   function resetReturnForm() {
-    setReturnProductId("");
-    setReturnQty("");
-    setReturnReason("");
+    setReturnLines([{ key: `line-${Date.now()}`, stockKey: "", qty: "", reason: "" }]);
+    setReturnDiscount("");
   }
 
   const nextStockReturnNo = useMemo(() => {
@@ -335,12 +345,8 @@ export default function FROStock() {
   }, [returnRequests]);
 
   function createReturnRequest() {
-    const selectedStock = returnStockOptions.find(
-      (item) =>
-        `${item.product}|${item.packSize}|${item.batchNo}` === returnProductId,
-    );
-    const qty = Number(returnQty || 0);
-    if (!selectedStock || qty <= 0 || qty > selectedStock.qty) return;
+    if (!returnLinesValid) return;
+    const items = returnLineTotals.filter((line) => line.qty > 0);
 
     const request: ReturnRequest = {
       id: `fro-return-${Date.now()}`,
@@ -348,15 +354,24 @@ export default function FROStock() {
       date: new Date().toISOString().split("T")[0],
       storeId: user?.storeId || "default",
       froName: user?.name || "",
-      reason: returnReason.trim() || "Stock return",
+      reason:
+        items
+          .map((item) => item.reason)
+          .filter(Boolean)
+          .join(", ") || "Stock return",
+      discount: returnTotals.discount,
       status: "pending",
       createdAt: new Date().toISOString(),
-      items: [
-        {
-          ...selectedStock,
-          qty,
-        },
-      ],
+      items: items.map((item) => ({
+        productId: item.productId,
+        product: item.product,
+        packSize: item.packSize,
+        batchNo: item.batchNo,
+        expiryDate: item.expiryDate,
+        qty: item.qty,
+        unitValue: item.unitValue,
+        reason: item.reason,
+      })),
     };
 
     const next = [request, ...returnRequests];
@@ -381,6 +396,7 @@ export default function FROStock() {
           id: `${challan.id}-${index}`,
           sdNo: challan.sdNo,
           date: challan.date,
+          executive: challan.executive,
           product: item.product,
           packSize: item.packSize,
           batchNo: item.batchNo,
@@ -405,6 +421,222 @@ export default function FROStock() {
       unitValue: Number(item.unitValue || 0),
     }));
   }, [user?.storeId, user?.name, stockVersion]);
+
+  const returnLineTotals = useMemo(() => {
+    const catalog = getProductsByStore(user?.storeId || "default");
+    const used = new Map<string, number>();
+    return returnLines.map((line) => {
+      const stock = returnStockOptions.find(
+        (item) => `${item.product}|${item.packSize}|${item.batchNo}` === line.stockKey,
+      );
+      const qty = Math.max(0, Number(line.qty || 0));
+      const already = used.get(line.stockKey) || 0;
+      if (stock && line.stockKey) used.set(line.stockKey, already + qty);
+      const available = Math.max(0, Number(stock?.qty || 0) - already);
+      const product = catalog.find(
+        (item) =>
+          item.id === stock?.productId ||
+          item.name.trim().toLowerCase() === String(stock?.product || "").trim().toLowerCase(),
+      );
+      const taxType = String(product?.taxType || "").toLowerCase();
+      const explicitCgst = Number(product?.cgst || 0);
+      const explicitSgst = Number(product?.sgst || 0);
+      const explicitIgst = Number(product?.igst || 0);
+      let cgstPercent = explicitCgst;
+      let sgstPercent = explicitSgst;
+      let igstPercent = explicitIgst;
+      if (!cgstPercent && !sgstPercent && !igstPercent) {
+        const totalTax = Number(product?.taxPercentage || 0);
+        if (taxType.includes("interstate") || taxType.includes("igst")) {
+          igstPercent = totalTax;
+        } else {
+          cgstPercent = totalTax / 2;
+          sgstPercent = totalTax / 2;
+        }
+      }
+      return {
+        key: line.key,
+        stock,
+        productId: stock?.productId || "",
+        product: stock?.product || "",
+        packSize: stock?.packSize || "",
+        batchNo: stock?.batchNo || "",
+        expiryDate: stock?.expiryDate || "",
+        unitValue: Number(stock?.unitValue || 0),
+        qty,
+        available,
+        reason: line.reason.trim(),
+        base: qty * Number(stock?.unitValue || 0),
+        cgstPercent,
+        sgstPercent,
+        igstPercent,
+        over: !!stock && qty > available,
+      };
+    });
+  }, [returnLines, returnStockOptions, user?.storeId]);
+
+  const returnTotals = useMemo(() => {
+    const beforeDiscount = returnLineTotals.reduce((sum, line) => sum + line.base, 0);
+    const discount = Math.min(
+      Math.max(0, Number(returnDiscount || 0)),
+      beforeDiscount,
+    );
+    let taxable = 0;
+    let sgst = 0;
+    let cgst = 0;
+    let igst = 0;
+    returnLineTotals.forEach((line) => {
+      const share = beforeDiscount > 0 ? line.base / beforeDiscount : 0;
+      const lineTaxable = Math.max(0, line.base - discount * share);
+      taxable += lineTaxable;
+      sgst += (lineTaxable * line.sgstPercent) / 100;
+      cgst += (lineTaxable * line.cgstPercent) / 100;
+      igst += (lineTaxable * line.igstPercent) / 100;
+    });
+    return {
+      beforeDiscount,
+      discount,
+      taxable,
+      sgst,
+      cgst,
+      igst,
+      grandTotal: taxable + sgst + cgst + igst,
+    };
+  }, [returnLineTotals, returnDiscount]);
+
+  const filledReturnLines = returnLineTotals.filter(
+    (line) => line.stock || line.qty > 0,
+  );
+  const returnLinesValid =
+    filledReturnLines.length > 0 &&
+    filledReturnLines.every((line) => line.stock && line.qty > 0 && !line.over);
+
+  function updateReturnLine(key: string, patch: Partial<ReturnLineDraft>) {
+    setReturnLines((current) =>
+      current.map((line) => (line.key === key ? { ...line, ...patch } : line)),
+    );
+  }
+
+  function renderReturnEditor() {
+    return (
+      <>
+        {returnLines.map((line, index) => {
+          const totals = returnLineTotals.find((item) => item.key === line.key);
+          return (
+            <div key={line.key} className="space-y-3 rounded-xl border border-slate-200 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-bold text-slate-700">Product {index + 1}</p>
+                {returnLines.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setReturnLines((current) => current.filter((item) => item.key !== line.key))
+                    }
+                    className="text-xs font-semibold text-red-600"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Product</label>
+                <select
+                  value={line.stockKey}
+                  onChange={(e) => updateReturnLine(line.key, { stockKey: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
+                >
+                  <option value="">Select stock</option>
+                  {returnStockOptions.map((item) => {
+                    const value = `${item.product}|${item.packSize}|${item.batchNo}`;
+                    return (
+                      <option key={value} value={value}>
+                        {item.product} • Available {item.qty}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Pack Size</label>
+                  <input value={totals?.packSize || ""} readOnly className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Batch No</label>
+                  <input value={totals?.batchNo || ""} readOnly className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Expiry Date</label>
+                  <input value={totals?.expiryDate ? formatDate(totals.expiryDate) : ""} readOnly className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">Price</label>
+                  <input value={totals?.stock ? formatCurrency(totals.unitValue) : ""} readOnly className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Return Qty</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={line.qty}
+                  onChange={(e) => updateReturnLine(line.key, { qty: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
+                  placeholder="Enter quantity"
+                />
+                {totals?.over && (
+                  <p className="mt-1 text-[11px] font-semibold text-red-600">
+                    Available {totals.available}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Reason</label>
+                <input
+                  value={line.reason}
+                  onChange={(e) => updateReturnLine(line.key, { reason: e.target.value })}
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
+                  placeholder="e.g. Unsold stock"
+                />
+              </div>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() =>
+            setReturnLines((current) => [
+              ...current,
+              { key: `line-${Date.now()}`, stockKey: "", qty: "", reason: "" },
+            ])
+          }
+          className="w-full rounded-xl border border-dashed border-brand-300 px-3 py-2.5 text-sm font-semibold text-brand-700"
+        >
+          + Add Product
+        </button>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-slate-600">Discount</label>
+          <input
+            type="number"
+            min="0"
+            value={returnDiscount}
+            onChange={(e) => setReturnDiscount(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-1 rounded-xl bg-slate-50 p-3 text-xs">
+          <div className="flex justify-between"><span>Total Before Discount</span><span>{formatCurrency(returnTotals.beforeDiscount)}</span></div>
+          <div className="flex justify-between"><span>Discount</span><span>{formatCurrency(returnTotals.discount)}</span></div>
+          <div className="flex justify-between"><span>Taxable Total</span><span>{formatCurrency(returnTotals.taxable)}</span></div>
+          <div className="flex justify-between"><span>SGST</span><span>{formatCurrency(returnTotals.sgst)}</span></div>
+          <div className="flex justify-between"><span>CGST</span><span>{formatCurrency(returnTotals.cgst)}</span></div>
+          <div className="flex justify-between"><span>IGST</span><span>{formatCurrency(returnTotals.igst)}</span></div>
+          <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>Grand Total</span><span>{formatCurrency(returnTotals.grandTotal)}</span></div>
+        </div>
+      </>
+    );
+  }
 
   const acceptedReturnItems = useMemo(
     () =>
@@ -486,12 +718,8 @@ export default function FROStock() {
   );
 
   const totalStockProductRows = useMemo(() => {
-    // Product list is limited to products currently present in Hand Stock,
-    // but Total Stock quantity/value is the cumulative accepted quantity
-    // received across all dates.
-    const currentHandKeys = new Set(
-      handStockRows.map((row) => `${row.product}|${row.packSize}`),
-    );
+    // Total received is the sum of accepted stock deliveries only.
+    // Sales and sales returns do not change this quantity.
     const map = new Map<
       string,
       { product: string; packSize: string; qty: number; value: number }
@@ -499,7 +727,6 @@ export default function FROStock() {
 
     receivedItems.forEach((item) => {
       const key = `${item.product}|${item.packSize}`;
-      if (!currentHandKeys.has(key)) return;
       const row = map.get(key) || {
         product: item.product,
         packSize: item.packSize,
@@ -514,24 +741,16 @@ export default function FROStock() {
     return Array.from(map.values()).sort((a, b) =>
       `${a.product}${a.packSize}`.localeCompare(`${b.product}${b.packSize}`),
     );
-  }, [receivedItems, handStockRows]);
-
-  const filteredTotalStockMovements = useMemo(
-    () =>
-      receivedItems.filter((item) =>
-        matchesDateFilter(item.date, totalStockFilter, totalStockCustomDate),
-      ),
-    [receivedItems, totalStockFilter, totalStockCustomDate, todayKey, monthKey],
-  );
+  }, [receivedItems]);
 
   const selectedTotalProductRows = useMemo(() => {
     if (!selectedTotalProduct) return [];
-    return filteredTotalStockMovements
+    return receivedItems
       .filter(
         (item) => `${item.product}|${item.packSize}` === selectedTotalProduct,
       )
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }, [filteredTotalStockMovements, selectedTotalProduct]);
+  }, [receivedItems, selectedTotalProduct]);
 
   const stockCards = [
     {
@@ -684,7 +903,13 @@ export default function FROStock() {
                       className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3"
                     >
                       <span className="text-[11px] text-slate-400">{index + 1}</span>
-                      <span className="text-xs font-medium text-slate-700">{formatDate(item.date)}</span>
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium text-slate-700">{formatDate(item.date)}</span>
+                        <span className="mt-0.5 block truncate text-[10px] text-slate-500">
+                          {item.sdNo || "-"} · {formatCurrency(item.unitValue)}
+                          {item.executive ? ` · ${item.executive}` : ""}
+                        </span>
+                      </span>
                       <span className="text-right text-xs font-bold text-slate-800">{item.qty}</span>
                       <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(item.value)}</span>
                     </div>
@@ -742,10 +967,6 @@ export default function FROStock() {
     }
 
     if (activeStockView === "return-form") {
-      const selectedReturnStock = returnStockOptions.find(
-        (item) =>
-          `${item.product}|${item.packSize}|${item.batchNo}` === returnProductId,
-      );
       return (
         <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
           {stockViewHeader("Return Stock", "Send stock return request to the Store", "text-amber-600")}
@@ -758,44 +979,7 @@ export default function FROStock() {
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none"
               />
             </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Product / Size / Batch</label>
-              <select
-                value={returnProductId}
-                onChange={(e) => setReturnProductId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
-              >
-                <option value="">Select stock</option>
-                {returnStockOptions.map((item) => {
-                  const value = `${item.product}|${item.packSize}|${item.batchNo}`;
-                  return (
-                    <option key={value} value={value}>
-                      {item.product} • {item.packSize} • {item.batchNo || "-"} • Available {item.qty}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Return Quantity</label>
-              <input
-                type="number"
-                min="1"
-                value={returnQty}
-                onChange={(e) => setReturnQty(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
-                placeholder="Enter quantity"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Reason</label>
-              <input
-                value={returnReason}
-                onChange={(e) => setReturnReason(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
-                placeholder="e.g. Unsold stock"
-              />
-            </div>
+            {renderReturnEditor()}
             <div className="flex gap-3 border-t border-slate-200 pt-3">
               <Button
                 variant="secondary"
@@ -809,11 +993,7 @@ export default function FROStock() {
               </Button>
               <Button
                 className="w-full"
-                disabled={
-                  !returnProductId ||
-                  Number(returnQty || 0) <= 0 ||
-                  Number(returnQty || 0) > (selectedReturnStock?.qty || 0)
-                }
+                disabled={!returnLinesValid}
                 onClick={() => {
                   createReturnRequest();
                   setActiveStockView("returned");
@@ -1505,7 +1685,7 @@ export default function FROStock() {
       {showReturnForm &&
         createPortal(
           <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4">
-            <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
@@ -1527,7 +1707,7 @@ export default function FROStock() {
                 </button>
               </div>
 
-              <div className="space-y-4 p-4 sm:p-5">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold text-slate-600">
                     Stock Return No
@@ -1542,53 +1722,7 @@ export default function FROStock() {
                   </p>
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                    Product / Size / Batch
-                  </label>
-                  <select
-                    value={returnProductId}
-                    onChange={(e) => setReturnProductId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-brand-500"
-                  >
-                    <option value="">Select stock</option>
-                    {returnStockOptions.map((item) => {
-                      const value = `${item.product}|${item.packSize}|${item.batchNo}`;
-                      return (
-                        <option key={value} value={value}>
-                          {item.product} • {item.packSize} •{" "}
-                          {item.batchNo || "-"} • Available {item.qty}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                    Return Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={returnQty}
-                    onChange={(e) => setReturnQty(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-brand-500"
-                    placeholder="Enter quantity"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
-                    Reason
-                  </label>
-                  <input
-                    value={returnReason}
-                    onChange={(e) => setReturnReason(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-brand-500"
-                    placeholder="e.g. Unsold stock"
-                  />
-                </div>
+                {renderReturnEditor()}
               </div>
 
               <div className="flex gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
@@ -1604,16 +1738,7 @@ export default function FROStock() {
                 </Button>
                 <Button
                   className="w-full"
-                  disabled={
-                    !returnProductId ||
-                    Number(returnQty || 0) <= 0 ||
-                    Number(returnQty || 0) >
-                      (returnStockOptions.find(
-                        (item) =>
-                          `${item.product}|${item.packSize}|${item.batchNo}` ===
-                          returnProductId,
-                      )?.qty || 0)
-                  }
+                  disabled={!returnLinesValid}
                   onClick={createReturnRequest}
                 >
                   Send Return
@@ -1940,8 +2065,14 @@ export default function FROStock() {
                         <span className="text-[11px] text-slate-400">
                           {index + 1}
                         </span>
-                        <span className="text-xs font-medium text-slate-700">
-                          {formatDate(item.date)}
+                        <span className="min-w-0">
+                          <span className="block text-xs font-medium text-slate-700">
+                            {formatDate(item.date)}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[10px] text-slate-500">
+                            {item.sdNo || "-"} · {formatCurrency(item.unitValue)}
+                            {item.executive ? ` · ${item.executive}` : ""}
+                          </span>
                         </span>
                         <span className="text-right text-xs font-bold text-slate-800">
                           {item.qty}

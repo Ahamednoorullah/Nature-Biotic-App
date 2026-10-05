@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  froOwnsTransaction,
   getFROStockByExecutive,
   getFinalCompanyStoreSales,
   getStoredFarmers,
   isStorePurchaseReceived,
+  settleLinkedFarmerAccounts,
   staff,
 } from "@/lib/data";
 import { buildInventoryRows } from "@/pages/StoreInventory";
@@ -40,7 +42,13 @@ function sameName(value: unknown, name: string) {
 export default function StoreReports({ storeId }: { storeId: string }) {
   const { user } = useAuth();
   if (user?.role === "fro") {
-    return <FroReportView storeId={storeId} name={user.name} />;
+    return (
+      <FroReportView
+        storeId={storeId}
+        name={user.name}
+        staffId={user.staffId || user.id}
+      />
+    );
   }
   return <StoreReportView storeId={storeId} />;
 }
@@ -271,13 +279,78 @@ function StoreReportView({ storeId }: { storeId: string }) {
     const periodReturns = returns.filter((row) => dated(row.date) && row.status !== "Rejected");
     const periodPurchaseReturns = purchaseReturns.filter((row) => dated(row.date));
     const periodExpenses = expenses.filter((row) => dated(row.date));
+    const periodInvoiceNos = new Set(
+      periodSales
+        .map((row) => String(row.invoiceNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const linkedReturns = returns.filter((row) => {
+      if (row.status === "Rejected") return false;
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      return dated(row.date) || periodInvoiceNos.has(invoiceNo);
+    });
+    const linkedReturnNos = new Set(
+      linkedReturns
+        .map((row) => String(row.returnNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const linkedRefunds = readRows(`nature-biotic-store-refunds-v2:${storeId}`).filter(
+      (row) =>
+        dated(row.date) ||
+        linkedReturnNos.has(String(row.referenceNo || "").trim().toLowerCase()),
+    );
+    linkedRefunds.forEach((row) => {
+      const day = formatDate(String(row.date || "")) || "Undated";
+      collectionByDate.set(day, (collectionByDate.get(day) || 0) - money(row.amount));
+    });
+    const settled = settleLinkedFarmerAccounts({
+      invoices: periodSales,
+      receipts: periodReceipts,
+      returns: linkedReturns,
+      refunds: linkedRefunds,
+      linkInvoices: sales,
+      linkReturns: returns,
+    });
+    const creditNotes = readRows(`nature-biotic-store-credit-notes-v3:${storeId}`);
+    const currentSettled = settleLinkedFarmerAccounts({
+      invoices: sales,
+      receipts,
+      returns: [...returns, ...creditNotes].filter((row) => row.status !== "Rejected"),
+      refunds: readRows(`nature-biotic-store-refunds-v2:${storeId}`),
+      linkInvoices: sales,
+      linkReturns: [...returns, ...creditNotes],
+    });
+    const currentByFarmer = new Map(
+      currentSettled.farmers.map((row) => [row.farmerName.trim().toLowerCase(), row]),
+    );
+    const listedFarmers = new Set<string>();
+    const farmerRows = settled.farmers.map((row) => {
+      listedFarmers.add(row.farmerName.trim().toLowerCase());
+      const current = currentByFarmer.get(row.farmerName.trim().toLowerCase());
+      return [
+        row.farmerName,
+        formatCurrency(row.sales),
+        formatCurrency(row.collection),
+        formatCurrency(current?.outstanding || 0),
+      ];
+    });
+    currentSettled.farmers.forEach((row) => {
+      const key = row.farmerName.trim().toLowerCase();
+      if (listedFarmers.has(key) || row.outstanding <= 0) return;
+      farmerRows.push([
+        row.farmerName,
+        formatCurrency(0),
+        formatCurrency(0),
+        formatCurrency(row.outstanding),
+      ]);
+    });
 
     return {
-      salesValue,
+      salesValue: settled.sales,
       invoiceCount: periodSales.length,
       quantitySold,
-      collection,
-      outstanding,
+      collection: settled.collection,
+      outstanding: currentSettled.outstanding,
       purchaseValue: Array.from(purchaseGroups.values()).reduce(
         (sum, row) => sum + row.value,
         0,
@@ -335,9 +408,9 @@ function StoreReportView({ storeId }: { storeId: string }) {
         String(row.farmerName || row.partyName || "-"),
         formatCurrency(money(row.amount)),
       ]),
-      outstandingRows: Array.from(farmerSales.entries())
-        .filter(([, value]) => value.outstanding > 0)
-        .map(([name, value]) => [name, formatCurrency(value.outstanding)]),
+      outstandingRows: currentSettled.farmers
+        .filter((row) => row.outstanding > 0)
+        .map((row) => [row.farmerName, formatCurrency(row.outstanding)]),
       purchaseRows: Array.from(purchaseGroups.entries()).map(([invoiceNo, row]) => [
         invoiceNo,
         formatDate(row.date),
@@ -380,12 +453,7 @@ function StoreReportView({ storeId }: { storeId: string }) {
         String(row.category || "-"),
         formatCurrency(money(row.amount)),
       ]),
-      farmerRows: Array.from(farmerSales.entries()).map(([name, value]) => [
-        name,
-        formatCurrency(value.sales),
-        formatCurrency(value.collection),
-        formatCurrency(value.outstanding),
-      ]),
+      farmerRows,
     };
   }, [storeId, filter, customFrom, customTo, version, user?.name]);
 
@@ -550,7 +618,15 @@ function StoreReportView({ storeId }: { storeId: string }) {
   );
 }
 
-function FroReportView({ storeId, name }: { storeId: string; name: string }) {
+function FroReportView({
+  storeId,
+  name,
+  staffId,
+}: {
+  storeId: string;
+  name: string;
+  staffId?: string;
+}) {
   const froName = name.trim().toLowerCase();
   const [filter, setFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
@@ -568,6 +644,8 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
       "nature-biotic-fro-stock-return-updated",
       "nature-biotic-expense-updated",
       "nature-biotic-fro-visits-updated",
+      "nature-biotic-store-refunds-updated",
+      "nature-biotic-store-sales-updated",
     ];
     events.forEach((event) => window.addEventListener(event, refresh));
     return () => events.forEach((event) => window.removeEventListener(event, refresh));
@@ -575,21 +653,44 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
   const report = useMemo(() => {
     const dated = (value: unknown) =>
       matchesSimpleDate(String(value || ""), filter, customFrom, customTo);
-    const sales = readRows(`nature-biotic-store-sales-invoices-v2:${storeId}`).filter(
-      (row) => sameName(row.executiveName, froName) && dated(row.date),
+    const ownedSales = readRows(`nature-biotic-store-sales-invoices-v2:${storeId}`).filter(
+      (row) => froOwnsTransaction(row, name, staffId),
     );
-    const collections = readRows(`nature-biotic-store-receipts-v3:${storeId}`).filter(
-      (row) => sameName(row.receivedBy, froName) && dated(row.date),
+    const sales = ownedSales.filter((row) => dated(row.date));
+    const ownedCollections = readRows(`nature-biotic-store-receipts-v3:${storeId}`).filter(
+      (row) => froOwnsTransaction(row, name, staffId),
     );
-    const returns = readRows(`nature-biotic-store-sales-returns-v2:${storeId}`).filter(
-      (row) => sameName(row.executiveName, froName) && dated(row.date),
+    const collections = ownedCollections.filter((row) => dated(row.date));
+    const allReturns = readRows(`nature-biotic-store-sales-returns-v2:${storeId}`).filter(
+      (row) =>
+        sameName(row.executiveName, froName) ||
+        sales.some(
+          (invoice) =>
+            String(invoice.invoiceNo || "").trim().toLowerCase() ===
+            String(row.invoiceNo || "").trim().toLowerCase(),
+        ) ||
+        ownedSales.some(
+          (invoice) =>
+            String(invoice.invoiceNo || "").trim().toLowerCase() ===
+            String(row.invoiceNo || "").trim().toLowerCase(),
+        ),
     );
+    const returns = allReturns.filter((row) => dated(row.date));
     const expenses = readRows("naturebiotic_shared_expenses").filter(
       (row) =>
         sameName(row.enteredBy, froName) &&
         !/^exp\d+$/.test(String(row.id || "")) &&
         dated(row.date),
     );
+    const refunds = readRows(`nature-biotic-store-refunds-v2:${storeId}`).filter((row) => {
+      const reference = String(row.referenceNo || "").trim().toLowerCase();
+      return (
+        sameName(row.executiveName, froName) ||
+        allReturns.some(
+          (item) => String(item.returnNo || "").trim().toLowerCase() === reference,
+        )
+      );
+    });
     const stock = getFROStockByExecutive(storeId, name);
     const salesByDate = new Map<string, number>();
     const outstandingByDate = new Map<string, number>();
@@ -626,6 +727,23 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
       const day = formatDate(String(row.date || "")) || "Undated";
       collectionByDate.set(day, (collectionByDate.get(day) || 0) + Number(row.amount || 0));
     });
+    refunds
+      .filter((row) => {
+        const reference = String(row.referenceNo || "").trim().toLowerCase();
+        return (
+          dated(row.date) ||
+          allReturns.some(
+            (item) => String(item.returnNo || "").trim().toLowerCase() === reference,
+          )
+        );
+      })
+      .forEach((row) => {
+        const day = formatDate(String(row.date || "")) || "Undated";
+        collectionByDate.set(
+          day,
+          (collectionByDate.get(day) || 0) - Number(row.amount || 0),
+        );
+      });
     const expenseCategories = new Map<string, number>();
     expenses.forEach((row) => {
       const category = String(row.category || "Other");
@@ -663,10 +781,16 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
         dated(farmer.joinedDate),
     );
     const handovers = readRows(`nature-biotic-fro-handovers-v1:${storeId}`).filter(
-      (row) => sameName(row.handedOverBy, froName) && dated(row.date),
+      (row) =>
+        sameName(row.handedOverBy, froName) &&
+        dated(row.date) &&
+        String(row.status || "accepted").toLowerCase() === "accepted",
     );
     const deliveries = readRows(`nature-biotic-store-delivery-challans-v2:${storeId}`).filter(
-      (row) => sameName(row.executive, froName) && dated(row.date),
+      (row) =>
+        sameName(row.executive, froName) &&
+        dated(row.date) &&
+        String(row.status || "").toLowerCase() === "accepted",
     );
     const stockReturns = readRows(
       `nature-biotic-fro-stock-return-requests-v1:${froName}`,
@@ -675,11 +799,43 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
       Array.isArray(items)
         ? items.reduce((sum, item) => sum + Number(item?.qty || item?.quantity || 0), 0)
         : 0;
+    const salesTotal = sales.reduce(
+      (sum, row) => sum + Math.max(0, Number(row.amount || 0)),
+      0,
+    );
+    const account = settleLinkedFarmerAccounts({
+      invoices: sales,
+      receipts: collections,
+      returns: returns.filter((row) => dated(row.date) || sales.some(
+        (invoice) =>
+          String(invoice.invoiceNo || "").trim().toLowerCase() ===
+          String(row.invoiceNo || "").trim().toLowerCase(),
+      )),
+      refunds: refunds.filter((row) => {
+        const reference = String(row.referenceNo || "").trim().toLowerCase();
+        return (
+          dated(row.date) ||
+          allReturns.some(
+            (item) => String(item.returnNo || "").trim().toLowerCase() === reference,
+          )
+        );
+      }),
+      linkInvoices: sales,
+      linkReturns: allReturns,
+    });
+    const currentAccount = settleLinkedFarmerAccounts({
+      invoices: ownedSales,
+      receipts: ownedCollections,
+      returns: allReturns,
+      refunds,
+      linkInvoices: ownedSales,
+      linkReturns: allReturns,
+    });
     return {
       sales,
-      salesTotal: sales.reduce((sum, row) => sum + Number(row.amount || 0), 0),
-      collection: collections.reduce((sum, row) => sum + Number(row.amount || 0), 0),
-      outstanding,
+      salesTotal,
+      collection: account.collection,
+      outstanding: currentAccount.outstanding,
       returns: returns.reduce((sum, row) => sum + Number(row.total || 0), 0),
       expenses: expenses.reduce((sum, row) => sum + Number(row.amount || 0), 0),
       stockValue: stock.reduce(
@@ -707,7 +863,7 @@ function FroReportView({ storeId, name }: { storeId: string; name: string }) {
         value,
       })),
     };
-  }, [storeId, froName, name, filter, customFrom, customTo, version]);
+  }, [storeId, froName, name, staffId, filter, customFrom, customTo, version]);
 
   const cards = [
     ["Sales", report.salesTotal],

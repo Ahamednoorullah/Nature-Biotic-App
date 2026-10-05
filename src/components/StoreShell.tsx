@@ -4,10 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon, Input } from "@/components/ui";
 import { changeAccountPassword } from "@/lib/auth/localAuth";
-import {
-  getStoreNotifications,
-  type StoreNotification,
-} from "@/lib/storeNotifications";
+import { getStoreNotifications } from "@/lib/storeNotifications";
 import {
   readNotificationReads,
   readStoreUserSettings,
@@ -175,9 +172,10 @@ export default function StoreShell({
     [storeId, noticeVersion],
   );
   const readIds = useMemo(() => new Set(reads), [reads]);
-  const unreadCount = notifications.filter(
+  const unreadNotifications = notifications.filter(
     (item) => !readIds.has(item.id),
-  ).length;
+  );
+  const unreadCount = unreadNotifications.length;
   const resolvedTheme =
     settings.theme === "system"
       ? systemDark
@@ -253,11 +251,14 @@ export default function StoreShell({
     updateSettings({ ...settings, theme });
   }
 
-  function markNotificationRead(item: StoreNotification) {
-    if (!user?.id || readIds.has(item.id)) return;
-    const next = [...reads, item.id];
-    setReads(next);
-    saveNotificationReads(user.id, storeId, next);
+  function markNotificationRead(id: string) {
+    if (!user?.id) return;
+    setReads((current) => {
+      if (current.includes(id)) return current;
+      const next = [...current, id];
+      saveNotificationReads(user.id, storeId, next);
+      return next;
+    });
   }
 
   async function submitPassword() {
@@ -428,18 +429,19 @@ export default function StoreShell({
                       {unreadCount} unread
                     </p>
                   </div>
-                  {notifications.length === 0 ? (
+                  {unreadNotifications.length === 0 ? (
                     <p className="px-4 py-6 text-sm text-slate-500">
                       No new notifications
                     </p>
                   ) : (
                     <div className="max-h-80 overflow-y-auto">
-                      {notifications.map((item) => (
+                      {unreadNotifications.map((item) => (
                         <button
                           key={item.id}
                           type="button"
+                          data-notification-id={item.id}
                           onClick={() => {
-                            markNotificationRead(item);
+                            markNotificationRead(item.id);
                             setOpenMenu(null);
                             goStorePage(item.page);
                           }}

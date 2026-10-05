@@ -3,6 +3,8 @@ import {
   getProductById,
   getMovementsByProduct,
   getStockStatus,
+  getStorePurchasesFromCompanySales,
+  isStorePurchaseReceived,
   type Product,
   type StockMovement,
 } from "@/lib/data";
@@ -36,7 +38,7 @@ const movementColor: Record<string, string> = {
 };
 
 export default function StoreInventoryDetail({
-  storeId: _storeId,
+  storeId,
   productId,
 }: {
   storeId: string;
@@ -213,8 +215,12 @@ export default function StoreInventoryDetail({
       <div key={tab} className="animate-fade-in">
         {tab === "overview" && <OverviewTab product={product} />}
         {tab === "movement" && <MovementTab movements={movements} />}
-        {tab === "purchase" && <PurchaseHistoryTab product={product} />}
-        {tab === "sales" && <SalesHistoryTab product={product} />}
+        {tab === "purchase" && (
+          <PurchaseHistoryTab storeId={storeId} product={product} />
+        )}
+        {tab === "sales" && (
+          <SalesHistoryTab storeId={storeId} product={product} />
+        )}
       </div>
     </div>
   );
@@ -394,33 +400,28 @@ function MovementTab({ movements }: { movements: StockMovement[] }) {
   );
 }
 
-function PurchaseHistoryTab({ product }: { product: Product }) {
-  const purchases = [
-    {
-      poNo: "PO-00012",
-      date: "2026-07-15",
-      supplier: "Nature Biotic Distribution",
-      qty: 50,
-      rate: product.purchasePrice,
-      amount: 50 * product.purchasePrice,
-    },
-    {
-      poNo: "PO-00008",
-      date: "2026-06-28",
-      supplier: "Nature Biotic Distribution",
-      qty: 80,
-      rate: product.purchasePrice,
-      amount: 80 * product.purchasePrice,
-    },
-    {
-      poNo: "PO-00003",
-      date: "2026-06-10",
-      supplier: "Nature Biotic Distribution",
-      qty: 40,
-      rate: product.purchasePrice,
-      amount: 40 * product.purchasePrice,
-    },
-  ];
+function PurchaseHistoryTab({
+  storeId,
+  product,
+}: {
+  storeId: string;
+  product: Product;
+}) {
+  const productName = product.name.trim().toLowerCase();
+  const purchases = getStorePurchasesFromCompanySales(storeId)
+    .filter(
+      (row) =>
+        isStorePurchaseReceived(row.invoiceNo) &&
+        String(row.product || "").trim().toLowerCase() === productName,
+    )
+    .map((row) => ({
+      poNo: row.invoiceNo,
+      date: row.date,
+      supplier: "Nature Biotic",
+      qty: Number(row.quantity || 0),
+      rate: Number(row.rate || 0),
+      amount: Number(row.total || 0),
+    }));
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -463,41 +464,50 @@ function PurchaseHistoryTab({ product }: { product: Product }) {
   );
 }
 
-function SalesHistoryTab({ product }: { product: Product }) {
-  const sales = [
-    {
-      invoiceNo: "NB-S1-0034",
-      date: "2026-07-20",
-      customer: "Murugan",
-      qty: 3,
-      amount: 3 * product.sellingPrice,
-      status: "Paid",
-    },
-    {
-      invoiceNo: "NB-S1-0028",
-      date: "2026-07-12",
-      customer: "Ramesh",
-      qty: 5,
-      amount: 5 * product.sellingPrice,
-      status: "Paid",
-    },
-    {
-      invoiceNo: "NB-S1-0021",
-      date: "2026-07-05",
-      customer: "Karthikeyan",
-      qty: 8,
-      amount: 8 * product.sellingPrice,
-      status: "Pending",
-    },
-    {
-      invoiceNo: "NB-S1-0015",
-      date: "2026-06-28",
-      customer: "Selvam",
-      qty: 2,
-      amount: 2 * product.sellingPrice,
-      status: "Paid",
-    },
-  ];
+function SalesHistoryTab({
+  storeId,
+  product,
+}: {
+  storeId: string;
+  product: Product;
+}) {
+  const productName = product.name.trim().toLowerCase();
+  let sales: {
+    invoiceNo: string;
+    date: string;
+    customer: string;
+    qty: number;
+    amount: number;
+    status: string;
+  }[] = [];
+  try {
+    const raw = localStorage.getItem(
+      `nature-biotic-store-sales-invoices-v2:${storeId}`,
+    );
+    const rows = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(rows)) {
+      sales = rows.flatMap((row) => {
+        const lines = Array.isArray(row?.products) ? row.products : [];
+        return lines
+          .filter((line: { productId?: string; productName?: string; name?: string }) => {
+            const lineName = String(line.productName || line.name || "")
+              .trim()
+              .toLowerCase();
+            return line.productId === product.id || lineName === productName;
+          })
+          .map((line: { quantity?: number; qty?: number; amount?: number; lineTotal?: number }) => ({
+            invoiceNo: String(row.invoiceNo || ""),
+            date: String(row.date || ""),
+            customer: String(row.partyName || ""),
+            qty: Number(line.quantity || line.qty || 0),
+            amount: Number(line.amount || line.lineTotal || 0),
+            status: "Saved",
+          }));
+      });
+    }
+  } catch {
+    sales = [];
+  }
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">

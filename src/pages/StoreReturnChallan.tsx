@@ -7,6 +7,7 @@ import {
   reduceFROStock,
   recordAcceptedStoreReturn,
   persistFROReturnAccepted,
+  readStoreFROStockReturns,
 } from "@/lib/data";
 
 type ReturnItem = {
@@ -68,7 +69,6 @@ type FROReturnRequest = {
 
 const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 const STORAGE_PREFIX = "nature-biotic-store-return-challans-v2";
-const FRO_RETURN_PREFIX = "nature-biotic-fro-stock-return-requests-v1";
 
 function emptyItems(): ReturnItem[] {
   return [
@@ -129,26 +129,10 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
   const loadFROReturns = () => {
     try {
-      const found: FROReturnRequest[] = [];
-      for (let i = 0; i < localStorage.length; i += 1) {
-        const key = localStorage.key(i);
-        if (!key || !key.startsWith(`${FRO_RETURN_PREFIX}:`)) continue;
-        try {
-          const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-          if (Array.isArray(parsed)) {
-            found.push(
-              ...parsed.filter(
-                (item: FROReturnRequest) => item?.storeId === storeId,
-              ),
-            );
-          }
-        } catch {}
-      }
-
+      const found = readStoreFROStockReturns(storeId) as FROReturnRequest[];
       const unique = Array.from(
         new Map(found.map((item) => [item.id, item])).values(),
       ).sort((a, b) => String(b.date).localeCompare(String(a.date)));
-
       setFroReturns(unique);
     } catch {
       setFroReturns([]);
@@ -161,6 +145,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-fro-stock-return-updated", refresh);
+    window.addEventListener("nature-biotic-store-stock-return-updated", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
@@ -168,11 +153,77 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
         "nature-biotic-fro-stock-return-updated",
         refresh,
       );
+      window.removeEventListener(
+        "nature-biotic-store-stock-return-updated",
+        refresh,
+      );
     };
   }, [storeId]);
 
+  function froReturnAsChallan(request: FROReturnRequest): ReturnChallan {
+    return {
+      id: request.id,
+      productId: request.items[0]?.productId || "",
+      rcNo: request.rcNo,
+      date: request.date,
+      sdNo: "",
+      executive: request.froName,
+      customerName: request.froName,
+      village: "",
+      phone: "",
+      farmer: request.froName,
+      placeOfSupply: "Tamil Nadu",
+      cgstPercent: 0,
+      sgstPercent: 0,
+      igstPercent: 0,
+      items: request.items.map((item) => {
+        const tax = getReturnTaxForItem(item);
+        return {
+          productId: item.productId,
+          product: item.product,
+          packSize: item.packSize,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          issuedQty: String(item.qty),
+          returnedQty: String(item.qty),
+          unitValue: String(item.unitValue || 0),
+          taxPercent: tax.taxPercent,
+          cgstPercent: tax.cgstPercent,
+          sgstPercent: tax.sgstPercent,
+          igstPercent: tax.igstPercent,
+        };
+      }),
+    };
+  }
+
+  const tableRows = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: ReturnChallan[] = [];
+
+    froReturns
+      .filter((request) => String(request.status || "").toLowerCase() === "accepted")
+      .forEach((request) => {
+        const key = String(request.rcNo || request.id).trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        merged.push(froReturnAsChallan(request));
+      });
+
+    rows.forEach((row) => {
+      const key = String(row.rcNo || row.id).trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(row);
+    });
+
+    return merged.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }, [rows, froReturns]);
+
   const pendingFROReturns = useMemo(
-    () => froReturns.filter((item) => item.status === "pending"),
+    () =>
+      froReturns.filter(
+        (item) => String(item.status || "").toLowerCase() === "pending",
+      ),
     [froReturns],
   );
 
@@ -354,47 +405,6 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       })),
     });
     persistFROReturnAccepted(accepted);
-
-    const storeRow: ReturnChallan = {
-      id: `fro-return-store-${request.id}`,
-      productId: accepted.items[0]?.productId || "",
-      rcNo: request.rcNo,
-      date: request.date,
-      sdNo: "",
-      executive: request.froName,
-      customerName: request.froName,
-      village: "",
-      phone: "",
-      farmer: request.froName,
-      placeOfSupply: "Tamil Nadu",
-      cgstPercent: 0,
-      sgstPercent: 0,
-      igstPercent: 0,
-      items: accepted.items.map((item) => {
-        const tax = getReturnTaxForItem(item);
-        return {
-          productId: item.productId,
-          product: item.product,
-          packSize: item.packSize,
-          batchNo: item.batchNo,
-          expiryDate: item.expiryDate,
-          issuedQty: String(item.qty),
-          returnedQty: String(item.qty),
-          unitValue: String(item.unitValue),
-          taxPercent: tax.taxPercent,
-          cgstPercent: tax.cgstPercent,
-          sgstPercent: tax.sgstPercent,
-          igstPercent: tax.igstPercent,
-        };
-      }),
-    };
-
-    // Show the accepted FRO return in the Store Return Challan list.
-    if (
-      !rows.some((row) => row.id === storeRow.id || row.rcNo === storeRow.rcNo)
-    ) {
-      persist([storeRow, ...rows]);
-    }
 
     setSelectedFroReturn(null);
   }
@@ -596,7 +606,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
         </Card>
       )}
 
-      {rows.length === 0 ? (
+      {tableRows.length === 0 ? (
         <Card className="p-0">
           <EmptyState
             icon="assignment_return"
@@ -662,7 +672,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
             </thead>
 
             <tbody>
-              {rows.map((row, index) => {
+              {tableRows.map((row, index) => {
                 const returnedQty = row.items.reduce(
                   (sum, item) => sum + Number(item.returnedQty || 0),
                   0,
@@ -712,12 +722,23 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
                     {/* SR NO */}
                     <td className="border-r border-slate-100 px-1.5 py-3 text-center font-semibold">
-                      {String(row.rcNo || "").replace(/^RC/i, "SR")}
+                      <span className="block">
+                        {String(row.rcNo || "").replace(/^RC/i, "SR")}
+                      </span>
+                      <span className="mt-0.5 block text-[10px] font-semibold text-emerald-700">
+                        Accepted
+                      </span>
                     </td>
 
                     {/* EXECUTIVE */}
                     <td className="border-r border-slate-100 px-1.5 py-3 text-center">
-                      {row.executive || "-"}
+                      <span className="block">{row.executive || "-"}</span>
+                      <span className="mt-0.5 block text-[10px] leading-tight text-slate-500 break-words">
+                        {row.items
+                          .map((item) => item.product)
+                          .filter(Boolean)
+                          .join(", ") || "-"}
+                      </span>
                     </td>
 
                     {/* RETURNED QTY */}

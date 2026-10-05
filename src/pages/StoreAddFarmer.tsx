@@ -250,6 +250,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
 
     const firstFarm = allFarms[0];
     const allCrops = allFarms.flatMap((farm) => farm.crops);
+    const recordedOn = new Date().toISOString().split("T")[0];
 
     addFarmer({
       storeId,
@@ -267,8 +268,10 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
       farmAddress: firstFarm.farmAddress,
       farms: allFarms.map((farm) => ({
         ...farm,
+        createdAt: (farm as { createdAt?: string }).createdAt || recordedOn,
         crops: farm.crops.map((crop) => ({
           ...crop,
+          createdAt: (crop as { createdAt?: string }).createdAt || recordedOn,
           landSize: Number(crop.landSize || 0),
         })),
       })),
@@ -278,6 +281,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
         | "Dealer",
       crops: allCrops.map((crop) => ({
         ...crop,
+        createdAt: (crop as { createdAt?: string }).createdAt || recordedOn,
         landSize: Number(crop.landSize || 0),
       })),
       profileImage,

@@ -74,7 +74,7 @@ type FROHandover = {
   method: string;
   handedOverBy: string;
   remarks?: string;
-  status?: "pending" | "accepted";
+  status?: "pending" | "accepted" | "rejected";
   acceptedAt?: string;
   acceptedBy?: string;
 };
@@ -105,8 +105,21 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       setPendingHandovers(
         all.filter((handover) => handover.status === "pending"),
       );
-    } catch {
+      const seenHandover = new Set<string>();
+      setAcceptedHandoverCash(
+        all.reduce((sum, handover) => {
+          const id = String(handover.id || "");
+          if (id && seenHandover.has(id)) return sum;
+          if (id) seenHandover.add(id);
+          const status = String(handover.status || "accepted").toLowerCase();
+          if (status !== "accepted") return sum;
+          if (String(handover.method || "Cash").toLowerCase() !== "cash") return sum;
+          return sum + Math.max(0, Number(handover.amount || 0));
+        }, 0),
+      );
+      } catch {
       setPendingHandovers([]);
+      setAcceptedHandoverCash(0);
     }
   }
 
@@ -128,7 +141,14 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const { user } = useAuth();
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [pendingHandovers, setPendingHandovers] = useState<FROHandover[]>([]);
+  const [acceptedHandoverCash, setAcceptedHandoverCash] = useState(0);
   const [showPendingHandovers, setShowPendingHandovers] = useState(false);
+  const [handoverOfficerId, setHandoverOfficerId] = useState<string | null>(
+    null,
+  );
+  const [viewingHandoverId, setViewingHandoverId] = useState<string | null>(
+    null,
+  );
   const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
   const [directDetail, setDirectDetail] = useState<DirectDetailSelection>(null);
   const [version, setVersion] = useState(0);
@@ -283,21 +303,34 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     return map;
   }, [pendingHandovers, executives]);
 
-  function acceptHandover(handoverId: string) {
+  function updateHandoverStatus(
+    handoverId: string,
+    status: "accepted" | "rejected",
+  ) {
     try {
       const storageKey = `${FRO_HANDOVER_STORAGE_PREFIX}:${storeId}`;
       const raw = localStorage.getItem(storageKey);
       const all: FROHandover[] = raw ? JSON.parse(raw) : [];
 
       const next = all.map((handover) => {
-        if (handover.id !== handoverId || handover.status === "accepted") {
+        if (
+          String(handover.id) !== String(handoverId) ||
+          String(handover.status || "").trim().toLowerCase() === "accepted"
+        ) {
+          return handover;
+        }
+        if (status === "rejected" && handover.status === "rejected") {
           return handover;
         }
         return {
           ...handover,
-          status: "accepted" as const,
-          acceptedAt: new Date().toISOString(),
-          acceptedBy: user?.name || "Store Admin",
+          status,
+          acceptedAt:
+            status === "accepted" ? new Date().toISOString() : handover.acceptedAt,
+          acceptedBy:
+            status === "accepted"
+              ? user?.name || "Store Admin"
+              : handover.acceptedBy,
         };
       });
 
@@ -485,7 +518,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                         {(pendingByExecutive[key]?.length || 0) > 0 && (
                           <button
                             type="button"
-                            onClick={() => setShowPendingHandovers(true)}
+                            onClick={() => {
+                              setHandoverOfficerId(key);
+                              setViewingHandoverId(null);
+                              setShowPendingHandovers(true);
+                            }}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 hover:bg-amber-100"
                           >
                             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
@@ -579,7 +616,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                   <ExecField
                     icon="local_shipping"
                     label="Total Received"
-                    value={String(received.qty)}
+                    value={formatCurrency(received.value)}
                     color="text-teal-600"
                   />
                   <ExecField
@@ -625,9 +662,17 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       {showPendingHandovers &&
         createPortal(
           <PendingHandoverModal
-            handovers={pendingHandovers}
+            handovers={
+              handoverOfficerId
+                ? pendingByExecutive[handoverOfficerId] || []
+                : pendingHandovers
+            }
             storeName={store.name}
-            onAccept={acceptHandover}
+            acceptedCash={acceptedHandoverCash}
+            viewingId={viewingHandoverId}
+            onView={setViewingHandoverId}
+            onAccept={(id) => updateHandoverStatus(id, "accepted")}
+            onReject={(id) => updateHandoverStatus(id, "rejected")}
             onClose={() => setShowPendingHandovers(false)}
           />,
           document.body,
@@ -675,12 +720,20 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
 function PendingHandoverModal({
   handovers,
   storeName,
+  acceptedCash,
+  viewingId,
+  onView,
   onAccept,
+  onReject,
   onClose,
 }: {
   handovers: FROHandover[];
   storeName: string;
+  acceptedCash: number;
+  viewingId: string | null;
+  onView: (handoverId: string | null) => void;
   onAccept: (handoverId: string) => void;
+  onReject: (handoverId: string) => void;
   onClose: () => void;
 }) {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -703,7 +756,9 @@ function PendingHandoverModal({
               <h3 className="font-bold text-slate-800">
                 Pending Cash Handover
               </h3>
-              <p className="text-xs text-slate-500">{storeName}</p>
+              <p className="text-xs text-slate-500">
+                {storeName} · Accepted cash received {formatCurrency(acceptedCash)}
+              </p>
             </div>
           </div>
 
@@ -739,7 +794,7 @@ function PendingHandoverModal({
                         </span>
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {handover.date} · {handover.method}
+                        From: {handover.handedOverBy} · {formatDate(handover.date)} · {handover.method}
                       </div>
                       {handover.remarks && (
                         <p className="mt-1 text-xs text-slate-500">
@@ -748,10 +803,24 @@ function PendingHandoverModal({
                       )}
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                    <div className="flex items-center justify-between gap-2 sm:justify-end">
                       <p className="text-lg font-extrabold text-slate-800">
                         {formatCurrency(Number(handover.amount) || 0)}
                       </p>
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          onView(viewingId === handover.id ? null : handover.id)
+                        }
+                      >
+                        View
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => onReject(handover.id)}
+                      >
+                        Reject
+                      </Button>
                       <Button
                         onClick={() => handleAccept(handover.id)}
                         disabled={acceptingId === handover.id}
@@ -762,6 +831,26 @@ function PendingHandoverModal({
                       </Button>
                     </div>
                   </div>
+                  {viewingId === handover.id && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-white p-3 text-xs">
+                      <div>
+                        <p className="text-slate-400">From</p>
+                        <p className="mt-1 font-semibold text-slate-800">{handover.handedOverBy}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400">Amount</p>
+                        <p className="mt-1 font-semibold text-slate-800">{formatCurrency(Number(handover.amount) || 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400">Date</p>
+                        <p className="mt-1 font-semibold text-slate-800">{formatDate(handover.date)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-400">Status</p>
+                        <p className="mt-1 font-semibold text-amber-700">Pending</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

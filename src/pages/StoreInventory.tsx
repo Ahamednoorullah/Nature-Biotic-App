@@ -8,13 +8,14 @@ import {
   storePurchaseStatusUpdatedEvent,
   getStoreAvailableQty,
   getFROHandQty,
+  getFROStockHolders,
   getStoreStockAdjustments,
   getStore,
   productCategories,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, parseBusinessDate } from "@/lib/format";
 import { downloadDataTablePdf } from "@/lib/documentPdf";
 
 
@@ -29,10 +30,12 @@ import { downloadDataTablePdf } from "@/lib/documentPdf";
 //   lastUpdated: string;
 // };
 type PackSizeStock = {
+  productId?: string;
   packSize: string;
   batchNo: string;
   expiryDate: string;
   lastSaleDate: string;
+  availableSince?: string;
   availableStock: number;
   stockInHand: number;
   stockValue: number;
@@ -50,57 +53,79 @@ type StockRow = {
 //
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function parseExpiryMonth(value: string) {
-  const match = value.trim().match(/^([A-Za-z]{3})\s+(\d{4})$/);
-  if (!match) return null;
-
-  const monthNames = [
-    "jan",
-    "feb",
-    "mar",
-    "apr",
-    "may",
-    "jun",
-    "jul",
-    "aug",
-    "sep",
-    "oct",
-    "nov",
-    "dec",
-  ];
-
-  const monthIndex = monthNames.indexOf(match[1].toLowerCase());
-  if (monthIndex === -1) return null;
-
-  const year = Number(match[2]);
-  return new Date(year, monthIndex + 1, 0, 23, 59, 59);
+function earlierBusinessDate(current: string, next: string) {
+  const nextDate = parseBusinessDate(next);
+  if (!nextDate) return current;
+  const currentDate = parseBusinessDate(current);
+  if (!currentDate || nextDate.getTime() < currentDate.getTime()) return next;
+  return current;
 }
 
-function getStockWarnings(pack: PackSizeStock) {
+function parseExpiryDate(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "-") return null;
+  const business = parseBusinessDate(raw);
+  if (business) return business;
+  const monthYear = raw.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monthYear) {
+    const monthNames = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ];
+    const monthIndex = monthNames.findIndex((name) =>
+      monthYear[1].toLowerCase().startsWith(name),
+    );
+    if (monthIndex === -1) return null;
+    return new Date(Number(monthYear[2]), monthIndex + 1, 0);
+  }
+  const yearMonth = raw.match(/^(\d{4})-(\d{2})$/);
+  if (!yearMonth) return null;
+  return new Date(Number(yearMonth[1]), Number(yearMonth[2]), 0);
+}
+
+export function getStockWarnings(pack: PackSizeStock) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const expiry = parseExpiryMonth(pack.expiryDate);
-  const lastSale = new Date(`${pack.lastSaleDate}T00:00:00`);
+  const expiry = parseExpiryDate(pack.expiryDate);
+  const lastSale = parseBusinessDate(pack.lastSaleDate);
+  const availableSince = parseBusinessDate(pack.availableSince || "");
+  const anchor = lastSale || availableSince;
 
-  const daysToExpiry = expiry
-    ? Math.ceil((expiry.getTime() - today.getTime()) / DAY_MS)
-    : Number.POSITIVE_INFINITY;
+  const monthDiff = expiry
+    ? (expiry.getFullYear() - today.getFullYear()) * 12 +
+      (expiry.getMonth() - today.getMonth())
+    : null;
+  const expired = !!expiry && expiry < today;
+  const expiringSoon =
+    monthDiff !== null && !expired && monthDiff >= 0 && monthDiff <= 2;
 
-  const daysSinceSale = Number.isNaN(lastSale.getTime())
-    ? 0
-    : Math.floor((today.getTime() - lastSale.getTime()) / DAY_MS);
-
-  const totalStock = pack.availableStock + pack.stockInHand;
+  const elapsed = anchor
+    ? Math.floor((today.getTime() - anchor.getTime()) / DAY_MS)
+    : Number.NaN;
+  const idleDays =
+    pack.availableStock > 0 && Number.isFinite(elapsed) ? elapsed : Number.NaN;
 
   return {
-    lowStock: totalStock < pack.lowStockLimit,
-    expiringSoon: daysToExpiry >= 0 && daysToExpiry <= 92,
-    expired: daysToExpiry < 0,
-    noSale30: daysSinceSale >= 30,
-    noSale60: daysSinceSale >= 60,
-    noSale90: daysSinceSale >= 90,
-    daysSinceSale,
+    lowStock:
+      pack.lowStockLimit > 0 &&
+      pack.availableStock + pack.stockInHand < pack.lowStockLimit,
+    expiringSoon,
+    expired,
+    noSale30: Number.isFinite(idleDays) && idleDays >= 30,
+    noSale60: Number.isFinite(idleDays) && idleDays >= 60,
+    noSale90: Number.isFinite(idleDays) && idleDays >= 90,
+    daysSinceSale: Number.isFinite(idleDays) ? idleDays : Number.NaN,
   };
 }
 
@@ -144,15 +169,49 @@ export function buildInventoryRows(
   );
 
   const lastSaleByProduct = new Map<string, string>();
+  const rememberSale = (name: string, date: string) => {
+    const key = name.trim().toLowerCase();
+    if (!key || !parseBusinessDate(date)) return;
+    const existing = lastSaleByProduct.get(key);
+    const existingTime = existing ? parseBusinessDate(existing)?.getTime() || 0 : 0;
+    const nextTime = parseBusinessDate(date)?.getTime() || 0;
+    if (!existing || nextTime >= existingTime) lastSaleByProduct.set(key, date);
+  };
   bills.forEach((bill) => {
-    bill.items.forEach((item) => {
-      const key = item.name.trim().toLowerCase();
-      const existing = lastSaleByProduct.get(key);
-      if (!existing || bill.billDate > existing) {
-        lastSaleByProduct.set(key, bill.billDate);
-      }
-    });
+    bill.items.forEach((item) => rememberSale(item.name, bill.billDate));
   });
+  try {
+    const raw = localStorage.getItem(
+      `nature-biotic-store-sales-invoices-v2:${storeId}`,
+    );
+    const invoices = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(invoices)) {
+      invoices.forEach((invoice) => {
+        const status = String(invoice?.status || "").trim().toLowerCase();
+        if (["cancelled", "canceled", "rejected", "void", "invalid"].includes(status)) return;
+        const lines = Array.isArray(invoice?.products) ? invoice.products : [];
+        lines.forEach((line: {
+          productName?: string;
+          name?: string;
+          date?: string;
+          product?: string | { name?: string };
+        }) => {
+          const product = line?.product;
+          rememberSale(
+            String(
+              line?.productName ||
+                line?.name ||
+                (typeof product === "string" ? product : product?.name) ||
+                "",
+            ),
+            String(line?.date || invoice?.date || invoice?.billDate || ""),
+          );
+        });
+      });
+    }
+  } catch {
+    // Stock warnings stay based on the purchases already loaded.
+  }
 
   const grouped = new Map<
     string,
@@ -170,6 +229,7 @@ export function buildInventoryRows(
       unitPrice: number;
       lowStockLimit: number;
       lastSaleDate: string;
+      availableSince: string;
     }
   >();
 
@@ -245,6 +305,10 @@ export function buildInventoryRows(
       if (unitPrice > 0) {
         existing.unitPrice = unitPrice;
       }
+      existing.availableSince = earlierBusinessDate(
+        existing.availableSince,
+        String(purchase.date || ""),
+      );
     } else {
       grouped.set(key, {
         id: String(purchase.id || key),
@@ -261,6 +325,7 @@ export function buildInventoryRows(
         unitPrice,
         lowStockLimit: configuredLimit,
         lastSaleDate: lastSaleByProduct.get(productName.toLowerCase()) || "",
+        availableSince: String(purchase.date || ""),
       });
     }
   });
@@ -317,10 +382,12 @@ export function buildInventoryRows(
       }
 
       productMap.get(productKey)!.packSizes.push({
+        productId: item.productId,
         packSize: item.packSize,
         batchNo: item.batchNo,
         expiryDate: item.expiryDate,
         lastSaleDate: item.lastSaleDate,
+        availableSince: item.availableSince,
         availableStock: item.quantity,
         stockInHand: item.handQuantity,
         stockValue: Math.round(item.stockValue),
@@ -378,6 +445,13 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
   );
   const [inventoryVersion, setInventoryVersion] = useState(0);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [handStockDetail, setHandStockDetail] = useState<{
+    productName: string;
+    productId: string;
+    packSize: string;
+    batchNo: string;
+    handStock: number;
+  } | null>(null);
 
   useEffect(() => {
     const refresh = () => {
@@ -576,9 +650,6 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                   }))}
                 />
               </div>
-              <Button variant="secondary">
-                <Icon name="download" size={18} /> Export to Excel
-              </Button>
               <Button
                 variant="secondary"
                 disabled={pdfBusy}
@@ -871,7 +942,23 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                             {pack.availableStock}
                           </td>
                           <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums text-slate-700">
-                            {pack.stockInHand}
+                            <button
+                              type="button"
+                              className="font-semibold text-brand-700 underline decoration-brand-300 underline-offset-2"
+                              onClick={() =>
+                                setHandStockDetail({
+                                  productName: product.productName,
+                                  productId: pack.productId || "",
+                                  packSize:
+                                    pack.packSize === "-" ? "" : pack.packSize,
+                                  batchNo:
+                                    pack.batchNo === "-" ? "" : pack.batchNo,
+                                  handStock: pack.stockInHand,
+                                })
+                              }
+                            >
+                              {pack.stockInHand}
+                            </button>
                           </td>
                           <td className="px-1.5 py-2.5 border-r border-slate-100 text-center tabular-nums font-bold">
                             <div className="flex flex-col items-center justify-center gap-1">
@@ -889,11 +976,17 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                                 }`}
                                 title={
                                   warnings.lowStock && warnings.noSale30
-                                    ? `Low stock. No sale for ${warnings.daysSinceSale} days`
+                                    ? `Low stock. ${
+                                        Number.isFinite(warnings.daysSinceSale)
+                                          ? `No sale for ${warnings.daysSinceSale} days`
+                                          : "No recorded sale"
+                                      }`
                                     : warnings.lowStock
                                       ? "Low total stock warning"
                                       : warnings.noSale30
-                                        ? `No sale for ${warnings.daysSinceSale} days`
+                                        ? Number.isFinite(warnings.daysSinceSale)
+                                          ? `No sale for ${warnings.daysSinceSale} days`
+                                          : "No recorded sale"
                                         : undefined
                                 }
                               >
@@ -1085,9 +1178,12 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                             <div className="font-medium text-slate-700">
                               {item.lastSaleDate || "-"}
                             </div>
-                            {item.daysSinceSale > 0 && (
+                            {Number.isFinite(item.daysSinceSale) &&
+                              item.daysSinceSale > 0 && (
                               <div className="mt-0.5 text-[11px] text-slate-400">
-                                {item.daysSinceSale} days ago
+                                {item.lastSaleDate
+                                  ? `${item.daysSinceSale} days ago`
+                                  : `No sale for ${item.daysSinceSale} days`}
                               </div>
                             )}
                           </td>
@@ -1117,6 +1213,82 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                 >
                   Close
                 </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {handStockDetail &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4">
+            <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">
+                    FRO Stock Details
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {handStockDetail.productName}
+                    {handStockDetail.packSize
+                      ? ` · ${handStockDetail.packSize}`
+                      : ""}
+                    {handStockDetail.batchNo
+                      ? ` · ${handStockDetail.batchNo}`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHandStockDetail(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                  aria-label="Close"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                {(() => {
+                  const holders = getFROStockHolders(
+                    storeId,
+                    handStockDetail.productId,
+                    handStockDetail.packSize,
+                    handStockDetail.batchNo,
+                    handStockDetail.productName,
+                  );
+                  const total = holders.reduce(
+                    (sum, holder) => sum + holder.quantity,
+                    0,
+                  );
+                  if (holders.length === 0) {
+                    return (
+                      <p className="py-8 text-center text-sm text-slate-500">
+                        No stock currently held by FROs.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-3">
+                      {holders.map((holder) => (
+                        <div
+                          key={holder.name}
+                          className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
+                        >
+                          <p className="font-semibold text-slate-800">
+                            {holder.name}
+                          </p>
+                          <p className="text-sm text-slate-600">
+                            Quantity: {holder.quantity}
+                          </p>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-sm font-bold text-slate-800">
+                        <span>Total Hand Stock</span>
+                        <span>{total}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>,

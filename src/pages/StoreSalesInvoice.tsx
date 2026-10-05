@@ -266,10 +266,12 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     const staffKey = String(user?.staffId || user?.id || "");
     const normalizedFroName = froName.toLowerCase();
     return rows.filter((row) => {
-      if (row.createdByStaffId && staffKey) {
-        return String(row.createdByStaffId) === staffKey;
-      }
-      return row.executiveName?.trim().toLowerCase() === normalizedFroName;
+      const byName = row.executiveName?.trim().toLowerCase() === normalizedFroName;
+      const byStaff =
+        Boolean(row.createdByStaffId) &&
+        Boolean(staffKey) &&
+        String(row.createdByStaffId) === staffKey;
+      return byName || byStaff;
     });
   }, [rows, isFRO, froName, user?.staffId, user?.id]);
 
@@ -442,15 +444,64 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     }));
   }
 
+  function maxEntryQty(
+    productId: string,
+    pkgsize: string,
+    batchNo: string,
+    expiryDate: string,
+  ) {
+    const selectedStock = activeStockVariants.find(
+      (item) =>
+        item.productId === productId &&
+        item.size === pkgsize &&
+        item.batchNo === batchNo &&
+        item.expiryDate === expiryDate,
+    );
+    if (!selectedStock) return 0;
+    const reserved = added
+      .filter(
+        (item) =>
+          item.productId === productId &&
+          item.pkgsize === pkgsize &&
+          item.batchNo === batchNo,
+      )
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    return Math.max(0, Number(selectedStock.quantity || 0) - reserved);
+  }
+
+  function clampStockQty(raw: string, max: number) {
+    const parsed = Number(String(raw).trim());
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return Math.min(Math.floor(parsed), Math.max(0, max));
+  }
+
   function selectProductSize(size: string) {
     const variant = selectedSizeVariants.find((item) => item.size === size);
+    setEntry((prev) => {
+      const productId = variant?.productId || prev.productId;
+      const batchNo = variant?.batchNo || "";
+      const expiryDate = variant?.expiryDate || "";
+      const max = maxEntryQty(productId, size, batchNo, expiryDate);
+      const current = prev.quantity > 0 ? prev.quantity : 1;
+      return {
+        ...prev,
+        productId,
+        pkgsize: size,
+        batchNo,
+        expiryDate,
+        sellingPrice: variant?.sellingPrice || 0,
+        quantity: Math.min(current, max),
+      };
+    });
+  }
+
+  function setEntryQuantity(raw: string) {
     setEntry((prev) => ({
       ...prev,
-      productId: variant?.productId || prev.productId,
-      pkgsize: size,
-      batchNo: variant?.batchNo || "",
-      expiryDate: variant?.expiryDate || "",
-      sellingPrice: variant?.sellingPrice || 0,
+      quantity: clampStockQty(
+        raw,
+        maxEntryQty(prev.productId, prev.pkgsize, prev.batchNo, prev.expiryDate),
+      ),
     }));
   }
 
@@ -563,6 +614,33 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       return;
     }
 
+    const requested = new Map<string, number>();
+    for (const item of added) {
+      const qty = Number(item.quantity || 0);
+      if (qty < 1) {
+        window.alert("Quantity must be at least 1 and cannot be negative.");
+        return;
+      }
+      const key = `${item.productId}|${item.pkgsize}|${item.batchNo}`;
+      requested.set(key, (requested.get(key) || 0) + qty);
+    }
+    for (const [key, qty] of requested) {
+      const [productId, pkgsize, batchNo] = key.split("|");
+      const stock = activeStockVariants.find(
+        (item) =>
+          item.productId === productId &&
+          item.size === pkgsize &&
+          item.batchNo === batchNo,
+      );
+      const available = Number(stock?.quantity || 0);
+      if (qty > available) {
+        window.alert(
+          `Only ${available} available in ${through === "Executive" ? "FRO" : "store"} stock.`,
+        );
+        return;
+      }
+    }
+
     savingSale.current = true;
     try {
     const saleThrough: SaleType = isFRO ? "Executive" : "Direct";
@@ -596,6 +674,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
+      window.dispatchEvent(new Event("nature-biotic-store-sales-updated"));
     } catch {}
 
     if (row.through === "Executive") {
@@ -1419,12 +1498,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         label="Quantity"
                         type="number"
                         value={String(entry.quantity)}
-                        onChange={(v) =>
-                          setEntry((prev) => ({
-                            ...prev,
-                            quantity: Number(v) || 0,
-                          }))
-                        }
+                        onChange={setEntryQuantity}
                       />
 
                       <Input
@@ -1906,12 +1980,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                           label="Quantity"
                           type="number"
                           value={String(entry.quantity)}
-                          onChange={(v) =>
-                            setEntry((prev) => ({
-                              ...prev,
-                              quantity: Number(v) || 0,
-                            }))
-                          }
+                          onChange={setEntryQuantity}
                         />
 
                         <Input

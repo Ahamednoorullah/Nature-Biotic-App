@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
+  froOwnsTransaction,
   getFarmersByStore,
   getStore,
   nextStoreDocumentNo,
@@ -46,6 +47,7 @@ type Receipt = {
   balanceAfter?: number;
   storeId?: string;
   receivedBy?: string;
+  createdByStaffId?: string;
   remarks?: string;
 };
 
@@ -101,6 +103,12 @@ function receiptBalance(receipt: Receipt) {
     return Math.max(receipt.balanceAfter, 0);
   }
   return Math.max(receipt.invoiceAmount - receipt.amount, 0);
+}
+
+function localIsoDate(date = new Date()) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 const STORAGE_PREFIX = "nature-biotic-store-receipts-v3";
@@ -202,9 +210,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   );
   const selectedInvoice = selectedChoice?.invoice;
   const outstandingBefore = selectedChoice?.remaining ?? 0;
-  const [receiptDate, setReceiptDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
+  const [receiptDate, setReceiptDate] = useState(localIsoDate);
   const [receiptNo, setReceiptNo] = useState("");
   const [method, setMethod] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
@@ -313,6 +319,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
         balanceAfter: Math.max(0, remaining - amountReceived),
         storeId,
         receivedBy: user?.name || "",
+        createdByStaffId: isFRO ? user?.staffId || user?.id : undefined,
         remarks,
       };
       if (latest.some((receipt) => receipt.id === newReceipt.id)) {
@@ -392,10 +399,13 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
       const matchesFarmer =
         (isFRO ? farmerFilter === "all" || r.farmerId === farmerFilter : true);
+      const matchesOwner =
+        !isFRO ||
+        froOwnsTransaction(r, user?.name || "", user?.staffId || user?.id);
 
-      return matchesSearch && matchesFarmer && matchesDate(r.date);
+      return matchesSearch && matchesFarmer && matchesOwner && matchesDate(r.date);
     });
-  }, [search, farmerFilter, dateFilter, customFrom, customTo, createdReceipts]);
+  }, [search, farmerFilter, dateFilter, customFrom, customTo, createdReceipts, isFRO, user]);
   return (
     <>
       {isFRO ? (

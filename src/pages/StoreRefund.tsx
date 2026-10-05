@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import {
@@ -17,27 +17,64 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 
-type StoredSaleInvoice = {
+type SalesReturnSource = {
   id: string;
   date: string;
+  returnNo: string;
   invoiceNo: string;
   through: "Direct" | "Executive";
   partyName: string;
   farmerId?: string;
   farmerPhone?: string;
   farmerVillage?: string;
-  farmerCrop?: string;
-  farmerAcre?: string;
   placeOfSupply?: string;
   executiveName?: string;
-  withoutTax: number;
-  sgst: number;
-  cgst: number;
-  igst: number;
-  amount: number;
+  discountAmount?: number;
+  sgst?: number;
+  cgst?: number;
+  igst?: number;
+  total: number;
+  items?: Array<{
+    product?: { name?: string };
+    packSize?: string;
+    quantity?: number;
+    total?: number;
+  }>;
 };
 
-const STORE_SALES_INVOICE_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
+const STORE_SALES_RETURN_STORAGE_KEY = "nature-biotic-store-sales-returns-v2";
+
+function ReturnSummary({ row }: { row: SalesReturnSource }) {
+  const tax =
+    Number(row.sgst || 0) + Number(row.cgst || 0) + Number(row.igst || 0);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 md:col-span-2 lg:col-span-3">
+      <p>
+        <span className="font-semibold">Original invoice:</span>{" "}
+        {row.invoiceNo || "-"}
+      </p>
+      <p className="mt-1">
+        <span className="font-semibold">Discount:</span>{" "}
+        {formatCurrency(Number(row.discountAmount || 0))}
+      </p>
+      <p>
+        <span className="font-semibold">Tax:</span> {formatCurrency(tax)}
+      </p>
+      <div className="mt-2 space-y-1">
+        {(row.items || []).map((item, index) => (
+          <p key={`${item.product?.name || "product"}-${index}`}>
+            {item.product?.name || "Product"}
+            {item.packSize ? ` · ${item.packSize}` : ""} · Qty{" "}
+            {Number(item.quantity || 0)} · {formatCurrency(Number(item.total || 0))}
+          </p>
+        ))}
+      </div>
+      <p className="mt-2 font-semibold">
+        Return total: {formatCurrency(Number(row.total || 0))}
+      </p>
+    </div>
+  );
+}
 
 type RefundRow = {
   id: string;
@@ -48,10 +85,12 @@ type RefundRow = {
   phone: string;
   village: string;
   referenceNo: string;
+  invoiceNo?: string;
   invoiceAmount: number;
   reason: string;
   paymentMethod: string;
   amount: number;
+  balance?: number;
   remarks: string;
   through?: "Direct" | "Executive";
   executiveName?: string;
@@ -108,6 +147,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const { user } = useAuth();
   const { goStorePage } = useNav();
   const isFRO = user?.role === "fro";
+  const savingRefund = useRef(false);
   const farmers = getFarmersByStore(storeId);
   const currentStore = getStore(storeId);
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
@@ -116,45 +156,44 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [referenceNo, setReferenceNo] = useState("");
 
-  const saleInvoices = useMemo<StoredSaleInvoice[]>(() => {
+  const salesReturns = useMemo<SalesReturnSource[]>(() => {
     try {
       const raw = localStorage.getItem(
-        `${STORE_SALES_INVOICE_STORAGE_KEY}:${storeId}`,
+        `${STORE_SALES_RETURN_STORAGE_KEY}:${storeId}`,
       );
-      return raw ? JSON.parse(raw) : [];
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   }, [storeId, showCreate]);
 
-  const visibleSaleInvoices = useMemo(() => {
-    if (!isFRO || !user?.name) return saleInvoices;
+  const visibleSalesReturns = useMemo(() => {
+    if (!isFRO || !user?.name) return salesReturns;
 
     const froName = user.name.trim().toLowerCase();
 
-    return saleInvoices.filter(
-      (invoice) =>
-        invoice.through === "Executive" &&
-        String(invoice.executiveName || "")
+    return salesReturns.filter(
+      (row) =>
+        row.through === "Executive" &&
+        String(row.executiveName || "")
           .trim()
           .toLowerCase() === froName,
     );
-  }, [saleInvoices, isFRO, user?.name]);
+  }, [salesReturns, isFRO, user?.name]);
 
-  const invoiceOptions = useMemo(
-    () =>
-      visibleSaleInvoices.map((invoice) => ({
-        value: invoice.invoiceNo,
-        label: `${invoice.invoiceNo} - ${invoice.partyName}`,
-      })),
-    [visibleSaleInvoices],
+  const selectedReturn = useMemo(
+    () => visibleSalesReturns.find((row) => row.returnNo === referenceNo),
+    [visibleSalesReturns, referenceNo],
   );
 
-  const selectedInvoice = useMemo(
-    () =>
-      visibleSaleInvoices.find((invoice) => invoice.invoiceNo === referenceNo),
-    [visibleSaleInvoices, referenceNo],
-  );
+  function selectSalesReturn(value: string) {
+    setReferenceNo(value);
+    const salesReturn = visibleSalesReturns.find((row) => row.returnNo === value);
+    setInvoiceAmount(Number(salesReturn?.total || 0));
+    setAmount(0);
+    setRefundError("");
+  }
 
   const [rows, setRows] = useState<RefundRow[]>(() => {
     return loadRows(storageKey);
@@ -169,20 +208,74 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
   const [amount, setAmount] = useState(0);
+  const [refundError, setRefundError] = useState("");
   const [remarks, setRemarks] = useState("");
 
+  const alreadyRefunded = useMemo(() => {
+    if (!selectedReturn) return 0;
+    return rows
+      .filter((row) => row.referenceNo === selectedReturn.returnNo)
+      .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
+  }, [rows, selectedReturn]);
+
+  const refundable = Math.max(
+    0,
+    Number(selectedReturn?.total || 0) - alreadyRefunded,
+  );
+  const balanceValue = Math.max(0, refundable - Math.max(0, amount));
+
+  const returnOptions = useMemo(
+    () =>
+      visibleSalesReturns
+        .filter((salesReturn) => {
+          const refunded = rows
+            .filter((row) => row.referenceNo === salesReturn.returnNo)
+            .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
+          return Number(salesReturn.total || 0) - refunded > 0;
+        })
+        .map((row) => ({
+          value: row.returnNo,
+          label: `${row.returnNo} - ${row.partyName}`,
+        })),
+    [visibleSalesReturns, rows],
+  );
+
+  function changeRefundAmount(raw: string) {
+    const parsed = Number(String(raw).trim());
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setAmount(0);
+      setRefundError(
+        parsed < 0 ? "Refund amount cannot be negative." : "",
+      );
+      return;
+    }
+    setAmount(parsed);
+    if (!selectedReturn) {
+      setRefundError("");
+      return;
+    }
+    if (parsed > refundable) {
+      setRefundError(
+        `Refund cannot exceed the remaining ${formatCurrency(refundable)}.`,
+      );
+      return;
+    }
+    setRefundError("");
+  }
+
   const selectedFarmer = farmers.find(
-    (farmer) => farmer.id === selectedInvoice?.farmerId,
+    (farmer) => farmer.id === selectedReturn?.farmerId,
   );
 
   const canCreate =
     !!date &&
     !!refundNo.trim() &&
-    !!selectedInvoice &&
+    !!selectedReturn &&
     !!reason &&
     !!paymentMethod &&
     amount > 0 &&
-    amount <= invoiceAmount;
+    amount <= refundable &&
+    !refundError;
 
   const scopedRows = useMemo(() => {
     if (!isFRO || !user?.name) return rows;
@@ -235,6 +328,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     setReason("");
     setPaymentMethod("");
     setAmount(0);
+    setRefundError("");
     setRemarks("");
   }
 
@@ -248,37 +342,74 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
 
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
+      window.dispatchEvent(new Event("nature-biotic-store-refunds-updated"));
     } catch {}
   }
 
   function createRefund() {
-    if (!canCreate || !selectedInvoice) return;
+    if (savingRefund.current || !canCreate || !selectedReturn) return;
+    savingRefund.current = true;
+    const originalTotal = Number(selectedReturn.total || 0);
+    const already = rows
+      .filter((row) => row.referenceNo === selectedReturn.returnNo)
+      .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
+    const remaining = Math.max(0, originalTotal - already);
+    if (!(amount > 0) || amount > remaining) {
+      setRefundError(
+        `Refund cannot exceed the remaining ${formatCurrency(remaining)}.`,
+      );
+      savingRefund.current = false;
+      return;
+    }
 
     const allocatedNo = nextRefundNo();
+    if (rows.some((row) => row.refundNo === allocatedNo)) {
+      savingRefund.current = false;
+      return;
+    }
+    let sourceInvoice: { farmerId?: string; partyName?: string } | undefined;
+    try {
+      const raw = localStorage.getItem(
+        `nature-biotic-store-sales-invoices-v2:${storeId}`,
+      );
+      const invoices = raw ? JSON.parse(raw) : [];
+      sourceInvoice = Array.isArray(invoices)
+        ? invoices.find(
+            (invoice) =>
+              String(invoice?.invoiceNo || "") === String(selectedReturn.invoiceNo || ""),
+          )
+        : undefined;
+    } catch {
+      sourceInvoice = undefined;
+    }
     const row: RefundRow = {
-      id: `refund-${Date.now()}`,
+      id: `refund-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       date,
       refundNo: allocatedNo,
-      farmerId: selectedInvoice.farmerId || "",
-      farmerName: selectedInvoice.partyName || "Farmer",
-      phone: selectedInvoice.farmerPhone || selectedFarmer?.phone || "",
-      village: selectedInvoice.farmerVillage || selectedFarmer?.village || "",
-      referenceNo: selectedInvoice.invoiceNo,
-      invoiceAmount: Number(selectedInvoice.amount || 0),
+      farmerId: String(sourceInvoice?.farmerId || selectedReturn.farmerId || ""),
+      farmerName:
+        String(sourceInvoice?.partyName || selectedReturn.partyName || "Farmer"),
+      phone: selectedReturn.farmerPhone || selectedFarmer?.phone || "",
+      village: selectedReturn.farmerVillage || selectedFarmer?.village || "",
+      referenceNo: selectedReturn.returnNo,
+      invoiceNo: selectedReturn.invoiceNo,
+      invoiceAmount: originalTotal,
       reason,
       paymentMethod,
       amount,
+      balance: Math.max(0, remaining - amount),
       remarks,
-      through: selectedInvoice.through,
+      through: selectedReturn.through,
       executiveName:
-        selectedInvoice.through === "Executive"
-          ? selectedInvoice.executiveName || ""
+        selectedReturn.through === "Executive"
+          ? selectedReturn.executiveName || ""
           : "",
-      placeOfSupply: selectedInvoice.placeOfSupply || "Tamil Nadu",
+      placeOfSupply: selectedReturn.placeOfSupply || "Tamil Nadu",
     };
 
     saveRows([row, ...rows]);
     rememberStoreDocumentNo(getStore(storeId)?.code || "ST", "REF", allocatedNo);
+    savingRefund.current = false;
     closeForm();
   }
 
@@ -595,8 +726,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     Create Refund
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Select a completed sales invoice, then refund the required
-                    amount to the farmer.
+                    Select a sales return, then refund that return amount to
+                    the farmer.
                   </p>
                 </div>
 
@@ -628,65 +759,64 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                   />
 
                   <Select
-                    label="Invoice Number"
+                    label="Sales Return Number"
                     value={referenceNo}
-                    onChange={(value) => {
-                      setReferenceNo(value);
-
-                      const invoice = saleInvoices.find(
-                        (item) => item.invoiceNo === value,
-                      );
-
-                      setInvoiceAmount(
-                        invoice ? Number(invoice.amount || 0) : 0,
-                      );
-                      setAmount(0);
-                    }}
-                    placeholder="Select sales invoice"
-                    options={invoiceOptions}
+                    onChange={selectSalesReturn}
+                    placeholder="Select sales return"
+                    options={returnOptions}
                     required
                   />
 
                   <Input
                     label="Farmer Name"
-                    value={selectedInvoice?.partyName || ""}
+                    value={selectedReturn?.partyName || ""}
                     onChange={() => {}}
-                    placeholder="Auto-filled from invoice"
+                    placeholder="Auto-filled from sales return"
                     readOnly
                   />
 
                   <Input
                     label="Mobile Number"
                     value={
-                      selectedInvoice?.farmerPhone ||
+                      selectedReturn?.farmerPhone ||
                       selectedFarmer?.phone ||
                       ""
                     }
                     onChange={() => {}}
-                    placeholder="Auto-filled from invoice"
+                    placeholder="Auto-filled from sales return"
                     readOnly
                   />
 
                   <Input
                     label="Village"
                     value={
-                      selectedInvoice?.farmerVillage ||
+                      selectedReturn?.farmerVillage ||
                       selectedFarmer?.village ||
                       ""
                     }
                     onChange={() => {}}
-                    placeholder="Auto-filled from invoice"
+                    placeholder="Auto-filled from sales return"
                     readOnly
                   />
 
                   <Input
-                    label="Invoice Amount"
+                    label="Original Invoice"
+                    value={selectedReturn?.invoiceNo || ""}
+                    onChange={() => {}}
+                    placeholder="Auto-filled from sales return"
+                    readOnly
+                  />
+
+                  <Input
+                    label="Return Amount"
                     type="number"
                     value={String(invoiceAmount)}
                     onChange={() => {}}
-                    placeholder="Auto-filled from invoice"
+                    placeholder="Auto-filled from sales return"
                     readOnly
                   />
+
+                  {selectedReturn && <ReturnSummary row={selectedReturn} />}
 
                   <Select
                     label="Reason"
@@ -716,17 +846,20 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     label="Refund Amount"
                     type="number"
                     value={String(amount)}
-                    onChange={(value) => {
-                      const next = Number(value) || 0;
-                      setAmount(Math.min(next, invoiceAmount || next));
-                    }}
+                    onChange={changeRefundAmount}
                     placeholder="Enter refund amount"
                     required
                   />
 
+                  {refundError && (
+                    <p className="text-sm font-medium text-red-600 md:col-span-2 lg:col-span-3">
+                      {refundError}
+                    </p>
+                  )}
+
                   <Input
                     label="Balance Value"
-                    value={formatCurrency(Math.max(invoiceAmount - amount, 0))}
+                    value={formatCurrency(balanceValue)}
                     onChange={() => {}}
                     readOnly
                   />
@@ -1142,7 +1275,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
             <div>
               <h2 className="text-xl font-bold text-slate-800">Create Refund</h2>
               <p className="mt-0.5 text-sm text-slate-500">
-                Select a completed sales invoice, then refund the required amount to the farmer.
+                Select a sales return, then refund that return amount to the farmer.
               </p>
             </div>
           </div>
@@ -1152,34 +1285,31 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
               <Input label="Date" type="date" value={date} onChange={setDate} required />
               <Input label="Refund No" value={refundNo} onChange={() => {}} readOnly required />
               <Select
-                label="Invoice Number"
+                label="Sales Return Number"
                 value={referenceNo}
-                onChange={(value) => {
-                  setReferenceNo(value);
-                  const invoice = saleInvoices.find((item) => item.invoiceNo === value);
-                  setInvoiceAmount(invoice ? Number(invoice.amount || 0) : 0);
-                  setAmount(0);
-                }}
-                placeholder="Select sales invoice"
-                options={invoiceOptions}
+                onChange={selectSalesReturn}
+                placeholder="Select sales return"
+                options={returnOptions}
                 required
               />
-              <Input label="Farmer Name" value={selectedInvoice?.partyName || ""} onChange={() => {}} placeholder="Auto-filled from invoice" readOnly />
+              <Input label="Farmer Name" value={selectedReturn?.partyName || ""} onChange={() => {}} placeholder="Auto-filled from sales return" readOnly />
               <Input
                 label="Mobile Number"
-                value={selectedInvoice?.farmerPhone || selectedFarmer?.phone || ""}
+                value={selectedReturn?.farmerPhone || selectedFarmer?.phone || ""}
                 onChange={() => {}}
-                placeholder="Auto-filled from invoice"
+                placeholder="Auto-filled from sales return"
                 readOnly
               />
               <Input
                 label="Village"
-                value={selectedInvoice?.farmerVillage || selectedFarmer?.village || ""}
+                value={selectedReturn?.farmerVillage || selectedFarmer?.village || ""}
                 onChange={() => {}}
-                placeholder="Auto-filled from invoice"
+                placeholder="Auto-filled from sales return"
                 readOnly
               />
-              <Input label="Invoice Amount" type="number" value={String(invoiceAmount)} onChange={() => {}} placeholder="Auto-filled from invoice" readOnly />
+              <Input label="Original Invoice" value={selectedReturn?.invoiceNo || ""} onChange={() => {}} placeholder="Auto-filled from sales return" readOnly />
+              <Input label="Return Amount" type="number" value={String(invoiceAmount)} onChange={() => {}} placeholder="Auto-filled from sales return" readOnly />
+              {selectedReturn && <ReturnSummary row={selectedReturn} />}
               <Select
                 label="Reason"
                 value={reason}
@@ -1200,16 +1330,18 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                 label="Refund Amount"
                 type="number"
                 value={String(amount)}
-                onChange={(value) => {
-                  const next = Number(value) || 0;
-                  setAmount(Math.min(next, invoiceAmount || next));
-                }}
+                onChange={changeRefundAmount}
                 placeholder="Enter refund amount"
                 required
               />
+              {refundError && (
+                <p className="text-sm font-medium text-red-600 md:col-span-2 lg:col-span-3">
+                  {refundError}
+                </p>
+              )}
               <Input
                 label="Balance Value"
-                value={formatCurrency(Math.max(invoiceAmount - amount, 0))}
+                value={formatCurrency(balanceValue)}
                 onChange={() => {}}
                 readOnly
               />

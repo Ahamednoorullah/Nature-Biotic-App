@@ -8,6 +8,10 @@ import {
   type StoreApprovalRequest,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import {
+  readNotificationReads,
+  saveNotificationReads,
+} from "@/lib/storeSettings";
 
 const navItems: { key: CompanyPage; label: string; icon: string }[] = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -25,6 +29,7 @@ const navItems: { key: CompanyPage; label: string; icon: string }[] = [
   { key: "expenses", label: "Expenses ", icon: "receipt_long" },
   { key: "credit-notes", label: "Credit Notes", icon: "undo" },
   { key: "receipts", label: "Receipts", icon: "receipt" },
+  { key: "refund", label: "Refund", icon: "currency_exchange" },
   { key: "reports", label: "Reports", icon: "bar_chart" },
 ];
 
@@ -44,6 +49,7 @@ export default function CompanyShell({
   const [pendingApprovals, setPendingApprovals] = useState<
     StoreApprovalRequest[]
   >([]);
+  const [reads, setReads] = useState<string[]>([]);
 
   useEffect(() => {
     const refresh = () =>
@@ -76,6 +82,26 @@ export default function CompanyShell({
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [openMenu]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    setReads(readNotificationReads(user.id, "company"));
+  }, [user?.id]);
+
+  const unreadApprovals = pendingApprovals.filter(
+    (request) => !reads.includes(request.id),
+  );
+  const unreadCount = unreadApprovals.length;
+
+  function markNotificationRead(id: string) {
+    if (!user?.id) return;
+    setReads((current) => {
+      if (current.includes(id)) return current;
+      const next = [...current, id];
+      saveNotificationReads(user.id, "company", next);
+      return next;
+    });
+  }
 
   return (
     <div className="flex min-h-screen overflow-x-clip bg-slate-50">
@@ -146,11 +172,9 @@ export default function CompanyShell({
                   size={22}
                   className="text-slate-600"
                 />
-                {pendingApprovals.length > 0 && (
+                {unreadCount > 0 && (
                   <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white ring-2 ring-white">
-                    {pendingApprovals.length > 9
-                      ? "9+"
-                      : pendingApprovals.length}
+                    {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
               </button>
@@ -206,20 +230,22 @@ export default function CompanyShell({
                       Notifications
                     </p>
                     <p className="text-xs text-slate-500">
-                      {pendingApprovals.length} pending
+                      {unreadCount} unread
                     </p>
                   </div>
-                  {pendingApprovals.length === 0 ? (
+                  {unreadApprovals.length === 0 ? (
                     <p className="px-4 py-6 text-sm text-slate-500">
                       No pending notifications.
                     </p>
                   ) : (
                     <div className="max-h-80 overflow-y-auto">
-                      {pendingApprovals.map((request) => (
+                      {unreadApprovals.map((request) => (
                         <button
                           key={request.id}
                           type="button"
+                          data-notification-id={request.id}
                           onClick={() => {
+                            markNotificationRead(request.id);
                             setOpenMenu(null);
                             goCompany(
                               request.type === "Purchase Return"
@@ -227,7 +253,9 @@ export default function CompanyShell({
                                 : "purchase-orders",
                             );
                           }}
-                          className="block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50"
+                          className={`block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
+                            reads.includes(request.id) ? "" : "bg-brand-50/40"
+                          }`}
                         >
                           <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">
                             {request.type === "Purchase Return"

@@ -1,10 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Icon, Input, Select, Button, EmptyState } from "@/components/ui";
 import { staff as staffSeed, getStore, type Staff } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 
-type AttendanceStatus = "Present" | "Leave" | "Absent" | "Half Day";
+type AttendanceStatus =
+  | "Present"
+  | "Leave"
+  | "Absent"
+  | "Half Day"
+  | "Checked In"
+  | "Checked Out";
 
 type AttendanceRecord = {
   id: string;
@@ -19,7 +25,100 @@ type AttendanceRecord = {
 const STORAGE_PREFIX = "nature-biotic-store-attendance-v1";
 
 function isoDate(date: Date) {
-  return date.toISOString().split("T")[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export const attendanceUpdatedEvent = "nature-biotic-attendance-updated";
+
+function readAttendance(storeId: string): AttendanceRecord[] {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX}:${storeId}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAttendance(storeId: string, rows: AttendanceRecord[]) {
+  localStorage.setItem(`${STORAGE_PREFIX}:${storeId}`, JSON.stringify(rows));
+  window.dispatchEvent(new Event(attendanceUpdatedEvent));
+}
+
+function currentTime() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(
+    now.getMinutes(),
+  ).padStart(2, "0")}`;
+}
+
+export function findTodayAttendance(storeId: string, staffId: string) {
+  if (!storeId || !staffId) return null;
+  const today = isoDate(new Date());
+  return (
+    readAttendance(storeId).find(
+      (row) => row?.staffId === staffId && row?.date === today,
+    ) || null
+  );
+}
+
+export function hasCheckedInToday(storeId: string, staffId: string) {
+  return Boolean(findTodayAttendance(storeId, staffId)?.checkIn);
+}
+
+export function hasCheckedOutToday(storeId: string, staffId: string) {
+  return Boolean(findTodayAttendance(storeId, staffId)?.checkOut);
+}
+
+export function checkInStaff(storeId: string, staffId: string) {
+  if (!storeId || !staffId) return false;
+  const today = isoDate(new Date());
+  const rows = readAttendance(storeId);
+  const index = rows.findIndex(
+    (row) => row?.staffId === staffId && row?.date === today,
+  );
+  if (index >= 0) {
+    if (rows[index].checkIn) return false;
+    rows[index] = {
+      ...rows[index],
+      checkIn: currentTime(),
+      status: rows[index].checkOut ? "Checked Out" : "Checked In",
+      note: rows[index].note || "Checked in",
+    };
+  } else {
+    rows.unshift({
+      id: `${staffId}-${today}`,
+      staffId,
+      date: today,
+      checkIn: currentTime(),
+      checkOut: "",
+      status: "Checked In",
+      note: "Checked in",
+    });
+  }
+  writeAttendance(storeId, rows);
+  return true;
+}
+
+export function checkOutStaff(storeId: string, staffId: string) {
+  if (!storeId || !staffId) return false;
+  const today = isoDate(new Date());
+  const rows = readAttendance(storeId);
+  const index = rows.findIndex(
+    (row) => row?.staffId === staffId && row?.date === today && row?.checkIn,
+  );
+  if (index < 0 || rows[index].checkOut) return false;
+  rows[index] = {
+    ...rows[index],
+    checkOut: currentTime(),
+    status: "Checked Out",
+    note: "Checked out",
+  };
+  writeAttendance(storeId, rows);
+  return true;
 }
 
 function monthKey(date = new Date()) {
@@ -109,9 +208,21 @@ function createSeedAttendance(storeStaff: Staff[]): AttendanceRecord[] {
   return records;
 }
 
+function attended(record: AttendanceRecord) {
+  return (
+    record.status === "Present" ||
+    record.status === "Half Day" ||
+    record.status === "Checked In" ||
+    record.status === "Checked Out" ||
+    Boolean(record.checkIn)
+  );
+}
+
 function statusClass(status: AttendanceStatus) {
   switch (status) {
     case "Present":
+    case "Checked In":
+    case "Checked Out":
       return "bg-emerald-50 text-emerald-700 border-emerald-200";
     case "Leave":
       return "bg-amber-50 text-amber-700 border-amber-200";
@@ -130,22 +241,33 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
   );
 
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
-  const [records] = useState<AttendanceRecord[]>(() => {
+  const [records, setRecords] = useState<AttendanceRecord[]>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) return JSON.parse(saved);
-
-      const seeded = createSeedAttendance(
-        staffSeed.filter((member) => member.storeId === storeId),
-      );
-      localStorage.setItem(storageKey, JSON.stringify(seeded));
-      return seeded;
+      return [];
     } catch {
-      return createSeedAttendance(
-        staffSeed.filter((member) => member.storeId === storeId),
-      );
+      return [];
     }
   });
+
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        const parsed = saved ? JSON.parse(saved) : [];
+        setRecords(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setRecords([]);
+      }
+    };
+    window.addEventListener(attendanceUpdatedEvent, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener(attendanceUpdatedEvent, refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [storageKey]);
 
   const [selectedDate, setSelectedDate] = useState(isoDate(new Date()));
   const [staffFilter, setStaffFilter] = useState("all");
@@ -186,10 +308,11 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
   }
 
   function totalPresent(staffId: string) {
-    return (
-      monthlyCount(staffId, "Present") +
-      monthlyCount(staffId, "Half Day")
-    );
+    return new Set(
+      monthRecords
+        .filter((record) => record.staffId === staffId && attended(record))
+        .map((record) => record.date),
+    ).size;
   }
 
   const todayRecords = useMemo(
@@ -202,10 +325,9 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
     [records, storeStaff],
   );
 
-  const presentToday = todayRecords.filter(
-    (record) =>
-      record.status === "Present" || record.status === "Half Day",
-  ).length;
+  const presentToday = new Set(
+    todayRecords.filter(attended).map((record) => record.staffId),
+  ).size;
   const leaveToday = todayRecords.filter(
     (record) => record.status === "Leave",
   ).length;

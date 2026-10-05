@@ -36,6 +36,7 @@ type CashRefund = {
   refundedTo: string;
   remarks?: string;
   settlementId?: string;
+  enteredBy?: string;
 };
 
 type Props = { storeId?: string };
@@ -302,6 +303,7 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     const next = [item, ...expenses];
     setExpenses(next);
     localStorage.setItem(expenseKey, JSON.stringify(next));
+    window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
     reset();
   };
 
@@ -316,10 +318,12 @@ export default function FROExpenses({ storeId = "default" }: Props) {
       refundedTo: "Store",
       remarks: remarks.trim(),
       settlementId: activeSettlementId,
+      enteredBy: user?.name?.trim() ?? "",
     };
     const next = [item, ...refunds];
     setRefunds(next);
     localStorage.setItem(refundKey, JSON.stringify(next));
+    window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
     reset();
   };
 

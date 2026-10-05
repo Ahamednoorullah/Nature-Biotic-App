@@ -1,4 +1,120 @@
 import { Key } from "react";
+
+const TRANSACTION_RESET_FLAG = "nature-biotic-transaction-reset-v3";
+
+function resetStoredTestTransactions() {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(TRANSACTION_RESET_FLAG) === "1") return;
+  } catch {
+    return;
+  }
+
+  const removeExact = new Set([
+    "nature-biotic-company-store-sales-v1",
+    "nature-biotic-approved-po-receipts-v1",
+    "nature-biotic-company-receipts-v1",
+    "nature-biotic-store-purchase-status-v1",
+    "nature-biotic-store-approval-requests-v1",
+    "nature-biotic-processed-stock-movements-v1",
+    "naturebiotic_shared_expenses",
+    "nature-biotic-company-refunds-v1",
+    "nature-biotic-company-expenses-v1",
+    "nature-biotic-company-credit-note-sync-v1",
+    "nature-biotic-physical-stock-entries-v1",
+    "nature-biotic-farmer-purchases-v1",
+  ]);
+  const removePrefix = [
+    "nature-biotic-store-receipts-v3",
+    "nature-biotic-store-sales-invoices-v2",
+    "nature-biotic-store-sales-returns-v2",
+    "nature-biotic-store-credit-notes-v3",
+    "nature-biotic-store-refunds-v2",
+    "nature-biotic-store-delivery-challans-v2",
+    "nature-biotic-store-return-challans-v2",
+    "nature-biotic-store-stock-adjustments-v1",
+    "nature-biotic-store-stock-return-received-v1",
+    "nature-biotic-fro-accepted-deliveries-v1",
+    "nature-biotic-fro-pending-deliveries-v1",
+    "nature-biotic-fro-stock-return-requests-v1",
+    "nature-biotic-fro-stock-txns-v1",
+    "nature-biotic-fro-stock-v1",
+    "nature-biotic-fro-sales-v1",
+    "nature-biotic-fro-handovers-v1",
+    "nature-biotic-fro-cash-received-v1",
+    "nature-biotic-fro-cash-refunds-v1",
+    "nature-biotic-fro-expense-settlement-v1",
+    "nature-biotic-fro-visits-v1",
+    "nature-biotic-quotations-",
+    "naturebiotic:purchase-orders:",
+    "naturebiotic:purchase-returns:",
+    "naturebiotic:purchase-payments:",
+    "nature-biotic-store-notification-reads-v1:",
+    "nature-biotic-store-attendance-v1:",
+  ];
+
+  try {
+    Object.keys(window.localStorage).forEach((key) => {
+      if (
+        removeExact.has(key) ||
+        removePrefix.some((prefix) => key.startsWith(prefix))
+      ) {
+        window.localStorage.removeItem(key);
+      }
+    });
+
+    const farmersRaw = window.localStorage.getItem(
+      "nature-biotic-store-farmers-v2",
+    );
+    if (farmersRaw) {
+      const farmersSaved = JSON.parse(farmersRaw);
+      if (Array.isArray(farmersSaved)) {
+        window.localStorage.setItem(
+          "nature-biotic-store-farmers-v2",
+          JSON.stringify(
+            farmersSaved.map((farmer) => ({
+              ...farmer,
+              outstanding: 0,
+              totalPurchases: 0,
+            })),
+          ),
+        );
+      }
+    }
+
+    const storesRaw = window.localStorage.getItem(
+      "nature-biotic-store-registry-v1",
+    );
+    if (storesRaw) {
+      const storesSaved = JSON.parse(storesRaw);
+      if (Array.isArray(storesSaved)) {
+        window.localStorage.setItem(
+          "nature-biotic-store-registry-v1",
+          JSON.stringify(
+            storesSaved.map((store) => ({
+              ...store,
+              todaySales: 0,
+              monthlySales: 0,
+              totalProfit: 0,
+              outstanding: 0,
+              activeCustomers: 0,
+              inventoryValue: 0,
+            })),
+          ),
+        );
+      }
+    }
+
+    window.sessionStorage.removeItem("nature-biotic-open-store-invoice");
+    window.sessionStorage.removeItem("nature-biotic-farmer-profile-tab");
+    window.localStorage.setItem(TRANSACTION_RESET_FLAG, "1");
+  } catch {
+    // Leave the flag unset so the next load can finish the reset.
+  }
+}
+
+resetStoredTestTransactions();
+
 export const productSeed: Product[] = [];
 
 export type Store = {
@@ -367,12 +483,12 @@ export const stores: Store[] = [
     gst: "33ABCDE1234F1Z5",
     phone: "9876543210",
     status: "Active",
-    todaySales: 24500,
-    monthlySales: 485000,
-    totalProfit: 96000,
-    outstanding: 32000,
-    activeCustomers: 142,
-    inventoryValue: 540000,
+    todaySales: 0,
+    monthlySales: 0,
+    totalProfit: 0,
+    outstanding: 0,
+    activeCustomers: 0,
+    inventoryValue: 0,
     openedDate: "2021-06-15",
     bankAccountName: "SAIRAM AGRI INPUTS",
     bankAccountNo: "50200106535019",
@@ -392,12 +508,12 @@ export const stores: Store[] = [
     gst: "33FGHIJ5678K1Z2",
     phone: "9123456701",
     status: "Active",
-    todaySales: 18200,
-    monthlySales: 392000,
-    totalProfit: 78000,
-    outstanding: 21500,
-    activeCustomers: 118,
-    inventoryValue: 410000,
+    todaySales: 0,
+    monthlySales: 0,
+    totalProfit: 0,
+    outstanding: 0,
+    activeCustomers: 0,
+    inventoryValue: 0,
     openedDate: "2022-01-20",
     bankAccountName: "SHRIYA",
     bankAccountNo: "60484655212398",
@@ -417,12 +533,12 @@ export const stores: Store[] = [
     gst: "32LMNOP9012R1Z8",
     phone: "9123456702",
     status: "Active",
-    todaySales: 31800,
-    monthlySales: 612000,
-    totalProfit: 124000,
-    outstanding: 18400,
-    activeCustomers: 165,
-    inventoryValue: 680000,
+    todaySales: 0,
+    monthlySales: 0,
+    totalProfit: 0,
+    outstanding: 0,
+    activeCustomers: 0,
+    inventoryValue: 0,
     openedDate: "2020-11-08",
     bankAccountName: "Nature Bio Mart",
     bankAccountNo: "70106585911327",
@@ -1217,6 +1333,8 @@ export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
   ...f,
   id: `f${i}`,
   storeId: "s1",
+  outstanding: 0,
+  totalPurchases: 0,
 }));
 
 const STORE_FARMERS_KEY = "nature-biotic-store-farmers-v2";
@@ -1345,56 +1463,8 @@ export function deleteFarmer(id: string): void {
   saveStoredFarmers(rows);
 }
 
-const productNames = products.map((p) => p.name);
-
 export const farmerPurchases: FarmerPurchase[] = [];
 export const farmerPayments: FarmerPayment[] = [];
-let purchaseCounter = 1;
-let paymentCounter = 1;
-
-farmers.forEach((farmer, fi) => {
-  const purchaseCount = 4 + (fi % 4);
-  for (let p = 0; p < purchaseCount; p++) {
-    const prod = productNames[(fi + p) % productNames.length];
-    const qty = 1 + ((fi + p) % 5);
-    const price = products.find((pr) => pr.name === prod)?.sellingPrice ?? 400;
-    const amount = qty * price;
-    const daysAgo = (p + 1) * 12 + fi * 3;
-    const d = new Date();
-    d.setDate(d.getDate() - daysAgo);
-    const date = d.toISOString().split("T")[0];
-    farmerPurchases.push({
-      id: `fp${purchaseCounter}`,
-      farmerId: farmer.id,
-      invoiceNo: `NB-S1-${String(purchaseCounter).padStart(4, "0")}`,
-      date,
-      product: prod,
-      quantity: qty,
-      amount,
-      paymentStatus: p % 3 === 0 ? "Pending" : "Paid",
-    });
-    purchaseCounter++;
-  }
-  const paymentCount = 2 + (fi % 3);
-  for (let pay = 0; pay < paymentCount; pay++) {
-    const amount = 2000 + (((fi + pay) * 1371) % 8000);
-    const daysAgo = (pay + 1) * 20 + fi * 5;
-    const d = new Date();
-    d.setDate(d.getDate() - daysAgo);
-    const date = d.toISOString().split("T")[0];
-    const methods = ["Cash", "Bank Transfer", "UPI"];
-    farmerPayments.push({
-      id: `fpm${paymentCounter}`,
-      farmerId: farmer.id,
-      receiptNo: `RCP-${String(paymentCounter).padStart(4, "0")}`,
-      date,
-      amount,
-      method: methods[pay % 3],
-      note: pay === 0 ? "Advance payment" : "Settlement",
-    });
-    paymentCounter++;
-  }
-});
 
 const billDates: string[] = [];
 for (let i = 0; i < 14; i++) {
@@ -1404,36 +1474,6 @@ for (let i = 0; i < 14; i++) {
 }
 
 export const bills: Bill[] = [];
-let billCounter = 1;
-billDates.forEach((date, di) => {
-  const billsPerDay = 3;
-  for (let b = 0; b < billsPerDay; b++) {
-    const farmer = farmers[(di + b) % farmers.length];
-    const itemCount = 1 + (b % 4);
-    const items = Array.from({ length: itemCount }, (_, k) => {
-      const prod = products[(di + b + k) % products.length];
-      const qty = 1 + ((di + b + k) % 5);
-      return {
-        name: prod?.name ?? "Product",
-        qty,
-        price: prod?.sellingPrice ?? 100,
-      };
-    });
-    const total = items.reduce((sum, it) => sum + it.qty * it.price, 0);
-    bills.push({
-      id: `b${di}${b}`,
-      storeId: "s1",
-      billNo: `NB-S1-${String(billCounter).padStart(4, "0")}`,
-      farmerName: farmer.name,
-      items,
-      total,
-      paymentStatus: (di + b) % 3 === 0 ? "Pending" : "Paid",
-      billDate: date,
-      executiveName: "Direct",
-    });
-    billCounter++;
-  }
-});
 
 const roles = [
   "Field Executive",
@@ -1555,137 +1595,9 @@ export function attachAccountLink(
   } catch {}
 }
 
-export const deliveryChallans: DeliveryChallan[] = [
-  {
-    id: "sd1",
-    storeId: "s1",
-    challanNo: "sd-2026-001",
-    date: "2026-08-14",
-    executiveName: "Ram Kumar",
-    issuedBy: "Store Manager",
-    status: "Open",
-    remarks: "Morning field stock issue",
-    items: [
-      {
-        productId: "p0",
-        productName: "Electra",
-        packSize: "500 ml",
-        batchNo: "ELE140826",
-        issuedQty: 20,
-        soldQty: 12,
-        returnedQty: 3,
-      },
-      {
-        productId: "p2",
-        productName: "Astra",
-        packSize: "100 ml",
-        batchNo: "AST140826",
-        issuedQty: 10,
-        soldQty: 6,
-        returnedQty: 1,
-      },
-    ],
-  },
-  {
-    id: "sd2",
-    storeId: "s1",
-    challanNo: "sd-2026-002",
-    date: "2026-08-14",
-    executiveName: "Ajith Kumar",
-    issuedBy: "Store Manager",
-    status: "Open",
-    remarks: "Field visit stock",
-    items: [
-      {
-        productId: "p0",
-        productName: "Electra",
-        packSize: "500 ml",
-        batchNo: "ELE140826",
-        issuedQty: 15,
-        soldQty: 8,
-        returnedQty: 2,
-      },
-      {
-        productId: "p1",
-        productName: "Aalga",
-        packSize: "250 ml",
-        batchNo: "AAL140826",
-        issuedQty: 12,
-        soldQty: 7,
-        returnedQty: 1,
-      },
-    ],
-  },
-  {
-    id: "sd3",
-    storeId: "s1",
-    challanNo: "sd-2026-003",
-    date: "2026-08-13",
-    executiveName: "PeriyaSamy",
-    issuedBy: "Store Manager",
-    status: "Partially Returned",
-    remarks: "Route stock issue",
-    items: [
-      {
-        productId: "p3",
-        productName: "Alpha",
-        packSize: "5 Kg",
-        batchNo: "ALP130826",
-        issuedQty: 8,
-        soldQty: 3,
-        returnedQty: 2,
-      },
-      {
-        productId: "p4",
-        productName: "Nuetra",
-        packSize: "1 L",
-        batchNo: "NUE130826",
-        issuedQty: 6,
-        soldQty: 2,
-        returnedQty: 1,
-      },
-    ],
-  },
-];
+export const deliveryChallans: DeliveryChallan[] = [];
 
-export const executiveStockReturns: ExecutiveStockReturn[] = [
-  {
-    id: "ret1",
-    storeId: "s1",
-    returnNo: "RET-001",
-    date: "2026-08-14",
-    challanNo: "sd-2026-001",
-    executiveName: "Ram Kumar",
-    productName: "Electra",
-    packSize: "500 ml",
-    quantity: 3,
-    remarks: "Unsold stock returned",
-  },
-  {
-    id: "ret2",
-    storeId: "s1",
-    returnNo: "RET-002",
-    date: "2026-08-14",
-    challanNo: "sd-2026-002",
-    executiveName: "Ajith Kumar",
-    productName: "Electra",
-    packSize: "500 ml",
-    quantity: 2,
-    remarks: "Balance returned",
-  },
-  {
-    id: "ret3",
-    storeId: "s1",
-    returnNo: "RET-003",
-    date: "2026-08-13",
-    challanNo: "sd-2026-003",
-    executiveName: "PeriyaSamy",
-    productName: "Alpha",
-    packSize: "5 Kg",
-    quantity: 2,
-    remarks: "Route return",
-  },
-];
+export const executiveStockReturns: ExecutiveStockReturn[] = [];
 
 export function getDeliveryChallansByStore(storeId: string): DeliveryChallan[] {
   return deliveryChallans.filter((challan) => challan.storeId === storeId);
@@ -1753,35 +1665,6 @@ const movementRemarks: Record<StockMovementType, string[]> = {
 };
 
 export const stockMovements: StockMovement[] = [];
-let movementCounter = 1;
-products.forEach((product) => {
-  const movementCount = 4 + (parseInt(product.id.replace("p", ""), 10) % 4);
-  let runningBalance = Math.max(0, product.stock - 40);
-  for (let m = 0; m < movementCount; m++) {
-    const types: StockMovementType[] = ["IN", "OUT", "TRANSFER", "ADJUSTMENT"];
-    const type =
-      types[(parseInt(product.id.replace("p", ""), 10) + m) % types.length];
-    const qty = 5 + (((m + 3) * 7) % 40);
-    if (type === "OUT" || type === "ADJUSTMENT")
-      runningBalance = Math.max(0, runningBalance - qty);
-    else runningBalance += qty;
-    const daysAgo = (m + 1) * 5 + parseInt(product.id.replace("p", ""), 10) * 2;
-    const d = new Date();
-    d.setDate(d.getDate() - daysAgo);
-    stockMovements.push({
-      id: `sm${movementCounter}`,
-      productId: product.id,
-      date: d.toISOString().split("T")[0],
-      type,
-      referenceNo: `${type === "IN" ? "PO" : type === "OUT" ? "INV" : type === "TRANSFER" ? "TRF" : "ADJ"}-${String(movementCounter).padStart(5, "0")}`,
-      quantity: qty,
-      balanceStock: runningBalance,
-      handledBy: movementHandlers[m % movementHandlers.length],
-      remarks: movementRemarks[type][m % movementRemarks[type].length],
-    });
-    movementCounter++;
-  }
-});
 
 export function getMovementsByProduct(productId: string): StockMovement[] {
   return stockMovements
@@ -1992,6 +1875,165 @@ export function getStoreApprovalRequest(
   );
 }
 export const storeApprovalRequestsUpdatedEvent = STORE_APPROVAL_EVENT;
+
+export type CompanyRefund = {
+  id: string;
+  date: string;
+  storeId: string;
+  storeName: string;
+  referenceNo: string;
+  amount: number;
+  refundNo?: string;
+  reason?: string;
+  paymentMethod?: string;
+  remarks?: string;
+  balance?: number;
+  purchaseRef?: string;
+};
+
+const COMPANY_REFUND_KEY = "nature-biotic-company-refunds-v1";
+export const companyRefundsUpdatedEvent = "nature-biotic-company-refunds-updated";
+
+export function getCompanyRefunds(): CompanyRefund[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(COMPANY_REFUND_KEY);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+export function purchaseReturnRefundable(storeId: string, referenceNo: string) {
+  const request = getStoreApprovalRequest(
+    "Purchase Return",
+    storeId,
+    referenceNo,
+  );
+  if (!request || request.status !== "Approved") return 0;
+  const seen = new Set<string>();
+  const refunded = getCompanyRefunds().reduce((sum, row) => {
+    if (row.storeId !== storeId) return sum;
+    const identity = String(row.id || row.refundNo || "")
+      .trim()
+      .toLowerCase();
+    if (identity && seen.has(identity)) return sum;
+    if (identity) seen.add(identity);
+    if (
+      String(row.referenceNo || "").trim().toLowerCase() !==
+      referenceNo.trim().toLowerCase()
+    ) {
+      return sum;
+    }
+    return sum + Math.max(0, Number(row.amount || 0));
+  }, 0);
+  return Math.max(0, Number(request.amount || 0) - refunded);
+}
+
+export function addCompanyRefund(input: {
+  storeId: string;
+  storeName: string;
+  referenceNo: string;
+  amount: number;
+  date: string;
+  refundNo?: string;
+  reason?: string;
+  paymentMethod?: string;
+  remarks?: string;
+  balance?: number;
+  purchaseRef?: string;
+}) {
+  const amount = Math.round(Math.max(0, Number(input.amount || 0)) * 100) / 100;
+  const referenceNo = input.referenceNo.trim();
+  const refundNo = String(input.refundNo || "").trim();
+  if (!input.storeId || !referenceNo || amount <= 0) {
+    return { ok: false as const, error: "Enter a refund amount for this purchase return." };
+  }
+  const existing = getCompanyRefunds();
+  if (
+    refundNo &&
+    existing.some(
+      (item) =>
+        String(item.refundNo || "").trim().toLowerCase() === refundNo.toLowerCase(),
+    )
+  ) {
+    return { ok: false as const, error: "This refund number is already saved." };
+  }
+  const remaining = purchaseReturnRefundable(input.storeId, referenceNo);
+  if (amount - remaining > 0.001) {
+    return {
+      ok: false as const,
+      error: `Refund cannot exceed the remaining ${remaining.toFixed(2)} on ${referenceNo}.`,
+    };
+  }
+  const row: CompanyRefund = {
+    id: `company-refund-${input.storeId}-${referenceNo}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    date: input.date,
+    storeId: input.storeId,
+    storeName: input.storeName,
+    referenceNo,
+    amount,
+    refundNo,
+    reason: input.reason || "",
+    paymentMethod: input.paymentMethod || "",
+    remarks: input.remarks || "",
+    balance: input.balance,
+    purchaseRef: input.purchaseRef || "",
+  };
+  if (existing.some((item) => item.id === row.id)) {
+    return { ok: true as const, row };
+  }
+  window.localStorage.setItem(
+    COMPANY_REFUND_KEY,
+    JSON.stringify([row, ...existing]),
+  );
+  window.dispatchEvent(new Event(companyRefundsUpdatedEvent));
+  return { ok: true as const, row };
+}
+
+/** A company refund reduces that store's sales and collection by the refund. */
+export function settleCompanyRefund(
+  grossSales: number,
+  grossCollection: number,
+  refundAmount: number,
+) {
+  const refund = Math.max(0, refundAmount);
+  const sales = Math.max(0, Math.max(0, grossSales) - refund);
+  const collection = Math.max(0, grossCollection) - refund;
+  const outstanding = Math.max(0, sales - collection);
+  return { sales, collection, outstanding };
+}
+
+export function froOwnsTransaction(
+  row: {
+    createdByStaffId?: string;
+    staffId?: string;
+    froId?: string;
+    receivedBy?: string;
+    handedOverBy?: string;
+    enteredBy?: string;
+    froName?: string;
+    executiveName?: string;
+  },
+  froName: string,
+  staffId?: string,
+) {
+  const rowStaff = String(
+    row?.createdByStaffId || row?.staffId || row?.froId || "",
+  ).trim();
+  const key = String(staffId || "").trim();
+  if (rowStaff) return Boolean(key) && rowStaff === key;
+  const owner = storedPerson(
+    row?.receivedBy ||
+      row?.handedOverBy ||
+      row?.enteredBy ||
+      row?.froName ||
+      row?.executiveName,
+  );
+  const name = storedPerson(froName);
+  return Boolean(owner) && Boolean(name) && owner === name;
+}
 
 // ===== FRO Current Stock Calculation =====
 
@@ -2719,29 +2761,74 @@ export function persistFROReturnAccepted(accepted: {
 }) {
   if (typeof window === "undefined") return;
 
-  const froKey = String(accepted.froName || "")
-    .trim()
-    .toLowerCase();
-  if (!froKey) return;
+  const requestId = String(accepted.id || "");
+  if (!requestId) return;
 
   try {
-    const requestKey = `${FRO_RETURN_REQUEST_PREFIX}:${froKey}`;
-    const saved = JSON.parse(localStorage.getItem(requestKey) || "[]");
-    if (Array.isArray(saved)) {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(`${FRO_RETURN_REQUEST_PREFIX}:`)) keys.push(key);
+    }
+
+    keys.forEach((key) => {
+      const saved = JSON.parse(localStorage.getItem(key) || "[]");
+      if (!Array.isArray(saved)) return;
+      if (!saved.some((item: any) => String(item?.id || "") === requestId)) return;
       localStorage.setItem(
-        requestKey,
+        key,
         JSON.stringify(
           saved.map((item: any) =>
-            String(item.id) === String(accepted.id)
+            String(item?.id || "") === requestId
               ? { ...item, ...accepted, status: "accepted" }
               : item,
           ),
         ),
       );
-    }
+    });
   } catch {}
 
   window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
+}
+
+export function readStoreFROStockReturns(storeId: string) {
+  if (typeof window === "undefined") return [];
+
+  const targetStore = String(storeId || "");
+  const requests: any[] = [];
+
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(`${FRO_RETURN_REQUEST_PREFIX}:`)) continue;
+      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+      if (!Array.isArray(parsed)) continue;
+      parsed.forEach((item) => {
+        if (!item) return;
+        if (String(item.storeId || "") !== targetStore) return;
+        requests.push(item);
+      });
+    }
+
+    const received = JSON.parse(
+      localStorage.getItem(`${STORE_RETURN_RECEIVED_PREFIX}:${targetStore}`) ||
+        "[]",
+    );
+    const acceptedIds = new Set(
+      (Array.isArray(received) ? received : []).map((item: any) =>
+        String(item?.id || ""),
+      ),
+    );
+
+    return requests.map((item) =>
+      acceptedIds.has(String(item.id || "")) ||
+      String(item.status || "").toLowerCase() === "accepted"
+        ? { ...item, status: "accepted" }
+        : item,
+    );
+  } catch {
+    return requests;
+  }
 }
 
 export function getFROAvailableQty(
@@ -3300,6 +3387,42 @@ export function getFROHandQty(
   }, 0);
 }
 
+export function getFROStockHolders(
+  storeId: string,
+  productId: string,
+  packSize: string,
+  batchNo: string,
+  productName?: string,
+) {
+  const target = { productId, productName, packSize, batchNo };
+  const totals = new Map<string, number>();
+
+  getFROStock(storeId).forEach((row) => {
+    const qty = Math.max(0, Number(row.currentQty || 0));
+    if (qty <= 0) return;
+    if (
+      !stockVariantsMatch(
+        {
+          productId: row.productId,
+          productName: row.productName,
+          packSize: row.packSize,
+          batchNo: row.batchNo,
+        },
+        target,
+      )
+    ) {
+      return;
+    }
+    const name = String(row.executiveName || "").trim() || "FRO";
+    totals.set(name, (totals.get(name) || 0) + qty);
+  });
+
+  return Array.from(totals.entries()).map(([name, quantity]) => ({
+    name,
+    quantity,
+  }));
+}
+
 // ============================================================
 // FRO SALES / COLLECTION / OUTSTANDING / CASH-IN-HAND LEDGER
 // ============================================================
@@ -3406,6 +3529,636 @@ export function getStoredFarmerPurchases(): FarmerPurchase[] {
     if (raw) return JSON.parse(raw);
   } catch {}
   return farmerPurchases;
+}
+
+function readStoredRows(key: string): any[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(key);
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function storedPerson(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function isCashMethod(method: unknown) {
+  const value = String(method ?? "Cash")
+    .trim()
+    .toLowerCase();
+  return value === "" || value === "cash";
+}
+
+function isVoidStatus(status: unknown) {
+  const value = String(status || "")
+    .trim()
+    .toLowerCase();
+  return (
+    value === "cancelled" ||
+    value === "canceled" ||
+    value === "rejected" ||
+    value === "void" ||
+    value === "invalid"
+  );
+}
+
+export type FarmerAccountRow = {
+  farmerId?: string;
+  farmerName?: string;
+  amount?: number;
+};
+
+export type FarmerAccountBucket = {
+  farmerName: string;
+  gross: number;
+  receipts: number;
+  returns: number;
+  refunds: number;
+};
+
+function farmerAccountKey(farmerId: unknown, name: unknown) {
+  const id = String(farmerId || "").trim();
+  if (id) return `id:${id}`;
+  const farmerName = String(name || "")
+    .trim()
+    .toLowerCase();
+  return farmerName ? `name:${farmerName}` : "";
+}
+
+function uniqueTransactionRows(rows: any[], idOf: (row: any) => string) {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const id = idOf(row).trim().toLowerCase();
+    if (!id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function findInvoiceForAccount(invoices: any[], invoiceNo: unknown) {
+  const key = String(invoiceNo || "").trim().toLowerCase();
+  if (!key) return undefined;
+  return invoices.find(
+    (row) => String(row?.invoiceNo || "").trim().toLowerCase() === key,
+  );
+}
+
+function findReturnForAccount(returns: any[], returnNo: unknown) {
+  const key = String(returnNo || "").trim().toLowerCase();
+  if (!key) return undefined;
+  return returns.find((row) => {
+    const number = String(row?.returnNo || row?.creditNoteNo || "")
+      .trim()
+      .toLowerCase();
+    return number === key;
+  });
+}
+
+/** Refund → sales return → original invoice → that invoice's farmer. */
+export function farmerFromRefund(
+  refund: any,
+  returns: any[],
+  invoices: any[],
+) {
+  const salesReturn = findReturnForAccount(
+    returns,
+    refund?.referenceNo || refund?.returnNo,
+  );
+  const invoice = findInvoiceForAccount(
+    invoices,
+    salesReturn?.invoiceNo || refund?.invoiceNo,
+  );
+  const farmerId = String(
+    invoice?.farmerId || salesReturn?.farmerId || "",
+  ).trim();
+  const farmerName = String(
+    invoice?.partyName ||
+      invoice?.farmerName ||
+      salesReturn?.partyName ||
+      salesReturn?.farmerName ||
+      "",
+  ).trim();
+  return {
+    farmerId,
+    farmerName,
+    invoiceNo: String(salesReturn?.invoiceNo || refund?.invoiceNo || ""),
+    returnNo: String(salesReturn?.returnNo || refund?.referenceNo || ""),
+    salesReturn,
+    invoice,
+  };
+}
+
+/** One refund record once, and never more than its sales return. */
+function applicableRefundRows(refunds: any[], returns: any[], invoices: any[]) {
+  const seen = new Set<string>();
+  const usedByReturn = new Map<string, number>();
+  const rows: {
+    row: any;
+    amount: number;
+    farmerId: string;
+    farmerName: string;
+  }[] = [];
+  refunds.forEach((row) => {
+    if (isVoidStatus(row?.status)) return;
+    const keys = [row?.id, row?.refundNo]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+    if (keys.some((key) => seen.has(key))) return;
+    keys.forEach((key) => seen.add(key));
+    const farmer = farmerFromRefund(row, returns, invoices);
+    if (!farmer.farmerId && !farmer.farmerName) return;
+    const requested = Math.max(0, Number(row?.amount || 0));
+    const returnKey = farmer.returnNo.trim().toLowerCase();
+    const returnTotal = Math.max(
+      0,
+      Number(
+        farmer.salesReturn?.total ||
+          farmer.salesReturn?.amount ||
+          farmer.salesReturn?.returnAmount ||
+          0,
+      ),
+    );
+    let amount = requested;
+    if (returnKey && farmer.salesReturn) {
+      const used = usedByReturn.get(returnKey) || 0;
+      amount = Math.max(0, Math.min(requested, returnTotal - used));
+      usedByReturn.set(returnKey, used + amount);
+    }
+    if (!amount) return;
+    rows.push({
+      row,
+      amount,
+      farmerId: farmer.farmerId,
+      farmerName: farmer.farmerName,
+    });
+  });
+  return rows;
+}
+
+export function settleLinkedFarmerAccounts(input: {
+  invoices: any[];
+  receipts: any[];
+  returns: any[];
+  refunds: any[];
+  linkInvoices?: any[];
+  linkReturns?: any[];
+}) {
+  const linkInvoices = input.linkInvoices || input.invoices;
+  const linkReturns = input.linkReturns || input.returns;
+  const invoices = uniqueTransactionRows(
+    input.invoices,
+    (row) => String(row?.id || row?.invoiceNo || ""),
+  ).filter((row) => !isVoidStatus(row?.status));
+  const receipts = uniqueTransactionRows(
+    input.receipts,
+    (row) => String(row?.id || row?.receiptNo || ""),
+  ).filter((row) => !isVoidStatus(row?.status));
+  const returns = uniqueTransactionRows(
+    input.returns,
+    (row) => String(row?.id || row?.returnNo || row?.creditNoteNo || ""),
+  ).filter(
+    (row) => !isVoidStatus(row?.status) && String(row?.status || "") !== "Rejected",
+  );
+  const refunds = applicableRefundRows(
+    input.refunds,
+    linkReturns,
+    linkInvoices,
+  );
+
+  const buckets = buildFarmerBuckets(
+    invoices.map((row) => ({
+      farmerId: row?.farmerId,
+      farmerName: row?.partyName || row?.farmerName,
+      amount: row?.amount,
+    })),
+    receipts.map((row) => ({
+      farmerId: row?.farmerId,
+      farmerName: row?.farmerName || row?.partyName,
+      amount: row?.amount,
+    })),
+    returns.map((row) => {
+      const invoice = findInvoiceForAccount(linkInvoices, row?.invoiceNo);
+      return {
+        farmerId: invoice?.farmerId || row?.farmerId,
+        farmerName:
+          invoice?.partyName ||
+          invoice?.farmerName ||
+          row?.partyName ||
+          row?.farmerName,
+        amount: row?.total || row?.amount || row?.returnAmount,
+      };
+    }),
+    refunds.map((row) => ({
+      farmerId: row.farmerId,
+      farmerName: row.farmerName,
+      amount: row.amount,
+    })),
+  );
+  return settleFarmerAccounts(buckets);
+}
+
+/** One farmer balance from invoices, receipts, returns, and refunds. */
+export function buildFarmerBuckets(
+  invoices: FarmerAccountRow[],
+  receipts: FarmerAccountRow[],
+  returns: FarmerAccountRow[],
+  refunds: FarmerAccountRow[],
+) {
+  const map = new Map<string, FarmerAccountBucket>();
+  const take = (farmerId: unknown, name: unknown) => {
+    const key = farmerAccountKey(farmerId, name);
+    if (!key) return null;
+    const current = map.get(key) || {
+      farmerName: String(name || "").trim() || "Farmer",
+      gross: 0,
+      receipts: 0,
+      returns: 0,
+      refunds: 0,
+    };
+    const label = String(name || "").trim();
+    if (label && current.farmerName === "Farmer") current.farmerName = label;
+    map.set(key, current);
+    return current;
+  };
+  invoices.forEach((row) => {
+    const bucket = take(row.farmerId, row.farmerName);
+    if (bucket) bucket.gross += Math.max(0, Number(row.amount || 0));
+  });
+  receipts.forEach((row) => {
+    const bucket = take(row.farmerId, row.farmerName);
+    if (bucket) bucket.receipts += Math.max(0, Number(row.amount || 0));
+  });
+  returns.forEach((row) => {
+    const bucket = take(row.farmerId, row.farmerName);
+    if (bucket) bucket.returns += Math.max(0, Number(row.amount || 0));
+  });
+  refunds.forEach((row) => {
+    const bucket = take(row.farmerId, row.farmerName);
+    if (bucket) bucket.refunds += Math.max(0, Number(row.amount || 0));
+  });
+  return map;
+}
+
+/**
+ * Sales fall by the return or the refund, whichever is recorded.
+ * Collection is receipts minus the refund. Outstanding cannot go below zero.
+ */
+export function settleFarmerAccounts(buckets: Map<string, FarmerAccountBucket>) {
+  let sales = 0;
+  let collection = 0;
+  let outstanding = 0;
+  const collectionAdjustments: {
+    farmerName: string;
+    amount: number;
+    ref: string;
+  }[] = [];
+  const outstandingRows: {
+    farmerName: string;
+    amount: number;
+  }[] = [];
+  const farmers: {
+    farmerId: string;
+    farmerName: string;
+    sales: number;
+    collection: number;
+    outstanding: number;
+    returns: number;
+    refunds: number;
+  }[] = [];
+
+  buckets.forEach((row, key) => {
+    const gross = Math.max(0, row.gross);
+    const receipts = Math.max(0, row.receipts);
+    const returns = Math.min(Math.max(0, row.returns), gross);
+    const refundTotal = Math.max(0, row.refunds);
+    const credit = Math.min(gross, Math.max(returns, refundTotal));
+    const netCollection = receipts - refundTotal;
+    const netSales = Math.max(0, gross - credit);
+    const due = Math.max(0, netSales - netCollection);
+    sales += netSales;
+    collection += netCollection;
+    outstanding += due;
+    if (refundTotal > 0) {
+      collectionAdjustments.push({
+        farmerName: row.farmerName || "Farmer",
+        amount: -refundTotal,
+        ref: "Refund",
+      });
+    }
+    if (due > 0) {
+      outstandingRows.push({
+        farmerName: row.farmerName || "Farmer",
+        amount: due,
+      });
+    }
+    farmers.push({
+      farmerId: key.startsWith("id:") ? key.slice(3) : "",
+      farmerName: row.farmerName || "Farmer",
+      sales: netSales,
+      collection: netCollection,
+      outstanding: due,
+      returns: Math.max(0, row.returns),
+      refunds: Math.max(0, row.refunds),
+    });
+  });
+
+  return {
+    sales,
+    collection,
+    outstanding,
+    collectionAdjustments,
+    outstandingRows,
+    farmers,
+  };
+}
+
+/** FRO sales, collection and outstanding from saved invoices and receipts. */
+export function summarizeFroAccounts(
+  invoices: FarmerAccountRow[],
+  receipts: FarmerAccountRow[],
+) {
+  const map = new Map<string, { farmerName: string; sales: number; collection: number }>();
+  const take = (farmerId: unknown, name: unknown) => {
+    const key = farmerAccountKey(farmerId, name) || "unknown";
+    const current = map.get(key) || {
+      farmerName: String(name || "").trim() || "Farmer",
+      sales: 0,
+      collection: 0,
+    };
+    const label = String(name || "").trim();
+    if (label && current.farmerName === "Farmer") current.farmerName = label;
+    map.set(key, current);
+    return current;
+  };
+
+  invoices.forEach((row) => {
+    const bucket = take(row.farmerId, row.farmerName);
+    bucket.sales += Math.max(0, Number(row.amount || 0));
+  });
+  receipts.forEach((row) => {
+    const bucket = take(row.farmerId, row.farmerName);
+    bucket.collection += Math.max(0, Number(row.amount || 0));
+  });
+
+    let sales = 0;
+    let collection = 0;
+    let outstanding = 0;
+    const outstandingRows: { farmerName: string; amount: number }[] = [];
+    map.forEach((row) => {
+      sales += row.sales;
+      collection += row.collection;
+      const due = Math.max(0, row.sales - row.collection);
+      outstanding += due;
+      if (due > 0) {
+        outstandingRows.push({ farmerName: row.farmerName, amount: due });
+      }
+    });
+
+  return { sales, collection, outstanding, outstandingRows };
+}
+
+export type FROCashLine = {
+  date: string;
+  ref: string;
+  party: string;
+  amount: number;
+};
+
+export type FROCashPosition = {
+  cashCollected: number;
+  otherCash: number;
+  cashHandover: number;
+  cashExpenses: number;
+  cashRefunds: number;
+  cashInHand: number;
+  lines: FROCashLine[];
+};
+
+export function handoverBelongsToFro(
+  row: {
+    createdByStaffId?: string;
+    staffId?: string;
+    froId?: string;
+    handedOverBy?: string;
+  },
+  froName: string,
+  staffIds: Array<string | undefined>,
+) {
+  const rowIds = [row?.createdByStaffId, row?.staffId, row?.froId]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const keys = staffIds
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (rowIds.some((id) => keys.includes(id))) return true;
+  const owner = storedPerson(row?.handedOverBy);
+  const name = storedPerson(froName);
+  return Boolean(owner) && Boolean(name) && owner === name;
+}
+
+/** Current physical cash for one FRO. Each accepted handover is counted once. */
+export function getFROCashPosition(
+  storeId: string,
+  froName: string,
+  staffId?: string,
+  accountId?: string,
+): FROCashPosition {
+  const name = storedPerson(froName);
+  const empty: FROCashPosition = {
+    cashCollected: 0,
+    otherCash: 0,
+    cashHandover: 0,
+    cashExpenses: 0,
+    cashRefunds: 0,
+    cashInHand: 0,
+    lines: [],
+  };
+  if (!storeId || !name) return empty;
+
+  const lines: FROCashLine[] = [];
+  let cashCollected = 0;
+  const seenReceipts = new Set<string>();
+  readStoredRows(`nature-biotic-store-receipts-v3:${storeId}`).forEach((row) => {
+    const receiptId = String(row?.id || row?.receiptNo || "");
+    if (receiptId && seenReceipts.has(receiptId)) return;
+    if (receiptId) seenReceipts.add(receiptId);
+    if (!froOwnsTransaction(row, name, staffId)) return;
+    if (isVoidStatus(row?.status)) return;
+    if (!isCashMethod(row?.method || row?.paymentMethod)) return;
+    const amount = Math.max(0, Number(row?.amount || 0));
+    if (!amount) return;
+    cashCollected += amount;
+    lines.push({
+      date: String(row?.date || ""),
+      ref: String(row?.receiptNo || "Receipt"),
+      party: String(row?.farmerName || row?.partyName || "Farmer"),
+      amount,
+    });
+  });
+
+  let otherCash = 0;
+  const settlementOwner = new Map<string, string>();
+  readStoredRows(`nature-biotic-fro-cash-received-v1:${storeId}`).forEach((row) => {
+    const owner = storedPerson(row?.requestedFor);
+    if (row?.settlementId && owner) {
+      settlementOwner.set(String(row.settlementId), owner);
+    }
+    if (!froOwnsTransaction({ ...row, receivedBy: row?.requestedFor }, name, staffId) && owner !== name) return;
+    if (String(row?.status || "") !== "accepted") return;
+    if (!isCashMethod(row?.method)) return;
+    const amount = Math.max(0, Number(row?.amount || 0));
+    if (!amount) return;
+    otherCash += amount;
+    lines.push({
+      date: String(row?.date || ""),
+      ref: String(row?.id || "Cash received"),
+      party: String(row?.receivedFrom || "Store"),
+      amount,
+    });
+  });
+
+  let cashHandover = 0;
+  const seenHandover = new Set<string>();
+  readStoredRows(`nature-biotic-fro-handovers-v1:${storeId}`).forEach((row) => {
+    const id = String(row?.id || "");
+    if (!id || seenHandover.has(id)) return;
+    if (!handoverBelongsToFro(row, froName, [staffId, accountId])) return;
+    if (!isCashMethod(row?.method)) return;
+    const status = String(row?.status || "accepted").trim().toLowerCase();
+    if (status !== "accepted") return;
+    const amount = Math.max(0, Number(row?.amount || 0));
+    if (!amount) return;
+    seenHandover.add(id);
+    cashHandover += amount;
+    lines.push({
+      date: String(row?.date || ""),
+      ref: id,
+      party: "Cash handover",
+      amount: -amount,
+    });
+  });
+
+  let cashExpenses = 0;
+  readStoredRows("naturebiotic_shared_expenses").forEach((row) => {
+    if (!froOwnsTransaction(row, name, staffId)) return;
+    if (isVoidStatus(row?.status)) return;
+    if (String(row?.status || "accepted").toLowerCase() !== "accepted") return;
+    if (!isCashMethod(row?.method)) return;
+    const amount = Math.max(0, Number(row?.amount || 0));
+    if (!amount) return;
+    cashExpenses += amount;
+    lines.push({
+      date: String(row?.date || ""),
+      ref: String(row?.expenseNo || row?.id || "Expense"),
+      party: String(row?.category || "Expense"),
+      amount: -amount,
+    });
+  });
+
+  let cashRefunds = 0;
+  readStoredRows(`nature-biotic-fro-cash-refunds-v1:${storeId}`).forEach((row) => {
+    const owner =
+      storedPerson(row?.enteredBy || row?.froName) ||
+      settlementOwner.get(String(row?.settlementId || "")) ||
+      "";
+    if (
+      !froOwnsTransaction(
+        { ...row, receivedBy: row?.enteredBy || row?.froName },
+        name,
+        staffId,
+      ) &&
+      owner !== name
+    ) {
+      return;
+    }
+    if (!isCashMethod(row?.method)) return;
+    const amount = Math.max(0, Number(row?.amount || 0));
+    if (!amount) return;
+    cashRefunds += amount;
+    lines.push({
+      date: String(row?.date || ""),
+      ref: String(row?.id || "Refund"),
+      party: String(row?.refundedTo || "Refund"),
+      amount: -amount,
+    });
+  });
+
+  const salesReturns = readStoredRows(
+    `nature-biotic-store-sales-returns-v2:${storeId}`,
+  );
+  const salesInvoices = readStoredRows(
+    `nature-biotic-store-sales-invoices-v2:${storeId}`,
+  );
+  applicableRefundRows(
+    readStoredRows(`nature-biotic-store-refunds-v2:${storeId}`),
+    salesReturns,
+    salesInvoices,
+  ).forEach(({ row, amount }) => {
+    const linked = farmerFromRefund(row, salesReturns, salesInvoices);
+    const owner = {
+      ...row,
+      createdByStaffId:
+        row?.createdByStaffId ||
+        linked.salesReturn?.createdByStaffId ||
+        linked.invoice?.createdByStaffId,
+      staffId:
+        row?.staffId ||
+        linked.salesReturn?.staffId ||
+        linked.invoice?.staffId,
+      executiveName:
+        row?.executiveName ||
+        linked.salesReturn?.executiveName ||
+        linked.invoice?.executiveName,
+    };
+    if (!froOwnsTransaction(owner, name, staffId)) return;
+    if (!isCashMethod(row?.paymentMethod || row?.method)) return;
+    cashRefunds += amount;
+    lines.push({
+      date: String(row?.date || ""),
+      ref: String(row?.refundNo || row?.referenceNo || "Refund"),
+      party: String(linked.farmerName || row?.farmerName || "Refund"),
+      amount: -amount,
+    });
+  });
+
+  return {
+    cashCollected,
+    otherCash,
+    cashHandover,
+    cashExpenses,
+    cashRefunds,
+    cashInHand: Math.max(
+      0,
+      cashCollected + otherCash - cashHandover - cashExpenses - cashRefunds,
+    ),
+    lines,
+  };
+}
+
+export function getFROReturnedAmountByInvoice(storeId: string, froName: string) {
+  const name = storedPerson(froName);
+  const totals = new Map<string, number>();
+  if (!storeId || !name) return totals;
+  readStoredRows(`nature-biotic-store-sales-returns-v2:${storeId}`).forEach(
+    (row) => {
+      if (isVoidStatus(row?.status)) return;
+      if (storedPerson(row?.executiveName) !== name) return;
+      const invoiceNo = String(row?.invoiceNo || "")
+        .trim()
+        .toLowerCase();
+      if (!invoiceNo) return;
+      const amount = Math.max(0, Number(row?.total || row?.amount || 0));
+      totals.set(invoiceNo, (totals.get(invoiceNo) || 0) + amount);
+    },
+  );
+  return totals;
 }
 
 function saveFarmerPurchasesRows(rows: FarmerPurchase[]) {

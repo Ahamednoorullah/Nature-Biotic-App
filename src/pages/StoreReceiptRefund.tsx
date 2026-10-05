@@ -13,10 +13,7 @@ type Row = {
 };
 
 export default function StoreReceiptRefund({ storeId }: { storeId: string }) {
-  const [rows, setRows] = useState<Row[]>([
-    { id: "1", date: "17 Aug 2026", referenceNo: "RCPT-501", type: "Receipt", party: "Murugan", amount: 5200, mode: "Cash" },
-    { id: "2", date: "16 Aug 2026", referenceNo: "REF-101", type: "Refund", party: "Selvam", amount: 800, mode: "UPI" },
-  ]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [type, setType] = useState<"Receipt" | "Refund">("Receipt");
   const [party, setParty] = useState("");

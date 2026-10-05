@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
@@ -266,6 +266,59 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   const [items, setItems] = useState<ReturnItem[]>([]);
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
 
+  function previouslyReturnedQty(
+    productId: string,
+    batchNo: string,
+    packSize: string,
+  ) {
+    return rows
+      .filter(
+        (row) =>
+          String(row.invoiceNo || "") === String(selectedInvoice?.invoiceNo || ""),
+      )
+      .flatMap((row) => row.items || [])
+      .filter((item) => {
+        const sameProduct =
+          String(item.productId || "") === String(productId || "");
+        const sameBatch = String(item.batchNo || "") === String(batchNo || "");
+        const samePack =
+          !packSize || String(item.packSize || "") === String(packSize || "");
+        return sameProduct && sameBatch && samePack;
+      })
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  }
+
+  function formReturnedQty(productId: string, batchNo: string, packSize: string) {
+    return items
+      .filter(
+        (item) =>
+          String(item.productId || "") === String(productId || "") &&
+          String(item.batchNo || "") === String(batchNo || "") &&
+          (!packSize || String(item.packSize || "") === String(packSize || "")),
+      )
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  }
+
+  function remainingReturnQty(
+    productId: string,
+    batchNo: string,
+    packSize: string,
+    soldQty: number,
+  ) {
+    return Math.max(
+      0,
+      Number(soldQty || 0) -
+        previouslyReturnedQty(productId, batchNo, packSize) -
+        formReturnedQty(productId, batchNo, packSize),
+    );
+  }
+
+  function clampReturnQty(raw: string, max: number) {
+    const parsed = Number(String(raw).trim());
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return Math.min(Math.floor(parsed), Math.max(0, max));
+  }
+
   const selectedInvoiceItem = selectedInvoice?.products.find(
     (item) => item.key === entry.sourceKey,
   );
@@ -328,14 +381,21 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       return;
     }
 
+    const packSize = item.pkgsize || item.packSize || item.product?.size || "";
+    const max = remainingReturnQty(
+      item.productId,
+      item.batchNo || "",
+      packSize,
+      Number(item.quantity || 0),
+    );
     setEntry((prev) => ({
       ...prev,
       sourceKey,
       productId: item.productId,
-      packSize: item.pkgsize || item.packSize || item.product?.size || "",
+      packSize,
       batchNo: item.batchNo || "",
       expiryDate: item.expiryDate || "",
-      quantity: 1,
+      quantity: max > 0 ? 1 : 0,
       price: Number(item.sellingPrice || 0),
       reason: "",
     }));
@@ -359,15 +419,12 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     }
 
 
-    const alreadyReturned = items
-      .filter(
-        (item) =>
-          item.productId === original.productId &&
-          item.batchNo === original.batchNo,
-      )
-      .reduce((sum, item) => sum + item.quantity, 0);
-
-    const remainingQty = Number(original.quantity || 0) - alreadyReturned;
+    const remainingQty = remainingReturnQty(
+      original.productId,
+      original.batchNo || "",
+      entry.packSize,
+      Number(original.quantity || 0),
+    );
     if (entry.quantity > remainingQty) {
       window.alert(
         `Only ${remainingQty} quantity can be returned from this invoice line.`,
@@ -459,7 +516,33 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     (isFRO || through === "Direct" || executiveName.trim());
 
   function saveReturn() {
-    if (!canSave) return;
+    if (!canSave || !selectedInvoice) return;
+
+    for (const item of items) {
+      const original = selectedInvoice.products.find(
+        (product) => product.key === item.key || (
+          product.productId === item.productId &&
+          product.batchNo === item.batchNo
+        ),
+      );
+      const sold = Number(original?.quantity || 0);
+      const already = previouslyReturnedQty(
+        item.productId,
+        item.batchNo,
+        item.packSize,
+      );
+      const requested = formReturnedQty(
+        item.productId,
+        item.batchNo,
+        item.packSize,
+      );
+      if (Number(item.quantity || 0) < 1 || already + requested > sold) {
+        window.alert(
+          `Only ${Math.max(0, sold - already)} quantity can be returned for this invoice line.`,
+        );
+        return;
+      }
+    }
 
     const allocatedNo = nextReturnNo();
     const next: SalesReturnRow = {
@@ -823,7 +906,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       </Card>
 
       {/* FRO list: same compact table pattern as Quotation / Sales Invoice */}
-      {isFRO ? (
+      {isFRO && !selectedReturn && !showCreate ? (
         <Card className="overflow-hidden p-0">
           <div className="w-full overflow-hidden">
             <table className="w-full table-fixed border-collapse text-xs">
@@ -885,19 +968,19 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
         </div>
       )}
 
-      {showCreate &&
-        createPortal(
+      {showCreate && (
+        <ShellSlot inline={isFRO}>
           <div
-            className={`fixed z-[10000] ${
+            className={
               isFRO
-                ? "inset-x-0 bottom-0 top-14 flex overflow-hidden bg-white"
-                : "inset-0 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
-            }`}
+                ? "w-full max-w-full overflow-x-hidden bg-white"
+                : "fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+            }
           >
             <div
               className={`flex flex-col overflow-hidden border-slate-200 bg-white ${
                 isFRO
-                  ? "h-full w-full border-0"
+                  ? "w-full border-0"
                   : "nb-modal-panel w-full max-w-7xl rounded-2xl border shadow-2xl"
               }`}
             >
@@ -1055,7 +1138,18 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                         type="number"
                         value={String(entry.quantity)}
                         onChange={(v) =>
-                          setEntry((p) => ({ ...p, quantity: Number(v) || 0 }))
+                          setEntry((current) => ({
+                            ...current,
+                            quantity: clampReturnQty(
+                              v,
+                              remainingReturnQty(
+                                current.productId,
+                                current.batchNo,
+                                current.packSize,
+                                Number(selectedInvoiceItem?.quantity || 0),
+                              ),
+                            ),
+                          }))
                         }
                       />
                       <Input
@@ -1335,18 +1429,18 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                 </Button>
               </div>
             </div>
-          </div>,
-          document.body,
-        )}
+          </div>
+        </ShellSlot>
+      )}
 
-      {selectedReturn &&
-        createPortal(
+      {selectedReturn && (
+        <ShellSlot inline={isFRO}>
           <div
-            className={`fixed z-[10020] ${
+            className={
               isFRO
-                ? "inset-x-0 top-[68px] bottom-[4.75rem] flex overflow-hidden bg-slate-50 lg:bottom-0 lg:left-64"
-                : "inset-0 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
-            }`}
+                ? "w-full max-w-full overflow-x-hidden bg-white"
+                : "fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+            }
           >
             <style>{`
               @media print {
@@ -1379,7 +1473,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
             {/* FRO mobile-friendly view: use a compact card layout like the quotation view.
                 The formal invoice/print layout below remains unchanged for Store Admin. */}
             {isFRO && (
-              <div className="flex h-full w-full flex-col overflow-hidden bg-white">
+              <div className="flex w-full flex-col overflow-hidden bg-white">
                 <style>{documentPrintStyle}</style>
                 <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
                   <button
@@ -2218,11 +2312,22 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                 )}
               </div>
             </div>
-          </div>,
-          document.body,
-        )}
+          </div>
+        </ShellSlot>
+      )}
     </div>
   );
+}
+
+function ShellSlot({
+  inline,
+  children,
+}: {
+  inline: boolean;
+  children: ReactNode;
+}) {
+  if (inline || typeof document === "undefined") return <>{children}</>;
+  return createPortal(children, document.body);
 }
 
 function Detail({ label, value }: { label: string; value: string }) {

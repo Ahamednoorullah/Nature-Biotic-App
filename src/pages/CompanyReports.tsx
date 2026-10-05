@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getCompanyCreditNoteSyncRecords,
+  getCompanyRefunds,
   getFinalCompanyStoreSales,
+  settleCompanyRefund,
+  settleLinkedFarmerAccounts,
   stores as allStores,
 } from "@/lib/data";
 import { Card, Icon } from "@/components/ui";
@@ -152,18 +155,88 @@ function buildReport(filter: DateFilter, from = "", to = "") {
     companyPaid.set(key, (companyPaid.get(key) || 0) + money(receipt.amount));
   });
 
-  let companySales = 0;
-  let companyOutstanding = 0;
+  const companyGrossSales = new Map<string, number>();
+  const companyGrossCollection = new Map<string, number>();
+  const companyRefunds = new Map<string, number>();
   companyInvoices.forEach((invoice, key) => {
     if (!inPeriod(invoice.date, filter, from, to)) return;
     const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
-    companySales += net;
-    companyOutstanding += Math.max(0, net - (companyPaid.get(key) || 0));
+    companyGrossSales.set(
+      invoice.storeId,
+      (companyGrossSales.get(invoice.storeId) || 0) + net,
+    );
+  });
+  companyReceipts.forEach((receipt) => {
+    if (!inPeriod(receipt.date, filter, from, to)) return;
+    const storeId = String(receipt.storeId || "");
+    companyGrossCollection.set(
+      storeId,
+      (companyGrossCollection.get(storeId) || 0) + money(receipt.amount),
+    );
+  });
+  getCompanyRefunds().forEach((refund) => {
+    if (!inPeriod(refund.date, filter, from, to)) return;
+    companyRefunds.set(
+      refund.storeId,
+      (companyRefunds.get(refund.storeId) || 0) + money(refund.amount),
+    );
+  });
+  let companySales = 0;
+  let companyCollection = 0;
+  const companyStoreIds = new Set<string>([
+    ...companyGrossSales.keys(),
+    ...companyGrossCollection.keys(),
+    ...companyRefunds.keys(),
+  ]);
+  companyStoreIds.forEach((storeId) => {
+    const settled = settleCompanyRefund(
+      companyGrossSales.get(storeId) || 0,
+      companyGrossCollection.get(storeId) || 0,
+      companyRefunds.get(storeId) || 0,
+    );
+    companySales += settled.sales;
+    companyCollection += settled.collection;
   });
 
-  const companyCollection = companyReceipts.reduce((sum, receipt) => {
-    return inPeriod(receipt.date, filter, from, to) ? sum + money(receipt.amount) : sum;
-  }, 0);
+  const lifetimeSales = new Map<string, number>();
+  const lifetimeCollection = new Map<string, number>();
+  const lifetimeRefunds = new Map<string, number>();
+  companyInvoices.forEach((invoice, key) => {
+    const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
+    lifetimeSales.set(
+      invoice.storeId,
+      (lifetimeSales.get(invoice.storeId) || 0) + net,
+    );
+  });
+  companyReceipts.forEach((receipt) => {
+    const storeId = String(receipt.storeId || "");
+    lifetimeCollection.set(
+      storeId,
+      (lifetimeCollection.get(storeId) || 0) + money(receipt.amount),
+    );
+  });
+  getCompanyRefunds().forEach((refund) => {
+    lifetimeRefunds.set(
+      refund.storeId,
+      (lifetimeRefunds.get(refund.storeId) || 0) + money(refund.amount),
+    );
+  });
+  let companyOutstanding = 0;
+  const lifetimeOutstanding = new Map<string, number>();
+  const lifetimeStoreIds = new Set<string>([
+    ...lifetimeSales.keys(),
+    ...lifetimeCollection.keys(),
+    ...lifetimeRefunds.keys(),
+  ]);
+  lifetimeStoreIds.forEach((storeId) => {
+    const settled = settleCompanyRefund(
+      lifetimeSales.get(storeId) || 0,
+      lifetimeCollection.get(storeId) || 0,
+      lifetimeRefunds.get(storeId) || 0,
+    );
+    lifetimeOutstanding.set(storeId, settled.outstanding);
+    companyOutstanding += settled.outstanding;
+  });
 
   const storeBooks = allStores.map((store) => {
     const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
@@ -189,7 +262,6 @@ function buildReport(filter: DateFilter, from = "", to = "") {
   const storeRows: StoreReport[] = storeBooks.map(
     ({ store, invoices, receipts, returned, paid }) => {
       let sales = 0;
-      let outstanding = 0;
       invoices.forEach((invoice) => {
         if (!inPeriod(invoice.date, filter, from, to)) return;
         const invoiceNo = String(invoice.invoiceNo || "").trim().toLowerCase();
@@ -198,30 +270,51 @@ function buildReport(filter: DateFilter, from = "", to = "") {
           money(invoice.amount) - (returned.get(invoiceNo) || 0),
         );
         sales += net;
-        outstanding += Math.max(0, net - (paid.get(invoiceNo) || 0));
       });
       const collection = receipts.reduce((sum, receipt) => {
         return inPeriod(receipt.date, filter, from, to) ? sum + money(receipt.amount) : sum;
       }, 0);
-      return { id: store.id, name: store.name, sales, collection, outstanding };
+      const current = settleLinkedFarmerAccounts({
+        invoices,
+        receipts,
+        returns: [...readRows(`${STORE_RETURN_KEY}:${store.id}`), ...readRows(`${STORE_CREDIT_KEY}:${store.id}`)].filter(
+          (row) => row.status !== "Rejected",
+        ),
+        refunds: readRows(`nature-biotic-store-refunds-v2:${store.id}`),
+        linkInvoices: invoices,
+        linkReturns: [
+          ...readRows(`${STORE_RETURN_KEY}:${store.id}`),
+          ...readRows(`${STORE_CREDIT_KEY}:${store.id}`),
+        ],
+      });
+      return {
+        id: store.id,
+        name: store.name,
+        sales,
+        collection,
+        outstanding: current.outstanding,
+      };
     },
   );
 
   const companyByStore = new Map<string, { sales: number; outstanding: number }>();
-  companyInvoices.forEach((invoice, key) => {
-    if (!inPeriod(invoice.date, filter, from, to)) return;
-    const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
-    const current = companyByStore.get(invoice.storeId) || { sales: 0, outstanding: 0 };
-    current.sales += net;
-    current.outstanding += Math.max(0, net - (companyPaid.get(key) || 0));
-    companyByStore.set(invoice.storeId, current);
+  companyStoreIds.forEach((storeId) => {
+    const settled = settleCompanyRefund(
+      companyGrossSales.get(storeId) || 0,
+      companyGrossCollection.get(storeId) || 0,
+      companyRefunds.get(storeId) || 0,
+    );
+    companyByStore.set(storeId, {
+      sales: settled.sales,
+      outstanding: lifetimeOutstanding.get(storeId) || 0,
+    });
   });
   const storeComparison = storeRows.map((store) => {
     const company = companyByStore.get(store.id) || { sales: 0, outstanding: 0 };
     return {
       name: store.name,
       sales: store.sales + company.sales,
-      outstanding: store.outstanding + company.outstanding,
+      outstanding: store.outstanding + (lifetimeOutstanding.get(store.id) || company.outstanding),
     };
   });
 

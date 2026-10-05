@@ -1,55 +1,67 @@
+import { useEffect, useState } from "react";
 import { Card, Icon } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 
-const directSales = [
-  {
-    date: "17 Aug 2026",
-    invoiceNo: "INV-D-1201",
-    farmer: "Murugan",
-    village: "Rajapalayam",
-    amount: 6200,
-  },
-  {
-    date: "17 Aug 2026",
-    invoiceNo: "INV-D-1202",
-    farmer: "Selvam",
-    village: "Seithur",
-    amount: 4800,
-  },
-  {
-    date: "16 Aug 2026",
-    invoiceNo: "INV-D-1198",
-    farmer: "Kannan",
-    village: "Watrap",
-    amount: 7500,
-  },
-];
+type SaleRow = {
+  id?: string;
+  date?: string;
+  invoiceNo?: string;
+  through?: string;
+  partyName?: string;
+  farmerVillage?: string;
+  executiveName?: string;
+  amount?: number;
+};
 
-const executiveSales = [
-  {
-    date: "17 Aug 2026",
-    invoiceNo: "INV-RK-1042",
-    executive: "Ram Kumar",
-    farmer: "Murugan",
-    amount: 6200,
-  },
-  {
-    date: "17 Aug 2026",
-    invoiceNo: "INV-AK-842",
-    executive: "Ajith Kumar",
-    farmer: "Arun",
-    amount: 5400,
-  },
-  {
-    date: "16 Aug 2026",
-    invoiceNo: "INV-PS-742",
-    executive: "PeriyaSamy",
-    farmer: "Velu",
-    amount: 4900,
-  },
-];
+function readStoreInvoices(storeId: string): SaleRow[] {
+  try {
+    const raw = localStorage.getItem(
+      `nature-biotic-store-sales-invoices-v2:${storeId}`,
+    );
+    const rows = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(rows)) return [];
+    return rows.filter((row) => {
+      const id = String(row?.id || "");
+      const invoiceNo = String(row?.invoiceNo || "").toLowerCase();
+      return id !== "store-sale-1" && invoiceNo !== "nb-inv-2001";
+    });
+  } catch {
+    return [];
+  }
+}
 
 export default function StoreSales({ storeId }: { storeId: string }) {
+  const [rows, setRows] = useState<SaleRow[]>(() => readStoreInvoices(storeId));
+
+  useEffect(() => {
+    const refresh = () => setRows(readStoreInvoices(storeId));
+    refresh();
+    window.addEventListener("nature-biotic-store-sales-updated", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("nature-biotic-store-sales-updated", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [storeId]);
+
+  const directSales = rows
+    .filter((row) => String(row.through || "Direct") !== "Executive")
+    .map((row) => ({
+      date: row.date || "",
+      invoiceNo: row.invoiceNo || "",
+      farmer: row.partyName || "",
+      village: row.farmerVillage || "",
+      amount: Number(row.amount || 0),
+    }));
+  const executiveSales = rows
+    .filter((row) => row.through === "Executive")
+    .map((row) => ({
+      date: row.date || "",
+      invoiceNo: row.invoiceNo || "",
+      executive: row.executiveName || "",
+      farmer: row.partyName || "",
+      amount: Number(row.amount || 0),
+    }));
   const directTotal = directSales.reduce((s, r) => s + r.amount, 0);
   const executiveTotal = executiveSales.reduce((s, r) => s + r.amount, 0);
   return (

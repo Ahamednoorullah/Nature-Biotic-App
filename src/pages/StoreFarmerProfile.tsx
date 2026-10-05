@@ -1,10 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StoreInvoiceBillModal } from "@/components/StoreInvoiceBillModal";
 import {
   getFarmerById,
   getPurchasesByFarmer,
   getPaymentsByFarmer,
   updateFarmer,
+  farmerFromRefund,
+  settleLinkedFarmerAccounts,
   cropTypes,
   soilTypes,
   waterSources,
@@ -24,7 +26,7 @@ import {
   Textarea,
   Modal,
 } from "@/components/ui";
-import { formatCurrency, formatDate, initials } from "@/lib/format";
+import { formatCurrency, formatDate, initials, parseBusinessDate } from "@/lib/format";
 
 type Tab =
   | "overview"
@@ -77,6 +79,17 @@ export default function StoreFarmerProfile({
   const [openInvoice, setOpenInvoice] = useState<any | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [, setRefresh] = useState(0);
+  useEffect(() => {
+    const refresh = () => setRefresh((value) => value + 1);
+    const events = [
+      "focus",
+      "nature-biotic-store-refunds-updated",
+      "nature-biotic-store-sales-updated",
+      "nature-biotic-store-receipts-updated",
+    ];
+    events.forEach((event) => window.addEventListener(event, refresh));
+    return () => events.forEach((event) => window.removeEventListener(event, refresh));
+  }, []);
   const farmer = getFarmerById(farmerId);
 
   if (!farmer) {
@@ -114,20 +127,36 @@ export default function StoreFarmerProfile({
 
   const liveInvoices = readStoreRows<any>(
     "nature-biotic-store-sales-invoices-v2",
-  ).filter(
-    (invoice: any) =>
-      String(invoice.farmerId || "").trim() === String(farmerId).trim() &&
-      invoice.id !== "store-sale-1" &&
-      String(invoice.invoiceNo || "").trim().toLowerCase() !== "nb-inv-2001",
-  );
+  ).filter((invoice: any) => {
+    if (invoice.id === "store-sale-1") return false;
+    if (String(invoice.invoiceNo || "").trim().toLowerCase() === "nb-inv-2001") {
+      return false;
+    }
+    const invoiceFarmerId = String(
+      invoice.farmerId || invoice.customerId || "",
+    ).trim();
+    const farmerIdText = String(farmerId || "").trim();
+    const invoiceName = String(
+      invoice.partyName || invoice.farmerName || invoice.customerName || "",
+    )
+      .trim()
+      .toLowerCase();
+    const sameId = Boolean(
+      invoiceFarmerId && farmerIdText && invoiceFarmerId === farmerIdText,
+    );
+    const sameName = Boolean(
+      !invoiceFarmerId && invoiceName && farmerNameKey && invoiceName === farmerNameKey,
+    );
+    return sameId || sameName;
+  });
 
   const liveReceipts = readStoreRows<any>(
     "nature-biotic-store-receipts-v3",
   ).filter((receipt: any) => {
-    const idMatch =
-      String(receipt.farmerId || "").trim() === String(farmerId).trim();
-
+    const receiptFarmerId = String(receipt.farmerId || "").trim();
+    const idMatch = Boolean(receiptFarmerId) && receiptFarmerId === String(farmerId).trim();
     const nameMatch =
+      !receiptFarmerId &&
       String(receipt.farmerName || "")
         .trim()
         .toLowerCase() === farmerNameKey;
@@ -138,45 +167,32 @@ export default function StoreFarmerProfile({
   const purchases = liveInvoices.flatMap((invoice: any) => {
           const products = Array.isArray(invoice.products)
             ? invoice.products
-            : [];
+            : Array.isArray(invoice.items)
+              ? invoice.items
+              : [];
 
-          if (products.length === 0) {
-            return [
-              {
-                id: invoice.id,
-                invoiceNo: invoice.invoiceNo,
-                date: invoice.date,
-                product: "Invoice",
-                quantity: 0,
-                amount: Number(invoice.amount || 0),
-                paymentStatus: liveReceipts.some(
-                  (receipt: any) =>
-                    String(receipt.invoiceNo || "") ===
-                    String(invoice.invoiceNo || ""),
-                )
-                  ? "Paid"
-                  : "Pending",
-              },
-            ];
-          }
+          if (products.length === 0) return [];
 
-          return products.map((item: any, index: number) => ({
+          return products.map((item: any, index: number) => {
+            const quantity = Number(item.quantity ?? item.qty ?? 0);
+            const packSize = String(
+              item.pkgsize || item.packSize || item.product?.size || "",
+            ).trim();
+            const name = String(
+              item.product?.name || item.productName || item.name || item.product || "Product",
+            );
+            const lineAmount = Number(item.rowTotal ?? item.total ?? 0);
+            const amount =
+              lineAmount > 0
+                ? lineAmount
+                : quantity * Number(item.sellingPrice ?? item.price ?? 0);
+            return {
             id: `${invoice.id}-${index}`,
             invoiceNo: invoice.invoiceNo,
             date: invoice.date,
-            product: `${item.product?.name || item.productName || item.product || "Product"}${
-              item.packSize || item.pkgsize
-                ? ` - ${item.packSize || item.pkgsize}`
-                : ""
-            }`,
-            quantity: Number(item.quantity ?? item.qty ?? 0),
-            amount: Number(
-              item.rowTotal ??
-                item.total ??
-                item.withoutTax ??
-                item.sellingPrice ??
-                0,
-            ),
+            product: packSize ? `${name} - ${packSize}` : name,
+            quantity,
+            amount,
             paymentStatus: liveReceipts.some(
               (receipt: any) =>
                 String(receipt.invoiceNo || "") ===
@@ -184,7 +200,8 @@ export default function StoreFarmerProfile({
             )
               ? "Paid"
               : "Pending",
-          }));
+          };
+          });
         });
 
   const invoices = liveInvoices.map((invoice: any) => {
@@ -229,6 +246,45 @@ export default function StoreFarmerProfile({
       amount: Number(receipt.amount || 0),
     }),
   ) as ReturnType<typeof getPaymentsByFarmer>;
+
+  const salesReturns = [
+    ...readStoreRows<any>("nature-biotic-store-sales-returns-v2"),
+    ...readStoreRows<any>("nature-biotic-store-credit-notes-v3"),
+  ];
+  const storedRefunds = readStoreRows<any>("nature-biotic-store-refunds-v2");
+  const allInvoices = readStoreRows<any>("nature-biotic-store-sales-invoices-v2");
+  const allReceipts = readStoreRows<any>("nature-biotic-store-receipts-v3");
+  const account = settleLinkedFarmerAccounts({
+    invoices: allInvoices,
+    receipts: allReceipts,
+    returns: salesReturns,
+    refunds: storedRefunds,
+  }).farmers.find((row) => {
+    if (row.farmerId && row.farmerId === String(farmerId)) return true;
+    return !row.farmerId && row.farmerName.trim().toLowerCase() === farmerNameKey;
+  }) || { sales: 0, collection: 0, outstanding: 0 };
+  const farmerRefunds = storedRefunds.flatMap((refund) => {
+    const linked = farmerFromRefund(refund, salesReturns, allInvoices);
+    const sameId = Boolean(linked.farmerId) && linked.farmerId === String(farmerId);
+    const sameName =
+      !linked.farmerId && linked.farmerName.trim().toLowerCase() === farmerNameKey;
+    if (!sameId && !sameName) return [];
+    return [
+      {
+        id: String(refund.id || refund.refundNo),
+        farmerId,
+        receiptNo: String(refund.refundNo || "Refund"),
+        date: String(refund.date || ""),
+        method: "Refund",
+        note: `Sales return ${linked.returnNo || refund.referenceNo || "-"} · Invoice ${linked.invoiceNo || "-"}`,
+        amount: Number(refund.amount || 0),
+      },
+    ];
+  });
+  const paymentHistory = [...payments, ...farmerRefunds];
+  const totalSpent = account.sales;
+  const totalPaid = account.collection;
+  const outstandingBalance = account.outstanding;
 
   return (
     <div>
@@ -336,7 +392,10 @@ export default function StoreFarmerProfile({
           <OverviewTab
             farmer={farmer}
             purchases={purchases}
-            payments={payments}
+            payments={paymentHistory}
+            totalSpent={totalSpent}
+            totalPaid={totalPaid}
+            outstandingBalance={outstandingBalance}
             isFro={isFro}
           />
         )}
@@ -372,7 +431,7 @@ export default function StoreFarmerProfile({
         {tab === "product-history" && (
           <ProductHistoryTab purchases={purchases} isFro={isFro} />
         )}
-        {tab === "payments" && <PaymentsTab payments={payments} />}
+        {tab === "payments" && <PaymentsTab payments={paymentHistory} />}
         {tab === "documents" && <DocumentsTab />}
       </div>
       <EditFarmerModal
@@ -399,16 +458,20 @@ function OverviewTab({
   farmer,
   purchases,
   payments,
+  totalSpent,
+  totalPaid,
+  outstandingBalance,
   isFro = false,
 }: {
   farmer: ReturnType<typeof getFarmerById>;
   purchases: ReturnType<typeof getPurchasesByFarmer>;
   payments: ReturnType<typeof getPaymentsByFarmer>;
+  totalSpent: number;
+  totalPaid: number;
+  outstandingBalance: number;
   isFro?: boolean;
 }) {
   if (!farmer) return null;
-  const totalSpent = purchases.reduce((s, p) => s + p.amount, 0);
-  const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
 
   const totalLand =
     farmer.crops?.reduce((sum, crop) => sum + Number(crop.landSize || 0), 0) ??
@@ -502,12 +565,12 @@ function OverviewTab({
           <p
             className={
               isFro
-                ? `text-sm sm:text-base font-bold mt-1 truncate ${farmer.outstanding > 0 ? "text-amber-600" : "text-brand-600"}`
-                : `text-2xl font-bold mt-1 ${farmer.outstanding > 0 ? "text-amber-600" : "text-brand-600"}`
+                ? `text-sm sm:text-base font-bold mt-1 truncate ${outstandingBalance > 0 ? "text-amber-600" : "text-brand-600"}`
+                : `text-2xl font-bold mt-1 ${outstandingBalance > 0 ? "text-amber-600" : "text-brand-600"}`
             }
           >
-            {farmer.outstanding > 0
-              ? formatCurrency(farmer.outstanding)
+            {outstandingBalance > 0
+              ? formatCurrency(outstandingBalance)
               : "Clear"}
           </p>
         </Card>
@@ -800,9 +863,10 @@ function ProductHistoryTab({
   const [period, setPeriod] = useState<PeriodFilter>("3-months");
 
   const startDate = getPeriodStartDate(period);
-  const periodPurchases = purchases.filter(
-    (p) => new Date(p.date) >= startDate,
-  );
+  const periodPurchases = purchases.filter((p) => {
+    const date = parseBusinessDate(p.date);
+    return Boolean(date && date >= startDate);
+  });
 
   // Unique product list for the dropdown (from all purchases, not just filtered)
   const productOptions = Array.from(
@@ -837,12 +901,21 @@ function ProductHistoryTab({
           totalAmount: 0,
           lastDate: p.date,
           transactions: 0,
+          invoiceNos: [] as string[],
         };
       }
       acc[p.product].totalQuantity += p.quantity;
       acc[p.product].totalAmount += p.amount;
       acc[p.product].transactions += 1;
-      if (new Date(p.date) > new Date(acc[p.product].lastDate)) {
+      if (
+        p.invoiceNo &&
+        !acc[p.product].invoiceNos.includes(String(p.invoiceNo))
+      ) {
+        acc[p.product].invoiceNos.push(String(p.invoiceNo));
+      }
+      const nextDate = parseBusinessDate(p.date);
+      const currentDate = parseBusinessDate(acc[p.product].lastDate);
+      if (nextDate && (!currentDate || nextDate > currentDate)) {
         acc[p.product].lastDate = p.date;
       }
       return acc;
@@ -855,6 +928,7 @@ function ProductHistoryTab({
         totalAmount: number;
         lastDate: string;
         transactions: number;
+        invoiceNos: string[];
       }
     >,
   );
@@ -981,7 +1055,12 @@ function ProductHistoryTab({
                         : "px-5 py-3.5 font-semibold text-slate-700"
                     }
                   >
-                    {row.product}
+                    <span className="block">{row.product}</span>
+                    {row.invoiceNos.length > 0 && (
+                      <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
+                        {row.invoiceNos.join(", ")}
+                      </span>
+                    )}
                   </td>
                   <td
                     className={
@@ -1164,6 +1243,7 @@ function EditFarmerModal({
           landSize: Number(cropLandSize),
           soilType,
           waterSource,
+          createdAt: new Date().toISOString().split("T")[0],
         },
       ],
     }));

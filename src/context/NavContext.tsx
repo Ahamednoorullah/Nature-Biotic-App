@@ -11,6 +11,7 @@ export type CompanyPage =
   | "staff-management"
   | "credit-notes"
   | "receipts"
+  | "refund"
   | "reports"
   | "settings";
 export type StorePage =

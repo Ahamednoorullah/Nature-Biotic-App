@@ -7,6 +7,10 @@ import {
   storeApprovalRequestsUpdatedEvent,
   getFinalCompanyStoreSales,
   getCompanyCreditNoteSyncRecords,
+  getCompanyRefunds,
+  settleCompanyRefund,
+  companyRefundsUpdatedEvent,
+  settleLinkedFarmerAccounts,
   type StoreApprovalRequest,
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
@@ -226,8 +230,7 @@ function buildAdminDashboard(filter: DateFilter) {
 
   const actualSalesList: SalesDetail[] = [];
   const outstandingMap = new Map<string, OutstandingDetail>();
-  let actualSales = 0;
-  let actualOutstanding = 0;
+  const grossSalesByStore = new Map<string, { name: string; sales: number }>();
 
   companyInvoices.forEach((invoice) => {
     if (!inPeriod(invoice.date, filter)) return;
@@ -236,44 +239,161 @@ function buildAdminDashboard(filter: DateFilter) {
       0,
       invoice.total - (creditsByInvoice.get(invoiceKey) || 0),
     );
+    const current = grossSalesByStore.get(invoice.storeId) || {
+      name: invoice.storeName || "-",
+      sales: 0,
+    };
+    current.sales += net;
+    current.name = invoice.storeName || current.name;
+    grossSalesByStore.set(invoice.storeId, current);
     if (net <= 0) return;
-    actualSales += net;
     actualSalesList.push({
       date: displayDate(invoice.date),
       invoiceNo: invoice.invoiceNo,
       storeName: invoice.storeName || "-",
       value: net,
     });
-
-    const balance = Math.max(0, net - (paidByInvoice.get(invoiceKey) || 0));
-    actualOutstanding += balance;
-    if (balance <= 0) return;
-    const bucket = ageBucket(parseTxnDate(invoice.date));
-    const row = outstandingMap.get(invoice.storeName) || {
-      storeName: invoice.storeName || "-",
-      under30: 0,
-      over30: 0,
-      over60: 0,
-      over90: 0,
-      totalAmount: 0,
-    };
-    row[bucket] += balance;
-    row.totalAmount += balance;
-    outstandingMap.set(invoice.storeName, row);
   });
 
   const actualCollectionList: CollectionDetail[] = [];
-  let actualCollection = 0;
+  const grossCollectionByStore = new Map<string, { name: string; amount: number }>();
   companyReceipts.forEach((receipt) => {
     if (!inPeriod(receipt.date, filter)) return;
     const amount = money(receipt.amount);
     if (amount <= 0) return;
-    actualCollection += amount;
+    const storeId = String(receipt.storeId || "");
+    const current = grossCollectionByStore.get(storeId) || {
+      name: String(receipt.storeName || "-"),
+      amount: 0,
+    };
+    current.amount += amount;
+    current.name = String(receipt.storeName || current.name);
+    grossCollectionByStore.set(storeId, current);
     actualCollectionList.push({
       date: displayDate(receipt.date),
       receiptNo: String(receipt.receiptNo || "-"),
       storeName: String(receipt.storeName || "-"),
       amount,
+    });
+  });
+
+  const refundsByStore = new Map<string, { name: string; amount: number }>();
+  getCompanyRefunds().forEach((refund) => {
+    if (!inPeriod(refund.date, filter)) return;
+    const amount = money(refund.amount);
+    if (amount <= 0) return;
+    const current = refundsByStore.get(refund.storeId) || {
+      name: refund.storeName || "-",
+      amount: 0,
+    };
+    current.amount += amount;
+    current.name = refund.storeName || current.name;
+    refundsByStore.set(refund.storeId, current);
+    actualSalesList.push({
+      date: displayDate(refund.date),
+      invoiceNo: refund.referenceNo,
+      storeName: refund.storeName || "-",
+      value: -amount,
+    });
+  });
+
+  let actualSales = 0;
+  let actualCollection = 0;
+  const settledStoreIds = new Set<string>([
+    ...grossSalesByStore.keys(),
+    ...grossCollectionByStore.keys(),
+    ...refundsByStore.keys(),
+  ]);
+  settledStoreIds.forEach((storeId) => {
+    const salesRow = grossSalesByStore.get(storeId);
+    const collectionRow = grossCollectionByStore.get(storeId);
+    const refundRow = refundsByStore.get(storeId);
+    const storeName =
+      salesRow?.name || collectionRow?.name || refundRow?.name || "-";
+    const settled = settleCompanyRefund(
+      salesRow?.sales || 0,
+      collectionRow?.amount || 0,
+      refundRow?.amount || 0,
+    );
+    actualSales += settled.sales;
+    actualCollection += settled.collection;
+    const collectionReduction = (collectionRow?.amount || 0) - settled.collection;
+    if (collectionReduction > 0) {
+      actualCollectionList.push({
+        date: "",
+        receiptNo: "Refund adjustment",
+        storeName,
+        amount: -collectionReduction,
+      });
+    }
+  });
+
+  const lifetimeSales = new Map<string, { name: string; sales: number }>();
+  companyInvoices.forEach((invoice) => {
+    const invoiceKey = `${invoice.storeId}|${invoice.invoiceNo.trim().toLowerCase()}`;
+    const net = Math.max(
+      0,
+      invoice.total - (creditsByInvoice.get(invoiceKey) || 0),
+    );
+    const current = lifetimeSales.get(invoice.storeId) || {
+      name: invoice.storeName || "-",
+      sales: 0,
+    };
+    current.sales += net;
+    current.name = invoice.storeName || current.name;
+    lifetimeSales.set(invoice.storeId, current);
+  });
+  const lifetimeCollection = new Map<string, { name: string; amount: number }>();
+  companyReceipts.forEach((receipt) => {
+    const amount = money(receipt.amount);
+    if (amount <= 0) return;
+    const storeId = String(receipt.storeId || "");
+    const current = lifetimeCollection.get(storeId) || {
+      name: String(receipt.storeName || "-"),
+      amount: 0,
+    };
+    current.amount += amount;
+    current.name = String(receipt.storeName || current.name);
+    lifetimeCollection.set(storeId, current);
+  });
+  const lifetimeRefunds = new Map<string, { name: string; amount: number }>();
+  getCompanyRefunds().forEach((refund) => {
+    const amount = money(refund.amount);
+    if (amount <= 0) return;
+    const current = lifetimeRefunds.get(refund.storeId) || {
+      name: refund.storeName || "-",
+      amount: 0,
+    };
+    current.amount += amount;
+    current.name = refund.storeName || current.name;
+    lifetimeRefunds.set(refund.storeId, current);
+  });
+  let actualOutstanding = 0;
+  const lifetimeStoreIds = new Set<string>([
+    ...lifetimeSales.keys(),
+    ...lifetimeCollection.keys(),
+    ...lifetimeRefunds.keys(),
+  ]);
+  lifetimeStoreIds.forEach((storeId) => {
+    const salesRow = lifetimeSales.get(storeId);
+    const collectionRow = lifetimeCollection.get(storeId);
+    const refundRow = lifetimeRefunds.get(storeId);
+    const storeName =
+      salesRow?.name || collectionRow?.name || refundRow?.name || "-";
+    const settled = settleCompanyRefund(
+      salesRow?.sales || 0,
+      collectionRow?.amount || 0,
+      refundRow?.amount || 0,
+    );
+    actualOutstanding += settled.outstanding;
+    if (settled.outstanding <= 0) return;
+    outstandingMap.set(storeName, {
+      storeName,
+      under30: settled.outstanding,
+      over30: 0,
+      over60: 0,
+      over90: 0,
+      totalAmount: settled.outstanding,
     });
   });
 
@@ -283,73 +403,54 @@ function buildAdminDashboard(filter: DateFilter) {
     const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
     const receipts = readRows(`${STORE_RECEIPT_KEY}:${store.id}`);
 
-    const returnedByInvoice = new Map<string, number>();
-    returns.forEach((row) => {
-      const invoiceNo = String(row.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      if (!invoiceNo) return;
-      returnedByInvoice.set(
-        invoiceNo,
-        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
-      );
+    const periodInvoices = invoices.filter((invoice) => inPeriod(invoice.date, filter));
+    const invoiceNos = new Set(
+      periodInvoices
+        .map((invoice) => String(invoice.invoiceNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const includedReturns = [...returns, ...credits].filter((row) => {
+      if (row.status === "Rejected") return false;
+      const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
+      return inPeriod(row.date || row.returnDate, filter) || invoiceNos.has(invoiceNo);
     });
-    credits.forEach((row) => {
-      if (row.status === "Rejected") return;
-      const invoiceNo = String(row.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      if (!invoiceNo) return;
-      returnedByInvoice.set(
-        invoiceNo,
-        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
-      );
+    const returnNos = new Set(
+      includedReturns
+        .map((row) => String(row.returnNo || row.creditNoteNo || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const periodReceipts = receipts.filter((row) => inPeriod(row.date, filter));
+    const refunds = readRows(`nature-biotic-store-refunds-v2:${store.id}`).filter((row) => {
+      const linked = returnNos.has(String(row.referenceNo || "").trim().toLowerCase());
+      return inPeriod(row.date, filter) || linked;
     });
-
-    const receiptPaid = new Map<string, number>();
-    receipts.forEach((row) => {
-      const invoiceNo = String(row.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      if (!invoiceNo) return;
-      receiptPaid.set(
-        invoiceNo,
-        (receiptPaid.get(invoiceNo) || 0) + money(row.amount),
-      );
-    });
-
-    let sales = 0;
-    let outstanding = 0;
     const farmers = new Set<string>();
-
-    invoices.forEach((invoice) => {
-      if (!inPeriod(invoice.date, filter)) return;
-      const invoiceNo = String(invoice.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      const net = Math.max(
-        0,
-        money(invoice.amount) - (returnedByInvoice.get(invoiceNo) || 0),
-      );
-      if (net <= 0) return;
-      sales += net;
-      outstanding += Math.max(0, net - (receiptPaid.get(invoiceNo) || 0));
-      const farmerKey = String(
-        invoice.farmerId || invoice.partyName || "",
-      ).trim();
+    periodInvoices.forEach((invoice) => {
+      const farmerKey = String(invoice.farmerId || invoice.partyName || "").trim();
       if (farmerKey) farmers.add(farmerKey.toLowerCase());
     });
-
-    const collection = receipts.reduce((sum, receipt) => {
-      if (!inPeriod(receipt.date, filter)) return sum;
-      return sum + money(receipt.amount);
-    }, 0);
+    const settled = settleLinkedFarmerAccounts({
+      invoices: periodInvoices,
+      receipts: periodReceipts,
+      returns: includedReturns,
+      refunds,
+      linkInvoices: invoices,
+      linkReturns: [...returns, ...credits],
+    });
+    const current = settleLinkedFarmerAccounts({
+      invoices,
+      receipts,
+      returns: [...returns, ...credits].filter((row) => row.status !== "Rejected"),
+      refunds: readRows(`nature-biotic-store-refunds-v2:${store.id}`),
+      linkInvoices: invoices,
+      linkReturns: [...returns, ...credits],
+    });
 
     return {
       storeId: store.id,
-      sales,
-      collection,
-      outstanding,
+      sales: settled.sales,
+      collection: settled.collection,
+      outstanding: current.outstanding,
       farmers: farmers.size,
     };
   });
@@ -436,6 +537,7 @@ export default function CompanyDashboard() {
     window.addEventListener("company-store-sales-updated", refresh);
     window.addEventListener("company-credit-note-sync-updated", refresh);
     window.addEventListener("nature-biotic-company-receipts-updated", refresh);
+    window.addEventListener(companyRefundsUpdatedEvent, refresh);
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
     window.addEventListener("nature-biotic-store-receipts-updated", refresh);
     window.addEventListener("fro-stock-updated", refresh);
@@ -448,6 +550,7 @@ export default function CompanyDashboard() {
         "nature-biotic-company-receipts-updated",
         refresh,
       );
+      window.removeEventListener(companyRefundsUpdatedEvent, refresh);
       window.removeEventListener(
         "nature-biotic-store-inventory-updated",
         refresh,

@@ -94,7 +94,8 @@ function FROMobileShell({
     [store?.id, user.name, user.id, noticeVersion],
   );
   const readIds = useMemo(() => new Set(reads), [reads]);
-  const unreadCount = notifications.filter((item) => !readIds.has(item.id)).length;
+  const unreadNotifications = notifications.filter((item) => !readIds.has(item.id));
+  const unreadCount = unreadNotifications.length;
   const resolvedTheme =
     settings.theme === "system"
       ? systemDark
@@ -173,10 +174,12 @@ function FROMobileShell({
   }
 
   function markNotificationRead(id: string) {
-    if (readIds.has(id)) return;
-    const next = [...reads, id];
-    setReads(next);
-    saveNotificationReads(user.id, store?.id || "", next);
+    setReads((current) => {
+      if (current.includes(id)) return current;
+      const next = [...current, id];
+      saveNotificationReads(user.id, store?.id || "", next);
+      return next;
+    });
   }
 
   async function submitPassword() {
@@ -320,14 +323,15 @@ function FROMobileShell({
                     <p className="text-sm font-bold text-slate-800">Notifications</p>
                     <p className="text-xs text-slate-500">{unreadCount} unread</p>
                   </div>
-                  {notifications.length === 0 ? (
+                  {unreadNotifications.length === 0 ? (
                     <p className="px-4 py-6 text-sm text-slate-500">No new notifications</p>
                   ) : (
                     <div className="max-h-80 overflow-y-auto">
-                      {notifications.map((item) => (
+                      {unreadNotifications.map((item) => (
                         <button
                           key={item.id}
                           type="button"
+                          data-notification-id={item.id}
                           onClick={() => {
                             markNotificationRead(item.id);
                             setOpenMenu(null);
