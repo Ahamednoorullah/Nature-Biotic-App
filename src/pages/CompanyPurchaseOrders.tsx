@@ -8,6 +8,7 @@ import {
   type Product,
   type StoreApprovalRequest,
   approveStorePurchaseOrder,
+  rejectStoreApprovalRequest,
 } from "@/lib/data";
 
 type PurchaseOrderItem = {
@@ -184,6 +185,21 @@ export default function CompanyPurchaseOrders() {
     if (selected?.id === id) {
       setSelected((current) =>
         current ? { ...current, status: "Approved" } : current,
+      );
+    }
+  }
+
+  function reject(id: string) {
+    const request = requests.find((row) => row.id === id);
+    if (request?.status !== "Pending") return;
+    if (!window.confirm("Reject this purchase order?")) return;
+
+    rejectStoreApprovalRequest(id);
+    refresh();
+
+    if (selected?.id === id) {
+      setSelected((current) =>
+        current ? { ...current, status: "Rejected" } : current,
       );
     }
   }
@@ -1034,6 +1050,12 @@ export default function CompanyPurchaseOrders() {
                           </div>
               
                           <div className="store-purchase-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                            {selected.status === "Pending" && (
+                              <Button variant="secondary" onClick={() => reject(selected.id)}>
+                                <Icon name="cancel" size={18} />
+                                Reject
+                              </Button>
+                            )}
                             {selected.status === "Pending" && (
                               <Button onClick={() => approve(selected.id)}>
                                 <Icon name="check_circle" size={18} />

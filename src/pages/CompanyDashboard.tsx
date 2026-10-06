@@ -8,7 +8,8 @@ import {
   getFinalCompanyStoreSales,
   getCompanyCreditNoteSyncRecords,
   getCompanyRefunds,
-  settleCompanyRefund,
+  getApprovedStorePurchaseReturns,
+  settleCompanyAccount,
   companyRefundsUpdatedEvent,
   settleLinkedFarmerAccounts,
   type StoreApprovalRequest,
@@ -277,23 +278,36 @@ function buildAdminDashboard(filter: DateFilter) {
     });
   });
 
-  const refundsByStore = new Map<string, { name: string; amount: number }>();
+  const purchaseReturns = getApprovedStorePurchaseReturns();
+  const returnsByStore = new Map<string, number>();
+  purchaseReturns.forEach((row) => {
+    if (!inPeriod(row.date, filter) || row.amount <= 0) return;
+    returnsByStore.set(
+      row.storeId,
+      (returnsByStore.get(row.storeId) || 0) + row.amount,
+    );
+    actualSalesList.push({
+      date: displayDate(row.date),
+      invoiceNo: `Sales Return ${row.returnNo}`,
+      storeName: row.storeName || "-",
+      value: -row.amount,
+    });
+  });
+
+  const refundsByStore = new Map<string, number>();
   getCompanyRefunds().forEach((refund) => {
     if (!inPeriod(refund.date, filter)) return;
     const amount = money(refund.amount);
     if (amount <= 0) return;
-    const current = refundsByStore.get(refund.storeId) || {
-      name: refund.storeName || "-",
-      amount: 0,
-    };
-    current.amount += amount;
-    current.name = refund.storeName || current.name;
-    refundsByStore.set(refund.storeId, current);
-    actualSalesList.push({
+    refundsByStore.set(
+      refund.storeId,
+      (refundsByStore.get(refund.storeId) || 0) + amount,
+    );
+    actualCollectionList.push({
       date: displayDate(refund.date),
-      invoiceNo: refund.referenceNo,
+      receiptNo: `Refund ${refund.refundNo || refund.referenceNo}`,
       storeName: refund.storeName || "-",
-      value: -amount,
+      amount: -amount,
     });
   });
 
@@ -302,30 +316,18 @@ function buildAdminDashboard(filter: DateFilter) {
   const settledStoreIds = new Set<string>([
     ...grossSalesByStore.keys(),
     ...grossCollectionByStore.keys(),
+    ...returnsByStore.keys(),
     ...refundsByStore.keys(),
   ]);
   settledStoreIds.forEach((storeId) => {
-    const salesRow = grossSalesByStore.get(storeId);
-    const collectionRow = grossCollectionByStore.get(storeId);
-    const refundRow = refundsByStore.get(storeId);
-    const storeName =
-      salesRow?.name || collectionRow?.name || refundRow?.name || "-";
-    const settled = settleCompanyRefund(
-      salesRow?.sales || 0,
-      collectionRow?.amount || 0,
-      refundRow?.amount || 0,
-    );
-    actualSales += settled.sales;
+    const settled = settleCompanyAccount({
+      grossSales: grossSalesByStore.get(storeId)?.sales || 0,
+      salesReturns: returnsByStore.get(storeId) || 0,
+      receipts: grossCollectionByStore.get(storeId)?.amount || 0,
+      refunds: refundsByStore.get(storeId) || 0,
+    });
+    actualSales += settled.netSales;
     actualCollection += settled.collection;
-    const collectionReduction = (collectionRow?.amount || 0) - settled.collection;
-    if (collectionReduction > 0) {
-      actualCollectionList.push({
-        date: "",
-        receiptNo: "Refund adjustment",
-        storeName,
-        amount: -collectionReduction,
-      });
-    }
   });
 
   const lifetimeSales = new Map<string, { name: string; sales: number }>();
@@ -356,35 +358,34 @@ function buildAdminDashboard(filter: DateFilter) {
     current.name = String(receipt.storeName || current.name);
     lifetimeCollection.set(storeId, current);
   });
-  const lifetimeRefunds = new Map<string, { name: string; amount: number }>();
-  getCompanyRefunds().forEach((refund) => {
-    const amount = money(refund.amount);
-    if (amount <= 0) return;
-    const current = lifetimeRefunds.get(refund.storeId) || {
-      name: refund.storeName || "-",
+  const lifetimeReturns = new Map<string, { name: string; amount: number }>();
+  purchaseReturns.forEach((row) => {
+    if (row.amount <= 0) return;
+    const current = lifetimeReturns.get(row.storeId) || {
+      name: row.storeName || "-",
       amount: 0,
     };
-    current.amount += amount;
-    current.name = refund.storeName || current.name;
-    lifetimeRefunds.set(refund.storeId, current);
+    current.amount += row.amount;
+    lifetimeReturns.set(row.storeId, current);
   });
   let actualOutstanding = 0;
   const lifetimeStoreIds = new Set<string>([
     ...lifetimeSales.keys(),
     ...lifetimeCollection.keys(),
-    ...lifetimeRefunds.keys(),
+    ...lifetimeReturns.keys(),
   ]);
   lifetimeStoreIds.forEach((storeId) => {
     const salesRow = lifetimeSales.get(storeId);
     const collectionRow = lifetimeCollection.get(storeId);
-    const refundRow = lifetimeRefunds.get(storeId);
+    const returnRow = lifetimeReturns.get(storeId);
     const storeName =
-      salesRow?.name || collectionRow?.name || refundRow?.name || "-";
-    const settled = settleCompanyRefund(
-      salesRow?.sales || 0,
-      collectionRow?.amount || 0,
-      refundRow?.amount || 0,
-    );
+      salesRow?.name || collectionRow?.name || returnRow?.name || "-";
+    const settled = settleCompanyAccount({
+      grossSales: salesRow?.sales || 0,
+      salesReturns: returnRow?.amount || 0,
+      receipts: collectionRow?.amount || 0,
+      refunds: 0,
+    });
     actualOutstanding += settled.outstanding;
     if (settled.outstanding <= 0) return;
     outstandingMap.set(storeName, {

@@ -203,8 +203,12 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
   }, [selectedInvoice]);
 
   function markReceived(invoiceNo: string) {
-    if (statuses[invoiceNo] === "Received") return;
-    const next = { ...statuses, [invoiceNo]: "Received" as PurchaseStatus };
+    const latest = getSavedStatuses();
+    if (latest[invoiceNo] === "Received") {
+      setStatuses(latest);
+      return;
+    }
+    const next = { ...latest, [invoiceNo]: "Received" as PurchaseStatus };
     setStatuses(next);
     saveStatuses(next);
   }

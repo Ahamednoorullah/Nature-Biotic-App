@@ -197,6 +197,7 @@ export default function StoreShell({
       "company-credit-note-sync-updated",
       "nature-biotic-store-purchase-status-updated",
       "nature-biotic-company-receipts-updated",
+      "nature-biotic-company-refunds-updated",
       "nature-biotic-fro-stock-return-updated",
       "nature-biotic-store-inventory-updated",
       "nature-biotic-handover-updated",

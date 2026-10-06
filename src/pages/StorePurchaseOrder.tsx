@@ -44,7 +44,7 @@ type PurchaseOrderRow = {
   cgst: number;
   igst: number;
   total: number;
-  status: "Pending" | "Accepted" | "Approved";
+  status: "Pending" | "Accepted" | "Approved" | "Rejected";
   items: AddedProduct[];
   notes?: string;
 };
@@ -159,9 +159,13 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
             storeId,
             row.poNo,
           );
-          return request?.status === "Approved" || row.status === "Approved"
-            ? { ...row, status: "Accepted" }
-            : row;
+          if (request?.status === "Approved" || row.status === "Approved") {
+            return row.status === "Accepted" ? row : { ...row, status: "Accepted" };
+          }
+          if (request?.status === "Rejected" && row.status !== "Rejected") {
+            return { ...row, status: "Rejected" };
+          }
+          return row;
         }),
       );
     syncStatuses();
@@ -842,7 +846,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                 </td>
                 <td className="px-2 py-3 text-center">
                   <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === "Accepted" || row.status === "Approved" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === "Accepted" || row.status === "Approved" ? "bg-emerald-50 text-emerald-700" : row.status === "Rejected" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}
                   >
                     {row.status}
                   </span>
@@ -960,7 +964,9 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                       selectedOrder.status === "Accepted" ||
                       selectedOrder.status === "Approved"
                         ? "bg-emerald-50 text-emerald-700"
-                        : "bg-amber-50 text-amber-700"
+                        : selectedOrder.status === "Rejected"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-amber-50 text-amber-700"
                     }`}
                   >
                     {selectedOrder.status}

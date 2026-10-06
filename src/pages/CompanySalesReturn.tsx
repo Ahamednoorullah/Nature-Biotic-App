@@ -9,6 +9,7 @@ import {
 } from "@/lib/format";
 import {
   getStoreApprovalRequests,
+  rejectStoreApprovalRequest,
   storeApprovalRequestsUpdatedEvent,
   updateStoreApprovalRequestStatus,
   type StoreApprovalRequestStatus,
@@ -125,6 +126,13 @@ export default function CompanySalesReturn() {
 
   function accept(approvalId: string) {
     updateStoreApprovalRequestStatus(approvalId, "Approved");
+  }
+
+  function reject(approvalId: string) {
+    if (!window.confirm("Reject this purchase return? Stock stays with the store.")) {
+      return;
+    }
+    rejectStoreApprovalRequest(approvalId);
   }
 
   const visibleLines = useMemo(
@@ -308,13 +316,22 @@ export default function CompanySalesReturn() {
                           item.returnNo === line.returnNo &&
                           item.storeId === line.storeId,
                       ) === index ? (
-                        <button
-                          type="button"
-                          onClick={() => accept(line.approvalId)}
-                          className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100"
-                        >
-                          Accept
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => accept(line.approvalId)}
+                            className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => reject(line.approvalId)}
+                            className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
+                          >
+                            Reject
+                          </button>
+                        </div>
                       ) : (
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-bold ${

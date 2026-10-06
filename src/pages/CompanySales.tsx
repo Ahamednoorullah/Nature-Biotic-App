@@ -21,6 +21,7 @@ import {
 import { createPortal } from "react-dom";
 
 import {
+  getAcceptedStorePurchaseOrders,
   getCompanyStoreSales,
   saveCompanyStoreSales,
   type CompanyStoreSaleRecord,
@@ -58,6 +59,7 @@ type AddedRow = {
   discountAmount: number;
   taxAmount: number;
   rowTotal: number;
+  needsBatch?: boolean;
 };
 
 type EntryForm = {
@@ -214,6 +216,7 @@ export default function CompanySales() {
     new Date().toISOString().split("T")[0],
   );
   const [storeId, setStoreId] = useState("");
+  const [purchaseOrderNo, setPurchaseOrderNo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [entry, setEntry] = useState<EntryForm>(emptyEntry());
   const [added, setAdded] = useState<AddedRow[]>([]);
@@ -570,6 +573,71 @@ export default function CompanySales() {
     }));
   }
 
+  const purchaseOrderOptions = useMemo(() => {
+    if (!showCreate) return [];
+    const linked = new Set(
+      sales
+        .filter((row) => row.invoiceNo !== editingInvoiceNo)
+        .map((row) => `${row.storeId}|${row.purchaseOrderNo || ""}`),
+    );
+    return getAcceptedStorePurchaseOrders().filter(
+      (order) => !linked.has(`${order.storeId}|${order.poNo}`),
+    );
+  }, [showCreate, sales, editingInvoiceNo]);
+
+  function selectPurchaseOrder(poNo: string) {
+    setPurchaseOrderNo(poNo);
+    if (!poNo) return;
+    const order = purchaseOrderOptions.find((item) => item.poNo === poNo);
+    if (!order) return;
+
+    const interState = order.items.some((item) => Number(item.igst || 0) > 0);
+    const supply = interState ? "Others" : "Tamil Nadu";
+    const taxType: TaxType = interState
+      ? "Others (IGST)"
+      : "Tamilnadu (SGST + CGST)";
+
+    setStoreId(order.storeId);
+    setPlaceOfSupply(supply);
+    setSelectedFarmer(null);
+    setShippingQuery("");
+    setShippingAddress("");
+    setEntry(emptyEntry());
+    setAdded(
+      order.items.flatMap((item) => {
+        const size = String(item.packSize || "").trim().toLowerCase();
+        const product =
+          productMaster.find((p) => p.id === item.productId) ||
+          productMaster.find(
+            (p) =>
+              p.name === item.product &&
+              String(p.size || "").trim().toLowerCase() === size,
+          );
+        if (!product || Number(item.quantity || 0) <= 0) return [];
+        return [
+          {
+            ...computeAdded({
+              productId: product.id,
+              product,
+              pkgsize: product.size,
+              batchNo: "",
+              expiryDate: "",
+              packSize: product.size,
+              hsn: product.hsnCode || item.hsnCode || "",
+              mrp: product.mrp || 0,
+              taxType,
+              taxPercent: Number(item.taxPercent ?? product.taxPercentage ?? 0),
+              quantity: Number(item.quantity),
+              sellingPrice: Number(item.price ?? product.purchasePrice ?? 0),
+              discountPercent: 0,
+            }),
+            needsBatch: true,
+          },
+        ];
+      }),
+    );
+  }
+
   function addProduct() {
     if (
       !entry.productId ||
@@ -623,7 +691,7 @@ export default function CompanySales() {
           rowTotal: _rowTotal,
           ...recalculable
         } = merged;
-        return computeAdded(recalculable);
+        return { ...computeAdded(recalculable), key: r.key };
       }),
     );
   }
@@ -707,6 +775,7 @@ export default function CompanySales() {
         igst,
         total: Math.round((withoutTax + taxAmount) * 100) / 100,
         returnAmount: 0,
+        ...(purchaseOrderNo ? { purchaseOrderNo } : {}),
       };
     });
   }
@@ -744,6 +813,7 @@ export default function CompanySales() {
     setInvoiceNo(header.invoiceNo);
     setSaleDate(header.date);
     setStoreId(header.storeId);
+    setPurchaseOrderNo(header.purchaseOrderNo || "");
     setPlaceOfSupply(header.placeOfSupply || "Tamil Nadu");
     setShippingAddress(header.shippingAddress || "");
     setShippingQuery(header.shippingAddress?.split(",")[0] || "");
@@ -791,6 +861,7 @@ export default function CompanySales() {
         discountAmount: Number(row.discount || 0),
         taxAmount: row.taxAmount,
         rowTotal: row.total,
+        needsBatch: !row.batchNo || !row.expiryDate,
       };
     });
 
@@ -805,6 +876,7 @@ export default function CompanySales() {
     setInvoiceNo("");
     setSaleDate(new Date().toISOString().split("T")[0]);
     setStoreId("");
+    setPurchaseOrderNo("");
     setRemarks("");
     setEntry(emptyEntry());
     setAdded([]);
@@ -948,7 +1020,11 @@ export default function CompanySales() {
     !!entry.batchNo &&
     !!entry.expiryDate &&
     entry.quantity >= 1;
-  const canCreate = !!storeId && !!invoiceNo && added.length > 0;
+  const canCreate =
+    !!storeId &&
+    !!invoiceNo &&
+    added.length > 0 &&
+    added.every((row) => row.batchNo.trim() && row.expiryDate && row.quantity > 0);
 
   return (
     <div>
@@ -2224,13 +2300,40 @@ export default function CompanySales() {
                     <Select
                       label="Bill to"
                       value={storeId}
-                      onChange={setStoreId}
+                      onChange={(value) => {
+                        setStoreId(value);
+                        if (
+                          purchaseOrderNo &&
+                          purchaseOrderOptions.find((o) => o.poNo === purchaseOrderNo)
+                            ?.storeId !== value
+                        ) {
+                          setPurchaseOrderNo("");
+                        }
+                      }}
                       placeholder="Choose a registered store"
                       options={stores.map((s) => ({
                         value: s.id,
                         label: `${s.name} — ${s.location}`,
                       }))}
                       required
+                    />
+                    <Select
+                      label="Purchase Order No. (Optional)"
+                      value={purchaseOrderNo}
+                      onChange={selectPurchaseOrder}
+                      options={[
+                        { value: "", label: "No purchase order" },
+                        ...(purchaseOrderNo &&
+                        !purchaseOrderOptions.some((o) => o.poNo === purchaseOrderNo)
+                          ? [{ value: purchaseOrderNo, label: purchaseOrderNo }]
+                          : []),
+                        ...purchaseOrderOptions
+                          .filter((o) => !storeId || o.storeId === storeId || o.poNo === purchaseOrderNo)
+                          .map((o) => ({
+                            value: o.poNo,
+                            label: `${o.poNo} — ${o.storeName} — ${formatCurrency(o.total)}`,
+                          })),
+                      ]}
                     />
                     <div
                       className="relative"
@@ -2542,10 +2645,32 @@ export default function CompanySales() {
                                 {r.product?.name}
                               </td>
                               <td className="px-3 py-2.5 text-slate-600">
-                                {r.batchNo}
+                                {r.needsBatch ? (
+                                  <input
+                                    value={r.batchNo}
+                                    onChange={(e) =>
+                                      updateAdded(r.key, { batchNo: e.target.value })
+                                    }
+                                    placeholder="Batch No"
+                                    className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-slate-700 focus:outline-none focus:border-brand-500"
+                                  />
+                                ) : (
+                                  r.batchNo
+                                )}
                               </td>
                               <td className="px-3 py-2.5 text-slate-600">
-                                {formatDate(r.expiryDate)}
+                                {r.needsBatch ? (
+                                  <input
+                                    type="date"
+                                    value={r.expiryDate}
+                                    onChange={(e) =>
+                                      updateAdded(r.key, { expiryDate: e.target.value })
+                                    }
+                                    className="w-36 rounded-lg border border-slate-200 px-2 py-1 text-slate-700 focus:outline-none focus:border-brand-500"
+                                  />
+                                ) : (
+                                  formatDate(r.expiryDate)
+                                )}
                               </td>
                               <td className="px-3 py-2.5 text-slate-600">
                                 {r.packSize}

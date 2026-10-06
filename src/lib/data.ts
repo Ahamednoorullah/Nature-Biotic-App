@@ -1055,6 +1055,7 @@ export type CompanyStoreSaleRecord = {
   discount?: number;
   productId?: string;
   saleStatus?: "Draft" | "Final";
+  purchaseOrderNo?: string;
 };
 
 const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
@@ -1275,30 +1276,123 @@ export function approveStorePurchaseOrder(requestId: string) {
     return updateStoreApprovalRequestStatus(requestId, "Approved");
   }
 
-  if (typeof window !== "undefined") {
-    try {
-      const key = `naturebiotic:purchase-orders:${request.storeId}`;
-      const orders = JSON.parse(localStorage.getItem(key) || "[]");
-      const po = Array.isArray(orders)
-        ? orders.find((item: any) => item?.poNo === request.referenceNo)
-        : null;
-      if (po) {
-        localStorage.setItem(
-          key,
-          JSON.stringify(
-            orders.map((item: any) =>
-              item?.poNo === request.referenceNo
-                ? { ...item, status: "Accepted" }
-                : item,
-            ),
-          ),
-        );
-        window.dispatchEvent(new Event("store-purchase-orders-updated"));
-      }
-    } catch {}
-  }
-
+  setStorePurchaseOrderStatus(request.storeId, request.referenceNo, "Accepted");
   return updateStoreApprovalRequestStatus(requestId, "Approved");
+}
+
+export function rejectStoreApprovalRequest(requestId: string) {
+  const request = getStoreApprovalRequests().find((row) => row.id === requestId);
+  if (!request || request.status !== "Pending") return getStoreApprovalRequests();
+  if (request.type === "Purchase Order") {
+    setStorePurchaseOrderStatus(request.storeId, request.referenceNo, "Rejected");
+  }
+  return updateStoreApprovalRequestStatus(requestId, "Rejected");
+}
+
+function setStorePurchaseOrderStatus(
+  storeId: string,
+  poNo: string,
+  status: "Accepted" | "Rejected",
+) {
+  if (typeof window === "undefined") return;
+  try {
+    const key = `naturebiotic:purchase-orders:${storeId}`;
+    const orders = JSON.parse(localStorage.getItem(key) || "[]");
+    if (!Array.isArray(orders) || !orders.some((item: any) => item?.poNo === poNo)) {
+      return;
+    }
+    localStorage.setItem(
+      key,
+      JSON.stringify(
+        orders.map((item: any) =>
+          item?.poNo === poNo ? { ...item, status } : item,
+        ),
+      ),
+    );
+    window.dispatchEvent(new Event("store-purchase-orders-updated"));
+  } catch {}
+}
+
+/** Store POs the company has accepted, for linking to a company sale. */
+export function getAcceptedStorePurchaseOrders(storeId?: string) {
+  return getStoreApprovalRequests()
+    .filter(
+      (request) =>
+        request.type === "Purchase Order" &&
+        request.status === "Approved" &&
+        (!storeId || request.storeId === storeId),
+    )
+    .flatMap((request) => {
+      const order = readStorageArray(
+        `naturebiotic:purchase-orders:${request.storeId}`,
+      ).find((row) => row?.poNo === request.referenceNo);
+      if (!order) return [];
+      return [
+        {
+          storeId: request.storeId,
+          storeName: request.storeName,
+          poNo: String(order.poNo),
+          date: String(order.date || request.date || ""),
+          total: Number(order.total ?? request.amount ?? 0),
+          items: (Array.isArray(order.items) ? order.items : []) as any[],
+        },
+      ];
+    });
+}
+
+export type ApprovedStorePurchaseReturn = {
+  storeId: string;
+  storeName: string;
+  returnNo: string;
+  purchaseRef: string;
+  date: string;
+  amount: number;
+  items: any[];
+};
+
+/** Purchase returns the company has approved; pending and rejected ones never count. */
+export function getApprovedStorePurchaseReturns(
+  storeId?: string,
+): ApprovedStorePurchaseReturn[] {
+  return getStoreApprovalRequests()
+    .filter(
+      (request) =>
+        request.type === "Purchase Return" &&
+        request.status === "Approved" &&
+        (!storeId || request.storeId === storeId),
+    )
+    .map((request) => {
+      const row = readStorageArray(
+        `naturebiotic:purchase-returns:${request.storeId}`,
+      ).find((item) => item?.returnNo === request.referenceNo);
+      return {
+        storeId: request.storeId,
+        storeName: request.storeName,
+        returnNo: request.referenceNo,
+        purchaseRef: String(row?.purchaseRef || ""),
+        date: String(row?.date || request.date || ""),
+        amount: Math.max(0, Number(row?.total ?? request.amount ?? 0)),
+        items: Array.isArray(row?.items) ? row.items : [],
+      };
+    });
+}
+
+/** Credit notes and approved purchase returns raised against one company invoice. */
+export function getCompanyInvoiceCredits(storeId: string, invoiceNo: string) {
+  const key = String(invoiceNo || "").trim().toLowerCase();
+  if (!key) return 0;
+  const credited = getCompanyCreditNoteSyncRecords().reduce((sum, note) => {
+    if (note.storeId !== storeId || note.status === "Rejected") return sum;
+    const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
+      .trim()
+      .toLowerCase();
+    return noteInvoice === key ? sum + Math.max(0, Number(note.returnAmount) || 0) : sum;
+  }, 0);
+  const returned = getApprovedStorePurchaseReturns(storeId).reduce(
+    (sum, row) => (row.purchaseRef.trim().toLowerCase() === key ? sum + row.amount : sum),
+    0,
+  );
+  return credited + returned;
 }
 
 export function getStorePurchasesFromCompanySales(storeId: string) {
@@ -1813,6 +1907,7 @@ export type StoreApprovalRequest = {
   amount: number;
   status: StoreApprovalRequestStatus;
   createdAt: number;
+  decidedAt?: number;
 };
 const STORE_APPROVAL_REQUESTS_KEY = "nature-biotic-store-approval-requests-v1";
 const STORE_APPROVAL_EVENT = "store-approval-requests-updated";
@@ -1856,10 +1951,16 @@ export function updateStoreApprovalRequestStatus(
   id: string,
   status: StoreApprovalRequestStatus,
 ) {
-  const updated = getStoreApprovalRequests().map((row) =>
-    row.id === id ? { ...row, status } : row,
+  const existing = getStoreApprovalRequests();
+  const target = existing.find((row) => row.id === id);
+  if (!target || target.status !== "Pending" || status === "Pending") {
+    return existing;
+  }
+  const updated = existing.map((row) =>
+    row.id === id ? { ...row, status, decidedAt: Date.now() } : row,
   );
   saveStoreApprovalRequests(updated);
+  if (target.type === "Purchase Return") notifyStoreStockChanged();
   return updated;
 }
 export function getStoreApprovalRequest(
@@ -1992,17 +2093,25 @@ export function addCompanyRefund(input: {
   return { ok: true as const, row };
 }
 
-/** A company refund reduces that store's sales and collection by the refund. */
-export function settleCompanyRefund(
-  grossSales: number,
-  grossCollection: number,
-  refundAmount: number,
-) {
-  const refund = Math.max(0, refundAmount);
-  const sales = Math.max(0, Math.max(0, grossSales) - refund);
-  const collection = Math.max(0, grossCollection) - refund;
-  const outstanding = Math.max(0, sales - collection);
-  return { sales, collection, outstanding };
+/**
+ * Company ↔ store account. An approved purchase return is a sales return: it
+ * lowers net sales and the outstanding. A refund is the cash paid back for that
+ * return: it lowers collection only, so it never raises the outstanding again.
+ */
+export function settleCompanyAccount(input: {
+  grossSales: number;
+  salesReturns: number;
+  receipts: number;
+  refunds: number;
+}) {
+  const grossSales = Math.max(0, input.grossSales);
+  const salesReturns = Math.min(grossSales, Math.max(0, input.salesReturns));
+  const netSales = grossSales - salesReturns;
+  const receipts = Math.max(0, input.receipts);
+  const refunds = Math.max(0, input.refunds);
+  const collection = receipts - refunds;
+  const outstanding = Math.max(0, netSales - receipts);
+  return { grossSales, salesReturns, netSales, collection, outstanding };
 }
 
 export function froOwnsTransaction(
@@ -2382,6 +2491,22 @@ function approvedCompanyCreditQty(storeId: string, target: any) {
   }, 0);
 }
 
+function approvedPurchaseReturnQty(storeId: string | undefined, target: any) {
+  return getApprovedStorePurchaseReturns(storeId).reduce(
+    (sum, row) =>
+      sum +
+      row.items.reduce(
+        (lineSum: number, line: any) =>
+          lineSum +
+          (stockVariantsMatch(variantOf(line), target)
+            ? Math.max(0, Number(line?.quantity || 0))
+            : 0),
+        0,
+      ),
+    0,
+  );
+}
+
 export type StoreStockAdjustmentRecord = {
   id: string;
   storeId: string;
@@ -2534,6 +2659,7 @@ export function getStoreAvailableQty(
   const customerReturns = directStoreReturnQty(storeId, target);
   const adjustments = storeAdjustmentQty(storeId, target);
   const companyCredits = approvedCompanyCreditQty(storeId, target);
+  const purchaseReturns = approvedPurchaseReturnQty(storeId, target);
 
   return Math.max(
     0,
@@ -2543,7 +2669,8 @@ export function getStoreAvailableQty(
       sold +
       customerReturns +
       adjustments -
-      companyCredits,
+      companyCredits -
+      purchaseReturns,
   );
 }
 
@@ -2610,7 +2737,20 @@ export function getCompanyAvailableQty(
     );
   }, 0);
 
-  return Math.max(0, opening - sold + returned);
+  const purchaseReturned = getApprovedStorePurchaseReturns().reduce(
+    (sum, row) =>
+      sum +
+      row.items.reduce((lineSum: number, line: any) => {
+        const variant = variantOf(line);
+        return (
+          lineSum +
+          (sameSize(variant) ? Math.max(0, Number(line?.quantity || 0)) : 0)
+        );
+      }, 0),
+    0,
+  );
+
+  return Math.max(0, opening - sold + returned + purchaseReturned);
 }
 
 export function approveCompanyCreditNotes(storeId: string, creditNoteNo: string) {

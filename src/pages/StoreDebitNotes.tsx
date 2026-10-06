@@ -182,7 +182,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
               const status =
                 request?.status === "Approved" || row.status === "Approved"
                   ? "Approved"
-                  : "Pending";
+                  : request?.status === "Rejected"
+                    ? "Rejected"
+                    : "Pending";
               return (Array.isArray(row.items) ? row.items : []).map((item: any) => ({
                 unit: "",
                 size: item.packSize || "",

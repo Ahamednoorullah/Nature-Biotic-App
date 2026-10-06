@@ -599,6 +599,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     resetForm();
   }
 
+  useEffect(() => {
+    if (showCreate) savingSale.current = false;
+  }, [showCreate]);
+
   function handleCreate() {
     if (savingSale.current) return;
     if (!invoiceNo.trim() || !partyName.trim() || added.length === 0) return;
@@ -696,11 +700,11 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
     }
 
-    savingSale.current = false;
     setShowCreate(false);
     resetForm();
-    } finally {
+    } catch (error) {
       savingSale.current = false;
+      throw error;
     }
   }
 

@@ -3,7 +3,8 @@ import {
   getCompanyCreditNoteSyncRecords,
   getCompanyRefunds,
   getFinalCompanyStoreSales,
-  settleCompanyRefund,
+  getApprovedStorePurchaseReturns,
+  settleCompanyAccount,
   settleLinkedFarmerAccounts,
   stores as allStores,
 } from "@/lib/data";
@@ -181,26 +182,43 @@ function buildReport(filter: DateFilter, from = "", to = "") {
       (companyRefunds.get(refund.storeId) || 0) + money(refund.amount),
     );
   });
+  const purchaseReturns = getApprovedStorePurchaseReturns();
+  const companyReturns = new Map<string, number>();
+  purchaseReturns.forEach((row) => {
+    if (!inPeriod(row.date, filter, from, to)) return;
+    companyReturns.set(
+      row.storeId,
+      (companyReturns.get(row.storeId) || 0) + row.amount,
+    );
+  });
+  let companyGross = 0;
+  let companySalesReturn = 0;
   let companySales = 0;
   let companyCollection = 0;
   const companyStoreIds = new Set<string>([
     ...companyGrossSales.keys(),
     ...companyGrossCollection.keys(),
+    ...companyReturns.keys(),
     ...companyRefunds.keys(),
   ]);
+  const companyPeriodByStore = new Map<string, number>();
   companyStoreIds.forEach((storeId) => {
-    const settled = settleCompanyRefund(
-      companyGrossSales.get(storeId) || 0,
-      companyGrossCollection.get(storeId) || 0,
-      companyRefunds.get(storeId) || 0,
-    );
-    companySales += settled.sales;
+    const settled = settleCompanyAccount({
+      grossSales: companyGrossSales.get(storeId) || 0,
+      salesReturns: companyReturns.get(storeId) || 0,
+      receipts: companyGrossCollection.get(storeId) || 0,
+      refunds: companyRefunds.get(storeId) || 0,
+    });
+    companyPeriodByStore.set(storeId, settled.netSales);
+    companyGross += settled.grossSales;
+    companySalesReturn += settled.salesReturns;
+    companySales += settled.netSales;
     companyCollection += settled.collection;
   });
 
   const lifetimeSales = new Map<string, number>();
   const lifetimeCollection = new Map<string, number>();
-  const lifetimeRefunds = new Map<string, number>();
+  const lifetimeReturns = new Map<string, number>();
   companyInvoices.forEach((invoice, key) => {
     const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
     lifetimeSales.set(
@@ -215,10 +233,10 @@ function buildReport(filter: DateFilter, from = "", to = "") {
       (lifetimeCollection.get(storeId) || 0) + money(receipt.amount),
     );
   });
-  getCompanyRefunds().forEach((refund) => {
-    lifetimeRefunds.set(
-      refund.storeId,
-      (lifetimeRefunds.get(refund.storeId) || 0) + money(refund.amount),
+  purchaseReturns.forEach((row) => {
+    lifetimeReturns.set(
+      row.storeId,
+      (lifetimeReturns.get(row.storeId) || 0) + row.amount,
     );
   });
   let companyOutstanding = 0;
@@ -226,14 +244,15 @@ function buildReport(filter: DateFilter, from = "", to = "") {
   const lifetimeStoreIds = new Set<string>([
     ...lifetimeSales.keys(),
     ...lifetimeCollection.keys(),
-    ...lifetimeRefunds.keys(),
+    ...lifetimeReturns.keys(),
   ]);
   lifetimeStoreIds.forEach((storeId) => {
-    const settled = settleCompanyRefund(
-      lifetimeSales.get(storeId) || 0,
-      lifetimeCollection.get(storeId) || 0,
-      lifetimeRefunds.get(storeId) || 0,
-    );
+    const settled = settleCompanyAccount({
+      grossSales: lifetimeSales.get(storeId) || 0,
+      salesReturns: lifetimeReturns.get(storeId) || 0,
+      receipts: lifetimeCollection.get(storeId) || 0,
+      refunds: 0,
+    });
     lifetimeOutstanding.set(storeId, settled.outstanding);
     companyOutstanding += settled.outstanding;
   });
@@ -299,13 +318,8 @@ function buildReport(filter: DateFilter, from = "", to = "") {
 
   const companyByStore = new Map<string, { sales: number; outstanding: number }>();
   companyStoreIds.forEach((storeId) => {
-    const settled = settleCompanyRefund(
-      companyGrossSales.get(storeId) || 0,
-      companyGrossCollection.get(storeId) || 0,
-      companyRefunds.get(storeId) || 0,
-    );
     companyByStore.set(storeId, {
-      sales: settled.sales,
+      sales: companyPeriodByStore.get(storeId) || 0,
       outstanding: lifetimeOutstanding.get(storeId) || 0,
     });
   });
@@ -358,6 +372,9 @@ function buildReport(filter: DateFilter, from = "", to = "") {
       if (!inBucket(invoice.date)) return;
       sales += Math.max(0, invoice.total - (companyCredits.get(key) || 0));
     });
+    purchaseReturns.forEach((row) => {
+      if (inBucket(row.date)) sales -= row.amount;
+    });
     storeBooks.forEach(({ invoices, returned }) => {
       invoices.forEach((invoice) => {
         if (!inBucket(invoice.date)) return;
@@ -372,6 +389,9 @@ function buildReport(filter: DateFilter, from = "", to = "") {
       (sum, receipt) => (inBucket(receipt.date) ? sum + money(receipt.amount) : sum),
       0,
     );
+    getCompanyRefunds().forEach((refund) => {
+      if (inBucket(refund.date)) collection -= money(refund.amount);
+    });
     storeBooks.forEach(({ receipts }) => {
       collection += receipts.reduce(
         (sum, receipt) => (inBucket(receipt.date) ? sum + money(receipt.amount) : sum),
@@ -408,6 +428,8 @@ function buildReport(filter: DateFilter, from = "", to = "") {
   });
 
   return {
+    companyGross,
+    companySalesReturn,
     companySales,
     marketSales,
     sales: companySales + marketSales,
@@ -520,7 +542,7 @@ export default function CompanyReports() {
         <Summary
           label="Sales"
           value={report.sales}
-          detail={`Company ${formatCurrency(report.companySales)} · Market ${formatCurrency(report.marketSales)}`}
+          detail={`Company ${formatCurrency(report.companyGross)} − Return ${formatCurrency(report.companySalesReturn)} = ${formatCurrency(report.companySales)} · Market ${formatCurrency(report.marketSales)}`}
         />
         <Summary
           label="Collection"

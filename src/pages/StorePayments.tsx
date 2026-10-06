@@ -3,6 +3,12 @@ import { Card, Button, Icon, EmptyState, Select, Input } from '@/components/ui';
 import { formatCurrency, formatDate, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter } from '@/lib/format';
 import type { Payment } from '@/lib/purchaseData';
 import { createPortal } from 'react-dom';
+import {
+  companyRefundsUpdatedEvent,
+  getCompanyInvoiceCredits,
+  getCompanyRefunds,
+  getFinalCompanyStoreSales,
+} from '@/lib/data';
 
 const vendors = ['Nature Biotic', 'Green Agro Suppliers', 'Sri Lakshmi Traders'];
 const methods = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
@@ -11,7 +17,68 @@ const statuses = ['Paid', 'Pending'];
 const statusColor: Record<string, 'green' | 'amber'> = {
   Paid: 'green',
   Pending: 'amber',
+  Refund: 'amber',
 };
+
+/** Receipts the company recorded from this store, and refunds it paid back. */
+function companyPaymentRows(storeId: string): Payment[] {
+  let receipts: any[] = [];
+  try {
+    const raw = localStorage.getItem('nature-biotic-company-receipts-v1');
+    const parsed = raw ? JSON.parse(raw) : [];
+    receipts = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    receipts = [];
+  }
+  const invoiceTotals = new Map<string, number>();
+  getFinalCompanyStoreSales()
+    .filter((sale) => sale.storeId === storeId)
+    .forEach((sale) => {
+      const key = String(sale.invoiceNo || '').trim().toLowerCase();
+      if (key) invoiceTotals.set(key, (invoiceTotals.get(key) || 0) + Number(sale.total || 0));
+    });
+  const collected = new Map<string, number>();
+  const paid: Payment[] = receipts
+    .filter((row) => row?.storeId === storeId && Number(row.amount) > 0)
+    .sort((a, b) =>
+      String(a.date).localeCompare(String(b.date)) ||
+      String(a.receiptNo).localeCompare(String(b.receiptNo), undefined, { numeric: true }),
+    )
+    .map((row) => {
+      const key = String(row.invoiceNo || '').trim().toLowerCase();
+      const amount = Number(row.amount || 0);
+      const total = collected.get(key) ?? 0;
+      collected.set(key, total + amount);
+      const balance = invoiceTotals.has(key)
+        ? Math.max(0, invoiceTotals.get(key)! - getCompanyInvoiceCredits(storeId, key) - total - amount)
+        : Math.max(0, Number(row.balanceAfter || 0));
+      return {
+        id: `company-receipt:${row.id || row.receiptNo}`,
+        paymentNo: String(row.receiptNo || '-'),
+        date: String(row.date || ''),
+        vendor: 'Nature Biotic',
+        invoiceRef: String(row.invoiceNo || '-'),
+        method: row.method,
+        amount,
+        balance,
+        status: 'Paid',
+      };
+    });
+  const refunded: Payment[] = getCompanyRefunds()
+    .filter((row) => row.storeId === storeId && Number(row.amount) > 0)
+    .map((row) => ({
+      id: `company-refund:${row.id}`,
+      paymentNo: row.refundNo || row.referenceNo,
+      date: row.date,
+      vendor: 'Nature Biotic',
+      invoiceRef: row.referenceNo,
+      method: (row.paymentMethod || '-') as Payment['method'],
+      amount: -Number(row.amount || 0),
+      balance: 0,
+      status: 'Refund' as Payment['status'],
+    }));
+  return [...paid, ...refunded];
+}
 
 export default function StorePayments({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState('');
@@ -24,13 +91,32 @@ export default function StorePayments({ storeId }: { storeId: string }) {
   const [customTo, setCustomTo] = useState("");
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`naturebiotic:purchase-payments:${storeId}`);
-      const saved = raw ? JSON.parse(raw) : [];
-      setRecords(Array.isArray(saved) ? saved : []);
-    } catch {
-      setRecords([]);
-    }
+    const refresh = () => {
+      let saved: Payment[] = [];
+      try {
+        const raw = localStorage.getItem(`naturebiotic:purchase-payments:${storeId}`);
+        const parsed = raw ? JSON.parse(raw) : [];
+        saved = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        saved = [];
+      }
+      setRecords(
+        [...saved, ...companyPaymentRows(storeId)].sort((a, b) =>
+          String(b.date).localeCompare(String(a.date)),
+        ),
+      );
+    };
+    refresh();
+    window.addEventListener('nature-biotic-company-receipts-updated', refresh);
+    window.addEventListener(companyRefundsUpdatedEvent, refresh);
+    window.addEventListener('store-approval-requests-updated', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('nature-biotic-company-receipts-updated', refresh);
+      window.removeEventListener(companyRefundsUpdatedEvent, refresh);
+      window.removeEventListener('store-approval-requests-updated', refresh);
+      window.removeEventListener('focus', refresh);
+    };
   }, [storeId]);
 
   const dated = useMemo(
@@ -52,9 +138,24 @@ export default function StorePayments({ storeId }: { storeId: string }) {
     [dated, search, vendorFilter, methodFilter],
   );
 
-  const totalPayable = dated.reduce((s, p) => s + p.amount + p.balance, 0);
+  const totalPayable = dated.reduce(
+    (s, p) => (p.amount < 0 ? s : s + p.amount + p.balance),
+    0,
+  );
   const paid = dated.reduce((s, p) => s + p.amount, 0);
-  const pending = dated.reduce((s, p) => s + p.balance, 0);
+  const pending = useMemo(() => {
+    const companyLatest = new Map<string, number>();
+    let saved = 0;
+    dated.forEach((p) => {
+      if (!p.id.startsWith('company-receipt:')) {
+        saved += p.balance;
+        return;
+      }
+      const key = p.invoiceRef.toLowerCase();
+      companyLatest.set(key, Math.min(companyLatest.get(key) ?? Infinity, p.balance));
+    });
+    return saved + [...companyLatest.values()].reduce((s, b) => s + b, 0);
+  }, [dated]);
   const today = new Date().toISOString().split('T')[0];
   const paymentsToday = dated.filter((p) => p.date === today).length;
 

@@ -1,6 +1,7 @@
 import type { StorePage } from "@/context/NavContext";
 import {
   getCompanyCreditNoteSyncRecords,
+  getCompanyRefunds,
   getFinalCompanyStoreSales,
   getStaffByStore,
   getStore,
@@ -209,6 +210,74 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
       }),
     );
   });
+
+  getStoreApprovalRequests()
+    .filter(
+      (request) =>
+        request.storeId === storeId &&
+        (request.type === "Purchase Order" || request.type === "Purchase Return") &&
+        (request.status === "Approved" || request.status === "Rejected"),
+    )
+    .forEach((request) => {
+      const isOrder = request.type === "Purchase Order";
+      const approved = request.status === "Approved";
+      const statusLabel = approved ? (isOrder ? "Accepted" : "Approved") : "Rejected";
+      items.push(
+        note({
+          id: `${isOrder ? "po" : "purchase-return"}-${statusLabel.toLowerCase()}:${storeId}:${request.referenceNo}`,
+          title: `${isOrder ? "Purchase Order" : "Purchase Return"} ${statusLabel}`,
+          description: `${request.referenceNo} · ${formatCurrency(Number(request.amount || 0))} · ${
+            approved
+              ? isOrder
+                ? "Accepted by Nature Biotic."
+                : "Approved by Nature Biotic. Stock deducted."
+              : "Rejected by Nature Biotic."
+          }`,
+          status: statusLabel,
+          tone: approved ? "accepted" : "neutral",
+          icon: isOrder ? "shopping_cart" : "assignment_return",
+          at: timeValue(request.date, request.decidedAt || request.createdAt),
+          sourceDate: request.decidedAt ? undefined : request.date,
+          page: isOrder ? "purchase-order" : "return-stock",
+        }),
+      );
+    });
+
+  readArray("nature-biotic-company-receipts-v1")
+    .filter((row) => row?.storeId === storeId && Number(row?.amount) > 0)
+    .forEach((row) => {
+      items.push(
+        note({
+          id: `company-receipt:${storeId}:${row.id || row.receiptNo}`,
+          title: "Payment Received by Nature Biotic",
+          description: `${row.receiptNo || "Receipt"} · ${formatCurrency(Number(row.amount || 0))} · ${row.invoiceNo || ""}`,
+          status: "Paid",
+          tone: "accepted",
+          icon: "payments",
+          at: timeValue(row.date),
+          sourceDate: row.date,
+          page: "payments",
+        }),
+      );
+    });
+
+  getCompanyRefunds()
+    .filter((row) => row.storeId === storeId && Number(row.amount) > 0)
+    .forEach((row) => {
+      items.push(
+        note({
+          id: `company-refund:${storeId}:${row.id}`,
+          title: "Refund Completed",
+          description: `${row.refundNo || "Refund"} · ${formatCurrency(Number(row.amount || 0))} · ${row.referenceNo}`,
+          status: "Refunded",
+          tone: "accepted",
+          icon: "currency_exchange",
+          at: timeValue(row.date),
+          sourceDate: row.date,
+          page: "payments",
+        }),
+      );
+    });
 
   readArray(`nature-biotic-store-delivery-challans-v2:${storeId}`).forEach((row) => {
     if (!row?.id || String(row.status || "").toLowerCase() !== "accepted") return;

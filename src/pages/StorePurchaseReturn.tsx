@@ -5,6 +5,7 @@ import {
   addStoreApprovalRequest,
   getStore,
   getStoreApprovalRequest,
+  getStoreAvailableQty,
   isStorePurchaseReceived,
   storeApprovalRequestsUpdatedEvent,
   stores,
@@ -49,7 +50,7 @@ type PurchaseReturnRow = {
   igst: number;
   total: number;
   reason: string;
-  status: "Pending" | "Approved";
+  status: "Pending" | "Approved" | "Rejected";
   items: ReturnItem[];
 };
 
@@ -157,9 +158,12 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
             storeId,
             row.returnNo,
           );
-          return request?.status === "Approved"
-            ? { ...row, status: "Approved" }
-            : row;
+          if (request?.status === "Approved" || request?.status === "Rejected") {
+            return row.status === request.status
+              ? row
+              : { ...row, status: request.status };
+          }
+          return row;
         }),
       );
     syncStatuses();
@@ -254,7 +258,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     purchaseInvoices.forEach((item) => {
       if (!item.invoiceNo || !isStorePurchaseReceived(item.invoiceNo)) return;
       const returned = rows.reduce((sum, row) => {
-        if (row.purchaseRef !== item.invoiceNo) return sum;
+        if (row.purchaseRef !== item.invoiceNo || row.status === "Rejected") return sum;
         return (
           sum +
           row.items
@@ -464,7 +468,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     pendingLines: ReturnItem[] = [],
   ) {
     return [...rows.flatMap((row) =>
-      row.purchaseRef === invoiceNo ? row.items : [],
+      row.purchaseRef === invoiceNo && row.status !== "Rejected" ? row.items : [],
     ), ...pendingLines].reduce((sum, item) => {
       if (
         item.product !== productName ||
@@ -475,6 +479,29 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
       }
       return sum + Number(item.quantity || 0);
     }, 0);
+  }
+
+  // Pending returns are not deducted yet, so they hold back stock until decided.
+  function stockLeftFor(
+    productName: string,
+    size: string,
+    batch: string,
+    pendingLines: ReturnItem[] = [],
+  ) {
+    const available = getStoreAvailableQty(storeId, "", size, batch, productName);
+    const held = [
+      ...rows.flatMap((row) => (row.status === "Pending" ? row.items : [])),
+      ...pendingLines,
+    ].reduce(
+      (sum, item) =>
+        item.product === productName &&
+        item.packSize === size &&
+        item.batchNo === batch
+          ? sum + Number(item.quantity || 0)
+          : sum,
+      0,
+    );
+    return Math.max(0, available - held);
   }
 
   const purchasedQty = selectedProduct
@@ -494,7 +521,17 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
         added,
       )
     : 0;
-  const returnableQty = Math.max(0, purchasedQty - alreadyReturned);
+  const returnableQty = selectedProduct
+    ? Math.min(
+        Math.max(0, purchasedQty - alreadyReturned),
+        stockLeftFor(
+          selectedProduct.product,
+          selectedProduct.packSize,
+          selectedProduct.batchNo,
+          added,
+        ),
+      )
+    : 0;
 
   const canAdd =
     !!selectedProduct &&
@@ -598,9 +635,11 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     });
     for (const [key, qty] of requested) {
       const [productName, size, batch] = key.split("||");
-      const available =
+      const available = Math.min(
         purchasedQtyFor(purchaseRef.trim(), productName, size, batch) -
-        returnedQtyFor(purchaseRef.trim(), productName, size, batch);
+          returnedQtyFor(purchaseRef.trim(), productName, size, batch),
+        stockLeftFor(productName, size, batch),
+      );
       if (qty < 1 || qty > available) {
         setReturnQtyError(
           "Return quantity cannot exceed the available returnable quantity.",
@@ -634,7 +673,23 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
       items: added,
     };
 
-    setRows((prev) => [row, ...prev]);
+    if (
+      rows.some(
+        (item) => item.returnNo.trim().toLowerCase() === row.returnNo.toLowerCase(),
+      )
+    ) {
+      window.alert("This purchase return number is already saved.");
+      return;
+    }
+
+    const nextRows = [row, ...rows];
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(nextRows));
+    } catch {
+      window.alert("The purchase return could not be saved.");
+      return;
+    }
+    setRows(nextRows);
     rememberPurchaseReturnNo(getStore(storeId)?.code || "ST", row.returnNo);
     window.dispatchEvent(new Event(purchaseReturnsUpdatedEvent));
     const store = stores.find((item) => item.id === storeId);
@@ -1284,7 +1339,9 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                       className={`rounded-full px-2 py-1 text-xs font-semibold ${
                         row.status === "Approved"
                           ? "bg-emerald-50 text-emerald-700"
-                          : "bg-amber-50 text-amber-700"
+                          : row.status === "Rejected"
+                            ? "bg-red-50 text-red-700"
+                            : "bg-amber-50 text-amber-700"
                       }`}
                     >
                       {row.status}
@@ -1367,7 +1424,9 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
                     className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
                       selectedReturn.status === "Approved"
                         ? "bg-emerald-50 text-emerald-700"
-                        : "bg-amber-50 text-amber-700"
+                        : selectedReturn.status === "Rejected"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-amber-50 text-amber-700"
                     }`}
                   >
                     {selectedReturn.status}

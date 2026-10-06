@@ -4,7 +4,7 @@ import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
   commitReceiptNumber,
-  getCompanyCreditNoteSyncRecords,
+  getCompanyInvoiceCredits,
   getFinalCompanyStoreSales,
   nextReceiptNumber,
   stores,
@@ -103,19 +103,10 @@ export default function CompanyReceipts() {
         grouped.set(key, current);
       });
 
-    const credits = getCompanyCreditNoteSyncRecords().filter(
-      (note) => note.storeId === createStoreId && note.status !== "Rejected",
-    );
-
     return Array.from(grouped.values())
       .map((invoice) => {
         const key = invoice.invoiceNo.toLowerCase();
-        const credited = credits.reduce((sum, note) => {
-          const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
-            .trim()
-            .toLowerCase();
-          return noteInvoice === key ? sum + money(note.returnAmount) : sum;
-        }, 0);
+        const credited = getCompanyInvoiceCredits(createStoreId, key);
         const collected = createdReceipts.reduce((sum, receipt) => {
           if (receipt.storeId !== createStoreId) return sum;
           if (receipt.invoiceNo.trim().toLowerCase() !== key) return sum;
@@ -189,17 +180,7 @@ export default function CompanyReceipts() {
     try {
       const latest = loadCompanyReceipts();
       const invoiceKey = selectedInvoice.invoiceNo.trim().toLowerCase();
-      const credited = getCompanyCreditNoteSyncRecords().reduce((sum, note) => {
-        if (note.storeId !== createStore.id || note.status === "Rejected") {
-          return sum;
-        }
-        const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
-          .trim()
-          .toLowerCase();
-        return noteInvoice === invoiceKey
-          ? sum + money(note.returnAmount)
-          : sum;
-      }, 0);
+      const credited = getCompanyInvoiceCredits(createStore.id, invoiceKey);
       const collected = latest.reduce((sum, receipt) => {
         if (receipt.storeId !== createStore.id) return sum;
         if (receipt.invoiceNo.trim().toLowerCase() !== invoiceKey) return sum;
