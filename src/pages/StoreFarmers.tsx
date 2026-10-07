@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   getFarmersByStore,
+  getStore,
   cropTypes,
   deleteFarmer,
   settleLinkedFarmerAccounts,
@@ -16,7 +17,8 @@ import {
   StatCard,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, formatCompact, initials } from "@/lib/format";
+import { formatCurrency, formatCompact, formatDate, initials } from "@/lib/format";
+import { downloadDataTablePdf } from "@/lib/documentPdf";
 import { createPortal } from "react-dom";
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -128,9 +130,48 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
     0,
   );
 
-  function handleExport() {
+  async function handleExport() {
+    if (exporting) return;
     setExporting(true);
-    setTimeout(() => setExporting(false), 800);
+    try {
+      await downloadDataTablePdf({
+        fileName: "nature-biotic-farmers.pdf",
+        heading: "Nature Biotic",
+        title: "Farmer List",
+        storeName: getStore(storeId)?.name || "Store",
+        generatedOn: `Generated ${formatDate(new Date().toISOString().split("T")[0])}`,
+        headers: ["Farmer", "Phone", "Village", "Crop", "Purchases", "Outstanding"],
+        aligns: ["left", "left", "left", "left", "right", "right"],
+        rows: filtered.map((farmer) => [
+          farmer.name,
+          farmer.phone || "-",
+          farmer.village || "-",
+          farmer.cropType || farmer.crops?.[0]?.cropType || "-",
+          formatCurrency(farmer.totalPurchases).replace("₹", "Rs. "),
+          formatCurrency(balanceOf(farmer)).replace("₹", "Rs. "),
+        ]),
+        total: [
+          "",
+          "",
+          "",
+          "Total",
+          formatCurrency(filtered.reduce((sum, farmer) => sum + farmer.totalPurchases, 0)).replace(
+            "₹",
+            "Rs. ",
+          ),
+          formatCurrency(filtered.reduce((sum, farmer) => sum + balanceOf(farmer), 0)).replace(
+            "₹",
+            "Rs. ",
+          ),
+        ],
+        emptyMessage: "No farmers match the current filters.",
+      });
+      window.alert("PDF downloaded.");
+    } catch {
+      window.alert("The PDF could not be created. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   }
 
   const [deleteTarget, setDeleteTarget] = useState<Farmer | null>(null);

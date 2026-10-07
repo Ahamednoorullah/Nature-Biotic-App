@@ -133,6 +133,7 @@ const seedRows: SalesReturnRow[] = [];
 
 type ReturnEntry = {
   sourceKey: string;
+  productName: string;
   productId: string;
   packSize: string;
   batchNo: string;
@@ -145,6 +146,7 @@ type ReturnEntry = {
 function emptyItem(): ReturnEntry {
   return {
     sourceKey: "",
+    productName: "",
     productId: "",
     packSize: "",
     batchNo: "",
@@ -391,6 +393,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     setEntry((prev) => ({
       ...prev,
       sourceKey,
+      productName: item.product?.name || "Product",
       productId: item.productId,
       packSize,
       batchNo: item.batchNo || "",
@@ -399,6 +402,53 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       price: Number(item.sellingPrice || 0),
       reason: "",
     }));
+  }
+
+  function returnLineName(item: { product?: { name?: string } }) {
+    return item.product?.name || "Product";
+  }
+
+  function returnLineSize(item: {
+    pkgsize?: string;
+    packSize?: string;
+    product?: { size?: string };
+  }) {
+    return item.pkgsize || item.packSize || item.product?.size || "";
+  }
+
+  function selectReturnName(name: string) {
+    const lines = (selectedInvoice?.products || []).filter(
+      (item) => returnLineName(item) === name,
+    );
+    const sizes = Array.from(
+      new Set(lines.map((item) => returnLineSize(item)).filter(Boolean)),
+    );
+    if (sizes.length === 1) {
+      selectReturnSize(name, sizes[0]);
+      return;
+    }
+    setEntry({ ...emptyItem(), productName: name });
+  }
+
+  function selectReturnSize(name: string, size: string) {
+    const lines = (selectedInvoice?.products || []).filter(
+      (item) => returnLineName(item) === name && returnLineSize(item) === size,
+    );
+    if (lines.length === 1) {
+      selectInvoiceProduct(lines[0].key);
+      return;
+    }
+    setEntry({ ...emptyItem(), productName: name, packSize: size });
+  }
+
+  function selectReturnBatch(batch: string) {
+    const line = (selectedInvoice?.products || []).find(
+      (item) =>
+        returnLineName(item) === entry.productName &&
+        returnLineSize(item) === entry.packSize &&
+        String(item.batchNo || "") === batch,
+    );
+    if (line) selectInvoiceProduct(line.key);
   }
 
   function addItem() {
@@ -1100,32 +1150,93 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                     <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-8">
                       <Select
                         label="Product"
-                        value={entry.sourceKey}
-                        onChange={selectInvoiceProduct}
+                        value={entry.productName}
+                        onChange={selectReturnName}
                         placeholder={
                           selectedInvoice
                             ? "Select invoice product"
                             : "Select invoice first"
                         }
-                        options={(selectedInvoice?.products || []).map(
-                          (item) => ({
-                            value: item.key,
-                            label: `${item.product?.name || "Product"} (${item.pkgsize || item.packSize || ""})`,
-                          }),
-                        )}
+                        options={Array.from(
+                          new Set(
+                            (selectedInvoice?.products || []).map((item) =>
+                              returnLineName(item),
+                            ),
+                          ),
+                        ).map((name) => ({ value: name, label: name }))}
                       />
-                      <Input
-                        label="Pack Size"
-                        value={entry.packSize}
-                        onChange={() => {}}
-                        readOnly
-                      />
-                      <Input
-                        label="Batch No"
-                        value={entry.batchNo}
-                        onChange={() => {}}
-                        readOnly
-                      />
+                      {(selectedInvoice?.products || []).filter(
+                        (item) => returnLineName(item) === entry.productName,
+                      ).filter((item, index, list) => {
+                        const size = returnLineSize(item);
+                        return (
+                          list.findIndex((row) => returnLineSize(row) === size) ===
+                          index
+                        );
+                      }).length > 1 ? (
+                        <Select
+                          label="Package Size"
+                          value={entry.packSize}
+                          onChange={(value) =>
+                            selectReturnSize(entry.productName, value)
+                          }
+                          placeholder="Select size"
+                          options={Array.from(
+                            new Set(
+                              (selectedInvoice?.products || [])
+                                .filter(
+                                  (item) =>
+                                    returnLineName(item) === entry.productName,
+                                )
+                                .map((item) => returnLineSize(item))
+                                .filter(Boolean),
+                            ),
+                          ).map((size) => ({ value: size, label: size }))}
+                        />
+                      ) : (
+                        <Input
+                          label="Package Size"
+                          value={entry.packSize}
+                          onChange={() => {}}
+                          placeholder={
+                            entry.productName ? "Auto" : "Select product first"
+                          }
+                          readOnly
+                        />
+                      )}
+                      {(selectedInvoice?.products || []).filter(
+                        (item) =>
+                          returnLineName(item) === entry.productName &&
+                          returnLineSize(item) === entry.packSize &&
+                          String(item.batchNo || "").trim(),
+                      ).length > 1 ? (
+                        <Select
+                          label="Batch ID"
+                          value={entry.batchNo}
+                          onChange={selectReturnBatch}
+                          placeholder="Select batch"
+                          options={Array.from(
+                            new Set(
+                              (selectedInvoice?.products || [])
+                                .filter(
+                                  (item) =>
+                                    returnLineName(item) === entry.productName &&
+                                    returnLineSize(item) === entry.packSize,
+                                )
+                                .map((item) => String(item.batchNo || ""))
+                                .filter(Boolean),
+                            ),
+                          ).map((batch) => ({ value: batch, label: batch }))}
+                        />
+                      ) : (
+                        <Input
+                          label="Batch ID"
+                          value={entry.batchNo}
+                          onChange={() => {}}
+                          placeholder={entry.packSize ? "Auto" : "Select size first"}
+                          readOnly
+                        />
+                      )}
                       <Input
                         label="Expiry Date"
                         type="date"

@@ -11,7 +11,6 @@ import {
   products as allProducts,
   getFarmersByStore,
   getStore,
-  getStorePurchasesFromCompanySales,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
@@ -38,6 +37,7 @@ type ProductRow = {
   product: string;
   productName: string;
   pkgsize: string;
+  batchNo?: string;
   qty: string;
   rate: string;
   taxPercent: number;
@@ -97,12 +97,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     );
   }, [storeFarmers, isFRO, user?.name]);
 
-  const storePurchaseRows = useMemo(
-    () => (getStorePurchasesFromCompanySales(storeId) || []) as any[],
-    [storeId],
-  );
-
-  const stockProducts = useMemo(() => {
+  const storeProducts = useMemo(() => {
     const unique = new Map<
       string,
       {
@@ -112,68 +107,27 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         size: string;
         sellingPrice: number;
         taxPercentage: number;
-        availableQty: number;
       }
     >();
-
-    storePurchaseRows.forEach((row: any, index: number) => {
-      const name = String(
-        row.productName ??
-          row.product ??
-          allProducts.find((product) => product.id === row.productId)?.name ??
-          "",
-      ).trim();
-
-      if (!name) return;
-
-      const master = allProducts.find(
-        (product) =>
-          product.id === row.productId ||
-          product.name.toLowerCase() === name.toLowerCase(),
-      );
-
-      const size = String(
-        row.packSize ?? row.pkgsize ?? row.size ?? master?.size ?? "",
-      ).trim();
-
-      const qty = Number(row.quantity ?? row.qty ?? 0);
-      if (qty <= 0) return;
-
-      const masterSellingPrice = Number(master?.sellingPrice ?? 0);
-      const recordedSellingPrice = Number(row.sellingPrice ?? 0);
-      const sellingPrice =
-        masterSellingPrice > 0 ? masterSellingPrice : recordedSellingPrice;
-
-      const taxPercentage = Number(
-        row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
-      );
-
-      const key = `${master?.id ?? row.productId ?? name}-${size || "default"}`;
-
-      const existing = unique.get(key);
-
-      if (existing) {
-        existing.availableQty += qty;
-        if (existing.sellingPrice <= 0 && sellingPrice > 0) {
-          existing.sellingPrice = sellingPrice;
-        }
-      } else {
+    allProducts
+      .filter((product) => product.status !== "Inactive")
+      .forEach((product) => {
+        const name = String(product.name || "").trim();
+        const size = String(product.size || "").trim();
+        if (!name || !size) return;
+        const key = `${name.toLowerCase()}|${size.toLowerCase()}`;
+        if (unique.has(key)) return;
         unique.set(key, {
           key,
-          productId: String(master?.id ?? row.productId ?? `purchase-${index}`),
+          productId: product.id,
           name,
           size,
-          sellingPrice,
-          taxPercentage,
-          availableQty: qty,
+          sellingPrice: Number(product.sellingPrice || 0),
+          taxPercentage: Number(product.taxPercentage || 0),
         });
-      }
-    });
-
+      });
     return Array.from(unique.values());
-  }, [storePurchaseRows]);
-
-  const storeProducts = stockProducts;
+  }, []);
 
   const [selectedQuotation, setSelectedQuotation] = useState<Row | null>(null);
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
@@ -278,6 +232,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     product: "",
     productName: "",
     pkgsize: "",
+    batchNo: "",
     qty: "1",
     rate: "",
     taxPercent: 0,
@@ -308,6 +263,39 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         label: item.size,
       }));
   }, [storeProducts, draftProduct.product]);
+
+  function chooseQuotationProduct(value: string) {
+    setDraftProduct((current) => ({
+      ...current,
+      product: value,
+      productName: value,
+      pkgsize: "",
+      batchNo: "",
+      rate: "",
+      taxPercent: 0,
+      sgstPercent: 0,
+      cgstPercent: 0,
+      igstPercent: 0,
+    }));
+  }
+
+  function chooseQuotationSize(value: string) {
+    const variant = storeProducts.find(
+      (item) => item.name === draftProduct.product && item.size === value,
+    );
+    const split = getTaxSplit(
+      placeOfSupply,
+      Number(variant?.taxPercentage || 0),
+    );
+    setDraftProduct((current) => ({
+      ...current,
+      pkgsize: variant?.size || value,
+      batchNo: "",
+      rate: variant ? String(variant.sellingPrice || 0) : current.rate,
+      taxPercent: Number(variant?.taxPercentage || 0),
+      ...split,
+    }));
+  }
 
   const selectedStockVariant = useMemo(
     () =>
@@ -474,7 +462,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     }
 
     if (!selectedStockVariant) {
-      alert("Selected product size is not available in store stock.");
+      alert("Select a product and package size from the company catalog.");
       return;
     }
 
@@ -952,7 +940,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   Add Product
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-400">
-                  Select products available in this store stock
+                  Select products from the company product catalog
                 </p>
               </div>
 
@@ -961,23 +949,11 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <Select
                     label="Product"
                     value={draftProduct.product}
-                    onChange={(value) => {
-                      setDraftProduct((current) => ({
-                        ...current,
-                        product: value,
-                        productName: value,
-                        pkgsize: "",
-                        rate: "",
-                        taxPercent: 0,
-                        sgstPercent: 0,
-                        cgstPercent: 0,
-                        igstPercent: 0,
-                      }));
-                    }}
+                    onChange={chooseQuotationProduct}
                     placeholder={
                       productNameOptions.length
                         ? "Select product"
-                        : "No stock products"
+                        : "No company products"
                     }
                     options={productNameOptions}
                   />
@@ -985,34 +961,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <Select
                     label="PKG Size"
                     value={draftProduct.pkgsize}
-                    onChange={(value) => {
-                      const variant = storeProducts.find(
-                        (item) =>
-                          item.name === draftProduct.product &&
-                          item.size === value,
-                      );
-
-                      if (!variant) {
-                        setDraftProduct((current) => ({
-                          ...current,
-                          pkgsize: value,
-                        }));
-                        return;
-                      }
-
-                      const split = getTaxSplit(
-                        placeOfSupply,
-                        Number(variant.taxPercentage || 0),
-                      );
-
-                      setDraftProduct((current) => ({
-                        ...current,
-                        pkgsize: variant.size,
-                        rate: String(variant.sellingPrice || 0),
-                        taxPercent: Number(variant.taxPercentage || 0),
-                        ...split,
-                      }));
-                    }}
+                    onChange={chooseQuotationSize}
                     placeholder={
                       draftProduct.product
                         ? "Select size"
@@ -2098,7 +2047,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         Add Product
                       </h3>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        Select products available in this store stock
+                        Select products from the company product catalog
                       </p>
                     </div>
 
@@ -2107,23 +2056,11 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         <Select
                           label="Product"
                           value={draftProduct.product}
-                          onChange={(value) => {
-                            setDraftProduct((current) => ({
-                              ...current,
-                              product: value,
-                              productName: value,
-                              pkgsize: "",
-                              rate: "",
-                              taxPercent: 0,
-                              sgstPercent: 0,
-                              cgstPercent: 0,
-                              igstPercent: 0,
-                            }));
-                          }}
+                          onChange={chooseQuotationProduct}
                           placeholder={
                             productNameOptions.length
                               ? "Select product"
-                              : "No stock products"
+                              : "No company products"
                           }
                           options={productNameOptions}
                         />
@@ -2131,34 +2068,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         <Select
                           label="PKG Size"
                           value={draftProduct.pkgsize}
-                          onChange={(value) => {
-                            const variant = storeProducts.find(
-                              (item) =>
-                                item.name === draftProduct.product &&
-                                item.size === value,
-                            );
-
-                            if (!variant) {
-                              setDraftProduct((current) => ({
-                                ...current,
-                                pkgsize: value,
-                              }));
-                              return;
-                            }
-
-                            const split = getTaxSplit(
-                              placeOfSupply,
-                              Number(variant.taxPercentage || 0),
-                            );
-
-                            setDraftProduct((current) => ({
-                              ...current,
-                              pkgsize: variant.size,
-                              rate: String(variant.sellingPrice || 0),
-                              taxPercent: Number(variant.taxPercentage || 0),
-                              ...split,
-                            }));
-                          }}
+                          onChange={chooseQuotationSize}
                           placeholder={
                             draftProduct.product
                               ? "Select size"

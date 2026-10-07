@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { getProductsByStore, getStoreAvailableQty, allocateStoreStockAdjustment, type AdjustmentType, type AdjustmentReason } from '@/lib/data';
+import { getProductsByStore, getStoreAvailableQty, getStorePurchasesFromCompanySales, recordStoreStockAdjustment, type AdjustmentType, type AdjustmentReason } from '@/lib/data';
 import { useNav } from '@/context/NavContext';
 import { Card, Button, Input, Select, Textarea, SectionTitle, Icon } from '@/components/ui';
 
@@ -15,7 +15,10 @@ const reasonIcons: Record<AdjustmentReason, string> = {
 };
 
 type FormState = {
+  productName: string;
+  packSize: string;
   product: string;
+  batchNo: string;
   adjustmentType: string;
   reason: string;
   quantity: string;
@@ -23,7 +26,7 @@ type FormState = {
 };
 
 const emptyForm: FormState = {
-  product: '', adjustmentType: 'Decrease', reason: '', quantity: '', remarks: '',
+  productName: '', packSize: '', product: '', batchNo: '', adjustmentType: 'Decrease', reason: '', quantity: '', remarks: '',
 };
 
 export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
@@ -33,10 +36,89 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
   const [approved, setApproved] = useState(false);
   const approving = useRef(false);
   const products = getProductsByStore(storeId);
+  const productNames = Array.from(
+    new Map(products.map((product) => [product.name.trim().toLowerCase(), product.name.trim()])).values(),
+  );
+
+  function sizesFor(name: string) {
+    const key = name.trim().toLowerCase();
+    const sizes = new Set<string>();
+    products.forEach((product) => {
+      if (product.name.trim().toLowerCase() !== key) return;
+      const size = String(product.size || "").trim();
+      if (size) sizes.add(size);
+    });
+    return Array.from(sizes);
+  }
+
+  function batchesFor(name: string, size: string) {
+    const nameKey = name.trim().toLowerCase();
+    const sizeKey = size.trim().toLowerCase();
+    const batches = new Set<string>();
+    if (!nameKey || !sizeKey) return [];
+    getStorePurchasesFromCompanySales(storeId).forEach((purchase: any) => {
+      const rowName = String(purchase.product || "").trim().toLowerCase();
+      const rowSize = String(purchase.packSize || purchase.pkgsize || "").trim().toLowerCase();
+      if (rowName !== nameKey || rowSize !== sizeKey) return;
+      const batchNo = String(purchase.batchNo || "").trim();
+      if (!batchNo || batchNo === "-") return;
+      const variant = products.find(
+        (product) =>
+          product.name.trim().toLowerCase() === nameKey &&
+          String(product.size || "").trim().toLowerCase() === sizeKey,
+      );
+      const available = getStoreAvailableQty(
+        storeId,
+        String(variant?.id || purchase.productId || ""),
+        size,
+        batchNo,
+        name,
+      );
+      if (available > 0) batches.add(batchNo);
+    });
+    return Array.from(batches);
+  }
 
   function update<K extends keyof FormState>(key: K, value: string) {
     setForm({ ...form, [key]: value });
   }
+
+  function applySize(name: string, size: string) {
+    const variant = products.find(
+      (product) =>
+        product.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        String(product.size || "").trim().toLowerCase() === size.trim().toLowerCase(),
+    );
+    const batches = batchesFor(name, size);
+    setForm((current) => ({
+      ...current,
+      productName: name,
+      packSize: size,
+      product: variant?.id || "",
+      batchNo: batches.length === 1 ? batches[0] : "",
+      quantity: "",
+    }));
+  }
+
+  function chooseProduct(name: string) {
+    const sizes = sizesFor(name);
+    if (sizes.length === 1) {
+      applySize(name, sizes[0]);
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      productName: name,
+      packSize: "",
+      product: "",
+      batchNo: "",
+      quantity: "",
+    }));
+  }
+
+  const availableQty = form.product
+    ? getStoreAvailableQty(storeId, form.product, form.packSize, form.batchNo, form.productName)
+    : 0;
 
   function handleSave() {
     setSaved(true);
@@ -46,16 +128,17 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
   function handleApprove() {
     const product = products.find((item) => item.id === form.product);
     const qty = Number(form.quantity || 0);
-    if (!product || qty <= 0 || approving.current) return;
+    if (!product || qty <= 0 || !form.batchNo || approving.current) return;
+    if (form.adjustmentType !== "Increase" && qty > availableQty) return;
     approving.current = true;
     const signedQty = form.adjustmentType === "Increase" ? qty : -qty;
-    allocateStoreStockAdjustment({
+    recordStoreStockAdjustment({
       id: `adjust-${Date.now()}`,
       storeId,
       productId: product.id,
       productName: product.name,
-      packSize: product.size,
-      batchNo: "",
+      packSize: form.packSize || product.size,
+      batchNo: form.batchNo,
       qty: signedQty,
       reason: form.reason || "Adjustment",
       date: new Date().toISOString().split("T")[0],
@@ -64,7 +147,13 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
     setTimeout(() => { setApproved(false); goStorePage('stock-management'); }, 1200);
   }
 
-  const isValid = form.product && form.reason && form.quantity;
+  const isValid =
+    !!form.product &&
+    !!form.packSize &&
+    !!form.batchNo &&
+    !!form.reason &&
+    Number(form.quantity) > 0 &&
+    (form.adjustmentType === "Increase" || Number(form.quantity) <= availableQty);
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -92,8 +181,20 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
         <Card className="p-6">
           <SectionTitle icon="tune" title="Adjustment Details" description="Select product and adjustment configuration." />
           <div className="grid sm:grid-cols-2 gap-4">
-            <Select label="Product" value={form.product} onChange={(v) => update('product', v)} placeholder="Select product" required
-              options={products.map((p) => ({ value: p.id, label: `${p.name} - ${p.size} (Stock: ${getStoreAvailableQty(storeId, p.id, p.size, "", p.name)})` }))} />
+            <Select label="Product" value={form.productName} onChange={chooseProduct} placeholder="Select product" required
+              options={productNames.map((name) => ({ value: name, label: name }))} />
+            {sizesFor(form.productName).length > 1 ? (
+              <Select label="Package Size" value={form.packSize} onChange={(size) => applySize(form.productName, size)} placeholder="Select size" required
+                options={sizesFor(form.productName).map((size) => ({ value: size, label: size }))} />
+            ) : (
+              <Input label="Package Size" value={form.packSize} onChange={() => {}} placeholder="Auto" readOnly />
+            )}
+            {batchesFor(form.productName, form.packSize).length > 1 ? (
+              <Select label="Batch ID" value={form.batchNo} onChange={(batch) => setForm((current) => ({ ...current, batchNo: batch, quantity: "" }))} placeholder="Select batch" required
+                options={batchesFor(form.productName, form.packSize).map((batch) => ({ value: batch, label: batch }))} />
+            ) : (
+              <Input label="Batch ID" value={form.batchNo} onChange={() => {}} placeholder={form.packSize ? "Auto" : "Select size first"} readOnly />
+            )}
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">Adjustment Type</label>
               <div className="flex gap-2">
@@ -133,7 +234,15 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4 mt-4">
-            <Input label="Quantity" type="number" value={form.quantity} onChange={(v) => update('quantity', v)} placeholder="e.g. 10" icon="numbers" required />
+            <Input label="Available Quantity" value={form.batchNo ? String(availableQty) : ""} onChange={() => {}} placeholder="Select batch" readOnly />
+            <Input label="Quantity" type="number" value={form.quantity} onChange={(v) => {
+              const next = Number(v);
+              if (form.adjustmentType !== "Increase" && form.batchNo && next > availableQty) {
+                update('quantity', String(availableQty));
+                return;
+              }
+              update('quantity', v);
+            }} placeholder="e.g. 10" icon="numbers" required />
           </div>
         </Card>
 

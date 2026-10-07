@@ -332,6 +332,7 @@ export async function downloadDataTablePdf(input: {
   rows: string[][];
   aligns?: Array<"left" | "right" | "center">;
   total?: string[];
+  emptyMessage?: string;
 }) {
   const JsPDF = await loadJsPdf();
   const pdf = new JsPDF({
@@ -422,7 +423,7 @@ export async function downloadDataTablePdf(input: {
   };
 
   if (input.rows.length === 0) {
-    writeRow(["No products match your filters."]);
+    writeRow([input.emptyMessage || "No products match your filters."]);
   } else {
     input.rows.forEach((row) => writeRow(row));
     if (input.total) {

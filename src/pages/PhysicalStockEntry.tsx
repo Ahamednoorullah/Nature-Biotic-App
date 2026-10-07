@@ -78,10 +78,31 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
   const [rows, setRows] = useState<EntryRow[]>([emptyRow()]);
   const [lastResult, setLastResult] = useState<SavedEntry | null>(null);
 
-  const productChoices = useMemo(
-    () => allProducts.map((p) => ({ value: p.id, label: p.name })),
-    [],
-  );
+  const productNames = useMemo(() => {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    allProducts.forEach((product) => {
+      if (product.status === "Inactive") return;
+      const name = product.name.trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      names.push(name);
+    });
+    return names;
+  }, []);
+
+  function sizesForName(name: string) {
+    const key = name.trim().toLowerCase();
+    const sizes = new Set<string>();
+    allProducts.forEach((product) => {
+      if (product.status === "Inactive") return;
+      if (product.name.trim().toLowerCase() !== key) return;
+      const size = String(product.size || "").trim();
+      if (size) sizes.add(size);
+    });
+    return Array.from(sizes);
+  }
 
   function updateRow(key: string, patch: Partial<EntryRow>) {
     setRows((prev) =>
@@ -89,12 +110,32 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
     );
   }
 
-  function selectProduct(key: string, productId: string) {
-    const product = allProducts.find((p) => p.id === productId);
+  function selectProduct(key: string, name: string) {
+    const sizes = sizesForName(name);
+    const size = sizes.length === 1 ? sizes[0] : "";
+    const product = allProducts.find(
+      (item) =>
+        item.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        (!size || item.size === size),
+    );
     updateRow(key, {
-      productId,
-      productName: product?.name || "",
-      packSize: product?.size || "",
+      productId: size ? product?.id || "" : "",
+      productName: name,
+      packSize: size,
+      unitPrice: size ? product?.sellingPrice || 0 : 0,
+    });
+  }
+
+  function selectSize(key: string, name: string, size: string) {
+    const product = allProducts.find(
+      (item) =>
+        item.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        item.size === size,
+    );
+    updateRow(key, {
+      productId: product?.id || "",
+      productName: name,
+      packSize: size,
       unitPrice: product?.sellingPrice || 0,
     });
   }
@@ -206,17 +247,34 @@ export default function PhysicalStockEntry({ storeId }: { storeId: string }) {
             >
               <Select
                 label="Product"
-                value={row.productId}
+                value={row.productName}
                 onChange={(v) => selectProduct(row.key, v)}
                 placeholder="Select product"
-                options={productChoices}
+                options={productNames.map((name) => ({
+                  value: name,
+                  label: name,
+                }))}
               />
-              <Input
-                label="Pack Size"
-                value={row.packSize}
-                onChange={() => {}}
-                readOnly
-              />
+              {sizesForName(row.productName).length > 1 ? (
+                <Select
+                  label="Package Size"
+                  value={row.packSize}
+                  onChange={(v) => selectSize(row.key, row.productName, v)}
+                  placeholder="Select size"
+                  options={sizesForName(row.productName).map((size) => ({
+                    value: size,
+                    label: size,
+                  }))}
+                />
+              ) : (
+                <Input
+                  label="Package Size"
+                  value={row.packSize}
+                  onChange={() => {}}
+                  placeholder="Auto"
+                  readOnly
+                />
+              )}
               <Input
                 label="Qty (counted)"
                 type="number"

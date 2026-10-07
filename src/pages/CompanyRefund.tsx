@@ -10,8 +10,11 @@ import {
 } from "@/lib/format";
 import {
   addCompanyRefund,
+  companyRefundParts,
   companyRefundsUpdatedEvent,
   getCompanyRefunds,
+  getCompanyStoreOutstanding,
+  previewRefundSettlement,
   getStoreApprovalRequests,
   nextStoreDocumentNo,
   purchaseReturnRefundable,
@@ -99,6 +102,7 @@ export default function CompanyRefund() {
   const [reason, setReason] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [amount, setAmount] = useState(0);
+  const [applyToOutstanding, setApplyToOutstanding] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [refundError, setRefundError] = useState("");
   const savingRefund = useRef(false);
@@ -140,7 +144,16 @@ export default function CompanyRefund() {
   const refundable = selectedReturn
     ? purchaseReturnRefundable(selectedReturn.storeId, selectedReturn.returnNo)
     : 0;
-  const balanceValue = Math.max(0, refundable - Math.max(0, amount));
+  const accountOutstanding = selectedReturn
+    ? getCompanyStoreOutstanding(selectedReturn.storeId)
+    : 0;
+  const settlement = previewRefundSettlement({
+    refundable,
+    outstanding: accountOutstanding,
+    apply: applyToOutstanding,
+    cash: amount,
+  });
+  const balanceValue = Math.max(0, settlement.settled - settlement.applied);
 
   const returnOptions = useMemo(
     () =>
@@ -179,6 +192,7 @@ export default function CompanyRefund() {
     setReason("");
     setPaymentMethod("");
     setAmount(0);
+    setApplyToOutstanding(false);
     setRemarks("");
     setRefundError("");
   }
@@ -190,7 +204,22 @@ export default function CompanyRefund() {
 
   function selectReturn(value: string) {
     setReferenceNo(value);
-    setAmount(0);
+    const row = returns.find((item) => item.returnNo === value);
+    const full = row ? purchaseReturnRefundable(row.storeId, row.returnNo) : 0;
+    setAmount(full);
+    setApplyToOutstanding(false);
+    setRefundError("");
+  }
+
+  function toggleApplyOutstanding(checked: boolean) {
+    const next = previewRefundSettlement({
+      refundable,
+      outstanding: accountOutstanding,
+      apply: checked,
+      cash: refundable,
+    });
+    setApplyToOutstanding(checked);
+    setAmount(next.maxCash);
     setRefundError("");
   }
 
@@ -202,9 +231,9 @@ export default function CompanyRefund() {
       return;
     }
     setAmount(parsed);
-    if (selectedReturn && parsed > refundable) {
+    if (selectedReturn && parsed > settlement.maxCash) {
       setRefundError(
-        `Refund cannot exceed the remaining ${formatCurrency(refundable)}.`,
+        `Refund cannot exceed ${formatCurrency(settlement.maxCash)}.`,
       );
       return;
     }
@@ -214,9 +243,11 @@ export default function CompanyRefund() {
   function createRefund() {
     if (savingRefund.current || !selectedReturn) return;
     savingRefund.current = true;
-    if (!(amount > 0) || amount > refundable) {
+    if (settlement.exceeds || settlement.settled <= 0) {
       setRefundError(
-        `Refund cannot exceed the remaining ${formatCurrency(refundable)}.`,
+        settlement.settled <= 0
+          ? "Enter a refund amount for this purchase return."
+          : `Refund cannot exceed ${formatCurrency(settlement.maxCash)}.`,
       );
       savingRefund.current = false;
       return;
@@ -225,14 +256,15 @@ export default function CompanyRefund() {
       storeId: selectedReturn.storeId,
       storeName: selectedReturn.storeName,
       referenceNo: selectedReturn.returnNo,
-      amount,
+      amount: settlement.settled,
       date,
       refundNo,
       reason,
       paymentMethod,
       remarks,
-      balance: Math.max(0, refundable - amount),
+      balance: Math.max(0, refundable - settlement.settled),
       purchaseRef: selectedReturn.purchaseRef,
+      applyToOutstanding: settlement.applied > 0,
     });
     savingRefund.current = false;
     if (!result.ok) {
@@ -246,8 +278,8 @@ export default function CompanyRefund() {
 
   const canCreate =
     !!selectedReturn &&
-    amount > 0 &&
-    amount <= refundable &&
+    settlement.settled > 0 &&
+    !settlement.exceeds &&
     !!reason &&
     !!paymentMethod &&
     !refundError;
@@ -372,7 +404,7 @@ export default function CompanyRefund() {
                       {row.paymentMethod || "-"}
                     </td>
                     <td className="px-2 py-3 text-right font-bold text-slate-800">
-                      {formatCurrency(row.amount)}
+                      {formatCurrency(companyRefundParts(row).paid)}
                     </td>
                   </tr>
                 ))}
@@ -478,6 +510,56 @@ export default function CompanyRefund() {
                     required
                   />
                   <Input
+                    label="Outstanding"
+                    value={selectedReturn ? formatCurrency(accountOutstanding) : ""}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                  {selectedReturn && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-slate-700 md:col-span-2 lg:col-span-3">
+                      <p>
+                        <span className="font-semibold">Outstanding:</span>{" "}
+                        {formatCurrency(accountOutstanding)}
+                      </p>
+                      <p className="mt-1">
+                        <span className="font-semibold">Return Amount:</span>{" "}
+                        {formatCurrency(refundable)}
+                      </p>
+                      <label className="mt-2 flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={applyToOutstanding}
+                          onChange={(event) =>
+                            toggleApplyOutstanding(event.target.checked)
+                          }
+                        />
+                        <span>
+                          {accountOutstanding > 0
+                            ? "Outstanding exists for this account. Apply refund against outstanding?"
+                            : "Apply refund against outstanding? There is no outstanding, so the full return stays refundable."}
+                        </span>
+                      </label>
+                      {applyToOutstanding && (
+                        <>
+                          <p className="mt-2">
+                            <span className="font-semibold">Applied to Outstanding:</span>{" "}
+                            {formatCurrency(settlement.applied)}
+                          </p>
+                          <p className="mt-1">
+                            <span className="font-semibold">Remaining Refund:</span>{" "}
+                            {formatCurrency(settlement.maxCash)}
+                          </p>
+                          <p className="mt-1 font-semibold">
+                            Outstanding {formatCurrency(accountOutstanding)} −{" "}
+                            {formatCurrency(settlement.applied)} ={" "}
+                            {formatCurrency(settlement.outstandingAfter)}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <Input
                     label="Refund Amount"
                     type="number"
                     value={String(amount)}
@@ -547,6 +629,8 @@ export default function CompanyRefund() {
                 <p><span className="font-semibold">Purchase return:</span> {selected.referenceNo}</p>
                 <p><span className="font-semibold">Reason:</span> {selected.reason || "-"}</p>
                 <p><span className="font-semibold">Payment method:</span> {selected.paymentMethod || "-"}</p>
+                <p><span className="font-semibold">Applied to outstanding:</span> {formatCurrency(companyRefundParts(selected).applied)}</p>
+                <p><span className="font-semibold">Cash refund:</span> {formatCurrency(companyRefundParts(selected).paid)}</p>
                 <p><span className="font-semibold">Amount:</span> {formatCurrency(selected.amount)}</p>
                 <p><span className="font-semibold">Remarks:</span> {selected.remarks || "-"}</p>
               </div>

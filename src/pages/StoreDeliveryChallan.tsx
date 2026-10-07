@@ -69,6 +69,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const [date, setDate] = useState("");
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
   const [items, setItems] = useState<Item[]>(emptyItems());
+  const [lineError, setLineError] = useState("");
   const [froFilter, setFroFilter] = useState("all");
 
   const [inventoryVersion, setInventoryVersion] = useState(0);
@@ -263,8 +264,9 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       );
       if (availableQty <= 0) return;
 
-      const product = byProduct.get(variant.productId) ?? {
-        id: variant.productId,
+      const nameKey = variant.productName.trim().toLowerCase();
+      const product = byProduct.get(nameKey) ?? {
+        id: nameKey,
         name: variant.productName,
         productType: variant.productType,
         variants: [],
@@ -273,7 +275,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
         ...variant,
         availableQty,
       });
-      byProduct.set(variant.productId, product);
+      byProduct.set(nameKey, product);
     });
 
     return Array.from(byProduct.values());
@@ -307,45 +309,95 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     );
   }
 
-  function selectProduct(i: number, productId: string) {
-    const product = storeProducts.find((p: any) => p.id === productId);
-    const firstVariant = product?.variants?.[0];
-    if (firstVariant) applyVariant(i, firstVariant);
-    else {
-      setItems((prev) =>
-        prev.map((item, index) =>
-          index === i
-            ? {
-                ...item,
-                productId,
-                product: product?.name || "",
-                packSize: "",
-                batchNo: "",
-                expiryDate: "",
-                qty: "",
-                unitValue: "",
-                taxPercent: 0,
-              }
-            : item,
-        ),
-      );
-    }
+  function productKey(item: Item) {
+    return item.product.trim().toLowerCase();
+  }
+
+  function comboKey(item: Pick<Item, "product" | "packSize" | "batchNo">) {
+    return [item.product, item.packSize, item.batchNo]
+      .map((value) => value.trim().toLowerCase())
+      .join("|");
+  }
+
+  function usedCombos(exceptIndex: number) {
+    return new Set(
+      items
+        .filter((item, index) => index !== exceptIndex && item.batchNo.trim())
+        .map((item) => comboKey(item)),
+    );
+  }
+
+  function selectProduct(i: number, nameKey: string) {
+    const product = storeProducts.find((p: any) => p.id === nameKey);
+    setLineError("");
+    setItems((prev) =>
+      prev.map((item, index) =>
+        index === i
+          ? {
+              ...item,
+              productId: "",
+              product: product?.name || "",
+              packSize: "",
+              batchNo: "",
+              expiryDate: "",
+              qty: "",
+              unitValue: "",
+              taxPercent: 0,
+            }
+          : item,
+      ),
+    );
   }
 
   function selectPackSize(i: number, packSize: string) {
+    setLineError("");
     const item = items[i];
-    const variant = getProductVariants(item.productId).find(
-      (v: any) => v.packSize === packSize,
+    const open = getProductVariants(productKey(item)).filter(
+      (variant: any) =>
+        variant.packSize === packSize &&
+        !usedCombos(i).has(
+          comboKey({
+            product: item.product,
+            packSize,
+            batchNo: variant.batchNo,
+          }),
+        ),
     );
-    if (variant) applyVariant(i, variant);
+    if (open.length === 1) {
+      applyVariant(i, open[0]);
+      return;
+    }
+    setItems((prev) =>
+      prev.map((row, index) =>
+        index === i
+          ? {
+              ...row,
+              packSize,
+              batchNo: "",
+              expiryDate: "",
+              qty: "",
+              productId: "",
+              unitValue: "",
+            }
+          : row,
+      ),
+    );
   }
 
   function selectBatch(i: number, batchNo: string) {
     const item = items[i];
-    const variant = getProductVariants(item.productId).find(
+    const variant = getProductVariants(productKey(item)).find(
       (v: any) => v.packSize === item.packSize && v.batchNo === batchNo,
     );
-    if (variant) applyVariant(i, variant);
+    if (!variant) return;
+    if (usedCombos(i).has(comboKey({ ...item, batchNo }))) {
+      setLineError(
+        "This product, package size and batch is already added. Edit the existing row.",
+      );
+      return;
+    }
+    setLineError("");
+    applyVariant(i, variant);
   }
 
   const canCreate =
@@ -359,8 +411,14 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
         item.batchNo.trim() &&
         item.expiryDate &&
         Number(item.qty) > 0 &&
-        Number(item.unitValue) >= 0,
-    );
+        Number(item.unitValue) >= 0 &&
+        Number(item.qty) <=
+          (getProductVariants(productKey(item)).find(
+            (variant: any) =>
+              variant.packSize === item.packSize && variant.batchNo === item.batchNo,
+          )?.availableQty ?? 0),
+    ) &&
+    new Set(items.map((item) => comboKey(item))).size === items.length;
 
   const totals = useMemo(() => {
     const approxValue = items.reduce(
@@ -392,6 +450,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     setExecutive("");
     setDate("");
     setItems(emptyItems());
+    setLineError("");
   }
 
   function closeForm() {
@@ -421,6 +480,26 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     if (!storeExecutives.includes(executive)) {
       window.alert("Select an executive assigned to this store.");
       return;
+    }
+    const seen = new Set<string>();
+    for (const item of items) {
+      const key = comboKey(item);
+      if (seen.has(key)) {
+        window.alert(
+          "This product, package size and batch is already added. Edit the existing row.",
+        );
+        return;
+      }
+      seen.add(key);
+      const available =
+        getProductVariants(productKey(item)).find(
+          (variant: any) =>
+            variant.packSize === item.packSize && variant.batchNo === item.batchNo,
+        )?.availableQty ?? 0;
+      if (Number(item.qty) > available) {
+        window.alert(`Only ${available} units available for this batch.`);
+        return;
+      }
     }
 
     const next: Challan = {
@@ -735,20 +814,69 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                         {items.map((item, i) => {
                           const approx =
                             Number(item.qty || 0) * Number(item.unitValue || 0);
+                          const variants = getProductVariants(productKey(item));
+                          const taken = usedCombos(i);
+                          const sizes = Array.from(
+                            new Set<string>(
+                              variants
+                                .filter(
+                                  (variant: any) =>
+                                    !taken.has(
+                                      comboKey({
+                                        product: item.product,
+                                        packSize: variant.packSize,
+                                        batchNo: variant.batchNo,
+                                      }),
+                                    ) || variant.packSize === item.packSize,
+                                )
+                                .map((variant: any) => String(variant.packSize || ""))
+                                .filter(Boolean),
+                            ),
+                          );
+                          const batches = variants.filter(
+                            (variant: any) =>
+                              variant.packSize === item.packSize &&
+                              (!taken.has(
+                                comboKey({
+                                  product: item.product,
+                                  packSize: variant.packSize,
+                                  batchNo: variant.batchNo,
+                                }),
+                              ) ||
+                                variant.batchNo === item.batchNo),
+                          );
+                          const available =
+                            variants.find(
+                              (variant: any) =>
+                                variant.packSize === item.packSize &&
+                                variant.batchNo === item.batchNo,
+                            )?.availableQty ?? 0;
                           return (
                             <tr key={i} className="border-t border-slate-100">
                               <td className="px-2 py-3 text-center">{i + 1}</td>
                               <td className="px-2 py-3">
                                 <Select
-                                  value={item.productId}
+                                  value={productKey(item)}
                                   onChange={(value) => selectProduct(i, value)}
                                   placeholder="Select product"
-                                  options={storeProducts.map(
-                                    (product: any) => ({
+                                  options={storeProducts
+                                    .filter((product: any) => {
+                                      const stillOpen = product.variants.some(
+                                        (variant: any) =>
+                                          !taken.has(
+                                            comboKey({
+                                              product: product.name,
+                                              packSize: variant.packSize,
+                                              batchNo: variant.batchNo,
+                                            }),
+                                          ),
+                                      );
+                                      return stillOpen || productKey(item) === product.id;
+                                    })
+                                    .map((product: any) => ({
                                       value: product.id,
                                       label: product.name,
-                                    }),
-                                  )}
+                                    }))}
                                 />
                               </td>
                               <td className="px-2 py-3">
@@ -756,17 +884,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                                   value={item.packSize}
                                   onChange={(value) => selectPackSize(i, value)}
                                   placeholder="Select size"
-                                  options={Array.from(
-                                    new Set<string>(
-                                      getProductVariants(item.productId)
-                                        .map((v: any) =>
-                                          String(v.packSize ?? ""),
-                                        )
-                                        .filter((size: string) =>
-                                          Boolean(size),
-                                        ),
-                                    ),
-                                  ).map((size: string) => ({
+                                  options={sizes.map((size) => ({
                                     value: size,
                                     label: size,
                                   }))}
@@ -777,16 +895,10 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                                   value={item.batchNo}
                                   onChange={(value) => selectBatch(i, value)}
                                   placeholder="Select batch"
-                                  options={getProductVariants(item.productId)
-                                    .filter(
-                                      (v: any) =>
-                                        String(v.packSize ?? "") ===
-                                        item.packSize,
-                                    )
-                                    .map((v: any) => {
-                                      const batch = String(v.batchNo ?? "");
-                                      return { value: batch, label: batch };
-                                    })}
+                                  options={batches.map((variant: any) => ({
+                                    value: String(variant.batchNo || ""),
+                                    label: String(variant.batchNo || ""),
+                                  }))}
                                 />
                               </td>
                               <td className="px-2 py-3">
@@ -802,20 +914,18 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                                   type="number"
                                   value={item.qty}
                                   onChange={(v) => {
-                                    const maxQty =
-                                      getProductVariants(item.productId).find(
-                                        (variant: any) =>
-                                          variant.packSize === item.packSize &&
-                                          variant.batchNo === item.batchNo,
-                                      )?.availableQty ?? 0;
                                     const nextQty = Math.max(0, Number(v || 0));
-                                    updateItem(
-                                      i,
-                                      "qty",
-                                      String(Math.min(nextQty, maxQty)),
-                                    );
+                                    if (item.batchNo && nextQty > available) {
+                                      setLineError(
+                                        `Only ${available} units available for this batch.`,
+                                      );
+                                      updateItem(i, "qty", String(available));
+                                      return;
+                                    }
+                                    setLineError("");
+                                    updateItem(i, "qty", v);
                                   }}
-                                  placeholder="Qty"
+                                  placeholder={item.batchNo ? `Max ${available}` : "Qty"}
                                 />
                               </td>
                               <td className="px-2 py-3">
@@ -848,6 +958,28 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="mt-3 space-y-1 text-sm text-slate-600">
+                    {items
+                      .filter((item) => item.product && item.packSize && item.batchNo)
+                      .map((item) => {
+                        const available =
+                          getProductVariants(productKey(item)).find(
+                            (variant: any) =>
+                              variant.packSize === item.packSize &&
+                              variant.batchNo === item.batchNo,
+                          )?.availableQty ?? 0;
+                        const added = Number(item.qty || 0);
+                        return (
+                          <p key={comboKey(item)}>
+                            {item.product} · {item.packSize} · {item.batchNo} — Available{" "}
+                            {available} · Added {added} · Balance {Math.max(0, available - added)}
+                          </p>
+                        );
+                      })}
+                    {lineError && (
+                      <p className="font-medium text-red-600">{lineError}</p>
+                    )}
                   </div>
 
                   <div className="mt-4 ml-auto w-full max-w-md rounded-xl bg-slate-50 p-4 space-y-2">

@@ -11,6 +11,9 @@ import {
 import {
   getFarmersByStore,
   getStore,
+  getStoreFarmerOutstanding,
+  previewRefundSettlement,
+  companyRefundParts,
   nextStoreDocumentNo,
   rememberStoreDocumentNo,
 } from "@/lib/data";
@@ -90,6 +93,7 @@ type RefundRow = {
   reason: string;
   paymentMethod: string;
   amount: number;
+  appliedToOutstanding?: number;
   balance?: number;
   remarks: string;
   through?: "Direct" | "Executive";
@@ -130,6 +134,63 @@ function DetailField({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+function RefundOutstandingNotice({
+  outstanding,
+  returnAmount,
+  applied,
+  maxCash,
+  outstandingAfter,
+  apply,
+  onApply,
+}: {
+  outstanding: number;
+  returnAmount: number;
+  applied: number;
+  maxCash: number;
+  outstandingAfter: number;
+  apply: boolean;
+  onApply: (value: boolean) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-slate-700 md:col-span-2 lg:col-span-3">
+      <p>
+        <span className="font-semibold">Outstanding:</span> {formatCurrency(outstanding)}
+      </p>
+      <p className="mt-1">
+        <span className="font-semibold">Return Amount:</span> {formatCurrency(returnAmount)}
+      </p>
+      <label className="mt-2 flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={apply}
+          onChange={(event) => onApply(event.target.checked)}
+        />
+        <span>
+          {outstanding > 0
+            ? "Outstanding exists for this account. Apply refund against outstanding?"
+            : "Apply refund against outstanding? There is no outstanding, so the full return stays refundable."}
+        </span>
+      </label>
+      {apply && (
+        <>
+          <p className="mt-2">
+            <span className="font-semibold">Applied to Outstanding:</span>{" "}
+            {formatCurrency(applied)}
+          </p>
+          <p className="mt-1">
+            <span className="font-semibold">Remaining Refund:</span> {formatCurrency(maxCash)}
+          </p>
+          <p className="mt-1 font-semibold">
+            Outstanding {formatCurrency(outstanding)} − {formatCurrency(applied)} ={" "}
+            {formatCurrency(outstandingAfter)}
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -190,8 +251,13 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   function selectSalesReturn(value: string) {
     setReferenceNo(value);
     const salesReturn = visibleSalesReturns.find((row) => row.returnNo === value);
-    setInvoiceAmount(Number(salesReturn?.total || 0));
-    setAmount(0);
+    const original = Number(salesReturn?.total || 0);
+    const refunded = rows
+      .filter((row) => row.referenceNo === value)
+      .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
+    setInvoiceAmount(original);
+    setAmount(Math.max(0, original - refunded));
+    setApplyToOutstanding(false);
     setRefundError("");
   }
 
@@ -208,6 +274,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
   const [amount, setAmount] = useState(0);
+  const [applyToOutstanding, setApplyToOutstanding] = useState(false);
   const [refundError, setRefundError] = useState("");
   const [remarks, setRemarks] = useState("");
 
@@ -222,7 +289,6 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     0,
     Number(selectedReturn?.total || 0) - alreadyRefunded,
   );
-  const balanceValue = Math.max(0, refundable - Math.max(0, amount));
 
   const returnOptions = useMemo(
     () =>
@@ -254,10 +320,14 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       setRefundError("");
       return;
     }
-    if (parsed > refundable) {
-      setRefundError(
-        `Refund cannot exceed the remaining ${formatCurrency(refundable)}.`,
-      );
+    const preview = previewRefundSettlement({
+      refundable,
+      outstanding: accountOutstanding,
+      apply: applyToOutstanding,
+      cash: parsed,
+    });
+    if (preview.exceeds) {
+      setRefundError(`Refund cannot exceed ${formatCurrency(preview.maxCash)}.`);
       return;
     }
     setRefundError("");
@@ -266,6 +336,32 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const selectedFarmer = farmers.find(
     (farmer) => farmer.id === selectedReturn?.farmerId,
   );
+  const accountOutstanding = selectedReturn
+    ? getStoreFarmerOutstanding(
+        storeId,
+        String(selectedReturn.farmerId || selectedFarmer?.id || ""),
+        selectedReturn.partyName,
+      )
+    : 0;
+  const settlement = previewRefundSettlement({
+    refundable,
+    outstanding: accountOutstanding,
+    apply: applyToOutstanding,
+    cash: amount,
+  });
+  const balanceValue = Math.max(0, settlement.settled - settlement.applied);
+
+  function toggleApplyOutstanding(checked: boolean) {
+    const next = previewRefundSettlement({
+      refundable,
+      outstanding: accountOutstanding,
+      apply: checked,
+      cash: refundable,
+    });
+    setApplyToOutstanding(checked);
+    setAmount(next.maxCash);
+    setRefundError("");
+  }
 
   const canCreate =
     !!date &&
@@ -273,8 +369,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     !!selectedReturn &&
     !!reason &&
     !!paymentMethod &&
-    amount > 0 &&
-    amount <= refundable &&
+    settlement.settled > 0 &&
+    !settlement.exceeds &&
     !refundError;
 
   const scopedRows = useMemo(() => {
@@ -328,6 +424,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     setReason("");
     setPaymentMethod("");
     setAmount(0);
+    setApplyToOutstanding(false);
     setRefundError("");
     setRemarks("");
   }
@@ -354,9 +451,17 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       .filter((row) => row.referenceNo === selectedReturn.returnNo)
       .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
     const remaining = Math.max(0, originalTotal - already);
-    if (!(amount > 0) || amount > remaining) {
+    const preview = previewRefundSettlement({
+      refundable: remaining,
+      outstanding: accountOutstanding,
+      apply: applyToOutstanding,
+      cash: amount,
+    });
+    if (preview.exceeds || preview.settled <= 0) {
       setRefundError(
-        `Refund cannot exceed the remaining ${formatCurrency(remaining)}.`,
+        preview.settled <= 0
+          ? "Enter a refund amount for this sales return."
+          : `Refund cannot exceed ${formatCurrency(preview.maxCash)}.`,
       );
       savingRefund.current = false;
       return;
@@ -396,8 +501,9 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       invoiceAmount: originalTotal,
       reason,
       paymentMethod,
-      amount,
-      balance: Math.max(0, remaining - amount),
+      amount: preview.settled,
+      appliedToOutstanding: preview.applied,
+      balance: Math.max(0, remaining - preview.settled),
       remarks,
       through: selectedReturn.through,
       executiveName:
@@ -570,7 +676,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                       </p>
                     </td>
                     <td className="px-2 py-3 text-right font-bold tabular-nums text-brand-700 whitespace-nowrap">
-                      {formatCurrency(row.amount)}
+                      {formatCurrency(companyRefundParts(row).paid)}
                     </td>
                   </tr>
                 ))}
@@ -652,7 +758,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                       {row.paymentMethod}
                     </td>
                     <td className="px-2 py-3 text-right font-bold text-slate-800">
-                      {formatCurrency(row.amount)}
+                      {formatCurrency(companyRefundParts(row).paid)}
                     </td>
                   </tr>
                 ))}
@@ -678,7 +784,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     </p>
                   </div>
                   <p className="shrink-0 text-base font-extrabold text-brand-700">
-                    {formatCurrency(row.amount)}
+                    {formatCurrency(companyRefundParts(row).paid)}
                   </p>
                 </div>
 
@@ -841,6 +947,18 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     }))}
                     required
                   />
+
+                  {selectedReturn && (
+                    <RefundOutstandingNotice
+                      outstanding={accountOutstanding}
+                      returnAmount={refundable}
+                      applied={settlement.applied}
+                      maxCash={settlement.maxCash}
+                      outstandingAfter={settlement.outstandingAfter}
+                      apply={applyToOutstanding}
+                      onApply={toggleApplyOutstanding}
+                    />
+                  )}
 
                   <Input
                     label="Refund Amount"
@@ -1326,6 +1444,17 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                 options={methods.map((item) => ({ value: item, label: item }))}
                 required
               />
+              {selectedReturn && (
+                <RefundOutstandingNotice
+                  outstanding={accountOutstanding}
+                  returnAmount={refundable}
+                  applied={settlement.applied}
+                  maxCash={settlement.maxCash}
+                  outstandingAfter={settlement.outstandingAfter}
+                  apply={applyToOutstanding}
+                  onApply={toggleApplyOutstanding}
+                />
+              )}
               <Input
                 label="Refund Amount"
                 type="number"
@@ -1402,7 +1531,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Refund Summary</p>
               <div className="mt-3 space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-slate-500">Invoice Amount</span><span className="font-semibold">{formatCurrency(selectedRefund.invoiceAmount || 0)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Refund Amount</span><span className="font-bold text-brand-700">{formatCurrency(selectedRefund.amount)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Applied to Outstanding</span><span className="font-bold text-slate-800">{formatCurrency(companyRefundParts(selectedRefund).applied)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Refund Paid</span><span className="font-bold text-brand-700">{formatCurrency(companyRefundParts(selectedRefund).paid)}</span></div>
                 <div className="flex justify-between border-t border-slate-200 pt-3"><span className="font-bold text-slate-900">Balance Value</span><span className="font-bold text-slate-900">{formatCurrency(Math.max((selectedRefund.invoiceAmount || 0) - selectedRefund.amount, 0))}</span></div>
               </div>
             </div>

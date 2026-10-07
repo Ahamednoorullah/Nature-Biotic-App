@@ -13,13 +13,14 @@ import {
   stores,
   adsdompanyCreditNoteSyncRecords,
   getCompanyCreditNoteSyncRecords,
+  saveCompanyCreditNoteSyncRecords,
   type CompanyCreditNoteSyncRecord,
   getFinalCompanyStoreSales,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
 
-type CreditNoteStatus = "Approved" | "Pending" | "Rejected";
+type CreditNoteStatus = "Draft" | "Approved" | "Pending" | "Rejected";
 
 type CreditNote = {
   id: string;
@@ -115,7 +116,7 @@ function lineSize(row: CompanyStoreSaleRecord) {
 }
 
 function lineProductKey(row: CompanyStoreSaleRecord) {
-  return String(row.productId || row.product || "").trim();
+  return String(row.product || "").trim().toLowerCase();
 }
 
 function unitPriceOf(row: CompanyStoreSaleRecord) {
@@ -199,6 +200,7 @@ export default function CompanyCreditNotes() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCreditNo, setEditingCreditNo] = useState("");
   const [selectesdreditNote, setSelectesdreditNote] = useState<{
     header: CreditNote;
     rows: CreditNote[];
@@ -275,8 +277,21 @@ export default function CompanyCreditNotes() {
         const batch = String(row.batchNo || "").trim();
         if (batch) batches.add(batch);
       });
-    return Array.from(batches);
-  }, [storeSales, entry.productId, entry.pkgsize]);
+    const productName =
+      storeSales.find((row) => lineProductKey(row) === entry.productId)?.product ||
+      "";
+    return Array.from(batches).filter(
+      (batch) =>
+        !added.some(
+          (item) =>
+            item.productName.trim().toLowerCase() ===
+              productName.trim().toLowerCase() &&
+            item.pkgsize.trim().toLowerCase() ===
+              entry.pkgsize.trim().toLowerCase() &&
+            item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
+        ),
+    );
+  }, [storeSales, entry.productId, entry.pkgsize, added]);
 
   const selectedSaleLines = useMemo(
     () =>
@@ -309,11 +324,17 @@ export default function CompanyCreditNotes() {
   ) {
     const saved = getCompanyCreditNoteSyncRecords()
       .filter((row) => {
-        if (row.storeId !== storeId || row.status === "Rejected") return false;
-        const rowKey = String(row.productId || "").trim();
-        const sameProduct = rowKey
-          ? rowKey === productId
-          : String(row.product || "").trim() === productName;
+        if (
+          row.storeId !== storeId ||
+          row.status === "Rejected" ||
+          row.status === "Draft" ||
+          row.creditNoteNo === editingCreditNo
+        ) {
+          return false;
+        }
+        const sameProduct =
+          String(row.product || "").trim().toLowerCase() ===
+          productName.trim().toLowerCase();
         return (
           sameProduct &&
           String(row.pkgsize || row.packSize || "")
@@ -327,7 +348,8 @@ export default function CompanyCreditNotes() {
     const pending = added
       .filter(
         (item) =>
-          item.productId === productId &&
+          item.productName.trim().toLowerCase() ===
+            productName.trim().toLowerCase() &&
           item.pkgsize.trim().toLowerCase() === size.trim().toLowerCase() &&
           item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
       )
@@ -428,13 +450,18 @@ export default function CompanyCreditNotes() {
   }
 
   function saleFor(productId: string, size: string, batch: string) {
-    const matches = storeSales.filter(
-      (row) =>
-        lineProductKey(row) === productId &&
+    const wanted = productId.trim().toLowerCase();
+    const matches = storeSales.filter((row) => {
+      const sameProduct =
+        lineProductKey(row) === wanted ||
+        String(row.productId || "").trim().toLowerCase() === wanted;
+      return (
+        sameProduct &&
         lineSize(row).toLowerCase() === size.trim().toLowerCase() &&
         String(row.batchNo || "").trim().toLowerCase() ===
-          batch.trim().toLowerCase(),
-    );
+          batch.trim().toLowerCase()
+      );
+    });
     return [...matches].sort((a, b) =>
       String(b.date).localeCompare(String(a.date)),
     )[0];
@@ -463,7 +490,18 @@ export default function CompanyCreditNotes() {
         const batch = String(row.batchNo || "").trim();
         if (batch) batches.add(batch);
       });
-    return Array.from(batches);
+    const productName =
+      storeSales.find((row) => lineProductKey(row) === productId)?.product || "";
+    return Array.from(batches).filter(
+      (batch) =>
+        !added.some(
+          (item) =>
+            item.productName.trim().toLowerCase() ===
+              productName.trim().toLowerCase() &&
+            item.pkgsize.trim().toLowerCase() === size.trim().toLowerCase() &&
+            item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
+        ),
+    );
   }
 
   function fillFromSale(
@@ -529,6 +567,19 @@ export default function CompanyCreditNotes() {
 
   function addProduct() {
     if (!canAdd || !entryProduct) return;
+    const duplicate = added.some(
+      (item) =>
+        item.productName.trim().toLowerCase() ===
+          entryProduct.product.trim().toLowerCase() &&
+        item.pkgsize.trim().toLowerCase() === entry.pkgsize.trim().toLowerCase() &&
+        item.batchNo.trim().toLowerCase() === entry.batchNo.trim().toLowerCase(),
+    );
+    if (duplicate) {
+      window.alert(
+        "This product, package size, and batch is already on the credit note.",
+      );
+      return;
+    }
     if (entry.quantity > remainingQuantity) {
       window.alert(
         "Credit note quantity cannot exceed the quantity sold to this store for the selected batch.",
@@ -545,7 +596,7 @@ export default function CompanyCreditNotes() {
 
     const newItem: AddedProduct = {
       key: `${entry.productId}-${entry.pkgsize}-${entry.batchNo}-${String(globalThis.Date.now())}`,
-      productId: entry.productId,
+      productId: String(entryProduct.productId || ""),
       productName: entryProduct.product,
       pkgsize: entry.pkgsize,
       batchNo: entry.batchNo,
@@ -611,6 +662,54 @@ export default function CompanyCreditNotes() {
         (item.storeId || item.party) === (row.storeId || row.party) &&
         item.Date === row.Date,
     );
+    if (row.status === "Draft") {
+      const lines = (relatedRows.length > 0 ? relatedRows : [row]).filter(
+        (item) => item.product,
+      );
+      setSelectesdreditNote(null);
+      setEditingCreditNo(row.creditNoteNo);
+      setCreditNoteNo(row.creditNoteNo);
+      setReturnDate(row.Date || "");
+      setStoreId(row.storeId || "");
+      setInvoiceNo(row.invoiceNo || "");
+      setRemarks(row.notes || "");
+      setPlaceOfSupply(row.storeLocation?.toLowerCase().includes("kerala") ? "Others" : "Tamil Nadu");
+      setAdded(
+        lines.map((item) => ({
+          key: item.id,
+          productId: String(item.product || "").trim().toLowerCase(),
+          productName: item.product || "",
+          pkgsize: item.pkgsize || "",
+          batchNo: item.batchNo || "",
+          expiryDate: item.expiryDate || "",
+          quantity: Number(item.quantity || 0),
+          sellingPrice: Number(item.sellingPrice || 0),
+          discount: Number(item.discountPercent || 0),
+          reason: item.reason || "",
+          soldQuantity: Number(item.quantity || 0),
+          taxPercent: Number(item.taxPercent || 0),
+          discountAmount: Number(item.discountAmount || 0),
+          taxableAmount: Number(item.taxableAmount || item.amount || 0),
+          sgst: Number(item.sgst || 0),
+          cgst: Number(item.cgst || 0),
+          igst: Number(item.igst || 0),
+          total: Number(item.total || 0),
+          sourceInvoiceNo: item.invoiceNo,
+        })),
+      );
+      setEntry({
+        productId: "",
+        pkgsize: "",
+        batchNo: "",
+        expiryDate: "",
+        quantity: 0,
+        sellingPrice: 0,
+        discount: 0,
+        reason: "",
+      });
+      setShowCreate(true);
+      return;
+    }
 
     setSelectesdreditNote({
       header: row,
@@ -625,6 +724,7 @@ export default function CompanyCreditNotes() {
     setStoreId("");
     setPlaceOfSupply("");
     setRemarks("");
+    setEditingCreditNo("");
     setEntry({
       productId: "",
       pkgsize: "",
@@ -639,17 +739,104 @@ export default function CompanyCreditNotes() {
   }
 
   function handleSaveDraft() {
-    if (!storeId || !creditNoteNo) return;
-    // TODO: persist as a draft (status: 'Pending') via your API / store
-    console.log("Saved as draft", {
+    if (!storeId || !creditNoteNo || !selectedStore) {
+      window.alert("Select a store before saving the credit note draft.");
+      return;
+    }
+    const noteNo = editingCreditNo || creditNoteNo;
+    const source = added.length
+      ? added
+      : [
+          {
+            key: "header",
+            productId: "",
+            productName: "",
+            pkgsize: "",
+            batchNo: "",
+            expiryDate: "",
+            quantity: 0,
+            sellingPrice: 0,
+            discount: 0,
+            reason: "",
+            soldQuantity: 0,
+            taxPercent: 0,
+            discountAmount: 0,
+            taxableAmount: 0,
+            sgst: 0,
+            cgst: 0,
+            igst: 0,
+            total: 0,
+            sourceInvoiceNo: invoiceNo,
+          },
+        ];
+    const syncRows: CompanyCreditNoteSyncRecord[] = source.map((item, index) => ({
+      id: `draft-${noteNo}-${index}`,
+      creditNoteNo: noteNo,
+      storeId: selectedStore.id,
+      storeName: selectedStore.name,
       returnDate,
-      invoiceNo,
-      storeId,
-      placeOfSupply,
-      remarks,
-      added,
-      totals,
-    });
+      purchaseRef: item.sourceInvoiceNo || "",
+      invoiceNo: item.sourceInvoiceNo || invoiceNo,
+      product: item.productName,
+      productId: item.productId,
+      packSize: item.pkgsize,
+      quantity: item.quantity,
+      unitPrice: item.sellingPrice,
+      pkgsize: item.pkgsize,
+      batchNo: item.batchNo,
+      expiryDate: item.expiryDate,
+      discountPercent: item.discount,
+      discountAmount: item.discountAmount,
+      taxableAmount: item.taxableAmount,
+      taxPercent: item.taxPercent,
+      withoutTax: item.taxableAmount,
+      sgst: item.sgst,
+      cgst: item.cgst,
+      igst: item.igst,
+      returnAmount: item.total,
+      reason: item.reason || remarks || "",
+      placeOfReturn: selectedStore.location?.split(",")[0] || "",
+      status: "Draft",
+      notes: remarks,
+    }));
+    const localRows: CreditNote[] = syncRows.map((item) => ({
+      id: item.id,
+      creditNoteNo: noteNo,
+      party: selectedStore.name,
+      Date: returnDate,
+      amount: item.taxableAmount || 0,
+      sgst: item.sgst,
+      cgst: item.cgst,
+      igst: item.igst,
+      total: item.returnAmount,
+      storeLocation: selectedStore.location,
+      placeofreturn: item.placeOfReturn,
+      storeId: selectedStore.id,
+      product: item.product,
+      quantity: item.quantity,
+      reason: item.reason,
+      status: "Draft",
+      invoiceNo: item.invoiceNo,
+      pkgsize: item.pkgsize,
+      batchNo: item.batchNo,
+      expiryDate: item.expiryDate,
+      sellingPrice: item.unitPrice,
+      discountPercent: item.discountPercent,
+      discountAmount: item.discountAmount,
+      taxableAmount: item.taxableAmount,
+      taxPercent: item.taxPercent,
+      notes: remarks,
+    }));
+    const existing = getCompanyCreditNoteSyncRecords().filter(
+      (row) => row.creditNoteNo !== noteNo,
+    );
+    saveCompanyCreditNoteSyncRecords([...syncRows, ...existing]);
+    setCreditNotes((prev) => [
+      ...localRows,
+      ...prev.filter((row) => row.creditNoteNo !== noteNo),
+    ]);
+    rememberCreditNoteNo(noteNo);
+    window.alert("Credit Note saved as draft.");
     closeForm();
   }
 
@@ -658,7 +845,7 @@ export default function CompanyCreditNotes() {
     savingRef.current = true;
 
     const createdAt = new globalThis.Date().getTime();
-    const allocatedNo = nextCreditNoteNo();
+    const allocatedNo = editingCreditNo || nextCreditNoteNo();
 
     const defaultCreditNoteNotes = `This credit note is generated against returned goods from ${selectedStore.name}.`;
 
@@ -695,6 +882,11 @@ export default function CompanyCreditNotes() {
       }),
     );
 
+    saveCompanyCreditNoteSyncRecords(
+      getCompanyCreditNoteSyncRecords().filter(
+        (row) => row.creditNoteNo !== allocatedNo,
+      ),
+    );
     adsdompanyCreditNoteSyncRecords(syncRows);
     rememberCreditNoteNo(allocatedNo);
 
@@ -727,7 +919,10 @@ export default function CompanyCreditNotes() {
       notes: remarks.trim() || defaultCreditNoteNotes,
     }));
 
-    setCreditNotes((prev) => [...companyRows, ...prev]);
+    setCreditNotes((prev) => [
+      ...companyRows,
+      ...prev.filter((row) => row.creditNoteNo !== allocatedNo),
+    ]);
     closeForm();
   }
 
@@ -1867,19 +2062,28 @@ export default function CompanyCreditNotes() {
                         }))}
                       />
 
-                      <Select
-                        label="Batch No"
-                        value={entry.batchNo}
-                        onChange={selectBatch}
-                        placeholder={
-                          entry.pkgsize ? "Select batch" : "Select size first"
-                        }
-                        options={batchOptions.map((batch) => ({
-                          value: batch,
-                          label: batch,
-                        }))}
-                        required
-                      />
+                      {batchOptions.length > 1 ? (
+                        <Select
+                          label="Batch No"
+                          value={entry.batchNo}
+                          onChange={selectBatch}
+                          placeholder="Select batch"
+                          options={batchOptions.map((batch) => ({
+                            value: batch,
+                            label: batch,
+                          }))}
+                          required
+                        />
+                      ) : (
+                        <Input
+                          label="Batch No"
+                          value={entry.batchNo}
+                          onChange={() => {}}
+                          placeholder={entry.pkgsize ? "Auto" : "Select size first"}
+                          readOnly
+                          required
+                        />
+                      )}
 
                       <Input
                         label="Expiry Date"
@@ -2164,7 +2368,7 @@ export default function CompanyCreditNotes() {
                 <Button
                   variant="secondary"
                   onClick={handleSaveDraft}
-                  disabled={!storeId || !invoiceNo || !creditNoteNo}
+                  disabled={!storeId || !creditNoteNo}
                 >
                   <Icon name="save" size={18} />
                   Save Draft

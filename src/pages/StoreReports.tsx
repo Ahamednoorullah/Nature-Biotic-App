@@ -61,8 +61,8 @@ function money(value: unknown) {
 function inPeriod(
   value: unknown,
   filter: SimpleDateFilter,
-  from: string,
-  to: string,
+  from = "",
+  to = "",
 ) {
   return matchesSimpleDate(String(value || ""), filter, from, to);
 }
@@ -127,8 +127,6 @@ function ReportTable({
 function StoreReportView({ storeId }: { storeId: string }) {
   const { user } = useAuth();
   const [filter, setFilter] = useState<SimpleDateFilter>("monthly");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -148,7 +146,7 @@ function StoreReportView({ storeId }: { storeId: string }) {
   }, []);
 
   const report = useMemo(() => {
-    const dated = (value: unknown) => inPeriod(value, filter, customFrom, customTo);
+    const dated = (value: unknown) => inPeriod(value, filter);
     const sales = readRows(
       `nature-biotic-store-sales-invoices-v2:${storeId}`,
     ).filter(
@@ -315,10 +313,14 @@ function StoreReportView({ storeId }: { storeId: string }) {
     const currentSettled = settleLinkedFarmerAccounts({
       invoices: sales,
       receipts,
-      returns: [...returns, ...creditNotes].filter((row) => row.status !== "Rejected"),
+      returns: [...returns, ...creditNotes].filter(
+        (row) => row.status !== "Rejected" && row.status !== "Draft",
+      ),
       refunds: readRows(`nature-biotic-store-refunds-v2:${storeId}`),
       linkInvoices: sales,
-      linkReturns: [...returns, ...creditNotes],
+      linkReturns: [...returns, ...creditNotes].filter(
+        (row) => row.status !== "Draft",
+      ),
     });
     const currentByFarmer = new Map(
       currentSettled.farmers.map((row) => [row.farmerName.trim().toLowerCase(), row]),
@@ -455,7 +457,7 @@ function StoreReportView({ storeId }: { storeId: string }) {
       ]),
       farmerRows,
     };
-  }, [storeId, filter, customFrom, customTo, version, user?.name]);
+  }, [storeId, filter, version, user?.name]);
 
   return (
     <div className="min-w-0">
@@ -467,7 +469,9 @@ function StoreReportView({ storeId }: { storeId: string }) {
           <p className="mt-1 text-slate-500">Store performance from saved transactions.</p>
         </div>
         <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
-          {simpleDateFilterOptions.map((tab) => (
+          {simpleDateFilterOptions
+            .filter((tab) => tab.value !== "custom")
+            .map((tab) => (
             <button
               key={tab.value}
               onClick={() => setFilter(tab.value)}
@@ -482,29 +486,6 @@ function StoreReportView({ storeId }: { storeId: string }) {
           ))}
         </div>
       </div>
-
-      {filter === "custom" && (
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row">
-          <label className="text-sm text-slate-600">
-            From
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(event) => setCustomFrom(event.target.value)}
-              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-slate-600">
-            To
-            <input
-              type="date"
-              value={customTo}
-              onChange={(event) => setCustomTo(event.target.value)}
-              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
-            />
-          </label>
-        </div>
-      )}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card className="p-5">
@@ -629,8 +610,6 @@ function FroReportView({
 }) {
   const froName = name.trim().toLowerCase();
   const [filter, setFilter] = useState<SimpleDateFilter>("monthly");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [version, setVersion] = useState(0);
   useEffect(() => {
     const refresh = () => setVersion((current) => current + 1);
@@ -652,7 +631,7 @@ function FroReportView({
   }, []);
   const report = useMemo(() => {
     const dated = (value: unknown) =>
-      matchesSimpleDate(String(value || ""), filter, customFrom, customTo);
+      matchesSimpleDate(String(value || ""), filter);
     const ownedSales = readRows(`nature-biotic-store-sales-invoices-v2:${storeId}`).filter(
       (row) => froOwnsTransaction(row, name, staffId),
     );
@@ -863,7 +842,7 @@ function FroReportView({
         value,
       })),
     };
-  }, [storeId, froName, name, staffId, filter, customFrom, customTo, version]);
+  }, [storeId, froName, name, staffId, filter, version]);
 
   const cards = [
     ["Sales", report.salesTotal],
@@ -883,7 +862,9 @@ function FroReportView({
           <p className="mt-1 text-sm text-slate-500">Your sales, collection, stock and expenses.</p>
         </div>
         <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
-          {simpleDateFilterOptions.map((tab) => (
+          {simpleDateFilterOptions
+            .filter((tab) => tab.value !== "custom")
+            .map((tab) => (
             <button
               key={tab.value}
               onClick={() => setFilter(tab.value)}
@@ -898,28 +879,6 @@ function FroReportView({
           ))}
         </div>
       </div>
-      {filter === "custom" && (
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row">
-          <label className="text-sm text-slate-600">
-            From
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(event) => setCustomFrom(event.target.value)}
-              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-slate-600">
-            To
-            <input
-              type="date"
-              value={customTo}
-              onChange={(event) => setCustomTo(event.target.value)}
-              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
-            />
-          </label>
-        </div>
-      )}
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
         {cards.map(([label, value]) => (
           <Card key={label} className="p-4 sm:p-5">

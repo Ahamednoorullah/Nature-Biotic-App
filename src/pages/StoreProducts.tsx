@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import {
   getProductsByStore,
+  getStore,
   productCategories,
   type Product,
   type ProductCategory,
@@ -16,7 +17,8 @@ import {
   EmptyState,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, initials } from "@/lib/format";
+import { formatCurrency, formatDate, initials } from "@/lib/format";
+import { downloadDataTablePdf } from "@/lib/documentPdf";
 
 const colorMap: Record<string, string> = {
   emerald: "from-emerald-400 to-emerald-600",
@@ -66,11 +68,43 @@ export default function StoreProducts({ storeId }: { storeId: string }) {
     );
   }
 
-  function handleExport() {
+  async function handleExport() {
+    if (loading) return;
     setLoading(true);
-    setTimeout(() => {
+    try {
+      await downloadDataTablePdf({
+        fileName: "nature-biotic-products.pdf",
+        heading: "Nature Biotic",
+        title: "Product List",
+        storeName: getStore(storeId)?.name || "Store",
+        generatedOn: `Generated ${formatDate(new Date().toISOString().split("T")[0])}`,
+        headers: [
+          "Product",
+          "Category",
+          "Size",
+          "HSN",
+          "Selling Price",
+          "Stock",
+          "Status",
+        ],
+        aligns: ["left", "left", "left", "left", "right", "right", "left"],
+        rows: filtered.map((product) => [
+          product.name,
+          product.productCategory,
+          product.size,
+          product.hsnCode,
+          formatCurrency(product.sellingPrice).replace("₹", "Rs. "),
+          String(product.stock),
+          product.status,
+        ]),
+        emptyMessage: "No products match the current filters.",
+      });
+      window.alert("PDF downloaded.");
+    } catch {
+      window.alert("The PDF could not be created. Please try again.");
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   }
 
   function handleImport() {

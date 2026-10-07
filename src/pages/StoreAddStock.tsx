@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { getProductsByStore, warehouseList, productSizes, recordStoreStockAdjustment } from '@/lib/data';
+import { getProductsByStore, warehouseList, getStorePurchasesFromCompanySales, recordStoreStockAdjustment } from '@/lib/data';
 import { useNav } from '@/context/NavContext';
 import { Card, Button, Input, Select, Textarea, SectionTitle, Icon } from '@/components/ui';
 
 type FormState = {
+  productName: string;
+  packSize: string;
   product: string;
   warehouse: string;
   batchNumber: string;
   quantity: string;
-  unit: string;
   supplier: string;
   purchaseDate: string;
   expiryDate: string;
@@ -18,7 +19,7 @@ type FormState = {
 };
 
 const emptyForm: FormState = {
-  product: '', warehouse: '', batchNumber: '', quantity: '', unit: '', supplier: '',
+  productName: '', packSize: '', product: '', warehouse: '', batchNumber: '', quantity: '', supplier: '',
   purchaseDate: '', expiryDate: '', manufacturingDate: '', costPrice: '', remarks: '',
 };
 
@@ -27,9 +28,71 @@ export default function StoreAddStock({ storeId }: { storeId: string }) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saved, setSaved] = useState(false);
   const products = getProductsByStore(storeId);
+  const productNames = Array.from(
+    new Map(products.map((product) => [product.name.trim().toLowerCase(), product.name.trim()])).values(),
+  );
+
+  function sizesFor(name: string) {
+    const key = name.trim().toLowerCase();
+    const sizes = new Set<string>();
+    products.forEach((product) => {
+      if (product.name.trim().toLowerCase() !== key) return;
+      const size = String(product.size || "").trim();
+      if (size) sizes.add(size);
+    });
+    return Array.from(sizes);
+  }
+
+  function batchesFor(name: string, size: string) {
+    const nameKey = name.trim().toLowerCase();
+    const sizeKey = size.trim().toLowerCase();
+    const batches = new Set<string>();
+    if (!nameKey || !sizeKey) return [];
+    getStorePurchasesFromCompanySales(storeId).forEach((purchase: any) => {
+      const rowName = String(purchase.product || "").trim().toLowerCase();
+      const rowSize = String(purchase.packSize || purchase.pkgsize || "").trim().toLowerCase();
+      if (rowName !== nameKey || rowSize !== sizeKey) return;
+      const batchNo = String(purchase.batchNo || "").trim();
+      if (batchNo && batchNo !== "-") batches.add(batchNo);
+    });
+    return Array.from(batches);
+  }
 
   function update<K extends keyof FormState>(key: K, value: string) {
     setForm({ ...form, [key]: value });
+  }
+
+  function applySize(name: string, size: string) {
+    const variant = products.find(
+      (product) =>
+        product.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        String(product.size || "").trim().toLowerCase() === size.trim().toLowerCase(),
+    );
+    const batches = batchesFor(name, size);
+    setForm((current) => ({
+      ...current,
+      productName: name,
+      packSize: size,
+      product: variant?.id || "",
+      batchNumber: batches.length === 1 ? batches[0] : "",
+      quantity: "",
+    }));
+  }
+
+  function chooseProduct(name: string) {
+    const sizes = sizesFor(name);
+    if (sizes.length === 1) {
+      applySize(name, sizes[0]);
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      productName: name,
+      packSize: "",
+      product: "",
+      batchNumber: "",
+      quantity: "",
+    }));
   }
 
   function saveStockEntry() {
@@ -90,14 +153,23 @@ export default function StoreAddStock({ storeId }: { storeId: string }) {
         <Card className="p-6">
           <SectionTitle icon="inventory_2" title="Stock Details" description="Select product and warehouse for this stock entry." />
           <div className="grid sm:grid-cols-2 gap-4">
-            <Select label="Product" value={form.product} onChange={(v) => update('product', v)} placeholder="Select product" required
-              options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.size})` }))} />
+            <Select label="Product" value={form.productName} onChange={chooseProduct} placeholder="Select product" required
+              options={productNames.map((name) => ({ value: name, label: name }))} />
+            {sizesFor(form.productName).length > 1 ? (
+              <Select label="Package Size" value={form.packSize} onChange={(size) => applySize(form.productName, size)} placeholder="Select size" required
+                options={sizesFor(form.productName).map((size) => ({ value: size, label: size }))} />
+            ) : (
+              <Input label="Package Size" value={form.packSize} onChange={() => {}} placeholder="Auto" readOnly />
+            )}
+            {batchesFor(form.productName, form.packSize).length > 1 ? (
+              <Select label="Batch ID" value={form.batchNumber} onChange={(v) => update('batchNumber', v)} placeholder="Select batch" required
+                options={batchesFor(form.productName, form.packSize).map((batch) => ({ value: batch, label: batch }))} />
+            ) : (
+              <Input label="Batch ID" value={form.batchNumber} onChange={(v) => update('batchNumber', v)} placeholder={form.packSize ? "Auto" : "Select size first"} icon="tag" required />
+            )}
+            <Input label="Quantity" type="number" value={form.quantity} onChange={(v) => update('quantity', v)} placeholder="e.g. 50" icon="numbers" required />
             <Select label="Warehouse" value={form.warehouse} onChange={(v) => update('warehouse', v)} placeholder="Select warehouse" required
               options={warehouseList.map((w) => ({ value: w, label: w }))} />
-            <Input label="Batch Number" value={form.batchNumber} onChange={(v) => update('batchNumber', v)} placeholder="e.g. BT-2026-001" icon="tag" required />
-            <Input label="Quantity" type="number" value={form.quantity} onChange={(v) => update('quantity', v)} placeholder="e.g. 50" icon="numbers" required />
-            <Select label="Unit" value={form.unit} onChange={(v) => update('unit', v)} placeholder="Select unit"
-              options={productSizes.map((s) => ({ value: s, label: s }))} />
           </div>
         </Card>
 

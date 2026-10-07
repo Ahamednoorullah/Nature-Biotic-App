@@ -376,7 +376,7 @@ export type CompanyCreditNoteSyncRecord = {
   returnAmount: number;
   reason: string;
   placeOfReturn: string;
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Draft" | "Pending" | "Approved" | "Rejected";
   notes?: string;
   pkgsize?: string;
   batchNo?: string;
@@ -627,398 +627,7 @@ export function saveProductPartyOptions(options: {
   } catch {}
 }
 
-const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [
-  {
-    name: "Murugan",
-    phone: "9876543201",
-    altMobile: "9123456701",
-    email: "murugan.farm@gmail.com",
-    aadhar: "XXXX-XXXX-4521",
-    gst: "",
-    village: "Rajapalayam",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626117",
-    farmAddress: "Survey No. 14, West Street, Rajapalayam",
-    landSize: 4.5,
-    cropType: "Cotton",
-    soilType: "Black Soil",
-    waterSource: "Borewell",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Cotton",
-        landSize: 4.5,
-        soilType: "Black Soil",
-        waterSource: "Borewell",
-      },
-    ],
-    paymentMethod: "Cash",
-    creditLimit: 15000,
-    outstanding: 8500,
-    customerCategory: "Retail",
-    remarks: "Regular customer, prefers organic products.",
-    internalNotes: "Prompt payment history.",
-    totalPurchases: 48200,
-    status: "Active",
-    joinedDate: "2022-03-15",
-    profileColor: "emerald",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Ramesh",
-    phone: "9876543202",
-    altMobile: "9123456702",
-    email: "ramesh.agri@gmail.com",
-    aadhar: "XXXX-XXXX-7832",
-    gst: "33ABCDE1234F1Z5",
-    village: "Srivilliputhur",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626135",
-    farmAddress: "Plot No. 8, Agraharam Street, Srivilliputhur",
-    landSize: 8.0,
-    cropType: "Paddy",
-    soilType: "Alluvial Soil",
-    waterSource: "Canal",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Paddy",
-        landSize: 8.0,
-        soilType: "Alluvial Soil",
-        waterSource: "Canal",
-      },
-    ],
-    paymentMethod: "Bank Transfer",
-    creditLimit: 30000,
-    outstanding: 0,
-    customerCategory: "Wholesale",
-    remarks: "Bulk buyer, monthly settlements.",
-    internalNotes: "Eligible for dealer pricing slab.",
-    totalPurchases: 124500,
-    status: "Active",
-    joinedDate: "2021-11-20",
-    profileColor: "blue",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Selvam",
-    phone: "9876543203",
-    altMobile: "",
-    email: "selvam.k@gmail.com",
-    aadhar: "XXXX-XXXX-1290",
-    gst: "",
-    village: "Sivakasi",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626123",
-    farmAddress: "No. 22, Kamarajar Street, Sivakasi",
-    landSize: 3.0,
-    cropType: "Chilli",
-    soilType: "Red Soil",
-    waterSource: "Borewell",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Chilli",
-        landSize: 3.0,
-        soilType: "Red Soil",
-        waterSource: "Borewell",
-      },
-    ],
-    paymentMethod: "Cash",
-    creditLimit: 10000,
-    outstanding: 4200,
-    customerCategory: "Retail",
-    remarks: "Chilli farmer, needs pest control guidance.",
-    internalNotes: "Occasional late payments.",
-    totalPurchases: 31800,
-    status: "Active",
-    joinedDate: "2023-01-08",
-    profileColor: "red",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Karthikeyan",
-    phone: "9876543204",
-    altMobile: "9123456704",
-    email: "karthik.farms@gmail.com",
-    aadhar: "XXXX-XXXX-9034",
-    gst: "33FGHIJ5678K1Z2",
-    village: "Virudhunagar",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626001",
-    farmAddress: "SF No. 5, Mill Street, Virudhunagar",
-    landSize: 12.5,
-    cropType: "Sugarcane",
-    soilType: "Loamy Soil",
-    waterSource: "Canal",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Sugarcane",
-        landSize: 12.5,
-        soilType: "Loamy Soil",
-        waterSource: "Canal",
-      },
-    ],
-    paymentMethod: "Bank Transfer",
-    creditLimit: 50000,
-    outstanding: 12500,
-    customerCategory: "Dealer",
-    remarks: "Large-scale sugarcane farmer, high volume buyer.",
-    internalNotes: "Key account, offer seasonal discount.",
-    totalPurchases: 215000,
-    status: "Active",
-    joinedDate: "2021-06-12",
-    profileColor: "amber",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Arumugam",
-    phone: "9876543205",
-    altMobile: "9123456705",
-    email: "arumugam.paddy@gmail.com",
-    aadhar: "XXXX-XXXX-3378",
-    gst: "",
-    village: "Rajapalayam",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626117",
-    farmAddress: "No. 7, East Street, Rajapalayam",
-    landSize: 5.5,
-    cropType: "Paddy",
-    soilType: "Clay Soil",
-    waterSource: "Borewell",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Paddy",
-        landSize: 5.5,
-        soilType: "Clay Soil",
-        waterSource: "Borewell",
-      },
-    ],
-    paymentMethod: "Cash",
-    creditLimit: 12000,
-    outstanding: 0,
-    customerCategory: "Retail",
-    remarks: "Paddy farmer, buys fertilizers every season.",
-    internalNotes: "Reliable customer.",
-    totalPurchases: 62300,
-    status: "Active",
-    joinedDate: "2022-07-22",
-    profileColor: "teal",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Palanisamy",
-    phone: "9876543206",
-    altMobile: "",
-    email: "palanisamy.g@gmail.com",
-    aadhar: "XXXX-XXXX-6721",
-    gst: "",
-    village: "Srivilliputhur",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626135",
-    farmAddress: "Survey No. 31, Keezh Street, Srivilliputhur",
-    landSize: 2.5,
-    cropType: "Groundnut",
-    soilType: "Red Loam",
-    waterSource: "Borewell",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Groundnut",
-        landSize: 2.5,
-        soilType: "Red Loam",
-        waterSource: "Borewell",
-      },
-    ],
-    paymentMethod: "Cash",
-    creditLimit: 8000,
-    outstanding: 3100,
-    customerCategory: "Retail",
-    remarks: "Groundnut farmer, small land holding.",
-    internalNotes: "Micro-credit eligible.",
-    totalPurchases: 18900,
-    status: "Active",
-    joinedDate: "2023-04-03",
-    profileColor: "blue",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Lakshmanan",
-    phone: "9876543207",
-    altMobile: "9123456707",
-    email: "lakshmanan.banana@gmail.com",
-    aadhar: "XXXX-XXXX-5412",
-    gst: "33LMNOP9012R1Z8",
-    village: "Sivakasi",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626123",
-    farmAddress: "Plot No. 14, Match Factory Road, Sivakasi",
-    landSize: 6.0,
-    cropType: "Banana",
-    soilType: "Alluvial Soil",
-    waterSource: "Drip Irrigation",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Banana",
-        landSize: 6.0,
-        soilType: "Alluvial Soil",
-        waterSource: "Drip Irrigation",
-      },
-    ],
-    paymentMethod: "Bank Transfer",
-    creditLimit: 25000,
-    outstanding: 7800,
-    customerCategory: "Wholesale",
-    remarks: "Banana plantation owner, bulk buyer of bio products.",
-    internalNotes: "Interested in organic line.",
-    totalPurchases: 87600,
-    status: "Active",
-    joinedDate: "2022-01-18",
-    profileColor: "emerald",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Sankaralingam",
-    phone: "9876543208",
-    altMobile: "",
-    email: "sankar.cotton@gmail.com",
-    aadhar: "XXXX-XXXX-8901",
-    gst: "",
-    village: "Virudhunagar",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626001",
-    farmAddress: "SF No. 19, Bazaar Street, Virudhunagar",
-    landSize: 3.5,
-    cropType: "Cotton",
-    soilType: "Black Soil",
-    waterSource: "Borewell",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Cotton",
-        landSize: 3.5,
-        soilType: "Black Soil",
-        waterSource: "Borewell",
-      },
-    ],
-    paymentMethod: "Cash",
-    creditLimit: 10000,
-    outstanding: 0,
-    customerCategory: "Retail",
-    remarks: "Cotton farmer, seasonal buyer.",
-    internalNotes: "Good payment record.",
-    totalPurchases: 28400,
-    status: "Active",
-    joinedDate: "2023-02-11",
-    profileColor: "amber",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Thangapandi",
-    phone: "9876543209",
-    altMobile: "9123456709",
-    email: "thangapandi.k@gmail.com",
-    aadhar: "XXXX-XXXX-2267",
-    gst: "",
-    village: "Rajapalayam",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626117",
-    farmAddress: "No. 3, South Street, Rajapalayam",
-    landSize: 1.5,
-    cropType: "Chilli",
-    soilType: "Red Soil",
-    waterSource: "Borewell",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Chilli",
-        landSize: 1.5,
-        soilType: "Red Soil",
-        waterSource: "Borewell",
-      },
-    ],
-    paymentMethod: "Cash",
-    creditLimit: 5000,
-    outstanding: 1800,
-    customerCategory: "Retail",
-    remarks: "Small-scale chilli farmer.",
-    internalNotes: "New customer, building trust.",
-    totalPurchases: 9200,
-    status: "Active",
-    joinedDate: "2023-09-05",
-    profileColor: "red",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-  {
-    name: "Velmurugan",
-    phone: "9876543210",
-    altMobile: "",
-    email: "velmurugan.s@gmail.com",
-    aadhar: "XXXX-XXXX-4598",
-    gst: "33VWXYZ3456S1Z9",
-    village: "Srivilliputhur",
-    landmark: "",
-    district: "Virudhunagar",
-    state: "Tamil Nadu",
-    pincode: "626135",
-    farmAddress: "Survey No. 42, Agraharam, Srivilliputhur",
-    landSize: 10.0,
-    cropType: "Sugarcane",
-    soilType: "Loamy Soil",
-    waterSource: "Canal",
-    crops: [
-      {
-        id: "crop-1",
-        cropType: "Sugarcane",
-        landSize: 10.0,
-        soilType: "Loamy Soil",
-        waterSource: "Canal",
-      },
-    ],
-    paymentMethod: "Bank Transfer",
-    creditLimit: 40000,
-    outstanding: 15600,
-    customerCategory: "Dealer",
-    remarks: "Large sugarcane estate, high-volume buyer.",
-    internalNotes: "Priority account, assign relationship manager.",
-    totalPurchases: 178000,
-    status: "Active",
-    joinedDate: "2021-09-30",
-    profileColor: "teal",
-    cropType3: undefined,
-    cropType2: undefined,
-  },
-];
+const farmerSeed: Omit<Farmer, "id" | "storeId">[] = [];
 
 export type CompanyStoreSaleRecord = {
   returnAmount: number;
@@ -1382,7 +991,13 @@ export function getCompanyInvoiceCredits(storeId: string, invoiceNo: string) {
   const key = String(invoiceNo || "").trim().toLowerCase();
   if (!key) return 0;
   const credited = getCompanyCreditNoteSyncRecords().reduce((sum, note) => {
-    if (note.storeId !== storeId || note.status === "Rejected") return sum;
+    if (
+      note.storeId !== storeId ||
+      note.status === "Rejected" ||
+      note.status === "Draft"
+    ) {
+      return sum;
+    }
     const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
       .trim()
       .toLowerCase();
@@ -1569,57 +1184,7 @@ for (let i = 0; i < 14; i++) {
 
 export const bills: Bill[] = [];
 
-const roles = [
-  "Field Executive",
-  "Sales Executive",
-  "Store Manager",
-  "Accountant",
-  "Inventory Clerk",
-];
-
-const staffNames = [
-  "Ram Kumar",
-  "Ajith Kumar",
-  "PeriyaSamy",
-  "Sarath KUmar",
-  "Vijay",
-];
-
-export const staff: Staff[] = staffNames.map((name, i) => ({
-  id: `st${i}`,
-  storeId: stores[i % stores.length]?.id ?? "s1",
-  name,
-  phone: `98765432${10 + i}`,
-  alternativePhone: `91234567${10 + i}`,
-  email: `${name.toLowerCase().replace(/\s/g, ".")}@naturebiotic.in`,
-  dob: `199${2 + i}-0${(i % 8) + 1}-1${i % 9}`,
-  age: 29 + i,
-  bloodGroup: ["O+", "A+", "B+", "AB+", "O-"][i % 5],
-  joinedDate: `202${1 + (i % 3)}-0${1 + (i % 9)}-1${i % 9}`,
-  address: [
-    "Rajapalayam, Virudhunagar, Tamil Nadu",
-    "Srivilliputhur, Virudhunagar, Tamil Nadu",
-    "Sivakasi, Virudhunagar, Tamil Nadu",
-    "Tenkasi, Tamil Nadu",
-    "Idukki, Kerala",
-  ][i],
-  proofIdName: `staff-proof-${i + 1}.pdf`,
-  profileImageName: "",
-  designation: [
-    "Field Exective",
-    "Field Exective",
-    "Field Exective",
-    "Field Exective",
-    "Field Exective",
-  ][i],
-  level: ((i % 4) + 1) as 1 | 2 | 3 | 4,
-  targetSales: [30000, 25000, 22000, 18000, 15000][i],
-  targetFarmers: [50, 45, 40, 35, 30][i],
-  targetFarms: [35, 32, 28, 24, 20][i],
-  targetVisits: [10, 20, 40, 120, 250][i],
-  role: roles[i % roles.length],
-  status: i === 3 ? "On Leave" : "Active",
-}));
+export const staff: Staff[] = [];
 
 const STORE_REGISTRY_KEY = "nature-biotic-store-registry-v1";
 const STAFF_REGISTRY_KEY = "nature-biotic-staff-registry-v1";
@@ -1665,6 +1230,115 @@ export function replaceStaffRegistry(next: Staff[]) {
   try {
     localStorage.setItem(STAFF_REGISTRY_KEY, JSON.stringify(staff));
   } catch {}
+}
+
+const PRESERVED_STORAGE_KEYS = new Set([
+  "nature-biotic-product-master-v1",
+  "nature-biotic-product-party-options-v1",
+  "nature-biotic-store-registry-v1",
+  "nature-biotic-auth-accounts-v1",
+  "nature-biotic-auth-credentials-v1",
+  "nature-biotic-auth-session-v1",
+  "nature_biotic_admin_details",
+  "nature_biotic_admin_bank_details",
+  "nature_biotic_company_address",
+  "nature_biotic_company_info",
+  TRANSACTION_RESET_FLAG,
+]);
+
+const PRESERVED_STORAGE_PREFIXES = [
+  "nature-biotic-store-user-settings-v1:",
+];
+
+function isPreservedStorageKey(key: string) {
+  return (
+    PRESERVED_STORAGE_KEYS.has(key) ||
+    PRESERVED_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))
+  );
+}
+
+function isApplicationStorageKey(key: string) {
+  return (
+    key.startsWith("nature-biotic-") ||
+    key.startsWith("naturebiotic") ||
+    key.startsWith("nature_biotic_")
+  );
+}
+
+/**
+ * Clears saved operational and demo records. Master data, store records,
+ * the product catalog, company settings, and company/store login accounts
+ * are left in place. Call this only from an explicit action.
+ */
+export function resetApplicationData() {
+  if (typeof window === "undefined") return;
+
+  const accountKey = "nature-biotic-auth-accounts-v1";
+  const credentialKey = "nature-biotic-auth-credentials-v1";
+  const sessionKey = "nature-biotic-auth-session-v1";
+  const settingsPrefix = "nature-biotic-store-user-settings-v1:";
+  let keptIds = new Set<string>();
+
+  try {
+    const accounts = JSON.parse(localStorage.getItem(accountKey) || "[]");
+    const keptAccounts = Array.isArray(accounts)
+      ? accounts.filter(
+          (account) =>
+            account?.role === "company_admin" || account?.role === "store_admin",
+        )
+      : [];
+    keptIds = new Set(keptAccounts.map((account) => account.id));
+    localStorage.setItem(accountKey, JSON.stringify(keptAccounts));
+
+    const credentials = JSON.parse(localStorage.getItem(credentialKey) || "[]");
+    localStorage.setItem(
+      credentialKey,
+      JSON.stringify(
+        Array.isArray(credentials)
+          ? credentials.filter((row) => keptIds.has(row?.accountId))
+          : [],
+      ),
+    );
+
+    const session = JSON.parse(localStorage.getItem(sessionKey) || "null");
+    if (!session?.id || !keptIds.has(session.id)) {
+      localStorage.removeItem(sessionKey);
+      sessionStorage.removeItem(sessionKey);
+    }
+  } catch {
+    // Keep the existing login records if stored auth data cannot be read.
+  }
+
+  const keys: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key) keys.push(key);
+  }
+  keys.forEach((key) => {
+    if (key.startsWith(settingsPrefix) && !keptIds.has(key.slice(settingsPrefix.length))) {
+      localStorage.removeItem(key);
+      return;
+    }
+    if (!isApplicationStorageKey(key) || isPreservedStorageKey(key)) return;
+    localStorage.removeItem(key);
+  });
+
+  sessionStorage.removeItem("nature-biotic-open-store-invoice");
+  sessionStorage.removeItem("nature-biotic-farmer-profile-tab");
+
+  stores.forEach((store) => {
+    store.todaySales = 0;
+    store.monthlySales = 0;
+    store.totalProfit = 0;
+    store.outstanding = 0;
+    store.activeCustomers = 0;
+    store.inventoryValue = 0;
+  });
+  try {
+    localStorage.setItem(STORE_REGISTRY_KEY, JSON.stringify(stores));
+  } catch {}
+
+  staff.splice(0, staff.length);
 }
 
 export function attachAccountLink(
@@ -1990,10 +1664,202 @@ export type CompanyRefund = {
   remarks?: string;
   balance?: number;
   purchaseRef?: string;
+  /** Part of `amount` that reduced outstanding. The rest was paid out in cash. */
+  appliedToOutstanding?: number;
 };
 
 const COMPANY_REFUND_KEY = "nature-biotic-company-refunds-v1";
 export const companyRefundsUpdatedEvent = "nature-biotic-company-refunds-updated";
+
+function roundMoney(value: number) {
+  return Math.round(Math.max(0, Number(value) || 0) * 100) / 100;
+}
+
+/** A refund splits into the part that settles outstanding and the part paid in cash. */
+export function companyRefundParts(refund: {
+  amount?: number;
+  appliedToOutstanding?: number;
+}) {
+  const amount = roundMoney(refund.amount || 0);
+  const applied = Math.min(amount, roundMoney(refund.appliedToOutstanding || 0));
+  return { amount, applied, paid: roundMoney(amount - applied) };
+}
+
+/**
+ * Preview only. Outstanding changes when the refund is saved, not when this runs.
+ * `cash` is the amount paid out. `applied` is what settles outstanding.
+ * `settled` is both together and is what consumes the return.
+ */
+export function previewRefundSettlement(input: {
+  refundable: number;
+  outstanding: number;
+  apply: boolean;
+  cash: number;
+}) {
+  const refundable = roundMoney(input.refundable);
+  const outstanding = roundMoney(input.outstanding);
+  const applied = input.apply ? Math.min(refundable, outstanding) : 0;
+  const maxCash = roundMoney(Math.max(0, refundable - applied));
+  const cash = roundMoney(Math.max(0, input.cash));
+  return {
+    applied,
+    maxCash,
+    cash,
+    exceeds: cash - maxCash > 0.001,
+    settled: roundMoney(applied + Math.min(cash, maxCash)),
+    outstandingAfter: roundMoney(Math.max(0, outstanding - applied)),
+  };
+}
+
+type DueInvoice = { key: string; date: string; due: number };
+
+/** Spend each applied refund on its invoice first, then the account's other invoices. */
+function applyRefundsToInvoices(
+  invoices: DueInvoice[],
+  refunds: { invoiceKey: string; date: string; applied: number }[],
+) {
+  const rows = invoices.map((row) => ({ ...row, due: roundMoney(row.due) }));
+  [...refunds]
+    .filter((row) => row.applied > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .forEach((refund) => {
+      let left = roundMoney(refund.applied);
+      const primary = rows.find((row) => row.key === refund.invoiceKey);
+      const order = [
+        ...(primary ? [primary] : []),
+        ...rows
+          .filter((row) => row !== primary)
+          .sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key)),
+      ];
+      order.forEach((row) => {
+        if (left <= 0 || row.due <= 0) return;
+        const take = Math.min(left, row.due);
+        row.due = roundMoney(row.due - take);
+        left = roundMoney(left - take);
+      });
+    });
+  return rows;
+}
+
+export type CompanyStorePosition = {
+  storeId: string;
+  storeName: string;
+  grossSales: number;
+  receipts: number;
+  appliedToOutstanding: number;
+  cashRefunds: number;
+  outstanding: number;
+  invoiceDue: Map<string, number>;
+};
+
+/** What a store still owes the company. An approved return does not reduce this. */
+export function getCompanyStorePositions(): Map<string, CompanyStorePosition> {
+  const byStore = new Map<
+    string,
+    {
+      storeName: string;
+      invoices: Map<string, { invoiceNo: string; date: string; total: number; collected: number }>;
+      refunds: { invoiceKey: string; date: string; applied: number; paid: number }[];
+    }
+  >();
+  const take = (storeId: string, storeName?: string) => {
+    const current: {
+      storeName: string;
+      invoices: Map<string, { invoiceNo: string; date: string; total: number; collected: number }>;
+      refunds: { invoiceKey: string; date: string; applied: number; paid: number }[];
+    } = byStore.get(storeId) || {
+      storeName: storeName || "",
+      invoices: new Map(),
+      refunds: [],
+    };
+    if (storeName && !current.storeName) current.storeName = storeName;
+    byStore.set(storeId, current);
+    return current;
+  };
+
+  getFinalCompanyStoreSales().forEach((sale) => {
+    const storeId = String(sale.storeId || "");
+    const invoiceNo = String(sale.invoiceNo || "").trim();
+    if (!storeId || !invoiceNo) return;
+    const bucket = take(storeId, sale.storeName);
+    const key = invoiceNo.toLowerCase();
+    const current = bucket.invoices.get(key) || {
+      invoiceNo,
+      date: String(sale.date || ""),
+      total: 0,
+      collected: 0,
+    };
+    current.total += roundMoney(sale.total || 0);
+    if (!current.date || String(sale.date || "") < current.date) {
+      current.date = String(sale.date || "");
+    }
+    bucket.invoices.set(key, current);
+  });
+
+  let receipts: any[] = [];
+  try {
+    const raw =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem(COMPANY_RECEIPT_STORAGE_KEY)
+        : null;
+    const parsed = raw ? JSON.parse(raw) : [];
+    receipts = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    receipts = [];
+  }
+  receipts.forEach((receipt) => {
+    const storeId = String(receipt?.storeId || "");
+    const invoiceNo = String(receipt?.invoiceNo || "").trim();
+    if (!storeId || !invoiceNo) return;
+    const current = take(storeId, receipt?.storeName).invoices.get(invoiceNo.toLowerCase());
+    if (current) current.collected += roundMoney(receipt?.amount || 0);
+  });
+
+  getCompanyRefunds().forEach((refund) => {
+    if (!refund.storeId) return;
+    const parts = companyRefundParts(refund);
+    take(refund.storeId, refund.storeName).refunds.push({
+      invoiceKey: String(refund.purchaseRef || "").trim().toLowerCase(),
+      date: String(refund.date || ""),
+      applied: parts.applied,
+      paid: parts.paid,
+    });
+  });
+
+  const positions = new Map<string, CompanyStorePosition>();
+  byStore.forEach((bucket, storeId) => {
+    const invoices = [...bucket.invoices.values()].map((row) => ({
+      key: row.invoiceNo.toLowerCase(),
+      date: row.date,
+      due: Math.max(0, row.total - row.collected),
+    }));
+    const settled = applyRefundsToInvoices(invoices, bucket.refunds);
+    const grossSales = [...bucket.invoices.values()].reduce((sum, row) => sum + row.total, 0);
+    const collected = [...bucket.invoices.values()].reduce((sum, row) => sum + row.collected, 0);
+    positions.set(storeId, {
+      storeId,
+      storeName: bucket.storeName,
+      grossSales,
+      receipts: collected,
+      appliedToOutstanding: bucket.refunds.reduce((sum, row) => sum + row.applied, 0),
+      cashRefunds: bucket.refunds.reduce((sum, row) => sum + row.paid, 0),
+      outstanding: settled.reduce((sum, row) => sum + row.due, 0),
+      invoiceDue: new Map(settled.map((row) => [row.key, row.due])),
+    });
+  });
+  return positions;
+}
+
+export function getCompanyStoreOutstanding(storeId: string) {
+  return getCompanyStorePositions().get(storeId)?.outstanding || 0;
+}
+
+export function getCompanyInvoiceDue(storeId: string, invoiceNo: string) {
+  const due = getCompanyStorePositions()
+    .get(storeId)
+    ?.invoiceDue.get(String(invoiceNo || "").trim().toLowerCase());
+  return due || 0;
+}
 
 export function getCompanyRefunds(): CompanyRefund[] {
   if (typeof window === "undefined") return [];
@@ -2044,6 +1910,7 @@ export function addCompanyRefund(input: {
   remarks?: string;
   balance?: number;
   purchaseRef?: string;
+  applyToOutstanding?: boolean;
 }) {
   const amount = Math.round(Math.max(0, Number(input.amount || 0)) * 100) / 100;
   const referenceNo = input.referenceNo.trim();
@@ -2081,6 +1948,9 @@ export function addCompanyRefund(input: {
     remarks: input.remarks || "",
     balance: input.balance,
     purchaseRef: input.purchaseRef || "",
+    appliedToOutstanding: input.applyToOutstanding
+      ? Math.min(amount, getCompanyStoreOutstanding(input.storeId))
+      : 0,
   };
   if (existing.some((item) => item.id === row.id)) {
     return { ok: true as const, row };
@@ -2094,23 +1964,25 @@ export function addCompanyRefund(input: {
 }
 
 /**
- * Company ↔ store account. An approved purchase return is a sales return: it
- * lowers net sales and the outstanding. A refund is the cash paid back for that
- * return: it lowers collection only, so it never raises the outstanding again.
+ * Company ↔ store account. An approved return lowers net sales only.
+ * Outstanding stays until a refund is applied against it. The cash part of a
+ * refund lowers collection and does not change outstanding.
  */
 export function settleCompanyAccount(input: {
   grossSales: number;
   salesReturns: number;
   receipts: number;
   refunds: number;
+  appliedToOutstanding?: number;
 }) {
   const grossSales = Math.max(0, input.grossSales);
   const salesReturns = Math.min(grossSales, Math.max(0, input.salesReturns));
   const netSales = grossSales - salesReturns;
   const receipts = Math.max(0, input.receipts);
-  const refunds = Math.max(0, input.refunds);
-  const collection = receipts - refunds;
-  const outstanding = Math.max(0, netSales - receipts);
+  const cashRefunds = Math.max(0, input.refunds);
+  const applied = Math.max(0, input.appliedToOutstanding ?? 0);
+  const collection = receipts - cashRefunds;
+  const outstanding = Math.max(0, grossSales - receipts - applied);
   return { grossSales, salesReturns, netSales, collection, outstanding };
 }
 
@@ -2386,6 +2258,120 @@ const STORE_SALES_RETURN_PREFIX = "nature-biotic-store-sales-returns-v2";
 const STORE_CREDIT_NOTE_PREFIX = "nature-biotic-store-credit-notes-v3";
 const STORE_STOCK_ADJUSTMENT_PREFIX = "nature-biotic-store-stock-adjustments-v1";
 
+type StoreInvoiceDue = {
+  farmerId: string;
+  farmerName: string;
+  invoiceNo: string;
+  due: number;
+};
+
+/** Invoice balances after receipts and refunds applied to outstanding. Returns do not reduce these. */
+function storeInvoiceDueRows(storeId: string): StoreInvoiceDue[] {
+  const invoices = readStorageArray(`${STORE_SALES_INVOICE_PREFIX}:${storeId}`).filter(
+    (row) => !isVoidStatus(row?.status) && String(row?.invoiceNo || "").trim(),
+  );
+  const receipts = readStorageArray(`${STORE_RECEIPT_STORAGE_PREFIX}${storeId}`).filter(
+    (row) => !isVoidStatus(row?.status),
+  );
+  const refunds = readStorageArray(`nature-biotic-store-refunds-v2:${storeId}`).filter(
+    (row) => !isVoidStatus(row?.status),
+  );
+  const farmers = new Map<
+    string,
+    {
+      invoices: DueInvoice[];
+      meta: Map<string, { farmerId: string; farmerName: string; invoiceNo: string }>;
+      refunds: { invoiceKey: string; date: string; applied: number }[];
+    }
+  >();
+  invoices.forEach((row) => {
+    const invoiceNo = String(row.invoiceNo || "").trim();
+    const farmerId = String(row.farmerId || "").trim();
+    const farmerName = String(row.partyName || row.farmerName || "").trim();
+    const farmerKey = farmerId ? `id:${farmerId}` : `name:${farmerName.toLowerCase()}`;
+    if (!farmerKey || farmerKey === "name:") return;
+    const bucket: {
+      invoices: DueInvoice[];
+      meta: Map<string, { farmerId: string; farmerName: string; invoiceNo: string }>;
+      refunds: { invoiceKey: string; date: string; applied: number }[];
+    } = farmers.get(farmerKey) || {
+      invoices: [],
+      meta: new Map(),
+      refunds: [],
+    };
+    const key = invoiceNo.toLowerCase();
+    const existing = bucket.invoices.find((item) => item.key === key);
+    const amount = roundMoney(row.amount || row.total || 0);
+    if (existing) {
+      existing.due += amount;
+    } else {
+      bucket.invoices.push({
+        key,
+        date: String(row.date || ""),
+        due: amount,
+      });
+      bucket.meta.set(key, { farmerId, farmerName, invoiceNo });
+    }
+    farmers.set(farmerKey, bucket);
+  });
+  farmers.forEach((bucket) => {
+    bucket.invoices.forEach((invoice) => {
+      const collected = receipts.reduce((sum, receipt) => {
+        return String(receipt?.invoiceNo || "").trim().toLowerCase() === invoice.key
+          ? sum + roundMoney(receipt?.amount || 0)
+          : sum;
+      }, 0);
+      invoice.due = Math.max(0, invoice.due - collected);
+    });
+  });
+  refunds.forEach((row) => {
+    const parts = companyRefundParts(row);
+    if (parts.applied <= 0) return;
+    const farmerId = String(row.farmerId || "").trim();
+    const farmerName = String(row.farmerName || row.partyName || "").trim();
+    const farmerKey = farmerId ? `id:${farmerId}` : `name:${farmerName.toLowerCase()}`;
+    const bucket = farmers.get(farmerKey);
+    if (!bucket) return;
+    bucket.refunds.push({
+      invoiceKey: String(row.invoiceNo || "").trim().toLowerCase(),
+      date: String(row.date || ""),
+      applied: parts.applied,
+    });
+  });
+  const result: StoreInvoiceDue[] = [];
+  farmers.forEach((bucket) => {
+    applyRefundsToInvoices(bucket.invoices, bucket.refunds).forEach((row) => {
+      const meta = bucket.meta.get(row.key);
+      if (!meta) return;
+      result.push({ ...meta, due: row.due });
+    });
+  });
+  return result;
+}
+
+export function getStoreInvoiceOutstanding(storeId: string, invoiceNo: string) {
+  const key = String(invoiceNo || "").trim().toLowerCase();
+  return (
+    storeInvoiceDueRows(storeId).find(
+      (row) => row.invoiceNo.trim().toLowerCase() === key,
+    )?.due || 0
+  );
+}
+
+export function getStoreFarmerOutstanding(
+  storeId: string,
+  farmerId?: string,
+  farmerName?: string,
+) {
+  const id = String(farmerId || "").trim();
+  const name = String(farmerName || "").trim().toLowerCase();
+  return storeInvoiceDueRows(storeId).reduce((sum, row) => {
+    if (id && row.farmerId === id) return sum + row.due;
+    if (!id && name && row.farmerName.trim().toLowerCase() === name) return sum + row.due;
+    return sum;
+  }, 0);
+}
+
 function readStorageArray(key: string): any[] {
   if (typeof window === "undefined") return [];
   try {
@@ -2459,7 +2445,13 @@ function directStoreReturnQty(storeId: string, target: any) {
   const creditNotes = readStorageArray(
     `${STORE_CREDIT_NOTE_PREFIX}:${storeId}`,
   ).reduce((sum, row) => {
-    if (isExecutiveMovement(row) || row?.status === "Rejected") return sum;
+    if (
+      isExecutiveMovement(row) ||
+      row?.status === "Rejected" ||
+      row?.status === "Draft"
+    ) {
+      return sum;
+    }
     return (
       sum +
       (stockVariantsMatch(variantOf(row), target)
@@ -3712,6 +3704,7 @@ export type FarmerAccountRow = {
   farmerId?: string;
   farmerName?: string;
   amount?: number;
+  appliedToOutstanding?: number;
 };
 
 export type FarmerAccountBucket = {
@@ -3720,6 +3713,8 @@ export type FarmerAccountBucket = {
   receipts: number;
   returns: number;
   refunds: number;
+  appliedRefunds: number;
+  cashRefunds: number;
 };
 
 function farmerAccountKey(farmerId: unknown, name: unknown) {
@@ -3802,6 +3797,7 @@ function applicableRefundRows(refunds: any[], returns: any[], invoices: any[]) {
   const rows: {
     row: any;
     amount: number;
+    appliedToOutstanding: number;
     farmerId: string;
     farmerName: string;
   }[] = [];
@@ -3835,6 +3831,10 @@ function applicableRefundRows(refunds: any[], returns: any[], invoices: any[]) {
     rows.push({
       row,
       amount,
+      appliedToOutstanding: Math.min(
+        amount,
+        Math.max(0, Number(row?.appliedToOutstanding || 0)),
+      ),
       farmerId: farmer.farmerId,
       farmerName: farmer.farmerName,
     });
@@ -3899,6 +3899,7 @@ export function settleLinkedFarmerAccounts(input: {
       farmerId: row.farmerId,
       farmerName: row.farmerName,
       amount: row.amount,
+      appliedToOutstanding: row.appliedToOutstanding,
     })),
   );
   return settleFarmerAccounts(buckets);
@@ -3921,6 +3922,8 @@ export function buildFarmerBuckets(
       receipts: 0,
       returns: 0,
       refunds: 0,
+      appliedRefunds: 0,
+      cashRefunds: 0,
     };
     const label = String(name || "").trim();
     if (label && current.farmerName === "Farmer") current.farmerName = label;
@@ -3941,14 +3944,23 @@ export function buildFarmerBuckets(
   });
   refunds.forEach((row) => {
     const bucket = take(row.farmerId, row.farmerName);
-    if (bucket) bucket.refunds += Math.max(0, Number(row.amount || 0));
+    if (!bucket) return;
+    const amount = Math.max(0, Number(row.amount || 0));
+    const applied = Math.min(
+      amount,
+      Math.max(0, Number(row.appliedToOutstanding || 0)),
+    );
+    bucket.refunds += amount;
+    bucket.appliedRefunds += applied;
+    bucket.cashRefunds += amount - applied;
   });
   return map;
 }
 
 /**
- * Sales fall by the return or the refund, whichever is recorded.
- * Collection is receipts minus the refund. Outstanding cannot go below zero.
+ * A return lowers net sales and leaves outstanding unchanged.
+ * Outstanding falls only by the refund amount applied against it.
+ * The cash part of a refund lowers collection.
  */
 export function settleFarmerAccounts(buckets: Map<string, FarmerAccountBucket>) {
   let sales = 0;
@@ -3978,17 +3990,21 @@ export function settleFarmerAccounts(buckets: Map<string, FarmerAccountBucket>) 
     const receipts = Math.max(0, row.receipts);
     const returns = Math.min(Math.max(0, row.returns), gross);
     const refundTotal = Math.max(0, row.refunds);
-    const credit = Math.min(gross, Math.max(returns, refundTotal));
-    const netCollection = receipts - refundTotal;
-    const netSales = Math.max(0, gross - credit);
-    const due = Math.max(0, netSales - netCollection);
+    const cashRefunds = Math.max(0, row.cashRefunds);
+    const applied = Math.min(
+      Math.max(0, gross - receipts),
+      Math.max(0, row.appliedRefunds),
+    );
+    const netCollection = receipts - cashRefunds;
+    const netSales = Math.max(0, gross - returns);
+    const due = Math.max(0, gross - receipts - applied);
     sales += netSales;
     collection += netCollection;
     outstanding += due;
-    if (refundTotal > 0) {
+    if (cashRefunds > 0) {
       collectionAdjustments.push({
         farmerName: row.farmerName || "Farmer",
-        amount: -refundTotal,
+        amount: -cashRefunds,
         ref: "Refund",
       });
     }

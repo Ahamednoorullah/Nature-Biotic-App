@@ -441,7 +441,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
               label="Farmer Name"
               value={form.name}
               onChange={(v) => update("name", v)}
-              placeholder="e.g. Murugan"
+              placeholder="Farmer name"
               icon="person"
               required
             />

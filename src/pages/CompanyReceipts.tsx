@@ -2,9 +2,10 @@ import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { downloadDataTablePdf } from "@/lib/documentPdf";
 import {
   commitReceiptNumber,
-  getCompanyInvoiceCredits,
+  getCompanyInvoiceDue,
   getFinalCompanyStoreSales,
   nextReceiptNumber,
   stores,
@@ -56,6 +57,7 @@ export default function CompanyReceipts() {
   const { user } = useAuth();
   const savingRef = useRef(false);
   const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [storeFilter, setStoreFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState<
     "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
@@ -105,17 +107,9 @@ export default function CompanyReceipts() {
 
     return Array.from(grouped.values())
       .map((invoice) => {
-        const key = invoice.invoiceNo.toLowerCase();
-        const credited = getCompanyInvoiceCredits(createStoreId, key);
-        const collected = createdReceipts.reduce((sum, receipt) => {
-          if (receipt.storeId !== createStoreId) return sum;
-          if (receipt.invoiceNo.trim().toLowerCase() !== key) return sum;
-          return sum + money(receipt.amount);
-        }, 0);
-        const net = Math.max(0, invoice.total - credited);
         return {
           ...invoice,
-          remaining: Math.max(0, net - collected),
+          remaining: getCompanyInvoiceDue(createStoreId, invoice.invoiceNo),
         };
       })
       .filter((invoice) => invoice.remaining > 0);
@@ -168,7 +162,7 @@ export default function CompanyReceipts() {
     );
     setInvoiceNo(invoice?.invoiceNo || "");
     setInvoiceAmount(invoice ? invoice.total : 0);
-    setAmountReceived(0);
+    setAmountReceived(invoice ? invoice.remaining : 0);
   }
 
   function handleCreateReceipt() {
@@ -179,16 +173,9 @@ export default function CompanyReceipts() {
 
     try {
       const latest = loadCompanyReceipts();
-      const invoiceKey = selectedInvoice.invoiceNo.trim().toLowerCase();
-      const credited = getCompanyInvoiceCredits(createStore.id, invoiceKey);
-      const collected = latest.reduce((sum, receipt) => {
-        if (receipt.storeId !== createStore.id) return sum;
-        if (receipt.invoiceNo.trim().toLowerCase() !== invoiceKey) return sum;
-        return sum + money(receipt.amount);
-      }, 0);
-      const remaining = Math.max(
-        0,
-        selectedInvoice.total - credited - collected,
+      const remaining = getCompanyInvoiceDue(
+        createStore.id,
+        selectedInvoice.invoiceNo,
       );
       if (amountReceived <= 0 || amountReceived > remaining) {
         savingRef.current = false;
@@ -306,6 +293,47 @@ export default function CompanyReceipts() {
     });
   }, [search, storeFilter, dateFilter, customFrom, customTo, createdReceipts]);
 
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const period =
+        dateFilter === "custom" && (customFrom || customTo)
+          ? `${customFrom || "Start"} to ${customTo || "Today"}`
+          : dateFilter === "all"
+            ? "All dates"
+            : dateFilter[0].toUpperCase() + dateFilter.slice(1);
+      const total = filtered.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      await downloadDataTablePdf({
+        fileName: "nature-biotic-company-receipts.pdf",
+        heading: "Nature Biotic",
+        title: "Collection Receipts",
+        storeName:
+          storeFilter === "all"
+            ? "All stores"
+            : filtered[0]?.storeName || "Company",
+        generatedOn: `Period: ${period} · Generated ${formatDate(new Date().toISOString().split("T")[0])}`,
+        headers: ["Receipt No", "Date", "Store", "Invoice", "Method", "Amount"],
+        aligns: ["left", "left", "left", "left", "left", "right"],
+        rows: filtered.map((row) => [
+          row.receiptNo,
+          formatDate(row.date),
+          row.storeName,
+          row.invoiceNo,
+          row.method,
+          formatCurrency(row.amount).replace("₹", "Rs. "),
+        ]),
+        total: ["", "", "", "", "Total", formatCurrency(total).replace("₹", "Rs. ")],
+        emptyMessage: "No receipts match the current filters.",
+      });
+      window.alert("PDF downloaded.");
+    } catch {
+      window.alert("The PDF could not be created. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -323,8 +351,8 @@ export default function CompanyReceipts() {
           <Button onClick={openCreateForm}>
             <Icon name="add" size={20} fill /> Create
           </Button>
-          <Button variant="secondary">
-            <Icon name="download" size={20} /> Export
+          <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+            <Icon name="download" size={20} /> {exporting ? "Exporting..." : "Export"}
           </Button>
         </div>
       </div>
@@ -861,6 +889,13 @@ export default function CompanyReceipts() {
                     value={String(invoiceAmount)}
                     onChange={() => {}}
                     placeholder="Total invoice value"
+                    readOnly
+                  />
+
+                  <Input
+                    label="Outstanding"
+                    value={formatCurrency(outstandingBefore)}
+                    onChange={() => {}}
                     readOnly
                   />
 

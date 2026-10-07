@@ -15,6 +15,7 @@ import {
   getStore,
   getFarmersByStore,
   getStorePurchasesFromCompanySales,
+  getStoreAvailableQty,
   nextStoreDocumentNo,
   rememberStoreDocumentNo,
   type Product,
@@ -64,7 +65,7 @@ type StoredSaleInvoice = {
 
 const STORE_SALES_INVOICE_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
-type CreditNoteStatus = "Approved" | "Pending" | "Rejected";
+type CreditNoteStatus = "Draft" | "Approved" | "Pending" | "Rejected";
 
 type CreditNote = {
   id: string;
@@ -123,7 +124,8 @@ type AddedProduct = {
   catalogProductId?: string;
 };
 
-const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red"> = {
+const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red" | "slate"> = {
+  Draft: "slate",
   Approved: "green",
   Pending: "amber",
   Rejected: "red",
@@ -163,6 +165,7 @@ export default function StoreCreditNotes({
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCreditNo, setEditingCreditNo] = useState("");
   const [selectesdreditNote, setSelectesdreditNote] = useState<{
     header: CreditNote;
     rows: CreditNote[];
@@ -202,6 +205,7 @@ export default function StoreCreditNotes({
     purchaseOrderNotesDefault,
   );
   const [entry, setEntry] = useState({
+    productName: "",
     productId: "",
     pkgsize: "",
     batchNo: "",
@@ -395,6 +399,7 @@ export default function StoreCreditNotes({
 
     setEntry((p) => ({
       ...p,
+      productName: lineName(saleRow),
       productId,
       pkgsize:
         saleRow.pkgsize || saleRow.packSize || saleRow.product?.size || "",
@@ -406,8 +411,241 @@ export default function StoreCreditNotes({
     }));
   }
 
+  function lineName(row: { product?: { name?: string } }) {
+    return String(row.product?.name || "Product").trim();
+  }
+
+  function lineSize(row: {
+    pkgsize?: string;
+    packSize?: string;
+    product?: { size?: string };
+  }) {
+    return String(row.pkgsize || row.packSize || row.product?.size || "").trim();
+  }
+
+  function creditProductNames() {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    const source = invoiceNo ? selectedInvoiceRows.map((row) => lineName(row)) : catalogRows.map((row) => row.name);
+    source.forEach((name) => {
+      const clean = String(name || "").trim();
+      const key = clean.toLowerCase();
+      if (!clean || seen.has(key)) return;
+      seen.add(key);
+      names.push(clean);
+    });
+    return names;
+  }
+
+  function creditSizes(name: string) {
+    const key = name.trim().toLowerCase();
+    const sizes = new Set<string>();
+    if (!key) return [];
+    if (invoiceNo) {
+      selectedInvoiceRows.forEach((row) => {
+        if (lineName(row).toLowerCase() !== key) return;
+        const size = lineSize(row);
+        if (size) sizes.add(size);
+      });
+      return Array.from(sizes);
+    }
+    catalogRows.forEach((row) => {
+      if (row.name.trim().toLowerCase() !== key) return;
+      if (row.size) sizes.add(row.size);
+    });
+    return Array.from(sizes);
+  }
+
+  function creditBatches(name: string, size: string) {
+    const nameKey = name.trim().toLowerCase();
+    const sizeKey = size.trim().toLowerCase();
+    const batches = new Set<string>();
+    if (!nameKey || !sizeKey) return [];
+    if (invoiceNo) {
+      selectedInvoiceRows.forEach((row) => {
+        if (lineName(row).toLowerCase() !== nameKey) return;
+        if (lineSize(row).toLowerCase() !== sizeKey) return;
+        const batch = String(row.batchNo || "").trim();
+        if (batch) batches.add(batch);
+      });
+    } else {
+    getStorePurchasesFromCompanySales(currentStoreId).forEach((row: any) => {
+      const rowName = String(row.product || row.productName || "").trim().toLowerCase();
+      const rowSize = String(row.packSize || row.pkgsize || row.size || "").trim().toLowerCase();
+      if (rowName !== nameKey || rowSize !== sizeKey) return;
+      const batch = String(row.batchNo || "").trim();
+      if (batch && batch !== "-") batches.add(batch);
+    });
+    }
+    return Array.from(batches).filter(
+      (batch) =>
+        !added.some(
+          (item) =>
+            item.productName.trim().toLowerCase() === nameKey &&
+            item.pkgsize.trim().toLowerCase() === sizeKey &&
+            item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
+        ),
+    );
+  }
+
+  function expiryForBatch(name: string, size: string, batch: string) {
+    const nameKey = name.trim().toLowerCase();
+    const sizeKey = size.trim().toLowerCase();
+    if (invoiceNo) {
+      const row = selectedInvoiceRows.find(
+        (item) =>
+          lineName(item).toLowerCase() === nameKey &&
+          lineSize(item).toLowerCase() === sizeKey &&
+          String(item.batchNo || "").trim() === batch,
+      );
+      return String(row?.expiryDate || "");
+    }
+    const purchase = getStorePurchasesFromCompanySales(currentStoreId).find(
+      (row: any) => {
+        const rowName = String(row.product || row.productName || "")
+          .trim()
+          .toLowerCase();
+        const rowSize = String(row.packSize || row.pkgsize || row.size || "")
+          .trim()
+          .toLowerCase();
+        return (
+          rowName === nameKey &&
+          rowSize === sizeKey &&
+          String(row.batchNo || "").trim() === batch
+        );
+      },
+    );
+    return String(purchase?.expiryDate || "");
+  }
+
+  function applyCreditLine(name: string, size: string, batch: string) {
+    if (invoiceNo) {
+      const index = selectedInvoiceRows.findIndex((row) => {
+        if (lineName(row).toLowerCase() !== name.trim().toLowerCase()) return false;
+        if (lineSize(row).toLowerCase() !== size.trim().toLowerCase()) return false;
+        return !batch || String(row.batchNo || "").trim() === batch;
+      });
+      if (index >= 0) {
+        selectProduct(String(index));
+        return;
+      }
+    }
+    const catalog = catalogRows.find(
+      (row) =>
+        row.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        row.size.trim().toLowerCase() === size.trim().toLowerCase(),
+    );
+    setEntry((current) => ({
+      ...current,
+      productName: name,
+      productId: catalog?.id || "",
+      pkgsize: size,
+      batchNo: batch,
+      expiryDate: expiryForBatch(name, size, batch) || catalog?.expiryDate || "",
+      quantity: size ? (current.quantity > 0 ? current.quantity : 1) : 0,
+      sellingPrice: catalog ? Number(catalog.price || 0) : 0,
+    }));
+  }
+
+  function chooseCreditProduct(name: string) {
+    const sizes = creditSizes(name);
+    const size = sizes.length === 1 ? sizes[0] : "";
+    const batches = size ? creditBatches(name, size) : [];
+    if (!size) {
+      setEntry((current) => ({
+        ...current,
+        productName: name,
+        productId: "",
+        pkgsize: "",
+        batchNo: "",
+        expiryDate: "",
+        quantity: 0,
+        sellingPrice: 0,
+      }));
+      return;
+    }
+    applyCreditLine(name, size, batches.length === 1 ? batches[0] : "");
+  }
+
+  function chooseCreditSize(size: string) {
+    const batches = creditBatches(entry.productName, size);
+    applyCreditLine(entry.productName, size, batches.length === 1 ? batches[0] : "");
+  }
+
+  function chooseCreditBatch(batch: string) {
+    applyCreditLine(entry.productName, entry.pkgsize, batch);
+  }
+
+  function comboAlreadyAdded(name: string, size: string, batch: string) {
+    return added.some(
+      (item) =>
+        item.productName.trim().toLowerCase() === name.trim().toLowerCase() &&
+        item.pkgsize.trim().toLowerCase() === size.trim().toLowerCase() &&
+        item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
+    );
+  }
+
+  function maxCreditQuantity(
+    name = entry.productName,
+    size = entry.pkgsize,
+    batch = entry.batchNo,
+  ) {
+    if (!name || !size || !batch) return 0;
+    const pending = added
+      .filter(
+        (item) =>
+          item.productName.trim().toLowerCase() === name.trim().toLowerCase() &&
+          item.pkgsize.trim().toLowerCase() === size.trim().toLowerCase() &&
+          item.batchNo.trim().toLowerCase() === batch.trim().toLowerCase(),
+      )
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    if (invoiceNo) {
+      const row = selectedInvoiceRows.find(
+        (item) =>
+          lineName(item).toLowerCase() === name.trim().toLowerCase() &&
+          lineSize(item).toLowerCase() === size.trim().toLowerCase() &&
+          String(item.batchNo || "").trim() === batch,
+      );
+      if (!row) return 0;
+      const already = creditNotes
+        .filter(
+          (note) =>
+            note.creditNoteNo !== editingCreditNo &&
+            note.invoiceNo === invoiceNo &&
+            note.product === lineName(row) &&
+            note.batchNo === String(row.batchNo || "") &&
+            note.status !== "Rejected" &&
+            note.status !== "Draft",
+        )
+        .reduce((sum, note) => sum + Number(note.quantity || 0), 0);
+      return Math.max(0, Number(row.quantity || 0) - already - pending);
+    }
+    const catalog = catalogRows.find(
+      (item) =>
+        item.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+        item.size.trim().toLowerCase() === size.trim().toLowerCase(),
+    );
+    if (!catalog) return 0;
+    return Math.max(
+      0,
+      getStoreAvailableQty(currentStoreId, catalog.id, size, batch, name) - pending,
+    );
+  }
+
   function addProduct() {
     if (!canAdd) return;
+    if (comboAlreadyAdded(entry.productName, entry.pkgsize, entry.batchNo)) {
+      window.alert(
+        "This product, package size, and batch is already on the credit note.",
+      );
+      return;
+    }
+    if (entry.quantity > maxCreditQuantity()) {
+      window.alert(
+        `Only ${maxCreditQuantity()} quantity is available for this batch.`,
+      );
+      return;
+    }
 
     const saleRow = invoiceNo
       ? selectedInvoiceRows[Number(entry.productId)]
@@ -422,7 +660,9 @@ export default function StoreCreditNotes({
             note.invoiceNo === invoiceNo &&
             note.product === (saleRow.product?.name || "") &&
             note.batchNo === saleRow.batchNo &&
-            note.status !== "Rejected",
+            note.status !== "Rejected" &&
+            note.status !== "Draft" &&
+            note.creditNoteNo !== editingCreditNo,
         )
         .reduce((sum, note) => sum + Number(note.quantity || 0), 0);
 
@@ -476,6 +716,7 @@ export default function StoreCreditNotes({
     setAdded((prev) => [...prev, newItem]);
 
     setEntry({
+      productName: "",
       productId: "",
       pkgsize: "",
       batchNo: "",
@@ -514,6 +755,48 @@ export default function StoreCreditNotes({
         (item.storeId || item.party) === (row.storeId || row.party) &&
         item.Date === row.Date,
     );
+    if (row.status === "Draft") {
+      const lines = (relatedRows.length > 0 ? relatedRows : [row]).filter(
+        (item) => item.product,
+      );
+      setSelectesdreditNote(null);
+      setEditingCreditNo(row.creditNoteNo);
+      setCreditNoteNo(row.creditNoteNo);
+      setReturnDate(row.Date || "");
+      setInvoiceNo(row.invoiceNo || "");
+      setFarmerName(row.party === "Draft" ? "" : row.party);
+      setFarmerPhone(row.farmerPhone || "");
+      setFarmerVillage(row.farmerVillage || "");
+      setFarmerCrop(row.farmerCrop || "");
+      setFarmerAcre(row.farmerAcre || "");
+      setPlaceOfSupply(row.storeLocation || "Tamil Nadu");
+      setRemarks(lines[0]?.reason || "");
+      setAdded(
+        lines.map((item) => ({
+          key: item.id,
+          productId: item.catalogProductId || "",
+          productName: item.product || "",
+          catalogProductId: item.catalogProductId,
+          pkgsize: item.pkgsize || "",
+          batchNo: item.batchNo || "",
+          expiryDate: item.expiryDate || "",
+          quantity: Number(item.quantity || 0),
+          sellingPrice: Number(item.sellingPrice || 0),
+          discount: Number(item.discountPercent || 0),
+          reason: item.reason || "",
+          soldQuantity: Number(item.quantity || 0),
+          taxPercent: Number(item.taxPercent || 0),
+          discountAmount: Number(item.discountAmount || 0),
+          taxableAmount: Number(item.taxableAmount || item.amount || 0),
+          sgst: Number(item.sgst || 0),
+          cgst: Number(item.cgst || 0),
+          igst: Number(item.igst || 0),
+          total: Number(item.total || 0),
+        })),
+      );
+      setShowCreate(true);
+      return;
+    }
 
     setSelectesdreditNote({
       header: row,
@@ -536,7 +819,9 @@ export default function StoreCreditNotes({
     setThrough("Direct");
     setExecutiveName("");
     setRemarks("");
+    setEditingCreditNo("");
     setEntry({
+      productName: "",
       productId: "",
       pkgsize: "",
       batchNo: "",
@@ -549,33 +834,40 @@ export default function StoreCreditNotes({
     setAdded([]);
   }
 
-  function handleSaveDraft() {
-    if (!storeId || !invoiceNo || !creditNoteNo) return;
-    // TODO: persist as a draft (status: 'Pending') via your API / store
-    console.log("Saved as draft", {
-      returnDate,
-      invoiceNo,
-      storeId,
-      placeOfSupply,
-      remarks,
-      added,
-      totals,
-    });
-    closeForm();
-  }
-
-  function handleCreate() {
-    if (!canCreate || !selectedStore || !farmerName) {
-      return;
-    }
-    const allocatedNo = nextCreditNo();
-
+  function persistCreditNote(status: "Draft" | "Pending") {
+    if (!selectedStore || !creditNoteNo) return;
+    if (status === "Pending" && (!canCreate || !farmerName)) return;
+    const allocatedNo = editingCreditNo || creditNoteNo;
     const createdAt = new globalThis.Date().getTime();
-
-    const storeRows: CreditNote[] = added.map((item, index) => ({
+    const lines = added.length
+      ? added
+      : [
+          {
+            key: "header",
+            productId: "",
+            productName: "",
+            catalogProductId: "",
+            pkgsize: "",
+            batchNo: "",
+            expiryDate: "",
+            quantity: 0,
+            sellingPrice: 0,
+            discount: 0,
+            reason: remarks,
+            soldQuantity: 0,
+            taxPercent: 0,
+            discountAmount: 0,
+            taxableAmount: 0,
+            sgst: 0,
+            cgst: 0,
+            igst: 0,
+            total: 0,
+          },
+        ];
+    const storeRows: CreditNote[] = lines.map((item, index) => ({
       id: `${allocatedNo}-${item.key}-${createdAt}-${index}`,
       creditNoteNo: allocatedNo,
-      party: farmerName,
+      party: farmerName || "Draft",
       Date: returnDate,
       amount: item.taxableAmount,
       sgst: item.sgst,
@@ -583,14 +875,13 @@ export default function StoreCreditNotes({
       igst: item.igst,
       total: item.total,
       storeLocation: placeOfSupply || selectedStore.location || "",
-      placeofreturn:
-        farmerVillage || selectedStore.location?.split(",")[0] || "",
+      placeofreturn: farmerVillage || selectedStore.location?.split(",")[0] || "",
       storeId: selectedStore.id,
       product: item.productName,
       catalogProductId: item.catalogProductId || "",
       quantity: item.quantity,
-      reason: item.reason || remarks || "Product Return",
-      status: "Pending",
+      reason: item.reason || remarks || "",
+      status,
       invoiceNo,
       pkgsize: item.pkgsize,
       batchNo: item.batchNo,
@@ -604,20 +895,35 @@ export default function StoreCreditNotes({
       farmerVillage,
       farmerCrop,
       farmerAcre,
-      through: "Direct",
+      through: "Direct" as const,
       executiveName: "",
     }));
-
-    const next = [...storeRows, ...creditNotes];
+    const next = [
+      ...storeRows,
+      ...creditNotes.filter((note) => note.creditNoteNo !== allocatedNo),
+    ];
     setCreditNotes(next);
-
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {}
     rememberStoreDocumentNo(currentStore?.code || "ST", "CN", allocatedNo);
-    window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
-
+    if (status === "Pending") {
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    }
     closeForm();
+    if (status === "Draft") window.alert("Credit Note saved as draft.");
+  }
+
+  function handleSaveDraft() {
+    if (!creditNoteNo) return;
+    persistCreditNote("Draft");
+  }
+
+  function handleCreate() {
+    if (!canCreate || !selectedStore || !farmerName) {
+      return;
+    }
+    persistCreditNote("Pending");
   }
 
   const DetailField = ({ label, value }: any) => (
@@ -1622,6 +1928,7 @@ export default function StoreCreditNotes({
                         setInvoiceNo(value);
                         setAdded([]);
                         setEntry({
+                          productName: "",
                           productId: "",
                           pkgsize: "",
                           batchNo: "",
@@ -1729,53 +2036,63 @@ export default function StoreCreditNotes({
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-3 items-end">
                       <Select
                         label="Select Product"
-                        value={entry.productId}
-                        onChange={selectProduct}
+                        value={entry.productName}
+                        onChange={chooseCreditProduct}
                         placeholder="Select"
-                        options={
-                          invoiceNo
-                            ? selectedInvoiceRows.map((row, index) => ({
-                                value: String(index),
-                                label: `${row.product?.name || "Product"} — ${
-                                  row.pkgsize ||
-                                  row.packSize ||
-                                  row.product?.size ||
-                                  ""
-                                }`,
-                              }))
-                            : catalogRows.map((product) => ({
-                                value: product.id,
-                                label: `${product.name}${
-                                  product.size ? ` — ${product.size}` : ""
-                                }`,
-                              }))
-                        }
+                        options={creditProductNames().map((name) => ({
+                          value: name,
+                          label: name,
+                        }))}
                       />
 
-                      <Select
-                        label="PKG Size"
-                        value={entry.pkgsize}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, pkgsize: v }))
-                        }
-                        placeholder="Select size"
-                        options={
-                          entry.pkgsize
-                            ? [{ value: entry.pkgsize, label: entry.pkgsize }]
-                            : []
-                        }
-                      />
+                      {creditSizes(entry.productName).length > 1 ? (
+                        <Select
+                          label="PKG Size"
+                          value={entry.pkgsize}
+                          onChange={chooseCreditSize}
+                          placeholder="Select size"
+                          options={creditSizes(entry.productName).map((size) => ({
+                            value: size,
+                            label: size,
+                          }))}
+                        />
+                      ) : (
+                        <Input
+                          label="PKG Size"
+                          value={entry.pkgsize}
+                          onChange={() => {}}
+                          placeholder="Auto"
+                          readOnly
+                        />
+                      )}
 
-                      <Input
-                        label="Batch No"
-                        value={entry.batchNo}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, batchNo: v }))
-                        }
-                        placeholder={invoiceNo ? "Auto from invoice" : "Batch"}
-                        readOnly={Boolean(invoiceNo)}
-                        required
-                      />
+                      {creditBatches(entry.productName, entry.pkgsize).length > 1 ? (
+                        <Select
+                          label="Batch No"
+                          value={entry.batchNo}
+                          onChange={chooseCreditBatch}
+                          placeholder="Select batch"
+                          options={creditBatches(entry.productName, entry.pkgsize).map(
+                            (batch) => ({ value: batch, label: batch }),
+                          )}
+                          required
+                        />
+                      ) : (
+                        <Input
+                          label="Batch No"
+                          value={entry.batchNo}
+                          onChange={(v) =>
+                            creditBatches(entry.productName, entry.pkgsize).length === 0
+                              ? setEntry((p) => ({ ...p, batchNo: v }))
+                              : undefined
+                          }
+                          placeholder={entry.pkgsize ? "Auto" : "Select size first"}
+                          readOnly={
+                            creditBatches(entry.productName, entry.pkgsize).length === 1
+                          }
+                          required
+                        />
+                      )}
 
                       <Input
                         label="Expiry Date"
@@ -1792,9 +2109,14 @@ export default function StoreCreditNotes({
                         label="Quantity"
                         type="number"
                         value={String(entry.quantity)}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, quantity: Number(v) || 0 }))
-                        }
+                        onChange={(v) => {
+                          const next = Math.max(0, Number(v) || 0);
+                          const max = maxCreditQuantity();
+                          setEntry((p) => ({
+                            ...p,
+                            quantity: max > 0 ? Math.min(next, max) : 0,
+                          }));
+                        }}
                       />
 
                       <Input
@@ -2066,7 +2388,7 @@ export default function StoreCreditNotes({
                 <Button
                   variant="secondary"
                   onClick={handleSaveDraft}
-                  disabled={!storeId || !invoiceNo || !creditNoteNo}
+                  disabled={!creditNoteNo}
                 >
                   <Icon name="save" size={18} />
                   Save Draft

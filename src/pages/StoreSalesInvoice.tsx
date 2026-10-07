@@ -14,11 +14,13 @@ import {
   getStorePurchasesFromCompanySales,
   getFROStockByExecutive,
   getStoreAvailableQty,
+  getStaffByStore,
   reduceFROStock,
   nextStoreDocumentNo,
   rememberStoreDocumentNo,
   type Product,
 } from "@/lib/data";
+import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
@@ -130,6 +132,15 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_KEY}:${storeId}`;
   const store = getStore(storeId);
   const storeFarmers = useMemo(() => getFarmersByStore(storeId), [storeId]);
+  const storeExecutives = useMemo(
+    () =>
+      getStaffByStore(storeId)
+        .filter((member) => member.status !== "Inactive")
+        .filter((member) => roleForStaffDesignation(member.designation) === "fro")
+        .map((member) => member.name.trim())
+        .filter(Boolean),
+    [storeId],
+  );
 
   const [rows, setRows] = useState<SaleRow[]>(() => {
     try {
@@ -475,13 +486,28 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     return Math.min(Math.floor(parsed), Math.max(0, max));
   }
 
+  function batchesForEntrySize(size: string) {
+    const seen = new Map<string, (typeof selectedSizeVariants)[number]>();
+    selectedSizeVariants
+      .filter((item) => item.size === size && String(item.batchNo || "").trim())
+      .forEach((item) => {
+        const key = String(item.batchNo).trim().toLowerCase();
+        if (!seen.has(key)) seen.set(key, item);
+      });
+    return Array.from(seen.values());
+  }
+
   function selectProductSize(size: string) {
-    const variant = selectedSizeVariants.find((item) => item.size === size);
+    const batches = batchesForEntrySize(size);
+    const variant = batches.length === 1 ? batches[0] : undefined;
+    const fallback = selectedSizeVariants.find((item) => item.size === size);
     setEntry((prev) => {
-      const productId = variant?.productId || prev.productId;
+      const productId = variant?.productId || fallback?.productId || prev.productId;
       const batchNo = variant?.batchNo || "";
       const expiryDate = variant?.expiryDate || "";
-      const max = maxEntryQty(productId, size, batchNo, expiryDate);
+      const max = batchNo
+        ? maxEntryQty(productId, size, batchNo, expiryDate)
+        : 0;
       const current = prev.quantity > 0 ? prev.quantity : 1;
       return {
         ...prev,
@@ -489,8 +515,31 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
         pkgsize: size,
         batchNo,
         expiryDate,
-        sellingPrice: variant?.sellingPrice || 0,
-        quantity: Math.min(current, max),
+        sellingPrice: variant?.sellingPrice || fallback?.sellingPrice || 0,
+        quantity: batchNo ? Math.min(current, max) : 0,
+      };
+    });
+  }
+
+  function selectEntryBatch(batchNo: string) {
+    const variant = selectedSizeVariants.find(
+      (item) => item.size === entry.pkgsize && item.batchNo === batchNo,
+    );
+    if (!variant) return;
+    setEntry((prev) => {
+      const max = maxEntryQty(
+        variant.productId,
+        prev.pkgsize,
+        batchNo,
+        variant.expiryDate,
+      );
+      return {
+        ...prev,
+        productId: variant.productId,
+        batchNo,
+        expiryDate: variant.expiryDate,
+        sellingPrice: variant.sellingPrice || 0,
+        quantity: Math.min(prev.quantity > 0 ? prev.quantity : 1, max),
       };
     });
   }
@@ -1437,11 +1486,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                           setAdded([]);
                         }}
                         placeholder="Select executive"
-                        options={[
-                          { value: "Ram Kumar", label: "Ram Kumar" },
-                          { value: "Ajith Kumar", label: "Ajith Kumar" },
-                          { value: "PeriyaSamy", label: "PeriyaSamy" },
-                        ]}
+                        options={storeExecutives.map((name) => ({
+                          value: name,
+                          label: name,
+                        }))}
                         required
                       />
                     )}
@@ -1482,13 +1530,26 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         )}
                       />
 
-                      <Input
-                        label="Batch No"
-                        value={entry.batchNo}
-                        onChange={() => {}}
-                        placeholder="Auto from stock"
-                        readOnly
-                      />
+                      {batchesForEntrySize(entry.pkgsize).length > 1 ? (
+                        <Select
+                          label="Batch ID"
+                          value={entry.batchNo}
+                          onChange={selectEntryBatch}
+                          placeholder="Select batch"
+                          options={batchesForEntrySize(entry.pkgsize).map((item) => ({
+                            value: item.batchNo,
+                            label: item.batchNo,
+                          }))}
+                        />
+                      ) : (
+                        <Input
+                          label="Batch ID"
+                          value={entry.batchNo}
+                          onChange={() => {}}
+                          placeholder={entry.pkgsize ? "Auto" : "Select size first"}
+                          readOnly
+                        />
+                      )}
 
                       <Input
                         label="Expiry Date"
@@ -1917,11 +1978,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                             setAdded([]);
                           }}
                           placeholder="Select executive"
-                          options={[
-                            { value: "Ram Kumar", label: "Ram Kumar" },
-                            { value: "Ajith Kumar", label: "Ajith Kumar" },
-                            { value: "PeriyaSamy", label: "PeriyaSamy" },
-                          ]}
+                          options={storeExecutives.map((name) => ({
+                            value: name,
+                            label: name,
+                          }))}
                           required
                         />
                       )}
@@ -1964,13 +2024,26 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                           )}
                         />
 
-                        <Input
-                          label="Batch No"
-                          value={entry.batchNo}
-                          onChange={() => {}}
-                          placeholder="Auto from stock"
-                          readOnly
-                        />
+                        {batchesForEntrySize(entry.pkgsize).length > 1 ? (
+                          <Select
+                            label="Batch ID"
+                            value={entry.batchNo}
+                            onChange={selectEntryBatch}
+                            placeholder="Select batch"
+                            options={batchesForEntrySize(entry.pkgsize).map((item) => ({
+                              value: item.batchNo,
+                              label: item.batchNo,
+                            }))}
+                          />
+                        ) : (
+                          <Input
+                            label="Batch ID"
+                            value={entry.batchNo}
+                            onChange={() => {}}
+                            placeholder={entry.pkgsize ? "Auto" : "Select size first"}
+                            readOnly
+                          />
+                        )}
 
                         <Input
                           label="Expiry Date"

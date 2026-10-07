@@ -18,6 +18,9 @@ type AttendanceRecord = {
   date: string;
   checkIn: string;
   checkOut: string;
+  checkInAt?: string;
+  checkOutAt?: string;
+  workedDuration?: string;
   status: AttendanceStatus;
   note: string;
 };
@@ -73,47 +76,122 @@ export function hasCheckedOutToday(storeId: string, staffId: string) {
   return Boolean(findTodayAttendance(storeId, staffId)?.checkOut);
 }
 
+function attendanceStartMs(record: AttendanceRecord) {
+  if (record.checkInAt) {
+    const parsed = new Date(record.checkInAt).getTime();
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  const [hour, minute, second] = String(record.checkIn || "0:0:0")
+    .split(":")
+    .map(Number);
+  const [year, month, day] = String(record.date || isoDate(new Date()))
+    .split("-")
+    .map(Number);
+  return new Date(
+    year || 0,
+    (month || 1) - 1,
+    day || 1,
+    hour || 0,
+    minute || 0,
+    second || 0,
+    0,
+  ).getTime();
+}
+
+export function elapsedSinceCheckIn(
+  record: AttendanceRecord,
+  now = Date.now(),
+) {
+  return formatWorkedDuration(now - attendanceStartMs(record));
+}
+
+export function formatWorkedDuration(milliseconds: number) {
+  const total = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+export function formatAttendanceTime(record: AttendanceRecord, field: "in" | "out") {
+  const iso = field === "in" ? record.checkInAt : record.checkOutAt;
+  const parsed = iso ? new Date(iso) : null;
+  const date =
+    parsed && !Number.isNaN(parsed.getTime())
+      ? parsed
+      : (() => {
+          const clock = field === "in" ? record.checkIn : record.checkOut;
+          if (!clock) return null;
+          const [hour, minute] = clock.split(":").map(Number);
+          const next = new Date();
+          next.setHours(hour || 0, minute || 0, 0, 0);
+          return next;
+        })();
+  if (!date) return "-";
+  const hours24 = date.getHours();
+  const suffix = hours24 >= 12 ? "PM" : "AM";
+  const hours12 = hours24 % 12 || 12;
+  return `${String(hours12).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")} ${suffix}`;
+}
+
+export function findOpenAttendance(storeId: string, staffId: string) {
+  if (!storeId || !staffId) return null;
+  return (
+    readAttendance(storeId).find(
+      (row) => row?.staffId === staffId && row.checkIn && !row.checkOut,
+    ) || null
+  );
+}
+
+export function latestStaffAttendance(storeId: string, staffId: string) {
+  if (!storeId || !staffId) return null;
+  const open = findOpenAttendance(storeId, staffId);
+  if (open) return open;
+  return (
+    readAttendance(storeId)
+      .filter((row) => row?.staffId === staffId && row.checkIn)
+      .sort((a, b) =>
+        String(b.checkInAt || b.date).localeCompare(String(a.checkInAt || a.date)),
+      )[0] || null
+  );
+}
+
 export function checkInStaff(storeId: string, staffId: string) {
   if (!storeId || !staffId) return false;
-  const today = isoDate(new Date());
+  if (findOpenAttendance(storeId, staffId)) return false;
+  const now = new Date();
+  const today = isoDate(now);
   const rows = readAttendance(storeId);
-  const index = rows.findIndex(
-    (row) => row?.staffId === staffId && row?.date === today,
-  );
-  if (index >= 0) {
-    if (rows[index].checkIn) return false;
-    rows[index] = {
-      ...rows[index],
-      checkIn: currentTime(),
-      status: rows[index].checkOut ? "Checked Out" : "Checked In",
-      note: rows[index].note || "Checked in",
-    };
-  } else {
-    rows.unshift({
-      id: `${staffId}-${today}`,
-      staffId,
-      date: today,
-      checkIn: currentTime(),
-      checkOut: "",
-      status: "Checked In",
-      note: "Checked in",
-    });
-  }
+  rows.unshift({
+    id: `${staffId}-${today}-${now.getTime()}`,
+    staffId,
+    date: today,
+    checkIn: currentTime(),
+    checkOut: "",
+    checkInAt: now.toISOString(),
+    status: "Checked In",
+    note: "Checked in",
+  });
   writeAttendance(storeId, rows);
   return true;
 }
 
 export function checkOutStaff(storeId: string, staffId: string) {
   if (!storeId || !staffId) return false;
-  const today = isoDate(new Date());
   const rows = readAttendance(storeId);
   const index = rows.findIndex(
-    (row) => row?.staffId === staffId && row?.date === today && row?.checkIn,
+    (row) => row?.staffId === staffId && row.checkIn && !row.checkOut,
   );
-  if (index < 0 || rows[index].checkOut) return false;
+  if (index < 0) return false;
+  const now = new Date();
+  const workedDuration = formatWorkedDuration(
+    now.getTime() - attendanceStartMs(rows[index]),
+  );
   rows[index] = {
     ...rows[index],
     checkOut: currentTime(),
+    checkOutAt: now.toISOString(),
+    workedDuration,
     status: "Checked Out",
     note: "Checked out",
   };

@@ -728,6 +728,9 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
                       formatCurrency(totals.stockValue).replace("₹", "Rs. "),
                     ],
                   })
+                    .then(() => {
+                      window.alert("PDF downloaded.");
+                    })
                     .catch(() => {
                       window.alert(
                         "The stock overview PDF could not be created. Please try again.",

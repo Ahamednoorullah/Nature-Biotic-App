@@ -276,9 +276,20 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
 
   function changeProduct(value: string) {
     const baseProduct = productMaster.find((item) => item.id === value);
-
+    const sizes = productMaster
+      .filter(
+        (item) =>
+          item.name === baseProduct?.name &&
+          item.unit === baseProduct?.unit &&
+          item.status === "Active",
+      )
+      .map((item) => item.size);
     setProduct(baseProduct?.id ?? "");
-    setPackSize(baseProduct?.size ?? "");
+    if (sizes.length === 1) {
+      setPackSize(sizes[0]);
+      return;
+    }
+    setPackSize("");
   }
 
   function changePackSize(value: string) {
@@ -514,12 +525,12 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
                         onChange={changePackSize}
                         placeholder={
                           selectedProduct
-                            ? `Select ${selectedProduct.unit} size`
+                            ? "Select size"
                             : "Select product first"
                         }
                         options={availablePackSizes.map((size) => ({
                           value: size,
-                          label: `${size} (${selectedProduct?.unit ?? ""})`,
+                          label: size,
                         }))}
                       />
                       <Input

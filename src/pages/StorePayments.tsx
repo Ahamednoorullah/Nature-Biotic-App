@@ -5,9 +5,8 @@ import type { Payment } from '@/lib/purchaseData';
 import { createPortal } from 'react-dom';
 import {
   companyRefundsUpdatedEvent,
-  getCompanyInvoiceCredits,
+  getCompanyStorePositions,
   getCompanyRefunds,
-  getFinalCompanyStoreSales,
 } from '@/lib/data';
 
 const vendors = ['Nature Biotic', 'Green Agro Suppliers', 'Sri Lakshmi Traders'];
@@ -30,14 +29,7 @@ function companyPaymentRows(storeId: string): Payment[] {
   } catch {
     receipts = [];
   }
-  const invoiceTotals = new Map<string, number>();
-  getFinalCompanyStoreSales()
-    .filter((sale) => sale.storeId === storeId)
-    .forEach((sale) => {
-      const key = String(sale.invoiceNo || '').trim().toLowerCase();
-      if (key) invoiceTotals.set(key, (invoiceTotals.get(key) || 0) + Number(sale.total || 0));
-    });
-  const collected = new Map<string, number>();
+  const invoiceDue = getCompanyStorePositions().get(storeId)?.invoiceDue;
   const paid: Payment[] = receipts
     .filter((row) => row?.storeId === storeId && Number(row.amount) > 0)
     .sort((a, b) =>
@@ -47,10 +39,8 @@ function companyPaymentRows(storeId: string): Payment[] {
     .map((row) => {
       const key = String(row.invoiceNo || '').trim().toLowerCase();
       const amount = Number(row.amount || 0);
-      const total = collected.get(key) ?? 0;
-      collected.set(key, total + amount);
-      const balance = invoiceTotals.has(key)
-        ? Math.max(0, invoiceTotals.get(key)! - getCompanyInvoiceCredits(storeId, key) - total - amount)
+      const balance = invoiceDue?.has(key)
+        ? invoiceDue.get(key) || 0
         : Math.max(0, Number(row.balanceAfter || 0));
       return {
         id: `company-receipt:${row.id || row.receiptNo}`,

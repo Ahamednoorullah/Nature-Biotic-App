@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { downloadDataTablePdf } from "@/lib/documentPdf";
 import {
   froOwnsTransaction,
   getFarmersByStore,
   getStore,
+  getStoreInvoiceOutstanding,
   nextStoreDocumentNo,
   rememberStoreDocumentNo,
 } from "@/lib/data";
@@ -52,50 +54,10 @@ type Receipt = {
 };
 
 const methods = ["Cash", "Bank Transfer", "UPI", "Cheque"];
-const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
-const STORE_CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
 
 function money(value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
-}
-
-function readStoredRows(key: string) {
-  try {
-    const raw = localStorage.getItem(key);
-    const rows = raw ? JSON.parse(raw) : [];
-    return Array.isArray(rows) ? rows : [];
-  } catch {
-    return [];
-  }
-}
-
-function invoiceDeductions(storeId: string, invoiceNo: string) {
-  const key = invoiceNo.trim().toLowerCase();
-  const returned = readStoredRows(`${STORE_RETURN_KEY}:${storeId}`).reduce(
-    (sum, row) => {
-      if (String(row.invoiceNo || "").trim().toLowerCase() !== key) return sum;
-      return sum + money(row.total);
-    },
-    0,
-  );
-  const credited = readStoredRows(`${STORE_CREDIT_KEY}:${storeId}`).reduce(
-    (sum, row) => {
-      if (row.status === "Rejected") return sum;
-      if (String(row.invoiceNo || "").trim().toLowerCase() !== key) return sum;
-      return sum + money(row.total);
-    },
-    0,
-  );
-  return returned + credited;
-}
-
-function collectedAgainst(receipts: Receipt[], invoiceNo: string) {
-  const key = invoiceNo.trim().toLowerCase();
-  return receipts.reduce((sum, receipt) => {
-    if (receipt.invoiceNo.trim().toLowerCase() !== key) return sum;
-    return sum + money(receipt.amount);
-  }, 0);
 }
 
 function receiptBalance(receipt: Receipt) {
@@ -150,6 +112,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   }, [saleInvoices, isFRO, user?.name]);
 
   const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [farmerFilter, setFarmerFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState<
     "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
@@ -184,14 +147,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       visibleSaleInvoices
         .map((invoice) => {
           const total = money(invoice.amount);
-          const net = Math.max(
-            0,
-            total - invoiceDeductions(storeId, invoice.invoiceNo),
-          );
-          const remaining = Math.max(
-            0,
-            net - collectedAgainst(createdReceipts, invoice.invoiceNo),
-          );
+          const remaining = getStoreInvoiceOutstanding(storeId, invoice.invoiceNo);
           return { invoice, total, remaining };
         })
         .filter((row) => row.remaining > 0),
@@ -275,11 +231,9 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     try {
       const latest = loadStoreReceipts();
       const total = money(selectedInvoice.amount);
-      const remaining = Math.max(
-        0,
-        total -
-          invoiceDeductions(storeId, selectedInvoice.invoiceNo) -
-          collectedAgainst(latest, selectedInvoice.invoiceNo),
+      const remaining = getStoreInvoiceOutstanding(
+        storeId,
+        selectedInvoice.invoiceNo,
       );
       if (amountReceived <= 0 || amountReceived > remaining) {
         savingRef.current = false;
@@ -406,6 +360,45 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
       return matchesSearch && matchesFarmer && matchesOwner && matchesDate(r.date);
     });
   }, [search, farmerFilter, dateFilter, customFrom, customTo, createdReceipts, isFRO, user]);
+
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const period =
+        dateFilter === "custom" && (customFrom || customTo)
+          ? `${customFrom || "Start"} to ${customTo || "Today"}`
+          : dateFilter === "all"
+            ? "All dates"
+            : dateFilter[0].toUpperCase() + dateFilter.slice(1);
+      const total = filtered.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      await downloadDataTablePdf({
+        fileName: "nature-biotic-receipts.pdf",
+        heading: "Nature Biotic",
+        title: "Collection Receipts",
+        storeName: getStore(storeId)?.name || "Store",
+        generatedOn: `Period: ${period} · Generated ${formatDate(new Date().toISOString().split("T")[0])}`,
+        headers: ["Receipt No", "Date", "Farmer", "Invoice", "Method", "Amount"],
+        aligns: ["left", "left", "left", "left", "left", "right"],
+        rows: filtered.map((row) => [
+          row.receiptNo,
+          formatDate(row.date),
+          row.farmerName,
+          row.invoiceNo,
+          row.method,
+          formatCurrency(row.amount).replace("₹", "Rs. "),
+        ]),
+        total: ["", "", "", "", "Total", formatCurrency(total).replace("₹", "Rs. ")],
+        emptyMessage: "No receipts match the current filters.",
+      });
+      window.alert("PDF downloaded.");
+    } catch {
+      window.alert("The PDF could not be created. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <>
       {isFRO ? (
@@ -456,11 +449,11 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   value={invoiceNo}
                   onChange={(value) => {
                     setInvoiceNo(value);
-                    const invoice = saleInvoices.find(
-                      (item) => item.invoiceNo === value,
+                    const choice = invoiceChoices.find(
+                      (item) => item.invoice.invoiceNo === value,
                     );
-                    setInvoiceAmount(invoice ? Number(invoice.amount || 0) : 0);
-                    setAmountReceived(0);
+                    setInvoiceAmount(choice ? Number(choice.invoice.amount || 0) : 0);
+                    setAmountReceived(choice ? choice.remaining : 0);
                   }}
                   placeholder="Select sales invoice"
                   options={invoiceOptions}
@@ -505,6 +498,12 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   label="Invoice Amount"
                   type="number"
                   value={String(invoiceAmount)}
+                  onChange={() => {}}
+                  readOnly
+                />
+                <Input
+                  label="Outstanding"
+                  value={formatCurrency(outstandingBefore)}
                   onChange={() => {}}
                   readOnly
                 />
@@ -693,8 +692,9 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.print()}
-                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-60"
                   aria-label="Export"
                 >
                   <Icon name="download" size={20} />
@@ -870,8 +870,8 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
               <Button onClick={openCreateForm}>
                 <Icon name="add" size={20} fill /> Create Receipt
               </Button>
-              <Button variant="secondary">
-                <Icon name="download" size={20} /> Export
+              <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+                <Icon name="download" size={20} /> {exporting ? "Exporting..." : "Export"}
               </Button>
             </div>
           </div>
@@ -1594,15 +1594,13 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                         value={invoiceNo}
                         onChange={(value) => {
                           setInvoiceNo(value);
-
-                          const invoice = saleInvoices.find(
-                            (item) => item.invoiceNo === value,
+                          const choice = invoiceChoices.find(
+                            (item) => item.invoice.invoiceNo === value,
                           );
-
                           setInvoiceAmount(
-                            invoice ? Number(invoice.amount || 0) : 0,
+                            choice ? Number(choice.invoice.amount || 0) : 0,
                           );
-                          setAmountReceived(0);
+                          setAmountReceived(choice ? choice.remaining : 0);
                         }}
                         placeholder="Select sales invoice"
                         options={invoiceOptions}
@@ -1656,6 +1654,13 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                         value={String(invoiceAmount)}
                         onChange={() => {}}
                         placeholder="Auto-filled from invoice"
+                        readOnly
+                      />
+
+                      <Input
+                        label="Outstanding"
+                        value={formatCurrency(outstandingBefore)}
+                        onChange={() => {}}
                         readOnly
                       />
 

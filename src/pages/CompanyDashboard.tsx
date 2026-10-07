@@ -8,6 +8,8 @@ import {
   getFinalCompanyStoreSales,
   getCompanyCreditNoteSyncRecords,
   getCompanyRefunds,
+  companyRefundParts,
+  getCompanyStorePositions,
   getApprovedStorePurchaseReturns,
   settleCompanyAccount,
   companyRefundsUpdatedEvent,
@@ -203,7 +205,7 @@ function buildAdminDashboard(filter: DateFilter) {
 
   const creditsByInvoice = new Map<string, number>();
   getCompanyCreditNoteSyncRecords().forEach((note) => {
-    if (note.status === "Rejected") return;
+    if (note.status === "Rejected" || note.status === "Draft") return;
     const invoiceNo = String(note.invoiceNo || note.purchaseRef || "")
       .trim()
       .toLowerCase();
@@ -297,17 +299,17 @@ function buildAdminDashboard(filter: DateFilter) {
   const refundsByStore = new Map<string, number>();
   getCompanyRefunds().forEach((refund) => {
     if (!inPeriod(refund.date, filter)) return;
-    const amount = money(refund.amount);
-    if (amount <= 0) return;
+    const parts = companyRefundParts(refund);
+    if (parts.paid <= 0) return;
     refundsByStore.set(
       refund.storeId,
-      (refundsByStore.get(refund.storeId) || 0) + amount,
+      (refundsByStore.get(refund.storeId) || 0) + parts.paid,
     );
     actualCollectionList.push({
       date: displayDate(refund.date),
       receiptNo: `Refund ${refund.refundNo || refund.referenceNo}`,
       storeName: refund.storeName || "-",
-      amount: -amount,
+      amount: -parts.paid,
     });
   });
 
@@ -330,71 +332,18 @@ function buildAdminDashboard(filter: DateFilter) {
     actualCollection += settled.collection;
   });
 
-  const lifetimeSales = new Map<string, { name: string; sales: number }>();
-  companyInvoices.forEach((invoice) => {
-    const invoiceKey = `${invoice.storeId}|${invoice.invoiceNo.trim().toLowerCase()}`;
-    const net = Math.max(
-      0,
-      invoice.total - (creditsByInvoice.get(invoiceKey) || 0),
-    );
-    const current = lifetimeSales.get(invoice.storeId) || {
-      name: invoice.storeName || "-",
-      sales: 0,
-    };
-    current.sales += net;
-    current.name = invoice.storeName || current.name;
-    lifetimeSales.set(invoice.storeId, current);
-  });
-  const lifetimeCollection = new Map<string, { name: string; amount: number }>();
-  companyReceipts.forEach((receipt) => {
-    const amount = money(receipt.amount);
-    if (amount <= 0) return;
-    const storeId = String(receipt.storeId || "");
-    const current = lifetimeCollection.get(storeId) || {
-      name: String(receipt.storeName || "-"),
-      amount: 0,
-    };
-    current.amount += amount;
-    current.name = String(receipt.storeName || current.name);
-    lifetimeCollection.set(storeId, current);
-  });
-  const lifetimeReturns = new Map<string, { name: string; amount: number }>();
-  purchaseReturns.forEach((row) => {
-    if (row.amount <= 0) return;
-    const current = lifetimeReturns.get(row.storeId) || {
-      name: row.storeName || "-",
-      amount: 0,
-    };
-    current.amount += row.amount;
-    lifetimeReturns.set(row.storeId, current);
-  });
   let actualOutstanding = 0;
-  const lifetimeStoreIds = new Set<string>([
-    ...lifetimeSales.keys(),
-    ...lifetimeCollection.keys(),
-    ...lifetimeReturns.keys(),
-  ]);
-  lifetimeStoreIds.forEach((storeId) => {
-    const salesRow = lifetimeSales.get(storeId);
-    const collectionRow = lifetimeCollection.get(storeId);
-    const returnRow = lifetimeReturns.get(storeId);
-    const storeName =
-      salesRow?.name || collectionRow?.name || returnRow?.name || "-";
-    const settled = settleCompanyAccount({
-      grossSales: salesRow?.sales || 0,
-      salesReturns: returnRow?.amount || 0,
-      receipts: collectionRow?.amount || 0,
-      refunds: 0,
-    });
-    actualOutstanding += settled.outstanding;
-    if (settled.outstanding <= 0) return;
+  getCompanyStorePositions().forEach((position) => {
+    actualOutstanding += position.outstanding;
+    if (position.outstanding <= 0) return;
+    const storeName = position.storeName || "-";
     outstandingMap.set(storeName, {
       storeName,
-      under30: settled.outstanding,
+      under30: position.outstanding,
       over30: 0,
       over60: 0,
       over90: 0,
-      totalAmount: settled.outstanding,
+      totalAmount: position.outstanding,
     });
   });
 
@@ -411,7 +360,7 @@ function buildAdminDashboard(filter: DateFilter) {
         .filter(Boolean),
     );
     const includedReturns = [...returns, ...credits].filter((row) => {
-      if (row.status === "Rejected") return false;
+      if (row.status === "Rejected" || row.status === "Draft") return false;
       const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
       return inPeriod(row.date || row.returnDate, filter) || invoiceNos.has(invoiceNo);
     });
@@ -436,15 +385,17 @@ function buildAdminDashboard(filter: DateFilter) {
       returns: includedReturns,
       refunds,
       linkInvoices: invoices,
-      linkReturns: [...returns, ...credits],
+      linkReturns: [...returns, ...credits].filter((row) => row.status !== "Draft"),
     });
     const current = settleLinkedFarmerAccounts({
       invoices,
       receipts,
-      returns: [...returns, ...credits].filter((row) => row.status !== "Rejected"),
+      returns: [...returns, ...credits].filter(
+        (row) => row.status !== "Rejected" && row.status !== "Draft",
+      ),
       refunds: readRows(`nature-biotic-store-refunds-v2:${store.id}`),
       linkInvoices: invoices,
-      linkReturns: [...returns, ...credits],
+      linkReturns: [...returns, ...credits].filter((row) => row.status !== "Draft"),
     });
 
     return {
@@ -473,7 +424,7 @@ function buildAdminDashboard(filter: DateFilter) {
       );
     });
     credits.forEach((row) => {
-      if (row.status === "Rejected") return;
+      if (row.status === "Rejected" || row.status === "Draft") return;
       const invoiceNo = String(row.invoiceNo || "")
         .trim()
         .toLowerCase();

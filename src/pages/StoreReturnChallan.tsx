@@ -8,7 +8,11 @@ import {
   recordAcceptedStoreReturn,
   persistFROReturnAccepted,
   readStoreFROStockReturns,
+  getStorePurchasesFromCompanySales,
+  getStoreAvailableQty,
+  getStaffByStore,
 } from "@/lib/data";
+import { roleForStaffDesignation } from "@/lib/auth/roles";
 
 type ReturnItem = {
   product: string;
@@ -67,7 +71,6 @@ type FROReturnRequest = {
   items: FROReturnRequestItem[];
 };
 
-const executives = ["Ram Kumar", "Ajith Kumar", "PeriyaSamy"];
 const STORAGE_PREFIX = "nature-biotic-store-return-challans-v2";
 
 function emptyItems(): ReturnItem[] {
@@ -96,6 +99,15 @@ function loadRows(storageKey: string): ReturnChallan[] {
 
 export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
+  const executives = useMemo(
+    () =>
+      getStaffByStore(storeId)
+        .filter((member) => member.status !== "Inactive")
+        .filter((member) => roleForStaffDesignation(member.designation) === "fro")
+        .map((member) => member.name.trim())
+        .filter(Boolean),
+    [storeId],
+  );
 
   const [rows, setRows] = useState<ReturnChallan[]>(() => {
     const saved = loadRows(storageKey);
@@ -457,6 +469,130 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   function updateItem(index: number, key: keyof ReturnItem, value: string) {
     setItems((prev) =>
       prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)),
+    );
+  }
+
+  function returnProductNames() {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    allProducts.forEach((product) => {
+      if (product.status === "Inactive") return;
+      const name = String(product.name || "").trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) return;
+      seen.add(key);
+      names.push(name);
+    });
+    return names;
+  }
+
+  function returnSizes(name: string) {
+    const key = name.trim().toLowerCase();
+    const sizes = new Set<string>();
+    allProducts.forEach((product) => {
+      if (product.status === "Inactive") return;
+      if (String(product.name || "").trim().toLowerCase() !== key) return;
+      const size = String(product.size || "").trim();
+      if (size) sizes.add(size);
+    });
+    return Array.from(sizes);
+  }
+
+  function returnBatches(name: string, size: string) {
+    const nameKey = name.trim().toLowerCase();
+    const sizeKey = size.trim().toLowerCase();
+    const found = new Map<
+      string,
+      { batchNo: string; expiry: string; productId: string; price: number }
+    >();
+    if (!nameKey || !sizeKey) return [];
+    getStorePurchasesFromCompanySales(storeId).forEach((purchase: any) => {
+      const rowName = String(purchase.product || "").trim().toLowerCase();
+      const rowSize = String(purchase.packSize || purchase.pkgsize || "")
+        .trim()
+        .toLowerCase();
+      if (rowName !== nameKey || rowSize !== sizeKey) return;
+      const batchNo = String(purchase.batchNo || "").trim();
+      if (!batchNo || batchNo === "-") return;
+      const master = allProducts.find(
+        (product) =>
+          String(product.name || "").trim().toLowerCase() === nameKey &&
+          String(product.size || "").trim().toLowerCase() === sizeKey,
+      );
+      const available = getStoreAvailableQty(
+        storeId,
+        String(master?.id || purchase.productId || ""),
+        size,
+        batchNo,
+        name,
+      );
+      if (available <= 0 || found.has(batchNo)) return;
+      found.set(batchNo, {
+        batchNo,
+        expiry: String(purchase.expiryDate || ""),
+        productId: String(master?.id || purchase.productId || ""),
+        price: Number(master?.sellingPrice || 0),
+      });
+    });
+    return Array.from(found.values());
+  }
+
+  function applyReturnSelection(
+    index: number,
+    name: string,
+    size: string,
+    batchNo: string,
+  ) {
+    const batches = size ? returnBatches(name, size) : [];
+    const batch =
+      batches.find((item) => item.batchNo === batchNo) ||
+      (batches.length === 1 ? batches[0] : undefined);
+    const master = allProducts.find(
+      (product) =>
+        String(product.name || "").trim().toLowerCase() ===
+          name.trim().toLowerCase() &&
+        (!size ||
+          String(product.size || "").trim().toLowerCase() ===
+            size.trim().toLowerCase()),
+    );
+    setItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? {
+              ...item,
+              product: name,
+              productId: batch?.productId || master?.id || "",
+              packSize: size,
+              batchNo: batch?.batchNo || "",
+              expiryDate: batch?.expiry || "",
+              unitValue: String(batch?.price || master?.sellingPrice || 0),
+              issuedQty: "",
+              returnedQty: "",
+            }
+          : item,
+      ),
+    );
+  }
+
+  function chooseReturnProduct(index: number, name: string) {
+    const sizes = returnSizes(name);
+    const size = sizes.length === 1 ? sizes[0] : "";
+    const batches = size ? returnBatches(name, size) : [];
+    applyReturnSelection(
+      index,
+      name,
+      size,
+      batches.length === 1 ? batches[0].batchNo : "",
+    );
+  }
+
+  function chooseReturnSize(index: number, name: string, size: string) {
+    const batches = returnBatches(name, size);
+    applyReturnSelection(
+      index,
+      name,
+      size,
+      batches.length === 1 ? batches[0].batchNo : "",
     );
   }
 
@@ -1054,92 +1190,82 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
                               <td className="px-2 py-3">
                                 <Select
-                                  value={item.productId}
-                                  onChange={(value) => {
-                                    const selectedProduct = allProducts.find(
-                                      (p) => p.id === value,
-                                    );
-                                    updateItem(index, "productId", value);
-                                    if (selectedProduct) {
-                                      const source = selectedProduct as any;
-
-                                      updateItem(
-                                        index,
-                                        "product",
-                                        selectedProduct.name,
-                                      );
-                                      updateItem(
-                                        index,
-                                        "packSize",
-                                        selectedProduct.size || "",
-                                      );
-                                      updateItem(
-                                        index,
-                                        "batchNo",
-                                        String(
-                                          source.batchNo ??
-                                            source.batchId ??
-                                            source.batchID ??
-                                            "",
-                                        ),
-                                      );
-                                      updateItem(
-                                        index,
-                                        "expiryDate",
-                                        String(
-                                          source.expiryDate ??
-                                            source.expDate ??
-                                            source.expiry ??
-                                            "",
-                                        ),
-                                      );
-                                      updateItem(
-                                        index,
-                                        "unitValue",
-                                        String(
-                                          selectedProduct.sellingPrice || 0,
-                                        ),
-                                      );
-                                    }
-                                  }}
+                                  value={item.product}
+                                  onChange={(value) =>
+                                    chooseReturnProduct(index, value)
+                                  }
                                   placeholder="Select Product"
-                                  options={allProducts.map((p) => ({
-                                    value: p.id,
-                                    label: `${p.name} (${p.size})`,
+                                  options={returnProductNames().map((name) => ({
+                                    value: name,
+                                    label: name,
                                   }))}
                                 />
                               </td>
 
                               <td className="px-2 py-3">
-                                <Select
-                                  value={item.packSize}
-                                  onChange={(value) =>
-                                    updateItem(index, "packSize", value)
-                                  }
-                                  placeholder="Select size"
-                                  options={[
-                                    { value: "100ml", label: "100 ml" },
-                                    { value: "250ml", label: "250 ml" },
-                                    { value: "500ml", label: "500 ml" },
-                                    { value: "1l", label: "1 L" },
-                                    { value: "100g", label: "100 g" },
-                                    { value: "250g", label: "250 g" },
-                                    { value: "500g", label: "500 g" },
-                                    { value: "1kg", label: "1 Kg" },
-                                    { value: "5kg", label: "5 Kg" },
-                                    { value: "10kg", label: "10 Kg" },
-                                    { value: "25kg", label: "25 Kg" },
-                                  ]}
-                                />
+                                {returnSizes(item.product).length > 1 ? (
+                                  <Select
+                                    value={item.packSize}
+                                    onChange={(value) =>
+                                      chooseReturnSize(index, item.product, value)
+                                    }
+                                    placeholder="Select size"
+                                    options={returnSizes(item.product).map(
+                                      (size) => ({
+                                        value: size,
+                                        label: size,
+                                      }),
+                                    )}
+                                  />
+                                ) : (
+                                  <Input
+                                    value={item.packSize}
+                                    onChange={() => {}}
+                                    placeholder="Auto"
+                                    readOnly
+                                  />
+                                )}
                               </td>
                               <td className="px-2 py-3">
-                                <Input
-                                  value={item.batchNo}
-                                  onChange={(value) =>
-                                    updateItem(index, "batchNo", value)
-                                  }
-                                  placeholder="Batch ID"
-                                />
+                                {returnBatches(item.product, item.packSize)
+                                  .length > 1 ? (
+                                  <Select
+                                    value={item.batchNo}
+                                    onChange={(value) =>
+                                      applyReturnSelection(
+                                        index,
+                                        item.product,
+                                        item.packSize,
+                                        value,
+                                      )
+                                    }
+                                    placeholder="Select batch"
+                                    options={returnBatches(
+                                      item.product,
+                                      item.packSize,
+                                    ).map((batch) => ({
+                                      value: batch.batchNo,
+                                      label: batch.batchNo,
+                                    }))}
+                                  />
+                                ) : (
+                                  <Input
+                                    value={item.batchNo}
+                                    onChange={(value) =>
+                                      returnBatches(item.product, item.packSize)
+                                        .length === 0
+                                        ? updateItem(index, "batchNo", value)
+                                        : undefined
+                                    }
+                                    placeholder={
+                                      item.packSize ? "Auto" : "Select size first"
+                                    }
+                                    readOnly={
+                                      returnBatches(item.product, item.packSize)
+                                        .length === 1
+                                    }
+                                  />
+                                )}
                               </td>
 
                               <td className="px-2 py-3">

@@ -100,10 +100,6 @@ export default function FROStock() {
   const [selectedTotalProduct, setSelectedTotalProduct] = useState<
     string | null
   >(null);
-  const [totalStockFilter, setTotalStockFilter] = useState<
-    "today" | "monthly" | "custom"
-  >("today");
-  const [totalStockCustomDate, setTotalStockCustomDate] = useState("");
   const [receivedFilter, setReceivedFilter] = useState<
     "today" | "monthly" | "custom"
   >("today");
@@ -726,7 +722,7 @@ export default function FROStock() {
     >();
 
     receivedItems.forEach((item) => {
-      const key = `${item.product}|${item.packSize}`;
+      const key = `${item.product.trim().toLowerCase()}|${item.packSize.trim().toLowerCase()}`;
       const row = map.get(key) || {
         product: item.product,
         packSize: item.packSize,
@@ -747,10 +743,70 @@ export default function FROStock() {
     if (!selectedTotalProduct) return [];
     return receivedItems
       .filter(
-        (item) => `${item.product}|${item.packSize}` === selectedTotalProduct,
+        (item) =>
+          `${item.product.trim().toLowerCase()}|${item.packSize.trim().toLowerCase()}` ===
+          selectedTotalProduct,
       )
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [receivedItems, selectedTotalProduct]);
+
+  const selectedHistoryQty = selectedTotalProductRows.reduce(
+    (sum, item) => sum + item.qty,
+    0,
+  );
+  const selectedHistoryValue = selectedTotalProductRows.reduce(
+    (sum, item) => sum + item.value,
+    0,
+  );
+
+  const stockHistoryTable = (
+    <div className="overflow-hidden rounded-xl border border-slate-200">
+      <div className="grid grid-cols-[1fr_64px_96px] items-center gap-2 bg-slate-50 px-3 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        <span>Date</span>
+        <span className="text-right">Qty</span>
+        <span className="text-right">Value</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {selectedTotalProductRows.length === 0 ? (
+          <div className="px-3 py-10 text-center text-xs text-slate-500">
+            No stock received for this product.
+          </div>
+        ) : (
+          selectedTotalProductRows.map((item, index) => (
+            <div
+              key={`${item.id}-${index}`}
+              className="grid grid-cols-[1fr_64px_96px] items-center gap-2 px-3 py-3"
+            >
+              <span className="text-xs font-medium text-slate-700">
+                {formatDate(item.date)}
+              </span>
+              <span className="text-right text-xs font-bold text-slate-800">
+                {item.qty}
+              </span>
+              <span className="text-right text-xs font-bold text-slate-800">
+                {formatCurrency(item.value)}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+      {selectedTotalProductRows.length > 0 && (
+        <div className="space-y-1.5 border-t border-slate-200 bg-slate-50 px-3 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            Total
+          </p>
+          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+            <span>Total Quantity</span>
+            <span>{selectedHistoryQty}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+            <span>Total Value</span>
+            <span>{formatCurrency(selectedHistoryValue)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   const stockCards = [
     {
@@ -876,47 +932,13 @@ export default function FROStock() {
     }
 
     if (activeStockView === "total-detail" && selectedTotalProduct) {
+      const historyName = selectedTotalProductRows[0]?.product || "Product";
+      const historySize = selectedTotalProductRows[0]?.packSize || "-";
       return (
         <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4 sm:pt-4">
-          {stockViewHeader(
-            selectedTotalProduct.split("|")[0],
-            selectedTotalProduct.split("|")[1] || "-",
-            "text-emerald-600",
-          )}
+          {stockViewHeader(historyName, historySize, "text-emerald-600")}
           <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <div className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                <span>S.No</span>
-                <span>Date</span>
-                <span className="text-right">Qty</span>
-                <span className="text-right">Value</span>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {selectedTotalProductRows.length === 0 ? (
-                  <div className="px-3 py-10 text-center text-xs text-slate-500">
-                    No stock movement for this filter.
-                  </div>
-                ) : (
-                  selectedTotalProductRows.map((item, index) => (
-                    <div
-                      key={`${item.id}-${index}`}
-                      className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3"
-                    >
-                      <span className="text-[11px] text-slate-400">{index + 1}</span>
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium text-slate-700">{formatDate(item.date)}</span>
-                        <span className="mt-0.5 block truncate text-[10px] text-slate-500">
-                          {item.sdNo || "-"} · {formatCurrency(item.unitValue)}
-                          {item.executive ? ` · ${item.executive}` : ""}
-                        </span>
-                      </span>
-                      <span className="text-right text-xs font-bold text-slate-800">{item.qty}</span>
-                      <span className="text-right text-xs font-bold text-slate-800">{formatCurrency(item.value)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            {stockHistoryTable}
           </div>
         </div>
       );
@@ -1189,32 +1211,6 @@ export default function FROStock() {
       return (
         <div className="mx-auto w-full max-w-md lg:max-w-none px-3 pb-24 pt-3 sm:px-4">
           {stockViewHeader("Total Stock", "Product wise stock", "text-emerald-600")}
-          <div className="mb-3 flex w-full overflow-hidden rounded-lg bg-slate-100 p-1">
-            {[
-              ["today", "Today"],
-              ["monthly", "Monthly"],
-              ["custom", "Custom"],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setTotalStockFilter(value as "today" | "monthly" | "custom")}
-                className={`flex-1 rounded-md px-2 py-2 text-[11px] font-semibold ${
-                  totalStockFilter === value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {totalStockFilter === "custom" && (
-            <input
-              type="date"
-              value={totalStockCustomDate}
-              onChange={(e) => setTotalStockCustomDate(e.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none"
-            />
-          )}
           <Card className="overflow-hidden p-0">
             <div className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">
               <span>S.No</span><span>Product-Size</span><span className="text-right">Qty</span><span className="text-right">Value</span>
@@ -1228,7 +1224,9 @@ export default function FROStock() {
                     type="button"
                     key={`${row.product}|${row.packSize}`}
                     onClick={() => {
-                      setSelectedTotalProduct(`${row.product}|${row.packSize}`);
+                      setSelectedTotalProduct(
+                        `${row.product.trim().toLowerCase()}|${row.packSize.trim().toLowerCase()}`,
+                      );
                       setActiveStockView("total-detail");
                     }}
                     className="grid w-full grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3 text-left active:bg-slate-50"
@@ -1927,34 +1925,6 @@ export default function FROStock() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-              <div className="mb-3 flex w-full overflow-hidden rounded-lg bg-slate-100 p-1">
-                {[
-                  ["today", "Today"],
-                  ["monthly", "Monthly"],
-                  ["custom", "Custom"],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() =>
-                      setTotalStockFilter(
-                        value as "today" | "monthly" | "custom",
-                      )
-                    }
-                    className={`flex-1 rounded-md px-2 py-2 text-[11px] font-semibold ${totalStockFilter === value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {totalStockFilter === "custom" && (
-                <input
-                  type="date"
-                  value={totalStockCustomDate}
-                  onChange={(e) => setTotalStockCustomDate(e.target.value)}
-                  className="mb-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-brand-500"
-                />
-              )}
               <div className="overflow-hidden rounded-xl border border-slate-200">
                 <div className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:grid-cols-[34px_1fr_60px_92px] sm:px-3">
                   <span>S.No</span>
@@ -1971,10 +1941,10 @@ export default function FROStock() {
                     totalStockProductRows.map((row, index) => (
                       <button
                         type="button"
-                        key={`${row.product}|${row.packSize}`}
+                        key={`${row.product.trim().toLowerCase()}|${row.packSize.trim().toLowerCase()}`}
                         onClick={() =>
                           setSelectedTotalProduct(
-                            `${row.product}|${row.packSize}`,
+                            `${row.product.trim().toLowerCase()}|${row.packSize.trim().toLowerCase()}`,
                           )
                         }
                         className="grid w-full grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3 text-left hover:bg-slate-50 active:bg-slate-100 sm:grid-cols-[34px_1fr_60px_92px] sm:px-3"
@@ -2029,10 +1999,10 @@ export default function FROStock() {
                   Stock Details
                 </p>
                 <h2 className="mt-1 truncate text-lg font-bold text-slate-800">
-                  {selectedTotalProduct.split("|")[0]}
+                  {selectedTotalProductRows[0]?.product || "Product"}
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {selectedTotalProduct.split("|")[1] || "-"}
+                  {selectedTotalProductRows[0]?.packSize || "-"}
                 </p>
               </div>
               <button
@@ -2044,47 +2014,7 @@ export default function FROStock() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-              <div className="overflow-hidden rounded-xl border border-slate-200">
-                <div className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 bg-slate-50 px-2.5 py-3 text-[10px] font-bold uppercase tracking-wide text-slate-500 sm:grid-cols-[34px_1fr_60px_92px] sm:px-3">
-                  <span>S.No</span>
-                  <span>Date</span>
-                  <span className="text-right">Qty</span>
-                  <span className="text-right">Value</span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {selectedTotalProductRows.length === 0 ? (
-                    <div className="px-3 py-10 text-center text-xs text-slate-500">
-                      No stock movement for this filter.
-                    </div>
-                  ) : (
-                    selectedTotalProductRows.map((item, index) => (
-                      <div
-                        key={`${item.id}-${index}`}
-                        className="grid grid-cols-[28px_1fr_52px_82px] items-center gap-2 px-2.5 py-3 sm:grid-cols-[34px_1fr_60px_92px] sm:px-3"
-                      >
-                        <span className="text-[11px] text-slate-400">
-                          {index + 1}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-xs font-medium text-slate-700">
-                            {formatDate(item.date)}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[10px] text-slate-500">
-                            {item.sdNo || "-"} · {formatCurrency(item.unitValue)}
-                            {item.executive ? ` · ${item.executive}` : ""}
-                          </span>
-                        </span>
-                        <span className="text-right text-xs font-bold text-slate-800">
-                          {item.qty}
-                        </span>
-                        <span className="text-right text-xs font-bold text-slate-800">
-                          {formatCurrency(item.value)}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              {stockHistoryTable}
             </div>
             <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-4 py-3 text-right">
               <Button

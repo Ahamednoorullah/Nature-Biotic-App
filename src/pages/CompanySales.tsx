@@ -524,33 +524,32 @@ export default function CompanySales() {
     };
   }, [added]);
 
+  function batchesForSale(name: string, size: string) {
+    const productName = name.trim().toLowerCase();
+    const pack = size.trim().toLowerCase();
+    const seen = new Set<string>();
+    getCompanyStoreSales().forEach((sale) => {
+      if (String(sale.product || "").trim().toLowerCase() !== productName) return;
+      const salePack = String(sale.packSize || sale.pkgsize || "")
+        .trim()
+        .toLowerCase();
+      if (salePack !== pack) return;
+      const batch = String(sale.batchNo || "").trim();
+      if (batch && batch !== "-") seen.add(batch);
+    });
+    return Array.from(seen);
+  }
+
   function selectProduct(productId: string) {
     const product = productMaster.find((p) => p.id === productId);
 
-    if (!product) {
-      setEntry((prev) => ({
-        ...prev,
-        productId: "",
-        pkgsize: "",
-        sellingPrice: 0,
-      }));
-      return;
-    }
-
-    const variants = productMaster.filter(
-      (item) =>
-        item.name === product.name &&
-        item.unit === product.unit &&
-        item.status !== "Inactive",
-    );
-
-    const firstVariant = variants[0] || product;
-
     setEntry((prev) => ({
       ...prev,
-      productId: firstVariant.id,
-      pkgsize: firstVariant.size,
-      sellingPrice: firstVariant.purchasePrice,
+      productId: product?.id || "",
+      pkgsize: "",
+      batchNo: "",
+      expiryDate: "",
+      sellingPrice: 0,
     }));
   }
 
@@ -564,11 +563,13 @@ export default function CompanySales() {
         item.size === size &&
         item.status !== "Inactive",
     );
+    const batches = batchesForSale(entryProduct.name, size);
 
     setEntry((prev) => ({
       ...prev,
       productId: variant?.id || prev.productId,
       pkgsize: size,
+      batchNo: batches.length === 1 ? batches[0] : "",
       sellingPrice: variant?.purchasePrice ?? prev.sellingPrice,
     }));
   }
@@ -2439,26 +2440,47 @@ export default function CompanySales() {
                           value={entry.pkgsize}
                           onChange={selectPackSize}
                           placeholder={
-                            entryProduct
-                              ? `Select ${entryProduct.unit} size`
-                              : "Select product first"
+                            entryProduct ? "Select size" : "Select product first"
                           }
                           options={selectedProductVariants.map((variant) => ({
                             value: variant.size,
-                            label: `${variant.size} (${variant.unit})`,
+                            label: variant.size,
                           }))}
                         />
                       </div>
 
-                      <Input
-                        label="Batch No"
-                        value={entry.batchNo}
-                        onChange={(v) =>
-                          setEntry((p) => ({ ...p, batchNo: v }))
-                        }
-                        placeholder="e.g. BAT-001"
-                        required
-                      />
+                      {entryProduct &&
+                      entry.pkgsize &&
+                      batchesForSale(entryProduct.name, entry.pkgsize).length > 1 ? (
+                        <Select
+                          label="Batch ID"
+                          value={entry.batchNo}
+                          onChange={(v) =>
+                            setEntry((p) => ({ ...p, batchNo: v }))
+                          }
+                          placeholder="Select batch"
+                          options={batchesForSale(entryProduct.name, entry.pkgsize).map(
+                            (batch) => ({ value: batch, label: batch }),
+                          )}
+                          required
+                        />
+                      ) : (
+                        <Input
+                          label="Batch ID"
+                          value={entry.batchNo}
+                          onChange={(v) =>
+                            setEntry((p) => ({ ...p, batchNo: v }))
+                          }
+                          placeholder={
+                            entry.pkgsize &&
+                            entryProduct &&
+                            batchesForSale(entryProduct.name, entry.pkgsize).length === 1
+                              ? "Auto"
+                              : "e.g. BAT-001"
+                          }
+                          required
+                        />
+                      )}
                       <Input
                         label="Expiry Date"
                         type="date"
@@ -2536,7 +2558,7 @@ export default function CompanySales() {
                         />
                         <DetailField
                           label="Pack Size"
-                          value={entry.pkgsize || entryProduct.size}
+                          value={entry.pkgsize || "-"}
                         />
                         <DetailField
                           label="HSN / SAC"

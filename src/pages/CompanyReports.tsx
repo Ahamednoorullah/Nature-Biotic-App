@@ -4,6 +4,8 @@ import {
   getCompanyRefunds,
   getFinalCompanyStoreSales,
   getApprovedStorePurchaseReturns,
+  companyRefundParts,
+  getCompanyStorePositions,
   settleCompanyAccount,
   settleLinkedFarmerAccounts,
   stores as allStores,
@@ -138,7 +140,7 @@ function buildReport(filter: DateFilter, from = "", to = "") {
 
   const companyCredits = new Map<string, number>();
   getCompanyCreditNoteSyncRecords().forEach((note) => {
-    if (note.status === "Rejected") return;
+    if (note.status === "Rejected" || note.status === "Draft") return;
     const invoiceNo = String(note.invoiceNo || note.purchaseRef || "")
       .trim()
       .toLowerCase();
@@ -177,10 +179,9 @@ function buildReport(filter: DateFilter, from = "", to = "") {
   });
   getCompanyRefunds().forEach((refund) => {
     if (!inPeriod(refund.date, filter, from, to)) return;
-    companyRefunds.set(
-      refund.storeId,
-      (companyRefunds.get(refund.storeId) || 0) + money(refund.amount),
-    );
+    const paid = companyRefundParts(refund).paid;
+    if (paid <= 0) return;
+    companyRefunds.set(refund.storeId, (companyRefunds.get(refund.storeId) || 0) + paid);
   });
   const purchaseReturns = getApprovedStorePurchaseReturns();
   const companyReturns = new Map<string, number>();
@@ -216,45 +217,11 @@ function buildReport(filter: DateFilter, from = "", to = "") {
     companyCollection += settled.collection;
   });
 
-  const lifetimeSales = new Map<string, number>();
-  const lifetimeCollection = new Map<string, number>();
-  const lifetimeReturns = new Map<string, number>();
-  companyInvoices.forEach((invoice, key) => {
-    const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
-    lifetimeSales.set(
-      invoice.storeId,
-      (lifetimeSales.get(invoice.storeId) || 0) + net,
-    );
-  });
-  companyReceipts.forEach((receipt) => {
-    const storeId = String(receipt.storeId || "");
-    lifetimeCollection.set(
-      storeId,
-      (lifetimeCollection.get(storeId) || 0) + money(receipt.amount),
-    );
-  });
-  purchaseReturns.forEach((row) => {
-    lifetimeReturns.set(
-      row.storeId,
-      (lifetimeReturns.get(row.storeId) || 0) + row.amount,
-    );
-  });
   let companyOutstanding = 0;
   const lifetimeOutstanding = new Map<string, number>();
-  const lifetimeStoreIds = new Set<string>([
-    ...lifetimeSales.keys(),
-    ...lifetimeCollection.keys(),
-    ...lifetimeReturns.keys(),
-  ]);
-  lifetimeStoreIds.forEach((storeId) => {
-    const settled = settleCompanyAccount({
-      grossSales: lifetimeSales.get(storeId) || 0,
-      salesReturns: lifetimeReturns.get(storeId) || 0,
-      receipts: lifetimeCollection.get(storeId) || 0,
-      refunds: 0,
-    });
-    lifetimeOutstanding.set(storeId, settled.outstanding);
-    companyOutstanding += settled.outstanding;
+  getCompanyStorePositions().forEach((position, storeId) => {
+    lifetimeOutstanding.set(storeId, position.outstanding);
+    companyOutstanding += position.outstanding;
   });
 
   const storeBooks = allStores.map((store) => {
@@ -264,7 +231,7 @@ function buildReport(filter: DateFilter, from = "", to = "") {
     const receipts = readRows(`${STORE_RECEIPT_KEY}:${store.id}`);
     const returned = new Map<string, number>();
     [...returns, ...credits].forEach((row) => {
-      if (row.status === "Rejected") return;
+      if (row.status === "Rejected" || row.status === "Draft") return;
       const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
       if (!invoiceNo) return;
       returned.set(invoiceNo, (returned.get(invoiceNo) || 0) + money(row.total));
@@ -297,14 +264,14 @@ function buildReport(filter: DateFilter, from = "", to = "") {
         invoices,
         receipts,
         returns: [...readRows(`${STORE_RETURN_KEY}:${store.id}`), ...readRows(`${STORE_CREDIT_KEY}:${store.id}`)].filter(
-          (row) => row.status !== "Rejected",
+          (row) => row.status !== "Rejected" && row.status !== "Draft",
         ),
         refunds: readRows(`nature-biotic-store-refunds-v2:${store.id}`),
         linkInvoices: invoices,
         linkReturns: [
           ...readRows(`${STORE_RETURN_KEY}:${store.id}`),
           ...readRows(`${STORE_CREDIT_KEY}:${store.id}`),
-        ],
+        ].filter((row) => row.status !== "Draft"),
       });
       return {
         id: store.id,
@@ -390,7 +357,7 @@ function buildReport(filter: DateFilter, from = "", to = "") {
       0,
     );
     getCompanyRefunds().forEach((refund) => {
-      if (inBucket(refund.date)) collection -= money(refund.amount);
+      if (inBucket(refund.date)) collection -= companyRefundParts(refund).paid;
     });
     storeBooks.forEach(({ receipts }) => {
       collection += receipts.reduce(
@@ -455,8 +422,6 @@ function buildReport(filter: DateFilter, from = "", to = "") {
 
 export default function CompanyReports() {
   const [filter, setFilter] = useState<DateFilter>("monthly");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -478,8 +443,8 @@ export default function CompanyReports() {
   }, []);
 
   const report = useMemo(
-    () => buildReport(filter, customFrom, customTo),
-    [filter, customFrom, customTo, version],
+    () => buildReport(filter),
+    [filter, version],
   );
   const hasActivity =
     report.sales > 0 ||
@@ -499,7 +464,9 @@ export default function CompanyReports() {
           </p>
         </div>
         <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
-          {simpleDateFilterOptions.map((tab) => (
+          {simpleDateFilterOptions
+            .filter((tab) => tab.value !== "custom")
+            .map((tab) => (
             <button
               key={tab.value}
               onClick={() => setFilter(tab.value)}
@@ -514,29 +481,6 @@ export default function CompanyReports() {
           ))}
         </div>
       </div>
-
-      {filter === "custom" && (
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row">
-          <label className="text-sm text-slate-600">
-            From
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(event) => setCustomFrom(event.target.value)}
-              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-slate-600">
-            To
-            <input
-              type="date"
-              value={customTo}
-              onChange={(event) => setCustomTo(event.target.value)}
-              className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2"
-            />
-          </label>
-        </div>
-      )}
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Summary

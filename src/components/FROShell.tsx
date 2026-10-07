@@ -4,6 +4,15 @@ import { useAuth } from "@/context/AuthContext";
 import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon, Input } from "@/components/ui";
 import { changeAccountPassword } from "@/lib/auth/localAuth";
+import {
+  attendanceUpdatedEvent,
+  checkInStaff,
+  checkOutStaff,
+  elapsedSinceCheckIn,
+  findOpenAttendance,
+  formatAttendanceTime,
+  latestStaffAttendance,
+} from "@/pages/StoreAttendance";
 import { getFroNotifications } from "@/lib/storeNotifications";
 import {
   readNotificationReads,
@@ -14,6 +23,80 @@ import {
   type StoreThemeChoice,
   type StoreUserSettings,
 } from "@/lib/storeSettings";
+
+function FroAttendanceControl({
+  storeId,
+  staffId,
+}: {
+  storeId: string;
+  staffId: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const refresh = () => setVersion((current) => current + 1);
+    window.addEventListener(attendanceUpdatedEvent, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener(attendanceUpdatedEvent, refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
+  const open = findOpenAttendance(storeId, staffId);
+  const latest = latestStaffAttendance(storeId, staffId);
+  void version;
+
+  return (
+    <div>
+      {open ? (
+        <div className="mb-2">
+          <p className="text-xs text-slate-500">
+            Check In: {formatAttendanceTime(open, "in")}
+          </p>
+          <p className="mt-1 font-mono text-sm font-bold tracking-wide text-slate-800">
+            {elapsedSinceCheckIn(open, now)}
+          </p>
+        </div>
+      ) : latest?.checkOut ? (
+        <div className="mb-2 space-y-0.5 text-xs text-slate-500">
+          <p>
+            Check In:{" "}
+            <span className="font-semibold text-slate-700">
+              {formatAttendanceTime(latest, "in")}
+            </span>
+          </p>
+          <p>
+            Check Out:{" "}
+            <span className="font-semibold text-slate-700">
+              {formatAttendanceTime(latest, "out")}
+            </span>
+          </p>
+          <p>
+            Duration:{" "}
+            <span className="font-semibold text-slate-700">
+              {latest.workedDuration || "-"}
+            </span>
+          </p>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => {
+          if (open) checkOutStaff(storeId, staffId);
+          else checkInStaff(storeId, staffId);
+        }}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+      >
+        <Icon name="schedule" size={18} />
+        {open ? "Check Out" : "Check In"}
+      </button>
+    </div>
+  );
+}
 
 export default function FROShell({
   storeId,
@@ -74,7 +157,10 @@ function FROMobileShell({
   );
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const previousUnread = useRef<number | null>(null);
 
   const currentStaff =
@@ -164,6 +250,16 @@ function FROMobileShell({
     return () => document.removeEventListener("mousedown", close);
   }, [openMenu]);
 
+  useEffect(() => {
+    if (openMenu === "settings") return;
+    setCurrentPassword("");
+    setNextPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setPasswordMessage("");
+    setPasswordOpen(false);
+  }, [openMenu]);
+
   function updateSettings(next: StoreUserSettings) {
     setSettings(next);
     saveStoreUserSettings(user.id, next);
@@ -182,17 +278,38 @@ function FROMobileShell({
     });
   }
 
+  function clearPasswordForm() {
+    setCurrentPassword("");
+    setNextPassword("");
+    setConfirmPassword("");
+    setPasswordError("");
+    setPasswordOpen(false);
+  }
+
+  function handleSignOut() {
+    clearPasswordForm();
+    setPasswordMessage("");
+    onSignOut();
+  }
+
   async function submitPassword() {
+    setPasswordMessage("");
+    setPasswordError("");
+    if (nextPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
     const result = await changeAccountPassword(
       user.id,
       currentPassword,
       nextPassword,
     );
-    setPasswordMessage(result.error || "Password updated.");
-    if (!result.error) {
-      setCurrentPassword("");
-      setNextPassword("");
+    if (result.error) {
+      setPasswordError(result.error);
+      return;
     }
+    clearPasswordForm();
+    setPasswordMessage("Password updated.");
   }
 
   const isSalesActive = [
@@ -238,7 +355,7 @@ function FROMobileShell({
   return (
     <div className={`flex h-[100dvh] overflow-x-clip ${resolvedTheme === "dark" ? "nb-store-dark bg-slate-950" : "bg-slate-50"}`}>
       <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-slate-100 bg-white">
-        <FRODesktopNav active={active} onNavigate={onNavigate} onSignOut={onSignOut} />
+        <FRODesktopNav active={active} onNavigate={onNavigate} onSignOut={handleSignOut} />
       </aside>
 
       <div className="relative flex h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden bg-slate-50">
@@ -408,20 +525,49 @@ function FROMobileShell({
                     <p className="text-xs text-slate-500">{currentStaff?.email || user.email}</p>
                     <p className="text-xs text-slate-400">{currentStaff?.designation || "FRO"}</p>
                   </div>
-                  <div className="mt-3 space-y-2">
-                    <Input label="Current password" type="password" value={currentPassword} onChange={setCurrentPassword} />
-                    <Input label="New password" type="password" value={nextPassword} onChange={setNextPassword} />
-                    {passwordMessage && (
-                      <p className="text-xs font-medium text-slate-600">{passwordMessage}</p>
-                    )}
+                  {passwordMessage && (
+                    <p className="mt-3 text-xs font-medium text-emerald-700">{passwordMessage}</p>
+                  )}
+                  {!passwordOpen ? (
                     <button
                       type="button"
-                      onClick={() => void submitPassword()}
-                      className="w-full rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white"
+                      onClick={() => {
+                        setPasswordMessage("");
+                        setPasswordError("");
+                        setPasswordOpen(true);
+                      }}
+                      className="mt-3 flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-700"
                     >
-                      Change password
+                      Change Password
+                      <Icon name="expand_more" size={18} />
                     </button>
-                  </div>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      <Input label="Current Password" type="password" value={currentPassword} onChange={setCurrentPassword} />
+                      <Input label="New Password" type="password" value={nextPassword} onChange={setNextPassword} />
+                      <Input label="Confirm New Password" type="password" value={confirmPassword} onChange={setConfirmPassword} />
+                      {passwordError && (
+                        <p className="text-xs font-medium text-red-600">{passwordError}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void submitPassword()}
+                        className="w-full rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white"
+                      >
+                        Change Password
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          clearPasswordForm();
+                          setPasswordMessage("");
+                        }}
+                        className="w-full rounded-xl bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -442,11 +588,17 @@ function FROMobileShell({
                     <Icon name="person" size={18} />
                     Profile
                   </button>
+                  <div className="border-t border-slate-100 px-4 py-3">
+                    <FroAttendanceControl
+                      storeId={store?.id || ""}
+                      staffId={String(user.staffId || user.id)}
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setOpenMenu(null);
-                      onSignOut();
+                      handleSignOut();
                     }}
                     className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
                   >
