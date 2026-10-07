@@ -497,56 +497,6 @@ export const stores: Store[] = [
     bankBranch: "Rajapalayam",
     bankUpiId: "sujiyaso22-1@okhdfcbank",
   },
-  {
-    id: "s2",
-    code: "ST",
-    name: "Shriya Tech",
-    owner: "Shriya",
-    manager: "Shriya",
-    location: "Tenkasi",
-    address: "7, Court Road, Tenkasi, Tamil Nadu 627811",
-    gst: "33FGHIJ5678K1Z2",
-    phone: "9123456701",
-    status: "Active",
-    todaySales: 0,
-    monthlySales: 0,
-    totalProfit: 0,
-    outstanding: 0,
-    activeCustomers: 0,
-    inventoryValue: 0,
-    openedDate: "2022-01-20",
-    bankAccountName: "SHRIYA",
-    bankAccountNo: "60484655212398",
-    bankIfsc: "HDFC0000257",
-    bankName: "HDFC Bank",
-    bankBranch: "Tenkasi",
-    bankUpiId: "shriyaso25-1@okhdfcbank",
-  },
-  {
-    id: "s3",
-    code: "NBM",
-    name: "Nature Bio Mart",
-    owner: "",
-    manager: "",
-    location: "Idukki, Kerala",
-    address: "Munnar Road, Idukki, Kerala 685602",
-    gst: "32LMNOP9012R1Z8",
-    phone: "9123456702",
-    status: "Active",
-    todaySales: 0,
-    monthlySales: 0,
-    totalProfit: 0,
-    outstanding: 0,
-    activeCustomers: 0,
-    inventoryValue: 0,
-    openedDate: "2020-11-08",
-    bankAccountName: "Nature Bio Mart",
-    bankAccountNo: "70106585911327",
-    bankIfsc: "SBI0000851",
-    bankName: "SBI Bank",
-    bankBranch: "Idukki",
-    bankUpiId: "naturebiomart18-1@oksbibank",
-  },
 ];
 
 const warehouses = ["Main Warehouse - Bellary", "Secondary Warehouse - Hospet"];
@@ -1207,11 +1157,36 @@ function mergeRegistry<T extends { id: string }>(target: T[], saved: T[]) {
   });
 }
 
-mergeRegistry(stores, readRegistry<Store>(STORE_REGISTRY_KEY));
+const REMOVED_STORE_IDS = new Set(["s2", "s3"]);
+const REMOVED_STORE_NAMES = new Set(["Shriya Tech", "Nature Bio Mart"]);
+
+function isRemovedStore(row: { id?: string; name?: string }) {
+  return REMOVED_STORE_IDS.has(row.id ?? "") || REMOVED_STORE_NAMES.has(row.name ?? "");
+}
+
+function mergeStoreRegistry(target: Store[], saved: Store[]) {
+  saved.forEach((row) => {
+    if (isRemovedStore(row)) return;
+    const index = target.findIndex((item) => item.id === row.id);
+    if (index >= 0) target[index] = { ...target[index], ...row };
+    else target.push(row);
+  });
+  for (let index = target.length - 1; index >= 0; index -= 1) {
+    if (isRemovedStore(target[index])) target.splice(index, 1);
+  }
+}
+
+const savedStores = readRegistry<Store>(STORE_REGISTRY_KEY);
+mergeStoreRegistry(stores, savedStores);
+if (savedStores.some((row) => isRemovedStore(row))) {
+  try {
+    localStorage.setItem(STORE_REGISTRY_KEY, JSON.stringify(stores));
+  } catch {}
+}
 mergeRegistry(staff, readRegistry<Staff>(STAFF_REGISTRY_KEY));
 
 export function getStores() {
-  return stores;
+  return stores.filter((store) => !isRemovedStore(store));
 }
 
 export function getStaffRecords() {
@@ -1219,7 +1194,8 @@ export function getStaffRecords() {
 }
 
 export function replaceStoreRegistry(next: Store[]) {
-  stores.splice(0, stores.length, ...next);
+  const kept = next.filter((store) => !isRemovedStore(store));
+  stores.splice(0, stores.length, ...kept);
   try {
     localStorage.setItem(STORE_REGISTRY_KEY, JSON.stringify(stores));
   } catch {}
