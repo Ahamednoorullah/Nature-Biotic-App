@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Card, Button, Input, Badge } from "@/components/ui";
 import { Icon } from "@/components/ui";
+import {
+  readCompanyUserSettings,
+  saveCompanyUserSettings,
+  type StoreThemeChoice,
+} from "@/lib/storeSettings";
 
 type AdminDetails = {
   name: string;
@@ -66,6 +71,23 @@ const defaultCompanyInfo: CompanyInfo = {
 
 export default function CompanySettings() {
   const { user } = useAuth();
+
+  // ---------- Theme Settings ----------
+  const [companyTheme, setCompanyTheme] = useState<StoreThemeChoice>("light");
+  const [themeSaved, setThemeSaved] = useState(false);
+
+  useEffect(() => {
+    const settings = readCompanyUserSettings(user?.id);
+    setCompanyTheme(settings.theme);
+  }, [user?.id]);
+
+  const handleThemeChange = (newTheme: StoreThemeChoice) => {
+    setCompanyTheme(newTheme);
+    const current = readCompanyUserSettings(user?.id);
+    saveCompanyUserSettings(user?.id, { ...current, theme: newTheme });
+    setThemeSaved(true);
+    setTimeout(() => setThemeSaved(false), 2000);
+  };
 
   // ---------- Profile Information (unchanged) ----------
   const [name, setName] = useState("Administrator");
@@ -194,6 +216,87 @@ export default function CompanySettings() {
       </div>
 
       <div className="space-y-6">
+        {/* ================= THEME PREFERENCE ================= */}
+        <Card className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+            <div className="flex items-center gap-2">
+              <Icon name="palette" size={22} className="text-brand-600" />
+              <div>
+                <h2 className="font-bold text-slate-800">Theme & Appearance</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Select your interface theme preference across the Company portal.
+                </p>
+              </div>
+            </div>
+            {themeSaved && (
+              <Badge color="green">
+                <Icon name="check_circle" size={14} fill />
+                Theme preference saved
+              </Badge>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[
+              {
+                id: "light",
+                label: "Light Theme",
+                desc: "Clean daylight theme with high contrast",
+                icon: "light_mode",
+              },
+              {
+                id: "dark",
+                label: "Dark Theme",
+                desc: "Eye-friendly low-light theme with crisp visibility",
+                icon: "dark_mode",
+              },
+              {
+                id: "system",
+                label: "System Theme",
+                desc: "Automatically adapts to your device OS setting",
+                icon: "settings_brightness",
+              },
+            ].map((item) => {
+              const isSelected = companyTheme === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleThemeChange(item.id as StoreThemeChoice)}
+                  className={`flex flex-col text-left p-4 rounded-xl border-2 transition-base relative ${
+                    isSelected
+                      ? "border-brand-600 bg-brand-50/60 dark:bg-brand-950/40 shadow-sm"
+                      : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/80"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-2">
+                    <div
+                      className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                        isSelected
+                          ? "bg-brand-600 text-white"
+                          : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                      }`}
+                    >
+                      <Icon name={item.icon} size={20} />
+                    </div>
+                    {isSelected && (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-white shadow-xs">
+                        <Icon name="check" size={14} />
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-bold text-sm text-slate-800 dark:text-slate-100">
+                    {item.label}
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                    {item.desc}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+
         {/* ================= PROFILE INFORMATION ================= */}
         <Card className="p-6">
           <div className="flex items-center gap-2 mb-5">

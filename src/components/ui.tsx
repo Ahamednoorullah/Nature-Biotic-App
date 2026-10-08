@@ -94,7 +94,7 @@ export function Card({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl shadow-card border border-slate-100 min-w-0 ${hover ? "transition-base hover:shadow-elevated hover:border-slate-200 cursor-pointer" : ""} ${className}`}
+      className={`bg-white dark:bg-slate-900 rounded-2xl shadow-card border border-slate-100 dark:border-slate-800/80 min-w-0 ${hover ? "transition-base hover:shadow-elevated hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer" : ""} ${className}`}
     >
       {children}
     </div>
@@ -119,11 +119,11 @@ export function Button({
   disabled?: boolean;
 }) {
   const variants = {
-    primary: "bg-brand-600 text-white hover:bg-brand-700 shadow-sm",
+    primary: "bg-brand-600 text-white hover:bg-brand-700 dark:hover:bg-brand-500 shadow-sm",
     secondary:
-      "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300",
-    ghost: "text-slate-600 hover:bg-slate-100",
-    danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200",
+      "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-700 dark:hover:border-slate-600",
+    ghost: "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white",
+    danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 dark:bg-red-950/60 dark:text-red-300 dark:border-red-800/50 dark:hover:bg-red-900/60",
   };
   const sizes = {
     sm: "px-3 py-1.5 text-sm",
@@ -150,11 +150,11 @@ export function Badge({
   color?: "green" | "red" | "amber" | "slate" | "blue";
 }) {
   const colors = {
-    green: "bg-brand-50 text-brand-700",
-    red: "bg-red-50 text-red-600",
-    amber: "bg-amber-50 text-amber-600",
-    slate: "bg-slate-100 text-slate-600",
-    blue: "bg-blue-50 text-blue-600",
+    green: "bg-brand-50 text-brand-700 dark:bg-brand-950/80 dark:text-brand-300 dark:border dark:border-brand-800/50",
+    red: "bg-red-50 text-red-600 dark:bg-red-950/80 dark:text-red-300 dark:border dark:border-red-800/50",
+    amber: "bg-amber-50 text-amber-600 dark:bg-amber-950/80 dark:text-amber-300 dark:border dark:border-amber-800/50",
+    slate: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:border dark:border-slate-700",
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-950/80 dark:text-blue-300 dark:border dark:border-blue-800/50",
   };
   return (
     <span
@@ -189,14 +189,14 @@ export function Input({
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
       <div className="relative">
         {icon && (
           <span
-            className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+            className="material-symbols-rounded absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400"
             style={{ fontSize: 20 }}
           >
             {icon}
@@ -209,7 +209,7 @@ export function Input({
           placeholder={placeholder}
           required={required}
           readOnly={readOnly}
-          className={`w-full ${icon ? "pl-11" : "pl-4"} pr-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus ${readOnly ? "bg-slate-50 text-slate-500 cursor-default" : ""}`}
+          className={`w-full ${icon ? "pl-11" : "pl-4"} pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus ${readOnly ? "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 cursor-default" : ""}`}
         />
       </div>
     </div>
@@ -236,7 +236,7 @@ export function Select({
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
@@ -245,17 +245,17 @@ export function Select({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           required={required}
-          className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus appearance-none cursor-pointer"
+          className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus appearance-none cursor-pointer"
         >
           {placeholder && <option value="">{placeholder}</option>}
           {options.map((o) => (
-            <option key={o.value} value={o.value}>
+            <option key={o.value} value={o.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">
               {o.label}
             </option>
           ))}
         </select>
         <span
-          className="material-symbols-rounded absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          className="material-symbols-rounded absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 pointer-events-none"
           style={{ fontSize: 20 }}
         >
           expand_more
@@ -285,7 +285,7 @@ export function Textarea({
   return (
     <div className={className}>
       {label && (
-        <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5">
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
@@ -295,7 +295,7 @@ export function Textarea({
         placeholder={placeholder}
         required={required}
         rows={rows}
-        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-800 placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 focus:shadow-focus resize-none"
+        className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-400 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus resize-none"
       />
     </div>
   );
@@ -327,21 +327,21 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-end justify-center p-3 sm:items-center sm:p-4">
       {/* Background */}
       <div
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
 
       {/* Popup */}
       <div
-        className={`relative flex max-h-[min(92dvh,960px)] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-elevated animate-scale-in ${sizeClass}`}
+        className={`relative flex max-h-[min(92dvh,960px)] w-full flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-elevated animate-scale-in ${sizeClass}`}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
-          <h3 className="min-w-0 truncate text-lg font-bold text-slate-800">{title}</h3>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 px-4 py-4 sm:px-6">
+          <h3 className="min-w-0 truncate text-lg font-bold text-slate-800 dark:text-slate-100">{title}</h3>
 
           <button
             onClick={onClose}
-            className="shrink-0 rounded-lg p-2 text-slate-400 transition-base hover:bg-slate-100 hover:text-slate-600"
+            className="shrink-0 rounded-lg p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-base hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <span className="material-symbols-rounded" style={{ fontSize: 22 }}>
               close
@@ -350,11 +350,11 @@ export function Modal({
         </div>
 
         {/* Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 text-slate-700 dark:text-slate-200">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-6 sm:py-4">
+          <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 dark:border-slate-800 px-4 py-3 sm:flex-row sm:justify-end sm:gap-3 sm:px-6 sm:py-4 bg-slate-50/50 dark:bg-slate-950/40">
             {footer}
           </div>
         )}
@@ -379,23 +379,23 @@ export function StatCard({
   color?: "brand" | "blue" | "amber" | "red" | "purple";
 }) {
   const colors: Record<string, string> = {
-    brand: "bg-brand-50 text-brand-600",
-    blue: "bg-blue-50 text-blue-600",
-    amber: "bg-amber-50 text-amber-600",
-    red: "bg-red-50 text-red-600",
-    purple: "bg-purple-50 text-purple-600",
+    brand: "bg-brand-50 text-brand-600 dark:bg-brand-950/70 dark:text-brand-400 dark:border dark:border-brand-800/40",
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400 dark:border dark:border-blue-800/40",
+    amber: "bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-400 dark:border dark:border-amber-800/40",
+    red: "bg-red-50 text-red-600 dark:bg-red-950/70 dark:text-red-400 dark:border dark:border-red-800/40",
+    purple: "bg-purple-50 text-purple-600 dark:bg-purple-950/70 dark:text-purple-400 dark:border dark:border-purple-800/40",
   };
   return (
     <Card className="p-5" hover>
       <div className="flex items-start justify-between">
         <div className="min-w-0 pr-3">
-          <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-1.5 break-words text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="mt-1.5 break-words text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100 sm:text-2xl">
             {value}
           </p>
           {trend && (
             <div
-              className={`flex items-center gap-1 mt-2 text-xs font-semibold ${trendUp ? "text-brand-600" : "text-red-500"}`}
+              className={`flex items-center gap-1 mt-2 text-xs font-semibold ${trendUp ? "text-brand-600 dark:text-brand-400" : "text-red-500 dark:text-red-400"}`}
             >
               <span
                 className="material-symbols-rounded"
@@ -432,17 +432,17 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+      <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
         <span
-          className="material-symbols-rounded text-slate-400"
+          className="material-symbols-rounded text-slate-400 dark:text-slate-400"
           style={{ fontSize: 32 }}
         >
           {icon}
         </span>
       </div>
-      <h3 className="text-lg font-semibold text-slate-700">{title}</h3>
+      <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">{title}</h3>
       {description && (
-        <p className="text-sm text-slate-500 mt-1 max-w-sm">{description}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-sm">{description}</p>
       )}
       {action && <div className="mt-5">{action}</div>}
     </div>
@@ -452,7 +452,7 @@ export function EmptyState({
 export function Spinner({ className = "" }: { className?: string }) {
   return (
     <div
-      className={`inline-block animate-spin rounded-full border-2 border-slate-200 border-t-brand-500 ${className}`}
+      className={`inline-block animate-spin rounded-full border-2 border-slate-200 dark:border-slate-700 border-t-brand-500 ${className}`}
       style={{ width: "1em", height: "1em" }}
     />
   );
@@ -469,17 +469,17 @@ export function SectionTitle({
 }) {
   return (
     <div className="flex items-center gap-2.5 mb-5">
-      <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+      <div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-950/70 dark:border dark:border-brand-800/40 flex items-center justify-center shrink-0">
         <span
-          className="material-symbols-rounded text-brand-600"
+          className="material-symbols-rounded text-brand-600 dark:text-brand-400"
           style={{ fontSize: 20 }}
         >
           {icon}
         </span>
       </div>
       <div>
-        <h2 className="font-bold text-slate-800">{title}</h2>
-        {description && <p className="text-sm text-slate-500">{description}</p>}
+        <h2 className="font-bold text-slate-800 dark:text-slate-100">{title}</h2>
+        {description && <p className="text-sm text-slate-500 dark:text-slate-400">{description}</p>}
       </div>
     </div>
   );

@@ -38,11 +38,11 @@ export default function StoreSettings({ storeId }: { storeId: string }) {
             <Input label="Location" value={form.location} onChange={(v) => setForm({ ...form, location: v })} icon="location_on" />
             <Input label="Phone Number" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} icon="call" />
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Store Status</label>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5">Store Status</label>
               <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm transition-base focus:outline-none focus:border-brand-500">
-                <option>Active</option>
-                <option>Inactive</option>
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm transition-base focus:outline-none focus:border-brand-500">
+                <option className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">Active</option>
+                <option className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">Inactive</option>
               </select>
             </div>
           </div>
@@ -77,10 +77,10 @@ function Toggle({ label, desc, defaultOn }: { label: string; desc: string; defau
   return (
     <div className="flex items-center justify-between py-2">
       <div>
-        <p className="text-sm font-semibold text-slate-700">{label}</p>
-        <p className="text-xs text-slate-500">{desc}</p>
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{desc}</p>
       </div>
-      <button onClick={() => setOn(!on)} className={`relative w-11 h-6 rounded-full transition-base ${on ? 'bg-brand-600' : 'bg-slate-200'}`}>
+      <button onClick={() => setOn(!on)} className={`relative w-11 h-6 rounded-full transition-base ${on ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
         <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </button>
     </div>

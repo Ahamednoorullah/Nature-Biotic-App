@@ -802,7 +802,7 @@ export default function StoreInventory({ storeId }: { storeId: string }) {
         {/* Excel-style table */}
         <Card className="overflow-hidden p-0">
           <div className="w-full max-w-full overflow-x-auto">
-            <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
+            <table className="w-full min-w-[1100px] table-fixed border-collapse text-[12px] xl:text-sm">
               <thead className="sticky top-0">
                 <tr className="bg-slate-100 text-slate-600 text-[10px] xl:text-xs uppercase tracking-wide border-b-2 border-slate-200">
                   <th className="w-[4%] px-1 py-3 text-center font-semibold border-r border-slate-200">

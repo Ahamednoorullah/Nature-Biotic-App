@@ -5,6 +5,7 @@ import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon, Input } from "@/components/ui";
 import { changeAccountPassword } from "@/lib/auth/localAuth";
 import { getStoreNotifications } from "@/lib/storeNotifications";
+import StoreMobileSectionHub from "./StoreMobileSectionHub";
 import {
   readNotificationReads,
   readStoreUserSettings,
@@ -99,6 +100,84 @@ const navItems: NavItem[] = [
   { type: "link", key: "reports", label: "Reports", icon: "bar_chart" },
 ];
 
+const salesSubpages = new Set<StorePage>([
+  "sales",
+  "farmers",
+  "quotation",
+  "sales-invoice",
+  "sales-return",
+  "credit-notes",
+  "receipt",
+  "refund",
+  "add-farmer",
+  "farmer-profile",
+]);
+
+const purchasesSubpages = new Set<StorePage>([
+  "purchases",
+  "purchase-order",
+  "return-stock",
+  "debit-notes",
+  "payments",
+  "expenses",
+]);
+
+const stockSubpages = new Set<StorePage>([
+  "stock-management",
+  "delivery-challan",
+  "return-challan",
+  "closing-stock",
+  "physical-stock",
+  "low-stock",
+  "stock-adjustment",
+  "add-stock",
+  "inventory-detail",
+]);
+
+const attendanceSubpages = new Set<StorePage>(["attendance"]);
+
+function formatPageTitle(page: StorePage): string {
+  const titles: Record<string, string> = {
+    dashboard: "Dashboard",
+    purchases: "Purchase Bills",
+    "purchase-order": "Purchase Order",
+    "return-stock": "Purchase Return",
+    "debit-notes": "Debit Notes",
+    payments: "Payments",
+    expenses: "Expenses",
+    "stock-management": "Stock Overview",
+    "delivery-challan": "Stock Delivery",
+    "return-challan": "Stock Return",
+    "closing-stock": "Closing Stock",
+    "physical-stock": "Physical Stock",
+    "low-stock": "Low Stock Alert",
+    "stock-adjustment": "Stock Adjustment",
+    "add-stock": "Add Stock",
+    "inventory-detail": "Inventory Detail",
+    sales: "Sales Overview",
+    farmers: "Farmers",
+    "add-farmer": "Add Farmer",
+    "farmer-profile": "Farmer Profile",
+    quotation: "Quotation",
+    "sales-invoice": "Sales Invoice",
+    "sales-return": "Sales Return",
+    "credit-notes": "Credit Notes",
+    receipt: "Receipt",
+    refund: "Refund",
+    attendance: "Attendance",
+    reports: "Reports",
+  };
+  return titles[page] || page.replace(/-/g, " ");
+}
+
+const bottomTabs = [
+  { id: "home" as const, label: "Home", icon: "home" },
+  { id: "purchases" as const, label: "Purchase", icon: "shopping_cart" },
+  { id: "stock" as const, label: "Stock", icon: "inventory_2" },
+  { id: "sales" as const, label: "Sales", icon: "point_of_sale" },
+  { id: "attendance" as const, label: "Attendance", icon: "badge" },
+];
+
 const groupKeys = ["purchases", "stock-management", "sales"] as const;
 
 function activeGroupFor(
@@ -139,7 +218,33 @@ export default function StoreShell({
   const { user, signOut } = useAuth();
   const { goStorePage, backToCompany } = useNav();
   const store = getStore(storeId);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileSectionHub, setMobileSectionHub] = useState<
+    "sales" | "purchases" | "stock" | "attendance" | null
+  >(null);
+  const [tabletDrawerOpen, setTabletDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const activeBottomTab = useMemo(() => {
+    if (mobileSectionHub === "sales") return "sales";
+    if (mobileSectionHub === "purchases") return "purchases";
+    if (mobileSectionHub === "stock") return "stock";
+    if (mobileSectionHub === "attendance") return "attendance";
+
+    if (active === "dashboard") return "home";
+    if (salesSubpages.has(active)) return "sales";
+    if (purchasesSubpages.has(active)) return "purchases";
+    if (stockSubpages.has(active)) return "stock";
+    if (attendanceSubpages.has(active)) return "attendance";
+    return null;
+  }, [mobileSectionHub, active]);
+
+  useEffect(() => {
+    setTabletDrawerOpen(false);
+    if (active === "dashboard") {
+      setMobileSectionHub(null);
+    }
+  }, [active]);
+
   const [openMenu, setOpenMenu] = useState<
     "profile" | "notifications" | "settings" | null
   >(null);
@@ -157,7 +262,13 @@ export default function StoreShell({
   );
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [settingsView, setSettingsView] = useState<"main" | "change-password">(
+    "main",
+  );
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const previousUnread = useRef<number | null>(null);
   const isStoreUser = user?.role === "store_admin";
   const roleLabel =
@@ -263,72 +374,225 @@ export default function StoreShell({
   }
 
   async function submitPassword() {
-    if (!user?.id) return;
-    const result = await changeAccountPassword(
-      user.id,
-      currentPassword,
-      nextPassword,
-    );
-    setPasswordMessage(result.error || "Password updated.");
-    if (!result.error) {
-      setCurrentPassword("");
-      setNextPassword("");
+    setPasswordError("");
+    setPasswordMessage("");
+
+    if (!currentPassword.trim()) {
+      setPasswordError("Please enter your current password.");
+      return;
+    }
+    if (!nextPassword.trim()) {
+      setPasswordError("Please enter a new password.");
+      return;
+    }
+    if (nextPassword.length < 6) {
+      setPasswordError("New password must be at least 6 characters.");
+      return;
+    }
+    if (nextPassword !== confirmPassword) {
+      setPasswordError("Confirm password does not match new password.");
+      return;
+    }
+
+    if (!user?.id) {
+      setPasswordError("User session not found. Please log in again.");
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const result = await changeAccountPassword(
+        user.id,
+        currentPassword,
+        nextPassword,
+      );
+      if (result.error) {
+        setPasswordError(result.error);
+      } else {
+        setPasswordMessage("Password updated successfully!");
+        setCurrentPassword("");
+        setNextPassword("");
+        setConfirmPassword("");
+        setTimeout(() => {
+          setSettingsView("main");
+          setPasswordMessage("");
+        }, 1800);
+      }
+    } catch {
+      setPasswordError("Failed to update password. Please try again.");
+    } finally {
+      setIsUpdatingPassword(false);
     }
   }
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+    document.documentElement.classList.toggle("nb-dark", resolvedTheme === "dark");
+    document.documentElement.classList.toggle(
+      "nb-store-dark",
+      resolvedTheme === "dark",
+    );
+    document.documentElement.setAttribute("data-theme", resolvedTheme);
+  }, [resolvedTheme]);
 
   return (
     <div
       className={`flex min-h-screen overflow-x-clip ${
-        resolvedTheme === "dark" ? "nb-store-dark bg-slate-950" : "bg-slate-50"
+        resolvedTheme === "dark"
+          ? "nb-dark dark nb-store-dark bg-slate-950 text-slate-100"
+          : "bg-slate-50 text-slate-800"
       }`}
     >
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-100 bg-white lg:flex">
+      {/* TABLET LANDSCAPE & DESKTOP DOCKED SIDEBAR */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-30 flex-col border-r border-slate-100 bg-white ${
+          sidebarCollapsed ? "hidden xl:flex" : "hidden lg:flex"
+        } xl:flex w-64`}
+      >
         <SidebarContent
           store={store}
           active={active}
-          onNavigate={goStorePage}
+          onNavigate={(p) => {
+            setMobileSectionHub(null);
+            goStorePage(p);
+          }}
           onBack={() => backToCompany()}
           showBack={!isStoreUser}
           onSignOut={signOut}
         />
       </aside>
 
-      {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
+      {/* TABLET DRAWER (600px to 1023px, sm: to lg:) */}
+      {tabletDrawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm animate-fade-in"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => setTabletDrawerOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 flex w-[min(16rem,86vw)] flex-col bg-white animate-slide-in-right">
+          <aside className="absolute inset-y-0 left-0 flex w-[min(18rem,82vw)] flex-col bg-white shadow-2xl animate-slide-in-right">
             <SidebarContent
               store={store}
               active={active}
               onNavigate={(p) => {
+                setTabletDrawerOpen(false);
+                setMobileSectionHub(null);
                 goStorePage(p);
-                setMobileOpen(false);
               }}
-              onBack={() => backToCompany()}
+              onBack={() => {
+                setTabletDrawerOpen(false);
+                backToCompany();
+              }}
               showBack={!isStoreUser}
               onSignOut={signOut}
-              onClose={() => setMobileOpen(false)}
+              onClose={() => setTabletDrawerOpen(false)}
             />
           </aside>
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col lg:ml-64">
-        <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/80 backdrop-blur-md">
-          <div className="flex h-16 items-center gap-3 px-3 sm:gap-4 sm:px-6">
+      <div
+        className={`flex min-w-0 flex-1 flex-col transition-all duration-200 ${
+          sidebarCollapsed ? "lg:ml-0 xl:ml-64" : "lg:ml-64 xl:ml-64"
+        } ml-0`}
+      >
+        {/* HEADER */}
+        <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/90 backdrop-blur-md">
+          {/* MOBILE HEADER — compact app-style header, sm:hidden (< 600px) */}
+          <div className="flex h-14 items-center justify-between px-3.5 sm:hidden">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src="/logo.png"
+                alt="Nature Biotic"
+                className="h-7 w-auto object-contain shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-slate-900 truncate leading-tight">
+                  {store?.name ?? "Store Portal"}
+                </p>
+                <p className="text-[10px] text-slate-500 font-medium truncate leading-none mt-0.5">
+                  {store?.location?.split(",")[0] || "Store"}
+                </p>
+              </div>
+            </div>
+
+            <div
+              data-header-menu
+              className="relative z-[10000] ml-auto flex items-center gap-1.5 shrink-0"
+            >
+              <button
+                type="button"
+                aria-label="Notifications"
+                onClick={() =>
+                  setOpenMenu((current) =>
+                    current === "notifications" ? null : "notifications",
+                  )
+                }
+                className="relative rounded-xl p-2 text-slate-600 transition active:scale-95 hover:bg-slate-100"
+              >
+                <Icon name="notifications" size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute right-1 top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand-600 px-0.5 text-[9px] font-bold text-white ring-2 ring-white">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                aria-label="Settings"
+                onClick={() =>
+                  setOpenMenu((current) =>
+                    current === "settings" ? null : "settings",
+                  )
+                }
+                className="rounded-xl p-2 text-slate-600 transition active:scale-95 hover:bg-slate-100"
+              >
+                <Icon name="settings" size={20} />
+              </button>
+
+              <button
+                type="button"
+                aria-label="Profile menu"
+                onClick={() =>
+                  setOpenMenu((current) =>
+                    current === "profile" ? null : "profile",
+                  )
+                }
+                className="flex items-center transition active:scale-95"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white ring-2 ring-brand-100">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* TABLET & DESKTOP HEADER — hidden sm:flex (>= 600px) */}
+          <div className="hidden h-16 items-center gap-3 px-4 sm:flex sm:px-6">
+            {/* Tablet Menu Drawer Toggle (600px to 1023px, lg:hidden) */}
             <button
-              onClick={() => setMobileOpen(true)}
-              className="rounded-lg p-2.5 transition-base hover:bg-slate-100 lg:hidden"
-              aria-label="Open menu"
+              type="button"
+              onClick={() => setTabletDrawerOpen(true)}
+              className="rounded-xl p-2 text-slate-700 transition hover:bg-slate-100 lg:hidden"
+              aria-label="Open navigation menu"
+              title="Open menu"
             >
               <Icon name="menu" size={24} />
             </button>
 
-            {/* Logo in navbar — mobile only */}
-            <div className="lg:hidden">
+            {/* Tablet Landscape Collapse Toggle (1024px to 1279px, lg:block xl:hidden) */}
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((prev) => !prev)}
+              className="hidden rounded-xl p-2 text-slate-700 transition hover:bg-slate-100 lg:block xl:hidden"
+              aria-label="Toggle sidebar"
+              title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+            >
+              <Icon name={sidebarCollapsed ? "menu" : "menu_open"} size={22} />
+            </button>
+
+            {/* Tablet Logo (visible when docked sidebar is hidden) */}
+            <div className={`items-center lg:hidden ${sidebarCollapsed ? "lg:flex" : ""}`}>
               <img
                 src="/logo.png"
                 alt="Nature Biotic"
@@ -341,14 +605,14 @@ export default function StoreShell({
                 <>
                   <button
                     onClick={() => backToCompany()}
-                    className="text-slate-400 hover:text-slate-600 font-medium transition-base hidden sm:block"
+                    className="text-slate-400 hover:text-slate-600 font-medium transition-base hidden md:block"
                   >
                     Store
                   </button>
                   <Icon
                     name="chevron_right"
                     size={18}
-                    className="text-slate-300 hidden sm:block"
+                    className="text-slate-300 hidden md:block"
                   />
                 </>
               )}
@@ -360,7 +624,7 @@ export default function StoreShell({
 
             <div
               data-header-menu
-              className="relative z-[10000] ml-auto flex items-center gap-1 sm:gap-2"
+              className="relative z-[10000] ml-auto flex items-center gap-2"
             >
               <button
                 type="button"
@@ -419,173 +683,526 @@ export default function StoreShell({
                   className="hidden text-slate-400 sm:block"
                 />
               </button>
+            </div>
+          </div>
 
-              {openMenu === "notifications" && (
-                <div className="absolute right-0 top-12 z-[80] max-h-[min(24rem,calc(100vh-5rem))] w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="text-sm font-bold text-slate-800">
-                      Notifications
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {unreadCount} unread
-                    </p>
-                  </div>
-                  {unreadNotifications.length === 0 ? (
-                    <p className="px-4 py-6 text-sm text-slate-500">
-                      No new notifications
-                    </p>
-                  ) : (
-                    <div className="max-h-80 overflow-y-auto">
-                      {unreadNotifications.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          data-notification-id={item.id}
-                          onClick={() => {
-                            markNotificationRead(item.id);
-                            setOpenMenu(null);
-                            goStorePage(item.page);
-                          }}
-                          className={`block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
-                            readIds.has(item.id) ? "" : "bg-brand-50/40"
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <Icon
-                              name={item.icon}
-                              size={18}
-                              className="mt-0.5 text-brand-700"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-bold text-slate-800">
-                                {item.title}
-                              </p>
-                              <p className="mt-0.5 text-xs text-slate-500">
-                                {item.description}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-400">
-                                {item.timeLabel}
-                                {item.status ? ` · ${item.status}` : ""}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {openMenu === "settings" && (
-                <div className="absolute right-0 top-12 z-[80] max-h-[min(32rem,calc(100vh-5rem))] w-[min(22rem,calc(100vw-1.5rem))] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
-                  <p className="text-sm font-bold text-slate-800">Settings</p>
-                  <p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Appearance
+          {/* SHARED DROPDOWN MENUS (Notifications, Settings, Profile) */}
+          <div data-header-menu className="relative">
+            {openMenu === "notifications" && (
+              <div className="absolute right-2 sm:right-6 top-1 z-[80] max-h-[min(24rem,calc(100vh-5rem))] w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <p className="text-sm font-bold text-slate-800">
+                    Notifications
                   </p>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {(
-                      [
-                        ["light", "Light"],
-                        ["dark", "Dark"],
-                        ["system", "System"],
-                      ] as const
-                    ).map(([value, label]) => (
+                  <p className="text-xs text-slate-500">
+                    {unreadCount} unread
+                  </p>
+                </div>
+                {unreadNotifications.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-slate-500">
+                    No new notifications
+                  </p>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {unreadNotifications.map((item) => (
                       <button
-                        key={value}
+                        key={item.id}
                         type="button"
-                        onClick={() => chooseTheme(value)}
-                        className={`rounded-xl px-2 py-2 text-xs font-semibold ${
-                          settings.theme === value
-                            ? "bg-brand-50 text-brand-700"
-                            : "bg-slate-50 text-slate-600"
+                        data-notification-id={item.id}
+                        onClick={() => {
+                          markNotificationRead(item.id);
+                          setOpenMenu(null);
+                          setMobileSectionHub(null);
+                          goStorePage(item.page);
+                        }}
+                        className={`block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
+                          readIds.has(item.id) ? "" : "bg-brand-50/40"
                         }`}
                       >
-                        {label}
+                        <div className="flex items-start gap-3">
+                          <Icon
+                            name={item.icon}
+                            size={18}
+                            className="mt-0.5 text-brand-700"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-slate-800">
+                              {item.title}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {item.description}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {item.timeLabel}
+                              {item.status ? ` · ${item.status}` : ""}
+                            </p>
+                          </div>
+                        </div>
                       </button>
                     ))}
                   </div>
-                  <p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Notifications
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateSettings({ ...settings, sound: !settings.sound })
-                    }
-                    className="mt-2 flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-700"
-                  >
-                    Notification sound
-                    <span>{settings.sound ? "On" : "Off"}</span>
-                  </button>
-                  <p className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Account
-                  </p>
-                  <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2">
-                    <p className="text-sm font-bold text-slate-800">
-                      {displayName}
+                )}
+              </div>
+            )}
+
+            {openMenu === "settings" && (
+              <div className="absolute right-2 sm:right-6 top-1 z-[80] max-h-[min(36rem,calc(100vh-5rem))] w-[min(23rem,calc(100vw-1.5rem))] overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-xl">
+                {settingsView === "main" ? (
+                  <>
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Icon
+                          name="settings"
+                          size={20}
+                          className="text-brand-600 dark:text-brand-400"
+                        />
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          Store Settings
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setOpenMenu(null)}
+                        className="rounded-lg p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        <Icon name="close" size={18} />
+                      </button>
+                    </div>
+
+                    {/* Section: Profile */}
+                    <p className="mt-3.5 text-xs font-bold uppercase tracking-wide text-slate-400">
+                      Profile
                     </p>
-                    <p className="text-xs text-slate-500">{user?.email}</p>
-                    <p className="text-xs text-slate-400">{roleLabel}</p>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    <Input
-                      label="Current password"
-                      type="password"
-                      value={currentPassword}
-                      onChange={setCurrentPassword}
-                    />
-                    <Input
-                      label="New password"
-                      type="password"
-                      value={nextPassword}
-                      onChange={setNextPassword}
-                    />
-                    {passwordMessage && (
-                      <p className="text-xs font-medium text-slate-600">
-                        {passwordMessage}
-                      </p>
-                    )}
+                    <div className="mt-2 flex items-center gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 p-3 border border-slate-100 dark:border-slate-800">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white shadow-xs">
+                        {displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">
+                          {displayName}
+                        </p>
+                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                          {user?.email}
+                        </p>
+                        <span className="inline-block mt-0.5 rounded-md bg-brand-50 dark:bg-brand-950/70 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700 dark:text-brand-300">
+                          {roleLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Section: Change Password */}
+                    <div className="mt-3.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPasswordError("");
+                          setPasswordMessage("");
+                          setCurrentPassword("");
+                          setNextPassword("");
+                          setConfirmPassword("");
+                          setSettingsView("change-password");
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 p-3 text-left transition hover:border-brand-500 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-800 group"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-400">
+                            <Icon name="lock" size={18} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 group-hover:text-brand-600 dark:group-hover:text-brand-400">
+                              Change Password
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Update your store account password
+                            </p>
+                          </div>
+                        </div>
+                        <Icon
+                          name="chevron_right"
+                          size={18}
+                          className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200"
+                        />
+                      </button>
+                    </div>
+
+                    {/* Section: Notifications */}
+                    <p className="mt-3.5 text-xs font-bold uppercase tracking-wide text-slate-400">
+                      Notifications
+                    </p>
                     <button
                       type="button"
-                      onClick={() => void submitPassword()}
-                      className="w-full rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white"
+                      onClick={() =>
+                        updateSettings({ ...settings, sound: !settings.sound })
+                      }
+                      className="mt-2 flex w-full items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 px-3 py-2.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                     >
-                      Change password
+                      <div className="flex items-center gap-2">
+                        <Icon
+                          name="volume_up"
+                          size={18}
+                          className="text-slate-500 dark:text-slate-400"
+                        />
+                        <span>Notification sound</span>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          settings.sound
+                            ? "bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-400"
+                            : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                        }`}
+                      >
+                        {settings.sound ? "On" : "Off"}
+                      </span>
                     </button>
+
+                    {/* Section: Appearance / Theme */}
+                    <p className="mt-3.5 text-xs font-bold uppercase tracking-wide text-slate-400">
+                      Appearance (Theme)
+                    </p>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {(
+                        [
+                          ["light", "Light", "light_mode"],
+                          ["dark", "Dark", "dark_mode"],
+                          ["system", "System", "settings_brightness"],
+                        ] as const
+                      ).map(([value, label, iconName]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => chooseTheme(value)}
+                          className={`flex flex-col items-center justify-center gap-1 rounded-xl p-2.5 text-xs font-semibold transition border ${
+                            settings.theme === value
+                              ? "border-brand-600 bg-brand-50 text-brand-700 dark:bg-brand-950/70 dark:text-brand-300 dark:border-brand-600"
+                              : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          }`}
+                        >
+                          <Icon name={iconName} size={18} />
+                          <span>{label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsView("main");
+                        setPasswordError("");
+                        setPasswordMessage("");
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-brand-700 dark:hover:text-brand-400 mb-3"
+                    >
+                      <Icon name="arrow_back" size={16} />
+                      <span>Back to Settings</span>
+                    </button>
+
+                    <div className="flex items-center gap-2.5 mb-3.5 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-400">
+                        <Icon name="lock" size={18} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                          Change Password
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Update your store account password
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Input
+                        label="Current Password"
+                        type="password"
+                        placeholder="Enter current password"
+                        value={currentPassword}
+                        onChange={setCurrentPassword}
+                        required
+                      />
+                      <Input
+                        label="New Password"
+                        type="password"
+                        placeholder="At least 6 characters"
+                        value={nextPassword}
+                        onChange={setNextPassword}
+                        required
+                      />
+                      <Input
+                        label="Confirm New Password"
+                        type="password"
+                        placeholder="Re-enter new password"
+                        value={confirmPassword}
+                        onChange={setConfirmPassword}
+                        required
+                      />
+
+                      {passwordError && (
+                        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800/50 text-xs font-semibold text-red-600 dark:text-red-300">
+                          <Icon name="error" size={16} />
+                          <span>{passwordError}</span>
+                        </div>
+                      )}
+
+                      {passwordMessage && (
+                        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-brand-50 dark:bg-brand-950/60 border border-brand-200 dark:border-brand-800/50 text-xs font-semibold text-brand-700 dark:text-brand-300">
+                          <Icon name="check_circle" size={16} fill />
+                          <span>{passwordMessage}</span>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettingsView("main");
+                            setPasswordError("");
+                            setPasswordMessage("");
+                          }}
+                          className="flex-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isUpdatingPassword}
+                          onClick={() => void submitPassword()}
+                          className="flex-1 rounded-xl bg-brand-600 hover:bg-brand-700 py-2.5 text-xs font-semibold text-white shadow-sm transition disabled:opacity-50"
+                        >
+                          {isUpdatingPassword
+                            ? "Updating..."
+                            : "Update Password"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {openMenu === "profile" && (
+              <div className="absolute right-2 sm:right-6 top-1 z-[80] w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-xl">
+                {/* Profile Header */}
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white shadow-xs">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-800 truncate">
+                        {displayName}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+                      <span className="inline-block mt-0.5 rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">
+                        {roleLabel}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {openMenu === "profile" && (
-                <div className="absolute right-0 top-12 z-[80] w-[min(16rem,calc(100vw-1.5rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 shadow-xl">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="text-sm font-bold text-slate-800">
-                      {displayName}
-                    </p>
-                    <p className="text-xs text-slate-500">{roleLabel}</p>
-                  </div>
+                <div className="py-1">
+                  {/* Reports item */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      setMobileSectionHub(null);
+                      goStorePage("reports");
+                    }}
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-brand-700"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                        <Icon name="bar_chart" size={17} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Reports</p>
+                        <p className="text-[10px] text-slate-400">Store analytics & summaries</p>
+                      </div>
+                    </div>
+                    <Icon name="chevron_right" size={16} className="text-slate-400" />
+                  </button>
+
+                  {/* Settings item */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenMenu("settings");
+                    }}
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-brand-700"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                        <Icon name="settings" size={17} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">Settings</p>
+                        <p className="text-[10px] text-slate-400">Preferences & password</p>
+                      </div>
+                    </div>
+                    <Icon name="chevron_right" size={16} className="text-slate-400" />
+                  </button>
+
+                  {!isStoreUser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenMenu(null);
+                        backToCompany();
+                      }}
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-brand-700"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                          <Icon name="business" size={17} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">Company Portal</p>
+                          <p className="text-[10px] text-slate-400">Switch back to company</p>
+                        </div>
+                      </div>
+                      <Icon name="chevron_right" size={16} className="text-slate-400" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-800 pt-1">
                   <button
                     type="button"
                     onClick={() => {
                       setOpenMenu(null);
                       signOut();
                     }}
-                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-red-50 hover:text-red-600"
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-xs font-bold text-red-600 dark:text-red-400 transition hover:bg-red-50 dark:hover:bg-red-950/60"
                   >
-                    <Icon name="logout" size={18} />
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-50 dark:bg-red-950/70 text-red-600 dark:text-red-400">
+                      <Icon name="logout" size={17} />
+                    </div>
                     Sign Out
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden p-3 sm:p-6 lg:p-8">
-          <div key={active} className="animate-fade-in">
-            {children}
-          </div>
+        {/* MAIN BODY */}
+        <main className="min-w-0 flex-1 overflow-x-hidden p-3 pb-28 sm:p-6 sm:pb-8 lg:p-8 lg:pb-8">
+          {/* Mobile Section Hub (only on mobile screens < 600px when user selects a section tab) */}
+          {mobileSectionHub ? (
+            <>
+              <div className="sm:hidden">
+                <StoreMobileSectionHub
+                  section={mobileSectionHub}
+                  onNavigate={(page) => {
+                    setMobileSectionHub(null);
+                    goStorePage(page);
+                  }}
+                />
+              </div>
+              <div className="hidden sm:block">
+                <div key={active} className="animate-fade-in">
+                  {children}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Inner page back bar for mobile (when not on dashboard, < 600px) */}
+              {active !== "dashboard" && (
+                <div className="mb-3.5 flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-xs sm:hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeBottomTab === "sales") setMobileSectionHub("sales");
+                      else if (activeBottomTab === "purchases") setMobileSectionHub("purchases");
+                      else if (activeBottomTab === "stock") setMobileSectionHub("stock");
+                      else if (activeBottomTab === "attendance") setMobileSectionHub("attendance");
+                      else {
+                        setMobileSectionHub(null);
+                        goStorePage("dashboard");
+                      }
+                    }}
+                    className="flex items-center gap-2 text-xs font-bold text-slate-700 transition active:scale-95 hover:text-brand-700"
+                  >
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                      <Icon name="arrow_back" size={16} />
+                    </div>
+                    <span>
+                      Back to {
+                        activeBottomTab === "sales" ? "Sales" :
+                        activeBottomTab === "purchases" ? "Purchase" :
+                        activeBottomTab === "stock" ? "Stock" :
+                        activeBottomTab === "attendance" ? "Attendance" : "Home"
+                      }
+                    </span>
+                  </button>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 capitalize">
+                    {formatPageTitle(active)}
+                  </span>
+                </div>
+              )}
+              <div key={active} className="animate-fade-in">
+                {children}
+              </div>
+            </>
+          )}
         </main>
+
+        {/* MOBILE BOTTOM NAVIGATION — sm:hidden (< 600px only) */}
+        <nav
+          aria-label="Mobile Navigation"
+          className="fixed bottom-0 inset-x-0 z-40 sm:hidden bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] pb-[max(0.6rem,env(safe-area-inset-bottom,0.6rem))] pt-1.5"
+        >
+          <div className="grid grid-cols-5 items-center px-1">
+            {bottomTabs.map((tab) => {
+              const isActive = activeBottomTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    if (tab.id === "home") {
+                      setMobileSectionHub(null);
+                      goStorePage("dashboard");
+                    } else {
+                      setMobileSectionHub(tab.id);
+                    }
+                  }}
+                  className={`group flex flex-col items-center justify-center py-1 px-1 transition-all duration-200 active:scale-95 ${
+                    isActive
+                      ? "text-brand-700 dark:text-emerald-400 font-semibold"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-normal"
+                  }`}
+                >
+                  <div
+                    className={`flex h-8 w-11 items-center justify-center rounded-xl transition-all duration-200 ${
+                      isActive
+                        ? "bg-brand-50 text-brand-700 dark:bg-emerald-950/70 dark:text-emerald-300 scale-105 shadow-xs"
+                        : "text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200"
+                    }`}
+                  >
+                    <Icon
+                      name={tab.icon}
+                      size={22}
+                      className={isActive ? "text-brand-700 dark:text-emerald-400 font-bold" : "text-slate-500 dark:text-slate-400"}
+                    />
+                  </div>
+                  <span
+                    className={`mt-0.5 text-[10px] leading-tight tracking-tight truncate max-w-full ${
+                      isActive
+                        ? "font-bold text-brand-700 dark:text-emerald-400"
+                        : "font-medium text-slate-500 dark:text-slate-400"
+                    }`}
+                  >
+                    {tab.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
       </div>
     </div>
   );
@@ -619,17 +1236,19 @@ function SidebarContent({
 
   return (
     <>
-      <div className="border-b border-slate-100 shrink-0">
+      <div className="border-b border-slate-100 dark:border-slate-800 shrink-0">
         <div className="flex items-center justify-center px-5 h-16 relative">
-          <img
-            src="/logo.png"
-            alt="Nature Biotic"
-            className="h-12 w-auto object-contain"
-          />
+          <div className="rounded-xl bg-white/95 px-3 py-1 shadow-xs inline-flex items-center justify-center">
+            <img
+              src="/logo.png"
+              alt="Nature Biotic"
+              className="h-10 w-auto object-contain"
+            />
+          </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="absolute right-3 p-1.5 rounded-lg hover:bg-slate-100 lg:hidden"
+              className="absolute right-3 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-300 lg:hidden"
             >
               <Icon name="close" size={20} />
             </button>
@@ -641,7 +1260,7 @@ function SidebarContent({
         {showBack && (
           <button
             onClick={onBack}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-500 hover:bg-slate-50 transition-base mb-2"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-base mb-2"
           >
             <Icon name="arrow_back" size={20} />
             Back to Stores
@@ -657,8 +1276,8 @@ function SidebarContent({
                 onClick={() => onNavigate(item.key)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-base ${
                   isActive
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50"
+                    ? "bg-brand-50 text-brand-700 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border dark:border-emerald-800/60 font-bold"
+                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:text-white"
                 }`}
               >
                 <Icon name={item.icon} size={22} fill={isActive} />
@@ -675,8 +1294,8 @@ function SidebarContent({
                 onClick={() => toggleGroup(item.key)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-base ${
                   isChildActive
-                    ? "text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50"
+                    ? "text-brand-700 dark:text-emerald-300 font-bold"
+                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:text-white"
                 }`}
               >
                 <Icon name={item.icon} size={22} fill={isChildActive} />
@@ -684,11 +1303,11 @@ function SidebarContent({
                 <Icon
                   name="chevron_right"
                   size={18}
-                  className={`text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                  className={`text-slate-400 dark:text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
                 />
               </button>
               {isOpen && (
-                <div className="mt-1 ml-3 pl-4 border-l border-slate-100 space-y-0.5">
+                <div className="mt-1 ml-3 pl-4 border-l border-slate-100 dark:border-slate-800 space-y-0.5">
                   {item.children.map((child) => {
                     const isActive = active === child.key;
                     return (
@@ -697,8 +1316,8 @@ function SidebarContent({
                         onClick={() => onNavigate(child.key)}
                         className={`w-full flex items-center gap-2.5 pl-3 pr-3 py-2 rounded-lg text-sm font-medium transition-base ${
                           isActive
-                            ? "bg-brand-50 text-brand-700"
-                            : "text-slate-500 hover:bg-slate-50"
+                            ? "bg-brand-50 text-brand-700 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border dark:border-emerald-800/40 font-bold"
+                            : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                         }`}
                       >
                         <Icon name={child.icon} size={18} fill={isActive} />
@@ -713,10 +1332,10 @@ function SidebarContent({
         })}
       </nav>
 
-      <div className="px-3 py-4 border-t border-slate-100 shrink-0">
+      <div className="px-3 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
         <button
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600 transition-base"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-950/60 hover:text-red-600 dark:hover:text-red-400 transition-base"
         >
           <Icon name="logout" size={22} />
           Sign Out

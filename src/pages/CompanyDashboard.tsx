@@ -467,7 +467,7 @@ function buildAdminDashboard(filter: DateFilter) {
 }
 
 export default function CompanyDashboard() {
-  const { goStore } = useNav();
+  const { goStore, goCompany } = useNav();
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [actualDetailView, setActualDetailView] =
     useState<ActualDetailView>(null);
@@ -549,12 +549,75 @@ export default function CompanyDashboard() {
 
   return (
     <div>
-      {/* Sticky date filter bar — solid background, stays below header */}
-      {/* <div className="sticky top-16 z-10 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3.5 mb-10 bg-slate-50 border-b border-slate-200 shadow-sm">
-        <div className="flex justify-end">
-          <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
+      {/* Mobile Quick Actions — sm:hidden (< 600px) */}
+      <div className="mb-5 sm:hidden">
+        <div className="mb-2.5 flex items-center justify-between">
+          <h2 className="text-xs font-bold text-slate-800 tracking-tight uppercase">
+            Quick Actions
+          </h2>
+          <span className="text-[10px] font-medium text-slate-400">
+            Admin shortcuts
+          </span>
         </div>
-      </div> */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => goCompany("sales")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white p-3 text-left shadow-xs transition active:scale-95 hover:border-brand-300"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+              <Icon name="receipt_long" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 truncate">Create Sale</p>
+              <p className="text-[10px] text-slate-400 truncate">New invoice</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goCompany("products")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white p-3 text-left shadow-xs transition active:scale-95 hover:border-emerald-300"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <Icon name="inventory_2" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 truncate">Products</p>
+              <p className="text-[10px] text-slate-400 truncate">Product master</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goCompany("stores")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white p-3 text-left shadow-xs transition active:scale-95 hover:border-blue-300"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+              <Icon name="storefront" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 truncate">Stores</p>
+              <p className="text-[10px] text-slate-400 truncate">Manage stores</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goCompany("purchase-orders")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 bg-white p-3 text-left shadow-xs transition active:scale-95 hover:border-purple-300"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
+              <Icon name="shopping_cart_checkout" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 truncate">Purchase Orders</p>
+              <p className="text-[10px] text-slate-400 truncate">Store requests</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
       <div className="mb-6 w-full overflow-x-auto lg:hidden">
         <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
       </div>
@@ -601,7 +664,7 @@ export default function CompanyDashboard() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[650px] text-sm">
                     <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                       <tr>
                         <th className="px-4 py-3 text-left">Type</th>
@@ -657,16 +720,16 @@ export default function CompanyDashboard() {
       )}
 
       {/* SECTION 1 — Actual Sales */}
-      <section className="mb-12">
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+      <section className="mb-8 sm:mb-12">
+        <div className="mb-4 sm:mb-5">
+          <h2 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight">
             Actual Sales
           </h2>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Nature Biotic direct and company sales overview
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 stagger [&_p]:!text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-5 stagger [&_p]:!text-sm">
           <button
             type="button"
             onClick={() =>
@@ -731,16 +794,16 @@ export default function CompanyDashboard() {
       </section>
 
       {/* SECTION 2 — Market Sales */}
-      <section className="mb-12">
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-slate-800 tracking-tight">
+      <section className="mb-8 sm:mb-12">
+        <div className="mb-4 sm:mb-5">
+          <h2 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight">
             Market Sales
           </h2>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Combined sales overview from all stores
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 stagger [&_p]:!text-sm">
+        <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5 stagger [&_p]:!text-sm">
           <StatCard
             label="Sales"
             value={formatCurrency(data.market.receivable)}

@@ -325,7 +325,8 @@ export default function CompanyPurchaseOrders() {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <table className="w-full table-fixed border-collapse text-sm">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[950px] table-fixed border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
                 <th rowSpan={2} className="w-[5%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
@@ -460,6 +461,7 @@ export default function CompanyPurchaseOrders() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 

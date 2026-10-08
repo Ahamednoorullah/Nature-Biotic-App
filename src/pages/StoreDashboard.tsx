@@ -19,6 +19,7 @@ import { getStorePurchasesFromCompanySales } from "@/lib/data";
 import { getFROStockTxnsByExecutive, getFROStockByExecutive, isStorePurchaseReceived } from "@/lib/data";
 import { getStoreOverviewStockValue } from "@/pages/StoreInventory";
 import { useAuth } from "@/context/AuthContext";
+import { useNav } from "@/context/NavContext";
 import {
   buildStoreDashboard,
   inPeriod,
@@ -92,6 +93,7 @@ type AggregatedStockRow = {
 };
 
 export default function StoreDashboard({ storeId }: { storeId: string }) {
+  const { goStorePage } = useNav();
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -355,7 +357,76 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </div>
       </div> */}
 
-      <div className="mb-6 w-full overflow-x-auto lg:hidden">
+      {/* Mobile Quick Actions — sm:hidden (< 600px) */}
+      <div className="mb-5 sm:hidden">
+        <div className="mb-2.5 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-800 tracking-tight">
+            Quick Actions
+          </h2>
+          <span className="text-[11px] font-medium text-slate-400">
+            Store shortcuts
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={() => goStorePage("sales-invoice")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left shadow-xs transition active:scale-95 hover:border-brand-300 dark:hover:border-brand-500 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 dark:bg-brand-950/70 text-brand-700 dark:text-brand-300">
+              <Icon name="receipt_long" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">Sales Invoice</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-400 truncate">Create bill</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goStorePage("farmers")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left shadow-xs transition active:scale-95 hover:border-emerald-300 dark:hover:border-emerald-500 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+              <Icon name="groups" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">Farmers</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-400 truncate">Directory</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goStorePage("purchases")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left shadow-xs transition active:scale-95 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300">
+              <Icon name="shopping_cart" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">Purchases</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-400 truncate">Bills & orders</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => goStorePage("stock-management")}
+            className="flex items-center gap-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-left shadow-xs transition active:scale-95 hover:border-purple-300 dark:hover:border-purple-500 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300">
+              <Icon name="inventory_2" size={18} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">Stock Overview</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-400 truncate">Current items</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-4 sm:mb-6 w-full overflow-x-auto no-scrollbar lg:hidden">
         <SegmentedDateFilter value={dateFilter} onChange={setDateFilter} />
       </div>
       {createPortal(
@@ -366,11 +437,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       )}
 
       {/* ROW 1 — Business Overview */}
-      <div className="mb-12">
-        <h2 className="text-lg font-bold text-slate-800 tracking-tight mb-10">
+      <div className="mb-8 lg:mb-12">
+        <h2 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight mb-3 sm:mb-6 lg:mb-10">
           Business Overview
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 stagger">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3 stagger">
           <BusinessOverviewCard
             label="Sales"
             value={formatCurrency(data.sales)}
@@ -427,7 +498,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <DirectSalesCard
             label="Sales"
             value={formatCurrency(directSales.sales)}
@@ -499,7 +570,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
             const stock = execStockData[key];
             return (
               <Card key={key} className="p-4">
-                <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-10 h-10 rounded-xl bg-gradient-to-br ${officer.color} flex items-center justify-center text-white font-bold text-sm shrink-0`}
@@ -508,11 +579,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     </div>
 
                     <div className="min-w-0">
-                      <h3 className="font-bold text-slate-800 text-base leading-tight truncate">
+                      <h3 className="font-bold text-slate-800 dark:text-slate-100 text-base leading-tight truncate">
                         {officer.name}
                       </h3>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs text-slate-400">
+                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                        <p className="text-xs text-slate-400 dark:text-slate-400 font-medium">
                           Field Executive
                         </p>
                         {(pendingByExecutive[key]?.length || 0) > 0 && (
@@ -523,7 +594,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                               setViewingHandoverId(null);
                               setShowPendingHandovers(true);
                             }}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 hover:bg-amber-100"
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/80 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60"
                           >
                             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                             Pending {pendingByExecutive[key]?.length}
@@ -560,12 +631,12 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-8 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
                   <ExecField
                     icon="payments"
                     label="Sales"
                     value={formatCurrency(e.sales)}
-                    color="text-brand-600"
+                    color="text-emerald-600 dark:text-emerald-400"
                     onClick={() =>
                       setExecDetail({
                         execKey: key,
@@ -578,7 +649,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     icon="account_balance_wallet"
                     label="Collection"
                     value={formatCurrency(e.collection)}
-                    color="text-blue-600"
+                    color="text-blue-600 dark:text-blue-400"
                     onClick={() =>
                       setExecDetail({
                         execKey: key,
@@ -591,7 +662,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     icon="savings"
                     label="Cash in Hand"
                     value={formatCurrency(e.collectionInHand)}
-                    color="text-emerald-600"
+                    color="text-emerald-600 dark:text-emerald-400"
                     onClick={() =>
                       setExecDetail({
                         execKey: key,
@@ -604,7 +675,7 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     icon="receipt_long"
                     label="Outstanding"
                     value={formatCurrency(e.outstanding)}
-                    color="text-amber-600"
+                    color="text-amber-600 dark:text-amber-400"
                     onClick={() =>
                       setExecDetail({
                         execKey: key,
@@ -617,33 +688,25 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
                     icon="local_shipping"
                     label="Total Received"
                     value={formatCurrency(received.value)}
-                    color="text-teal-600"
+                    color="text-teal-600 dark:text-teal-400"
                   />
                   <ExecField
                     icon="groups"
                     label="Farmers"
                     value={String(e.farmers)}
+                    color="text-slate-800 dark:text-slate-100"
                   />
-                  {/* <ExecField
-                    icon="agriculture"
-                    label="Farms"
-                    value={String(e.farms)}
-                  /> */}
-                  {/* <ExecField
-                    icon="spa"
-                    label="Crops"
-                    value={String(e.crops)}
-                  /> */}
                   <ExecField
                     icon="receipt"
                     label="Visits"
                     value={String(e.visits)}
+                    color="text-slate-800 dark:text-slate-100"
                   />
                   <ExecField
                     icon="inventory_2"
                     label="Stocks in Hand"
                     value={formatCurrency(stock?.balanceTotalValue || 0)}
-                    color="text-indigo-600"
+                    color="text-indigo-600 dark:text-indigo-400"
                     onClick={() =>
                       setExecDetail({
                         execKey: key,
@@ -745,8 +808,8 @@ function PendingHandoverModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4 backdrop-blur-[2px]">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
@@ -879,8 +942,8 @@ function FROStockDetailModal({
   const stockCount = getFROTotalStockCount(executiveName, storeId);
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4 backdrop-blur-[2px]">
+      <div className="w-full max-w-md max-h-[85vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
@@ -931,23 +994,23 @@ function DirectSalesCard({
   onClick?: () => void;
 }) {
   const colors: Record<string, string> = {
-    brand: "bg-emerald-50 text-emerald-600",
-    blue: "bg-blue-50 text-blue-600",
-    amber: "bg-amber-50 text-amber-600",
-    purple: "bg-purple-50 text-purple-600",
+    brand: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border dark:border-emerald-800/50",
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-300 dark:border dark:border-blue-800/50",
+    amber: "bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-300 dark:border dark:border-amber-800/50",
+    purple: "bg-purple-50 text-purple-600 dark:bg-purple-950/70 dark:text-purple-300 dark:border dark:border-purple-800/50",
   };
 
   return (
     <Card
       onClick={onClick}
-      className={`p-4 transition-base hover:-translate-y-0.5 hover:shadow-md ${
-        onClick ? "cursor-pointer hover:ring-1 hover:ring-brand-200" : ""
+      className={`p-4 transition-base hover:-translate-y-0.5 hover:shadow-md border border-slate-100 dark:border-slate-800 ${
+        onClick ? "cursor-pointer hover:ring-1 hover:ring-brand-200 dark:hover:ring-brand-500/50" : ""
       }`}
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-1 whitespace-nowrap text-[14px] font-bold tracking-tight text-slate-800">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="mt-1 whitespace-nowrap text-xs sm:text-[14px] font-bold tracking-tight text-slate-800 dark:text-slate-100">
             {value}
           </p>
         </div>
@@ -1139,8 +1202,8 @@ function DirectSalesDetailModal({
         : summary.outstanding;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4 backdrop-blur-[2px]">
+      <div className="flex h-[88vh] sm:h-[76vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
@@ -1276,18 +1339,18 @@ function BusinessOverviewCard({
   trend: string;
 }) {
   const colors: Record<string, string> = {
-    brand: "bg-emerald-50 text-emerald-600",
-    blue: "bg-blue-50 text-blue-600",
-    amber: "bg-amber-50 text-amber-600",
-    purple: "bg-purple-50 text-purple-600",
+    brand: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300 dark:border dark:border-emerald-800/50",
+    blue: "bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-300 dark:border dark:border-blue-800/50",
+    amber: "bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-300 dark:border dark:border-amber-800/50",
+    purple: "bg-purple-50 text-purple-600 dark:bg-purple-950/70 dark:text-purple-300 dark:border dark:border-purple-800/50",
   };
 
   return (
-    <Card className="p-4 transition-base hover:-translate-y-0.5 hover:shadow-md">
+    <Card className="p-4 transition-base hover:-translate-y-0.5 hover:shadow-md border border-slate-100 dark:border-slate-800">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-1 text-[14px] font-bold tracking-tight text-slate-800">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
+          <p className="mt-1 text-[14px] font-bold tracking-tight text-slate-800 dark:text-slate-100">
             {value}
           </p>
         </div>
@@ -1299,7 +1362,7 @@ function BusinessOverviewCard({
         </div>
       </div>
 
-      <p className="mt-3 text-[11px] font-semibold leading-tight text-emerald-600">
+      <p className="mt-3 text-[11px] font-semibold leading-tight text-emerald-600 dark:text-emerald-400">
         {trend}
       </p>
     </Card>
@@ -1354,8 +1417,8 @@ function ExecutiveDetailModal({
     const activeValue = stockData.balanceTotalValue;
 
     return (
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-        <div className="flex h-[76vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4 backdrop-blur-[2px]">
+        <div className="flex h-[88vh] sm:h-[76vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
@@ -1501,8 +1564,8 @@ function ExecutiveDetailModal({
   const totalAmount = rows.reduce((sum, row) => sum + row.amount, 0);
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-      <div className="flex h-[72vh] w-[92vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-3 sm:p-4 backdrop-blur-[2px]">
+      <div className="flex h-[88vh] sm:h-[76vh] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
@@ -1631,15 +1694,15 @@ function SegmentedDateFilter({
   onChange: (v: DateFilter) => void;
 }) {
   return (
-    <div className="inline-flex p-1 rounded-2xl bg-slate-100 border border-slate-200 overflow-x-auto max-w-full">
+    <div className="inline-flex p-1 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs overflow-x-auto max-w-full">
       {filterTabs.map((tab) => (
         <button
           key={tab.key}
           onClick={() => onChange(tab.key)}
-          className={`px-3 sm:px-4 py-2.5 rounded-xl text-sm font-semibold transition-base whitespace-nowrap ${
+          className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-base whitespace-nowrap ${
             value === tab.key
-              ? "bg-white text-brand-700 shadow-sm"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-white dark:bg-emerald-600 text-brand-700 dark:text-white shadow-sm font-bold"
+              : "text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800/80"
           }`}
         >
           {tab.label}
@@ -1661,25 +1724,25 @@ function ExecutiveTargetBadge({
   color: "brand" | "blue" | "amber" | "purple";
 }) {
   const tone: Record<string, string> = {
-    brand: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    blue: "border-blue-200 bg-blue-50 text-blue-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    purple: "border-purple-200 bg-purple-50 text-purple-700",
+    brand: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/80 dark:bg-emerald-950/60 dark:text-emerald-300",
+    blue: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800/80 dark:bg-blue-950/60 dark:text-blue-300",
+    amber: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/80 dark:bg-amber-950/60 dark:text-amber-300",
+    purple: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800/80 dark:bg-purple-950/60 dark:text-purple-300",
   };
 
   return (
     <div
-      className={`min-w-[118px] rounded-lg border px-2.5 py-1.5 ${tone[color]}`}
+      className={`min-w-[124px] rounded-xl border px-3 py-1.5 transition ${tone[color]}`}
     >
       <div className="flex items-center gap-1.5">
-        <Icon name={icon} size={13} />
-        <span className="text-[9px] font-semibold uppercase tracking-wide opacity-75">
+        <Icon name={icon} size={14} className="shrink-0" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-200">
           {label}
         </span>
       </div>
 
-      <div className="mt-0.5">
-        <span className="text-xs font-bold">{value}</span>
+      <div className="mt-1">
+        <span className="text-xs font-extrabold tracking-tight dark:text-white">{value}</span>
       </div>
     </div>
   );
@@ -1689,7 +1752,7 @@ function ExecField({
   icon,
   label,
   value,
-  color = "text-slate-800",
+  color = "text-slate-800 dark:text-slate-100",
   onClick,
 }: {
   icon: string;
@@ -1703,18 +1766,18 @@ function ExecField({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className={`w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg bg-slate-50/70 transition ${
+      className={`w-full text-left flex items-center gap-2 px-2.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-100 dark:border-slate-700/80 transition ${
         onClick
-          ? "cursor-pointer hover:bg-slate-100 hover:-translate-y-0.5"
+          ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/90 hover:-translate-y-0.5 shadow-2xs hover:shadow-xs active:scale-95"
           : "cursor-default"
       }`}
     >
-      <Icon name={icon} size={15} className="text-slate-400 shrink-0" />
+      <Icon name={icon} size={16} className="text-slate-400 dark:text-slate-400 shrink-0" />
       <div className="min-w-0">
-        <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-tight truncate">
           {label}
         </p>
-        <p className={`text-sm font-bold leading-tight ${color} truncate`}>
+        <p className={`text-sm font-extrabold leading-tight ${color} truncate mt-0.5`}>
           {value}
         </p>
       </div>

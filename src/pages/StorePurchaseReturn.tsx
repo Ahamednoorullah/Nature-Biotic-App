@@ -1210,8 +1210,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
         )}
 
       <Card className="overflow-hidden p-0">
-        <div className="w-full">
-          <table className="w-full table-fixed border-collapse text-sm">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[950px] table-fixed border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
                 <th

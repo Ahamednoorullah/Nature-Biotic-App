@@ -204,41 +204,640 @@ body {
   animation: shimmer 1.6s infinite linear;
 }
 
-/* Store theme. Scoped to the store shell so company and FRO screens stay unchanged. */
+/* Comprehensive Dark Theme (Scoped to .dark, .nb-dark, and .nb-store-dark) */
+html.dark,
+html.nb-dark,
+.dark,
+.nb-dark,
 .nb-store-dark {
-  background: #020617;
-  color: #e2e8f0;
+  color-scheme: dark;
 }
+
+.dark,
+.nb-dark,
+.nb-store-dark {
+  background-color: #020617;
+  color: #f1f5f9;
+}
+
+/* Surfaces: Cards, Drawers, Sidebars, Modals */
+.dark .bg-white,
+.dark .bg-white\/80,
+.dark .bg-white\/90,
+.dark .bg-white\/95,
+.nb-dark .bg-white,
+.nb-dark .bg-white\/80,
+.nb-dark .bg-white\/90,
+.nb-dark .bg-white\/95,
 .nb-store-dark .bg-white,
 .nb-store-dark .bg-white\/80,
+.nb-store-dark .bg-white\/90,
 .nb-store-dark .bg-white\/95 {
-  background-color: #0f172a;
+  background-color: #0f172a !important;
 }
+
+/* Page Background & Inner wells */
+.dark.bg-slate-50,
+.nb-dark.bg-slate-50,
+.nb-store-dark.bg-slate-50,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.nb-dark .bg-slate-50\/50,
+.nb-dark .bg-slate-50\/60,
+.nb-store-dark .bg-slate-50\/50,
+.nb-store-dark .bg-slate-50\/60 {
+  background-color: #020617 !important;
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-50\/70,
+.nb-dark .bg-slate-50,
+.nb-dark .bg-slate-50\/70,
 .nb-store-dark .bg-slate-50,
-.nb-store-dark .bg-slate-50\/60,
-.nb-store-dark .bg-slate-50\/50 {
-  background-color: #020617;
+.nb-store-dark .bg-slate-50\/70 {
+  background-color: #1e293b !important;
 }
+
+.dark .bg-slate-100,
+.nb-dark .bg-slate-100,
 .nb-store-dark .bg-slate-100 {
-  background-color: #1e293b;
+  background-color: #1e293b !important;
 }
+
+.dark .bg-slate-200,
+.nb-dark .bg-slate-200,
+.nb-store-dark .bg-slate-200 {
+  background-color: #334155 !important;
+}
+
+/* Typography & Text Contrast */
+.dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6,
+.nb-dark h1, .nb-dark h2, .nb-dark h3, .nb-dark h4, .nb-dark h5, .nb-dark h6,
+.nb-store-dark h1, .nb-store-dark h2, .nb-store-dark h3, .nb-store-dark h4, .nb-store-dark h5, .nb-store-dark h6 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.nb-dark .text-slate-900,
+.nb-dark .text-slate-800,
+.nb-dark .text-slate-700,
+.nb-dark .text-gray-900,
+.nb-dark .text-gray-800,
+.nb-dark .text-gray-700,
+.nb-store-dark .text-slate-900,
 .nb-store-dark .text-slate-800,
-.nb-store-dark .text-slate-700 {
-  color: #f8fafc;
+.nb-store-dark .text-slate-700,
+.nb-store-dark .text-gray-900,
+.nb-store-dark .text-gray-800,
+.nb-store-dark .text-gray-700 {
+  color: #f8fafc !important;
 }
+
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-gray-600,
+.dark .text-gray-500,
+.nb-dark .text-slate-600,
+.nb-dark .text-slate-500,
+.nb-dark .text-gray-600,
+.nb-dark .text-gray-500,
 .nb-store-dark .text-slate-600,
 .nb-store-dark .text-slate-500,
-.nb-store-dark .text-slate-400 {
-  color: #cbd5e1;
+.nb-store-dark .text-gray-600,
+.nb-store-dark .text-gray-500 {
+  color: #cbd5e1 !important;
 }
+
+.dark .text-slate-400,
+.dark .text-gray-400,
+.nb-dark .text-slate-400,
+.nb-dark .text-gray-400,
+.nb-store-dark .text-slate-400,
+.nb-store-dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+/* Borders & Dividers */
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300,
+.dark .divide-slate-100,
+.dark .divide-slate-200,
+.nb-dark .border-slate-100,
+.nb-dark .border-slate-200,
+.nb-dark .border-slate-300,
+.nb-dark .border-gray-100,
+.nb-dark .border-gray-200,
+.nb-dark .border-gray-300,
+.nb-dark .divide-slate-100,
+.nb-dark .divide-slate-200,
 .nb-store-dark .border-slate-100,
 .nb-store-dark .border-slate-200,
-.nb-store-dark .border-slate-300 {
-  border-color: #334155;
+.nb-store-dark .border-slate-300,
+.nb-store-dark .border-gray-100,
+.nb-store-dark .border-gray-200,
+.nb-store-dark .border-gray-300,
+.nb-store-dark .divide-slate-100,
+.nb-store-dark .divide-slate-200 {
+  border-color: #334155 !important;
 }
+
+/* Inputs, Dropdowns, Selects, Textareas */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="range"]),
+.dark select,
+.dark textarea,
+.nb-dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="range"]),
+.nb-dark select,
+.nb-dark textarea,
+.nb-store-dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="range"]),
+.nb-store-dark select,
+.nb-store-dark textarea {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus,
+.nb-dark input:focus,
+.nb-dark select:focus,
+.nb-dark textarea:focus,
+.nb-store-dark input:focus,
+.nb-store-dark select:focus,
+.nb-store-dark textarea:focus {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder,
+.nb-dark input::placeholder,
+.nb-dark textarea::placeholder,
+.nb-store-dark input::placeholder,
+.nb-store-dark textarea::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
+
+.dark select option,
+.nb-dark select option,
+.nb-store-dark select option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+.dark input:read-only,
+.dark input:disabled,
+.nb-dark input:read-only,
+.nb-dark input:disabled,
+.nb-store-dark input:read-only,
+.nb-store-dark input:disabled {
+  background-color: #0b1120 !important;
+  color: #94a3b8 !important;
+  border-color: #1e293b !important;
+}
+
+/* Tables */
+.dark table,
+.nb-dark table,
+.nb-store-dark table {
+  color: #f1f5f9;
+}
+
+.dark thead,
+.dark thead tr,
+.dark th,
+.nb-dark thead,
+.nb-dark thead tr,
+.nb-dark th,
+.nb-store-dark thead,
+.nb-store-dark thead tr,
+.nb-store-dark th {
+  background-color: #1e293b !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+
+.dark tbody tr,
+.nb-dark tbody tr,
+.nb-store-dark tbody tr {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: #1e293b !important;
+}
+
+.dark tbody tr:hover,
+.nb-dark tbody tr:hover,
+.nb-store-dark tbody tr:hover {
+  background-color: #1e293b !important;
+}
+
+.dark td,
+.nb-dark td,
+.nb-store-dark td {
+  border-color: #1e293b !important;
+}
+
+/* Modals & Dialogs */
+.dark [role="dialog"],
+.dark .nb-modal-panel,
+.nb-dark [role="dialog"],
+.nb-dark .nb-modal-panel,
+.nb-store-dark [role="dialog"],
+.nb-store-dark .nb-modal-panel {
+  background-color: #0f172a !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+
+/* Buttons */
+.dark .bg-white.text-slate-700,
+.nb-dark .bg-white.text-slate-700,
+.nb-store-dark .bg-white.text-slate-700 {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+.dark .bg-white.text-slate-700:hover,
+.nb-dark .bg-white.text-slate-700:hover,
+.nb-store-dark .bg-white.text-slate-700:hover {
+  background-color: #334155 !important;
+  border-color: #475569 !important;
+}
+
+/* Dark Hover States — ensures text and icons NEVER disappear on hover */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-white:hover,
+.nb-dark .hover\:bg-slate-50:hover,
+.nb-dark .hover\:bg-slate-100:hover,
+.nb-dark .hover\:bg-white:hover,
 .nb-store-dark .hover\:bg-slate-50:hover,
-.nb-store-dark .hover\:bg-slate-100:hover {
-  background-color: #1e293b;
+.nb-store-dark .hover\:bg-slate-100:hover,
+.nb-store-dark .hover\:bg-white:hover {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+.dark .hover\:bg-brand-50\/30:hover,
+.dark .hover\:bg-brand-50\/40:hover,
+.dark .hover\:bg-brand-50\/50:hover,
+.dark .hover\:bg-brand-50:hover,
+.dark .hover\:bg-emerald-50:hover,
+.dark .hover\:bg-emerald-100:hover,
+.nb-dark .hover\:bg-brand-50\/30:hover,
+.nb-dark .hover\:bg-brand-50\/40:hover,
+.nb-dark .hover\:bg-brand-50\/50:hover,
+.nb-dark .hover\:bg-brand-50:hover,
+.nb-dark .hover\:bg-emerald-50:hover,
+.nb-dark .hover\:bg-emerald-100:hover,
+.nb-store-dark .hover\:bg-brand-50\/30:hover,
+.nb-store-dark .hover\:bg-brand-50\/40:hover,
+.nb-store-dark .hover\:bg-brand-50\/50:hover,
+.nb-store-dark .hover\:bg-brand-50:hover,
+.nb-store-dark .hover\:bg-emerald-50:hover,
+.nb-store-dark .hover\:bg-emerald-100:hover {
+  background-color: rgba(22, 101, 52, 0.35) !important;
+  color: #86efac !important;
+}
+
+/* Red / Sign Out / Danger hovers */
+.dark .hover\:bg-red-50:hover,
+.dark .hover\:bg-red-100:hover,
+.nb-dark .hover\:bg-red-50:hover,
+.nb-dark .hover\:bg-red-100:hover,
+.nb-store-dark .hover\:bg-red-50:hover,
+.nb-store-dark .hover\:bg-red-100:hover {
+  background-color: rgba(153, 27, 27, 0.35) !important;
+  color: #fca5a5 !important;
+}
+
+.dark .hover\:text-red-600:hover,
+.dark .hover\:text-red-700:hover,
+.nb-dark .hover\:text-red-600:hover,
+.nb-dark .hover\:text-red-700:hover,
+.nb-store-dark .hover\:text-red-600:hover,
+.nb-store-dark .hover\:text-red-700:hover {
+  color: #fca5a5 !important;
+}
+
+.dark .hover\:bg-amber-50:hover,
+.dark .hover\:bg-amber-100:hover,
+.nb-dark .hover\:bg-amber-50:hover,
+.nb-dark .hover\:bg-amber-100:hover,
+.nb-store-dark .hover\:bg-amber-50:hover,
+.nb-store-dark .hover\:bg-amber-100:hover {
+  background-color: rgba(180, 83, 9, 0.35) !important;
+  color: #fde68a !important;
+}
+
+.dark .hover\:bg-blue-50:hover,
+.dark .hover\:bg-blue-100:hover,
+.nb-dark .hover\:bg-blue-50:hover,
+.nb-dark .hover\:bg-blue-100:hover,
+.nb-store-dark .hover\:bg-blue-50:hover,
+.nb-store-dark .hover\:bg-blue-100:hover {
+  background-color: rgba(30, 64, 175, 0.35) !important;
+  color: #93c5fd !important;
+}
+
+.dark .hover\:bg-purple-50:hover,
+.dark .hover\:bg-purple-100:hover,
+.nb-dark .hover\:bg-purple-50:hover,
+.nb-dark .hover\:bg-purple-100:hover,
+.nb-store-dark .hover\:bg-purple-50:hover,
+.nb-store-dark .hover\:bg-purple-100:hover {
+  background-color: rgba(107, 33, 168, 0.35) !important;
+  color: #d8b4fe !important;
+}
+
+.dark .hover\:bg-orange-50:hover,
+.dark .hover\:bg-orange-50\/40:hover,
+.dark .hover\:bg-orange-50\/30:hover,
+.nb-dark .hover\:bg-orange-50:hover,
+.nb-dark .hover\:bg-orange-50\/40:hover,
+.nb-dark .hover\:bg-orange-50\/30:hover,
+.nb-store-dark .hover\:bg-orange-50:hover,
+.nb-store-dark .hover\:bg-orange-50\/40:hover,
+.nb-store-dark .hover\:bg-orange-50\/30:hover {
+  background-color: rgba(194, 65, 12, 0.35) !important;
+  color: #fdba74 !important;
+}
+
+/* Badges and Brand Accents */
+.dark .bg-brand-50,
+.nb-dark .bg-brand-50,
+.nb-store-dark .bg-brand-50 {
+  background-color: rgba(22, 101, 52, 0.35) !important;
+  color: #86efac !important;
+}
+
+.dark .text-brand-700,
+.nb-dark .text-brand-700,
+.nb-store-dark .text-brand-700 {
+  color: #86efac !important;
+}
+
+.dark .text-brand-600,
+.nb-dark .text-brand-600,
+.nb-store-dark .text-brand-600 {
+  color: #4ade80 !important;
+}
+
+.dark .bg-emerald-50,
+.nb-dark .bg-emerald-50,
+.nb-store-dark .bg-emerald-50 {
+  background-color: rgba(22, 101, 52, 0.35) !important;
+  color: #86efac !important;
+}
+
+.dark .text-emerald-700,
+.dark .text-emerald-600,
+.nb-dark .text-emerald-700,
+.nb-dark .text-emerald-600,
+.nb-store-dark .text-emerald-700,
+.nb-store-dark .text-emerald-600 {
+  color: #86efac !important;
+}
+
+.dark .bg-red-50,
+.nb-dark .bg-red-50,
+.nb-store-dark .bg-red-50 {
+  background-color: rgba(153, 27, 27, 0.35) !important;
+  color: #fca5a5 !important;
+}
+
+.dark .text-red-600,
+.dark .text-red-700,
+.nb-dark .text-red-600,
+.nb-dark .text-red-700,
+.nb-store-dark .text-red-600,
+.nb-store-dark .text-red-700 {
+  color: #fca5a5 !important;
+}
+
+.dark .bg-amber-50,
+.nb-dark .bg-amber-50,
+.nb-store-dark .bg-amber-50 {
+  background-color: rgba(146, 64, 14, 0.35) !important;
+  color: #fde68a !important;
+}
+
+.dark .text-amber-600,
+.dark .text-amber-700,
+.nb-dark .text-amber-600,
+.nb-dark .text-amber-700,
+.nb-store-dark .text-amber-600,
+.nb-store-dark .text-amber-700 {
+  color: #fde68a !important;
+}
+
+.dark .bg-blue-50,
+.nb-dark .bg-blue-50,
+.nb-store-dark .bg-blue-50 {
+  background-color: rgba(30, 64, 175, 0.35) !important;
+  color: #93c5fd !important;
+}
+
+.dark .text-blue-600,
+.dark .text-blue-700,
+.nb-dark .text-blue-600,
+.nb-dark .text-blue-700,
+.nb-store-dark .text-blue-600,
+.nb-store-dark .text-blue-700 {
+  color: #93c5fd !important;
+}
+
+.dark .bg-sky-50,
+.nb-dark .bg-sky-50,
+.nb-store-dark .bg-sky-50 {
+  background-color: rgba(3, 105, 161, 0.35) !important;
+  color: #7dd3fc !important;
+}
+
+.dark .text-sky-700,
+.dark .text-sky-600,
+.nb-dark .text-sky-700,
+.nb-dark .text-sky-600,
+.nb-store-dark .text-sky-700,
+.nb-store-dark .text-sky-600 {
+  color: #7dd3fc !important;
+}
+
+.dark .bg-purple-50,
+.nb-dark .bg-purple-50,
+.nb-store-dark .bg-purple-50 {
+  background-color: rgba(107, 33, 168, 0.35) !important;
+  color: #d8b4fe !important;
+}
+
+.dark .text-purple-600,
+.dark .text-purple-700,
+.nb-dark .text-purple-600,
+.nb-dark .text-purple-700,
+.nb-store-dark .text-purple-600,
+.nb-store-dark .text-purple-700 {
+  color: #d8b4fe !important;
+}
+
+.dark .bg-teal-50,
+.nb-dark .bg-teal-50,
+.nb-store-dark .bg-teal-50 {
+  background-color: rgba(15, 118, 110, 0.35) !important;
+  color: #5eead4 !important;
+}
+
+.dark .text-teal-700,
+.dark .text-teal-600,
+.nb-dark .text-teal-700,
+.nb-dark .text-teal-600,
+.nb-store-dark .text-teal-700,
+.nb-store-dark .text-teal-600 {
+  color: #5eead4 !important;
+}
+
+.dark .bg-rose-50,
+.nb-dark .bg-rose-50,
+.nb-store-dark .bg-rose-50 {
+  background-color: rgba(190, 18, 60, 0.35) !important;
+  color: #fda4af !important;
+}
+
+.dark .text-rose-700,
+.dark .text-rose-600,
+.nb-dark .text-rose-700,
+.nb-dark .text-rose-600,
+.nb-store-dark .text-rose-700,
+.nb-store-dark .text-rose-600 {
+  color: #fda4af !important;
+}
+
+.dark .bg-indigo-50,
+.nb-dark .bg-indigo-50,
+.nb-store-dark .bg-indigo-50 {
+  background-color: rgba(67, 56, 202, 0.35) !important;
+  color: #a5b4fc !important;
+}
+
+.dark .text-indigo-700,
+.dark .text-indigo-600,
+.nb-dark .text-indigo-700,
+.nb-dark .text-indigo-600,
+.nb-store-dark .text-indigo-700,
+.nb-store-dark .text-indigo-600 {
+  color: #a5b4fc !important;
+}
+
+/* Active Nav & Pills */
+.dark aside button.bg-brand-50,
+.nb-dark aside button.bg-brand-50,
+.nb-store-dark aside button.bg-brand-50,
+.dark aside div.bg-brand-50,
+.nb-dark aside div.bg-brand-50,
+.nb-store-dark aside div.bg-brand-50 {
+  background-color: rgba(22, 101, 52, 0.35) !important;
+  color: #86efac !important;
+}
+
+.dark .rounded-2xl.bg-slate-100 button.bg-white,
+.nb-dark .rounded-2xl.bg-slate-100 button.bg-white,
+.nb-store-dark .rounded-2xl.bg-slate-100 button.bg-white {
+  background-color: #166534 !important;
+  color: #ffffff !important;
+}
+
+/* Table Totals / tfoot */
+.dark tfoot,
+.dark tfoot tr,
+.dark tfoot td,
+.nb-dark tfoot,
+.nb-dark tfoot tr,
+.nb-dark tfoot td,
+.nb-store-dark tfoot,
+.nb-store-dark tfoot tr,
+.nb-store-dark tfoot td {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+/* Headers & Sticky Bars */
+.dark header,
+.nb-dark header,
+.nb-store-dark header {
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  border-color: #1e293b !important;
+}
+
+.dark nav.fixed,
+.nb-dark nav.fixed,
+.nb-store-dark nav.fixed {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-color: #1e293b !important;
+}
+
+.dark ::-webkit-scrollbar-thumb,
+.nb-dark ::-webkit-scrollbar-thumb,
+.nb-store-dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover,
+.nb-dark ::-webkit-scrollbar-thumb:hover,
+.nb-store-dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Printable invoice/challan documents must retain paper contrast */
+.dark .nb-print-panel,
+.nb-dark .nb-print-panel,
+.nb-store-dark .nb-print-panel {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+.dark .nb-print-panel *,
+.nb-dark .nb-print-panel *,
+.nb-store-dark .nb-print-panel * {
+  color: revert;
+}
+.dark .nb-print-panel .text-slate-900,
+.dark .nb-print-panel .text-slate-800,
+.dark .nb-print-panel .text-slate-700,
+.nb-dark .nb-print-panel .text-slate-900,
+.nb-dark .nb-print-panel .text-slate-800,
+.nb-dark .nb-print-panel .text-slate-700,
+.nb-store-dark .nb-print-panel .text-slate-900,
+.nb-store-dark .nb-print-panel .text-slate-800,
+.nb-store-dark .nb-print-panel .text-slate-700 {
+  color: #0f172a !important;
+}
+.dark .nb-print-panel .bg-white,
+.nb-dark .nb-print-panel .bg-white,
+.nb-store-dark .nb-print-panel .bg-white {
+  background-color: #ffffff !important;
+}
+.dark .nb-print-panel .bg-slate-50,
+.nb-dark .nb-print-panel .bg-slate-50,
+.nb-store-dark .nb-print-panel .bg-slate-50 {
+  background-color: #f8fafc !important;
+}
+.dark .nb-print-panel .border-slate-200,
+.dark .nb-print-panel .border-slate-300,
+.nb-dark .nb-print-panel .border-slate-200,
+.nb-dark .nb-print-panel .border-slate-300,
+.nb-store-dark .nb-print-panel .border-slate-200,
+.nb-store-dark .nb-print-panel .border-slate-300 {
+  border-color: #cbd5e1 !important;
 }
 
 /* Transitions */

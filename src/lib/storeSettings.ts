@@ -14,6 +14,10 @@ function settingsKey(userId: string) {
   return `nature-biotic-store-user-settings-v1:${userId}`;
 }
 
+function companySettingsKey(userId?: string) {
+  return `nature-biotic-company-user-settings-v1:${userId || "admin"}`;
+}
+
 function readsKey(userId: string, storeId: string) {
   return `nature-biotic-store-notification-reads-v1:${userId}:${storeId}`;
 }
@@ -36,6 +40,34 @@ export function readStoreUserSettings(userId: string): StoreUserSettings {
 export function saveStoreUserSettings(userId: string, settings: StoreUserSettings) {
   if (typeof window === "undefined" || !userId) return;
   localStorage.setItem(settingsKey(userId), JSON.stringify(settings));
+}
+
+export function readCompanyUserSettings(userId?: string): StoreUserSettings {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  try {
+    const raw = localStorage.getItem(companySettingsKey(userId));
+    const saved = raw ? JSON.parse(raw) : {};
+    const theme =
+      saved?.theme === "light" || saved?.theme === "dark" || saved?.theme === "system"
+        ? saved.theme
+        : "light";
+    return { theme, sound: saved?.sound === true };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+export function saveCompanyUserSettings(
+  userId: string | undefined,
+  settings: StoreUserSettings,
+) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(companySettingsKey(userId), JSON.stringify(settings));
+  window.dispatchEvent(
+    new CustomEvent("nature-biotic-company-theme-updated", {
+      detail: settings,
+    }),
+  );
 }
 
 export function readNotificationReads(userId: string, storeId: string) {

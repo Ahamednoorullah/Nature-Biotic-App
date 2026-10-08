@@ -482,7 +482,7 @@ export default function CompanyReports() {
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Summary
           label="Sales"
           value={report.sales}
@@ -533,7 +533,7 @@ export default function CompanyReports() {
               <h2 className="font-bold text-slate-800">Store performance</h2>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[500px] text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                     <th className="px-5 py-3 text-left font-semibold">Store</th>

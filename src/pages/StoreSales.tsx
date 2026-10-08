@@ -74,7 +74,7 @@ export default function StoreSales({ storeId }: { storeId: string }) {
           View store direct sales and executive sales in one place.
         </p>
       </div>
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div className="mb-6 grid gap-4 grid-cols-1 sm:grid-cols-3">
         <Summary
           label="Direct Sales"
           value={formatCurrency(directTotal)}

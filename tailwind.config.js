@@ -1,8 +1,13 @@
 /** @type {import('tailwinsdss').Config} */
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      screens: {
+        xs: "480px",
+        sm: "600px",
+      },
       colors: {
         brand: {
           50: "#f0fdf4",

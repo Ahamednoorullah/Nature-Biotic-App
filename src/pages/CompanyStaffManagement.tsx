@@ -309,8 +309,8 @@ export default function CompanyStaffManagement() {
       </div>
 
       <Card className="overflow-hidden p-0">
-        <div className="w-full overflow-hidden">
-          <table className="w-full table-fixed border-collapse text-[12px] xl:text-sm">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[850px] table-fixed border-collapse text-[12px] xl:text-sm">
             <thead>
               <tr className="border-b-2 border-slate-200 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-500 xl:text-xs">
                 <th className="w-[4%] border-r border-slate-200 px-2 py-3 text-center">

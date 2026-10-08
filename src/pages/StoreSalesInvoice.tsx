@@ -939,8 +939,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
       {!isFRO && (
         <Card className="overflow-hidden p-0">
-          <div className="hidden md:block">
-            <table className="w-full table-fixed border-collapse text-sm">
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full min-w-[850px] table-fixed border-collapse text-sm">
               <thead>
                 <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
                   <th

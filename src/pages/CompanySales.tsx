@@ -1150,8 +1150,8 @@ export default function CompanySales() {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="w-full overflow-y-auto max-h-[600px]">
-            <table className="w-full table-fixed border-collapse text-[11px] xl:text-xs">
+          <div className="w-full overflow-x-auto overflow-y-auto max-h-[600px]">
+            <table className="w-full min-w-[950px] table-fixed border-collapse text-[11px] xl:text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
                   <th

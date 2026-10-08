@@ -687,7 +687,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="hidden overflow-x-auto md:block">
-            <table className="w-full table-fixed border-collapse text-sm">
+            <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
               <thead>
                 <tr className="border-b-2 border-slate-200 bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
                   <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center">

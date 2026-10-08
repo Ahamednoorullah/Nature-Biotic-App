@@ -551,7 +551,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       </div>
 
       <Card className="overflow-hidden p-0">
-        <table className="w-full table-fixed border-collapse text-sm">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
           <thead>
             {/* First Header Row */}
             <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
@@ -689,6 +690,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
             })}
           </tbody>
         </table>
+        </div>
       </Card>
       {/* Create Stock Delivery — popup, same shell as Credit Note / Sales / Quotation */}
       {showAdd &&

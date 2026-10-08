@@ -468,7 +468,7 @@ function StoreReportView({ storeId }: { storeId: string }) {
           </h1>
           <p className="mt-1 text-slate-500">Store performance from saved transactions.</p>
         </div>
-        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
+        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           {simpleDateFilterOptions
             .filter((tab) => tab.value !== "custom")
             .map((tab) => (
@@ -477,8 +477,8 @@ function StoreReportView({ storeId }: { storeId: string }) {
               onClick={() => setFilter(tab.value)}
               className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
                 filter === tab.value
-                  ? "bg-brand-600 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                  ? "bg-brand-600 text-white shadow-sm dark:bg-emerald-600"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               }`}
             >
               {tab.label}
@@ -487,7 +487,7 @@ function StoreReportView({ storeId }: { storeId: string }) {
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="p-5">
           <p className="text-sm font-medium text-slate-500">Sales</p>
           <p className="mt-1 text-2xl font-bold text-slate-800">{formatCurrency(report.salesValue)}</p>
@@ -861,7 +861,7 @@ function FroReportView({
           <h1 className="text-xl font-bold tracking-tight text-slate-800 sm:text-2xl">Reports</h1>
           <p className="mt-1 text-sm text-slate-500">Your sales, collection, stock and expenses.</p>
         </div>
-        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
+        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           {simpleDateFilterOptions
             .filter((tab) => tab.value !== "custom")
             .map((tab) => (
@@ -870,8 +870,8 @@ function FroReportView({
               onClick={() => setFilter(tab.value)}
               className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
                 filter === tab.value
-                  ? "bg-brand-600 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                  ? "bg-brand-600 text-white shadow-sm dark:bg-emerald-600"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
               }`}
             >
               {tab.label}
@@ -879,7 +879,7 @@ function FroReportView({
           ))}
         </div>
       </div>
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <div className="mb-5 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
         {cards.map(([label, value]) => (
           <Card key={label} className="p-4 sm:p-5">
             <p className="text-sm font-medium text-slate-500">{label}</p>

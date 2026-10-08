@@ -568,7 +568,7 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1120px] table-fixed border-collapse text-sm">
               <thead>
-                <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-800/90 dark:text-slate-300">
                   <th className="w-[5%] px-3 py-3 text-center">S.No</th>
                   <th className="w-[20%] px-3 py-3 text-left">Staff</th>
                   <th className="w-[12%] px-3 py-3 text-left">Designation</th>
@@ -740,9 +740,9 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
               </div>
 
               <div className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full table-fixed border-collapse text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                    <tr className="border-b border-slate-200">
+                <table className="w-full min-w-[550px] table-fixed border-collapse text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-100 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300">
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
                       <th className="w-[15%] px-3 py-3 text-center">Date</th>
                       <th className="w-[15%] px-3 py-3 text-center">Check In</th>
                       <th className="w-[15%] px-3 py-3 text-center">Check Out</th>

@@ -315,8 +315,8 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="w-full">
-            <table className="w-full table-fixed border-collapse text-sm">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-100 text-xs uppercase tracking-wider text-slate-600">
                   <th rowSpan={2} className="w-[5%] border-r border-slate-200 px-2 py-3 text-center font-semibold">

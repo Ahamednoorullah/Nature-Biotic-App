@@ -459,7 +459,8 @@ export default function CompanyReceipts() {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <table className="w-full table-fixed border-collapse text-sm">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[850px] table-fixed border-collapse text-sm">
             <thead>
               <tr className="border-b-2 border-slate-200 bg-slate-100 text-[11px] uppercase tracking-wide text-slate-600">
                 <th className="w-[6%] border-r border-slate-200 px-2 py-3 text-center font-semibold">
@@ -527,6 +528,7 @@ export default function CompanyReceipts() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 

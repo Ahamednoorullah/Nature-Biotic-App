@@ -217,8 +217,8 @@ export default function StorePayments({ storeId }: { storeId: string }) {
         <Card className="p-0"><EmptyState icon="payments" title="No payments found" description="Adjust your search or filters to find payment records." /></Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="w-full">
-            <table className="w-full table-fixed text-sm border-collapse">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[900px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b-2 border-slate-200">
                   <th className="w-[6%] font-semibold px-2 py-3 border-r border-slate-200 text-center">S.No</th>

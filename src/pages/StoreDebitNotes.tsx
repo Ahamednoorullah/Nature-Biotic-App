@@ -566,8 +566,8 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="w-full">
-            <table className="w-full table-fixed text-sm border-collapse">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[950px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider border-b border-slate-200">
                   <th

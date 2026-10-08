@@ -752,7 +752,8 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <table className="w-full table-fixed border-collapse text-sm">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[950px] table-fixed border-collapse text-sm">
             <thead>
               {/* MAIN HEADER */}
               <tr className="bg-slate-100 text-xs uppercase tracking-wider text-slate-600 border-b border-slate-200">
@@ -901,6 +902,7 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 
