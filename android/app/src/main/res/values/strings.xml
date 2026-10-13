@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nature Biotic</string>
+    <string name="title_activity_main">Nature Biotic</string>
+    <string name="package_name">in.naturebiotic.erp</string>
+    <string name="custom_url_scheme">in.naturebiotic.erp</string>
+</resources>

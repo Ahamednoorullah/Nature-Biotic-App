@@ -4,12 +4,17 @@ import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
 import {
   getStoreApprovalRequests,
+  getDatabasePurchaseOrders,
   getProductMaster,
   type Product,
   type StoreApprovalRequest,
   approveStorePurchaseOrder,
   rejectStoreApprovalRequest,
 } from "@/lib/data";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { decidePurchaseOrder } from "@/lib/db/rpc";
 
 type PurchaseOrderItem = {
   id?: string;
@@ -57,6 +62,25 @@ type PurchaseRequestRow = StoreApprovalRequest & {
 };
 
 function readStorePurchaseOrders(storeId: string): StoredPurchaseOrder[] {
+  if (usesSupabaseData()) {
+    return getDatabasePurchaseOrders()
+      .filter((order) => order.storeId === storeId)
+      .map((order) => ({
+        id: order.id,
+        poNo: order.poNo,
+        date: order.date,
+        totalProduct: order.totalProduct,
+        batchNo: "",
+        expiryDate: "",
+        withoutTax: order.withoutTax,
+        sgst: order.sgst,
+        cgst: order.cgst,
+        igst: order.igst,
+        total: order.total,
+        notes: order.notes,
+        items: order.items,
+      }));
+  }
   try {
     const raw = localStorage.getItem(`naturebiotic:purchase-orders:${storeId}`);
     return raw ? JSON.parse(raw) : [];
@@ -69,6 +93,11 @@ function writeStorePurchaseOrders(
   storeId: string,
   orders: StoredPurchaseOrder[],
 ) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Purchase order notes are stored when the store submits the order.",
+    );
+  }
   try {
     localStorage.setItem(
       `naturebiotic:purchase-orders:${storeId}`,
@@ -100,6 +129,8 @@ export default function CompanyPurchaseOrders() {
   const [batchNo, setBatchNo] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [selected, setSelected] = useState<PurchaseRequestRow | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [deciding, setDeciding] = useState(false);
 
   const productMaster = useMemo<Product[]>(() => getProductMaster(), []);
 
@@ -175,9 +206,28 @@ export default function CompanyPurchaseOrders() {
     );
   }
 
-  function approve(id: string) {
+  async function approve(id: string) {
     const request = requests.find((row) => row.id === id);
-    if (request?.status === "Approved" || request?.status === "Rejected") return;
+    if (request?.status === "Approved" || request?.status === "Rejected" || deciding) return;
+    if (usesSupabaseData()) {
+      setDeciding(true);
+      setActionError("");
+      try {
+        await decidePurchaseOrder(id, "accepted");
+        await refreshPurchasingData();
+        refresh();
+        if (selected?.id === id) {
+          setSelected((current) =>
+            current ? { ...current, status: "Approved" } : current,
+          );
+        }
+      } catch (error) {
+        setActionError(dbErrorMessage(error, "This purchase order could not be accepted."));
+      } finally {
+        setDeciding(false);
+      }
+      return;
+    }
 
     approveStorePurchaseOrder(id);
     refresh();
@@ -189,10 +239,29 @@ export default function CompanyPurchaseOrders() {
     }
   }
 
-  function reject(id: string) {
+  async function reject(id: string) {
     const request = requests.find((row) => row.id === id);
-    if (request?.status !== "Pending") return;
+    if (request?.status !== "Pending" || deciding) return;
     if (!window.confirm("Reject this purchase order?")) return;
+    if (usesSupabaseData()) {
+      setDeciding(true);
+      setActionError("");
+      try {
+        await decidePurchaseOrder(id, "rejected");
+        await refreshPurchasingData();
+        refresh();
+        if (selected?.id === id) {
+          setSelected((current) =>
+            current ? { ...current, status: "Rejected" } : current,
+          );
+        }
+      } catch (error) {
+        setActionError(dbErrorMessage(error, "This purchase order could not be rejected."));
+      } finally {
+        setDeciding(false);
+      }
+      return;
+    }
 
     rejectStoreApprovalRequest(id);
     refresh();
@@ -272,6 +341,11 @@ export default function CompanyPurchaseOrders() {
 }
       `}</style>
 
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
@@ -995,8 +1069,10 @@ export default function CompanyPurchaseOrders() {
 
                                     {/* Screen - Editable Notes */}
                                     <textarea
+                                      readOnly={usesSupabaseData()}
                                       value={selected.order?.notes || ""}
                                       onChange={(e) => {
+                                        if (usesSupabaseData()) return;
                                         const newNotes = e.target.value;
 
                                         setSelected((prev) =>

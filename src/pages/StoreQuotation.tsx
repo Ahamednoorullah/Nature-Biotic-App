@@ -9,8 +9,11 @@ import { createPortal } from "react-dom";
 import { QuotationBill } from "@/components/QuotationBill";
 import {
   products as allProducts,
+  farmerCropsForDisplay,
+  farmerCropSummary,
   getFarmersByStore,
   getStore,
+  type Farmer,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
@@ -45,6 +48,68 @@ type ProductRow = {
   cgstPercent: number;
   igstPercent: number;
 };
+
+function farmDetailsFromFarmer(farmer?: Farmer | null, fallback?: { crop?: string; acre?: string }) {
+  const summary = farmerCropSummary(farmer);
+  const crops = farmerCropsForDisplay(farmer);
+  return {
+    crops,
+    crop: summary.crop || fallback?.crop || "",
+    acre: summary.acre || fallback?.acre || "",
+  };
+}
+
+function FarmDetailsFields({
+  farmer,
+  fallbackCrop,
+  fallbackAcre,
+  placeOfSupply,
+}: {
+  farmer?: Farmer | null;
+  fallbackCrop?: string;
+  fallbackAcre?: string;
+  placeOfSupply?: string;
+}) {
+  const details = farmDetailsFromFarmer(farmer, {
+    crop: fallbackCrop,
+    acre: fallbackAcre,
+  });
+  const farmCount = new Set(
+    details.crops.map((row) => row.farmLabel).filter(Boolean),
+  ).size;
+  return (
+    <div className="mt-1.5 space-y-1 text-xs">
+      {details.crops.length === 0 ? (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <div>
+            <span className="text-slate-400">Crop</span>
+            <p className="font-semibold text-slate-700">{details.crop || "-"}</p>
+          </div>
+          <div>
+            <span className="text-slate-400">Acre</span>
+            <p className="font-semibold text-slate-700">{details.acre || "-"}</p>
+          </div>
+        </div>
+      ) : (
+        details.crops.map((row, index) => (
+          <div key={`${row.farmLabel}-${row.cropType}-${index}`}>
+            {farmCount > 1 && row.farmLabel ? (
+              <span className="text-slate-400">{row.farmLabel}: </span>
+            ) : null}
+            <span className="font-semibold text-slate-700">{row.cropType}</span>
+            {row.landSize > 0 ? (
+              <span className="text-slate-500"> · {row.landSize} acre</span>
+            ) : null}
+          </div>
+        ))
+      )}
+      <div>
+        <span className="text-slate-400">Place</span>
+        <p className="font-semibold text-slate-700">{placeOfSupply || "-"}</p>
+      </div>
+    </div>
+  );
+}
 
 type Row = {
   roundOff: number;
@@ -629,11 +694,17 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
       },
     );
     const storeName = getStore(storeId)?.name || "Nature Biotic";
+    const farm = farmDetailsFromFarmer(
+      storeFarmers.find((row) => row.id === quotation.farmerId),
+      { crop: quotation.crop, acre: quotation.acre },
+    );
     const billQuotation = {
       ...quotation,
       farmer: contact.name,
       village: contact.village,
       phone: contact.phone,
+      crop: farm.crop,
+      acre: farm.acre,
     };
 
     async function shareOnWhatsApp() {
@@ -671,6 +742,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
           storeName,
         }),
         lock: sharingQuotation,
+        allowWithoutPhone: true,
       });
     }
 
@@ -713,20 +785,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                 Farm Details
               </p>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <div>
-                  <span className="text-slate-400">Crop</span>
-                  <p className="font-semibold text-slate-700">{quotation.crop || "-"}</p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Acre</span>
-                  <p className="font-semibold text-slate-700">{quotation.acre || "-"}</p>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-slate-400">Place</span>
-                  <p className="font-semibold text-slate-700">{quotation.placeOfSupply || "-"}</p>
-                </div>
-              </div>
+              <FarmDetailsFields
+                farmer={storeFarmers.find((row) => row.id === quotation.farmerId)}
+                fallbackCrop={quotation.crop}
+                fallbackAcre={quotation.acre}
+                placeOfSupply={quotation.placeOfSupply}
+              />
             </Card>
           </div>
 
@@ -901,8 +965,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   readOnly
                 />
 
-                <Input label="Crop" value={crop} onChange={() => {}} readOnly />
-
                 <Select
                   label="Place of Supply"
                   value={placeOfSupply}
@@ -921,14 +983,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                       label: "Others",
                     },
                   ]}
-                />
-
-                <Input
-                  label="Acre"
-                  type="number"
-                  value={acre}
-                  onChange={() => {}}
-                  readOnly
                 />
               </div>
             </div>
@@ -1350,26 +1404,12 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                 Farm Details
               </p>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <div>
-                  <span className="text-slate-400">Crop</span>
-                  <p className="font-semibold text-slate-700">
-                    {quotation.crop || "-"}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-slate-400">Acre</span>
-                  <p className="font-semibold text-slate-700">
-                    {quotation.acre || "-"}
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-slate-400">Place</span>
-                  <p className="font-semibold text-slate-700">
-                    {quotation.placeOfSupply || "-"}
-                  </p>
-                </div>
-              </div>
+              <FarmDetailsFields
+                farmer={storeFarmers.find((row) => row.id === quotation.farmerId)}
+                fallbackCrop={quotation.crop}
+                fallbackAcre={quotation.acre}
+                placeOfSupply={quotation.placeOfSupply}
+              />
             </Card>
           </div>
 
@@ -2001,15 +2041,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                         readOnly
                       />
 
-                      {/* ROW 2 */}
-
-                      <Input
-                        label="Crop"
-                        value={crop}
-                        onChange={() => {}}
-                        readOnly
-                      />
-
                       <Select
                         label="Place of Supply"
                         value={placeOfSupply}
@@ -2028,14 +2059,6 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                             label: "Others",
                           },
                         ]}
-                      />
-
-                      <Input
-                        label="Acre"
-                        type="number"
-                        value={acre}
-                        onChange={() => {}}
-                        readOnly
                       />
                     </div>
                   </div>
@@ -2629,26 +2652,14 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                       <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">
                         Farm Details
                       </p>
-                      <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[10px]">
-                        <div>
-                          <span className="text-slate-400">Crop</span>
-                          <p className="truncate font-semibold text-slate-700">
-                            {selectedQuotation.crop || "-"}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Acre</span>
-                          <p className="truncate font-semibold text-slate-700">
-                            {selectedQuotation.acre || "-"}
-                          </p>
-                        </div>
-                        <div className="col-span-2">
-                          <span className="text-slate-400">Place</span>
-                          <p className="truncate font-semibold text-slate-700">
-                            {selectedQuotation.placeOfSupply || "-"}
-                          </p>
-                        </div>
-                      </div>
+                      <FarmDetailsFields
+                        farmer={storeFarmers.find(
+                          (row) => row.id === selectedQuotation.farmerId,
+                        )}
+                        fallbackCrop={selectedQuotation.crop}
+                        fallbackAcre={selectedQuotation.acre}
+                        placeOfSupply={selectedQuotation.placeOfSupply}
+                      />
                     </div>
                   </div>
 
@@ -2768,10 +2779,68 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                 </div>
 
                 <QuotationBill
-                  quotation={selectedQuotation}
+                  quotation={{
+                    ...selectedQuotation,
+                    ...farmDetailsFromFarmer(
+                      storeFarmers.find(
+                        (row) => row.id === selectedQuotation.farmerId,
+                      ),
+                      {
+                        crop: selectedQuotation.crop,
+                        acre: selectedQuotation.acre,
+                      },
+                    ),
+                  }}
                   notes={purchaseOrderNotes}
                   onNotesChange={setPurchaseOrderNotes}
                 />
+                <div
+                  ref={quotationBillRef}
+                  className="quotation-pdf-sheet"
+                  aria-hidden="true"
+                  style={{
+                    position: "fixed",
+                    left: -2400,
+                    top: 0,
+                    width: DOCUMENT_PDF_WIDTH_PX,
+                    background: "#fff",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <QuotationBill
+                    quotation={(() => {
+                      const contact = farmerContactText(
+                        storeFarmers.find(
+                          (row) => row.id === selectedQuotation.farmerId,
+                        ),
+                        {
+                          name: selectedQuotation.farmer,
+                          village: selectedQuotation.village,
+                          phone: selectedQuotation.phone,
+                        },
+                      );
+                      const farm = farmDetailsFromFarmer(
+                        storeFarmers.find(
+                          (row) => row.id === selectedQuotation.farmerId,
+                        ),
+                        {
+                          crop: selectedQuotation.crop,
+                          acre: selectedQuotation.acre,
+                        },
+                      );
+                      return {
+                        ...selectedQuotation,
+                        farmer: contact.name,
+                        village: contact.village,
+                        phone: contact.phone,
+                        crop: farm.crop,
+                        acre: farm.acre,
+                      };
+                    })()}
+                    notes={purchaseOrderNotes}
+                    documentMode
+                  />
+                </div>
               </div>
 
               <div className="quotation-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
@@ -2780,6 +2849,63 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   onClick={() => setSelectedQuotation(null)}
                 >
                   Close
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const contact = farmerContactText(
+                      storeFarmers.find(
+                        (row) => row.id === selectedQuotation.farmerId,
+                      ),
+                      {
+                        name: selectedQuotation.farmer,
+                        village: selectedQuotation.village,
+                        phone: selectedQuotation.phone,
+                      },
+                    );
+                    const storeName = getStore(storeId)?.name || "Nature Biotic";
+                    void shareDocumentPdf({
+                      sheet: quotationBillRef.current,
+                      phone: contact.phone,
+                      fileName: documentPdfFileName(selectedQuotation.quotationNo),
+                      message: detailedShareMessage({
+                        farmerName: contact.name,
+                        intro: "Please find your quotation details.",
+                        numberLabel: "Quotation No",
+                        number: selectedQuotation.quotationNo,
+                        date: formatDate(selectedQuotation.date),
+                        lines: (selectedQuotation.products || []).map((item) => {
+                          const qty = Number(item.qty || 0);
+                          const rate = Number(item.rate || 0);
+                          const base = qty * rate;
+                          const tax =
+                            (base *
+                              (Number(item.sgstPercent || 0) +
+                                Number(item.cgstPercent || 0) +
+                                Number(item.igstPercent || 0))) /
+                            100;
+                          return {
+                            name: item.productName,
+                            packSize: item.pkgsize,
+                            qty: item.qty,
+                            rate: formatCurrency(rate),
+                            amount: formatCurrency(base + tax),
+                          };
+                        }),
+                        lineAmountLabel: "Amount",
+                        totalLabel:
+                          (selectedQuotation.products || []).length > 1
+                            ? "Grand Total"
+                            : "Total",
+                        total: formatCurrency(selectedQuotation.amount),
+                        storeName,
+                      }),
+                      lock: sharingQuotation,
+                      allowWithoutPhone: true,
+                    });
+                  }}
+                >
+                  WhatsApp Share
                 </Button>
                 <Button onClick={() => window.print()}>
                   <Icon name="print" size={18} />

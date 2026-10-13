@@ -1,5 +1,9 @@
 import { useRef, useState } from 'react';
-import { getProductsByStore, getStoreAvailableQty, getStorePurchasesFromCompanySales, recordStoreStockAdjustment, type AdjustmentType, type AdjustmentReason } from '@/lib/data';
+import { getProductsByStore, getStoreAvailableQty, getStorePurchasesFromCompanySales, getStoreStockLines, recordStoreStockAdjustment, type AdjustmentReason, type AdjustmentType } from '@/lib/data';
+import { dbErrorMessage } from '@/lib/db/errors';
+import { usesSupabaseData } from '@/lib/db/mode';
+import { refreshPurchasingData } from '@/lib/db/purchasing';
+import { createStockAdjustment } from '@/lib/db/rpc';
 import { useNav } from '@/context/NavContext';
 import { Card, Button, Input, Select, Textarea, SectionTitle, Icon } from '@/components/ui';
 
@@ -32,6 +36,7 @@ const emptyForm: FormState = {
 export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
   const { goStorePage } = useNav();
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [actionError, setActionError] = useState("");
   const [saved, setSaved] = useState(false);
   const [approved, setApproved] = useState(false);
   const approving = useRef(false);
@@ -54,6 +59,22 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
   function batchesFor(name: string, size: string) {
     const nameKey = name.trim().toLowerCase();
     const sizeKey = size.trim().toLowerCase();
+    if (usesSupabaseData()) {
+      if (!nameKey || !sizeKey) return [];
+      return Array.from(
+        new Set(
+          getStoreStockLines(storeId)
+            .filter(
+              (line) =>
+                line.productName.trim().toLowerCase() === nameKey &&
+                line.packSize.trim().toLowerCase() === sizeKey &&
+                line.batchNo.trim() &&
+                line.available > 0,
+            )
+            .map((line) => line.batchNo),
+        ),
+      );
+    }
     const batches = new Set<string>();
     if (!nameKey || !sizeKey) return [];
     getStorePurchasesFromCompanySales(storeId).forEach((purchase: any) => {
@@ -125,13 +146,39 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
     setTimeout(() => { setSaved(false); goStorePage('stock-management'); }, 1200);
   }
 
-  function handleApprove() {
+  async function handleApprove() {
     const product = products.find((item) => item.id === form.product);
     const qty = Number(form.quantity || 0);
     if (!product || qty <= 0 || !form.batchNo || approving.current) return;
     if (form.adjustmentType !== "Increase" && qty > availableQty) return;
     approving.current = true;
     const signedQty = form.adjustmentType === "Increase" ? qty : -qty;
+    if (usesSupabaseData()) {
+      setActionError("");
+      try {
+        const batch = getStoreStockLines(storeId).find(
+          (line) =>
+            line.variantId === product.id &&
+            line.batchNo.trim().toLowerCase() === form.batchNo.trim().toLowerCase(),
+        );
+        await createStockAdjustment({
+          p_store_id: storeId,
+          p_variant_id: product.id,
+          p_qty: signedQty,
+          p_reason: form.reason as AdjustmentReason,
+          p_batch_id: batch?.batchId || null,
+          p_batch_no: form.batchNo.trim(),
+          p_remarks: form.remarks.trim() || null,
+        });
+        await refreshPurchasingData();
+        setApproved(true);
+        setTimeout(() => { setApproved(false); goStorePage('stock-management'); }, 1200);
+      } catch (error) {
+        approving.current = false;
+        setActionError(dbErrorMessage(error, "The stock adjustment could not be saved."));
+      }
+      return;
+    }
     recordStoreStockAdjustment({
       id: `adjust-${Date.now()}`,
       storeId,
@@ -157,6 +204,11 @@ export default function StoreStockAdjustment({ storeId }: { storeId: string }) {
 
   return (
     <div className="max-w-3xl mx-auto">
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => goStorePage('stock-management')} className="p-2 rounded-xl hover:bg-slate-100 transition-base text-slate-500">
           <Icon name="arrow_back" size={22} />

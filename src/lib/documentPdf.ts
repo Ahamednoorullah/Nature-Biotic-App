@@ -1,4 +1,4 @@
-import { openWhatsAppShare, shareableWhatsAppPhone } from "@/lib/whatsappShare";
+import { openWhatsAppShare } from "@/lib/whatsappShare";
 
 type PdfDocument = {
   addImage: (
@@ -442,16 +442,24 @@ export async function shareDocumentPdf(input: {
   fileName: string;
   message: string;
   lock?: { current: boolean };
+  allowWithoutPhone?: boolean;
 }) {
   if (input.lock?.current) return;
-  if (!shareableWhatsAppPhone(input.phone)) return;
   const sheet = input.sheet;
   if (!sheet) return;
   if (input.lock) input.lock.current = true;
   try {
     const blob = await withSheet(sheet, () => createDocumentPdfBlob(sheet));
     savePdfBlob(blob, input.fileName);
-    openWhatsAppShare(input.phone, input.message, { stayOnPage: true });
+    const message = [
+      input.message,
+      "",
+      `Please attach the downloaded PDF (${input.fileName}). WhatsApp cannot attach it automatically.`,
+    ].join("\n");
+    openWhatsAppShare(input.phone, message, {
+      stayOnPage: true,
+      allowWithoutPhone: Boolean(input.allowWithoutPhone),
+    });
   } catch {
     window.alert("The document PDF could not be created. Please try again.");
   } finally {

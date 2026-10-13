@@ -14,6 +14,9 @@ import {
   saveProductPartyOptions,
   type Product,
 } from "@/lib/data";
+import { createCatalogProducts } from "@/lib/db/products";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
 
 type PackingType = "Volume" | "Weight";
 
@@ -130,6 +133,7 @@ export default function ProductAddForm({
   ]);
   const [applicationMethods, setApplicationMethods] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [productImage, setProductImage] = useState("");
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const initialPartyOptions = getProductPartyOptions();
@@ -289,7 +293,7 @@ export default function ProductAddForm({
       (row, index) =>
         ({
           id: `master-${now}-${index}`,
-          storeId: "s1",
+          storeId: "catalog",
           name: form.name.trim(),
           purpose: form.productPurpose.trim() as Product["purpose"],
           productCategory: form.productCategory as Product["productCategory"],
@@ -331,8 +335,12 @@ export default function ProductAddForm({
     );
   }
 
-  function persistProduct() {
+  async function persistProduct() {
     const variants = buildProductVariants();
+    if (usesSupabaseData()) {
+      await createCatalogProducts(variants);
+      return variants;
+    }
     addProductMasterVariants(variants);
     return variants;
   }
@@ -361,14 +369,24 @@ export default function ProductAddForm({
     }, 900);
   }
 
-  function handleSave() {
-    persistProduct();
-    showSaved(onSaved);
+  async function handleSave() {
+    setSaveError("");
+    try {
+      await persistProduct();
+      showSaved(onSaved);
+    } catch (error) {
+      setSaveError(dbErrorMessage(error, "Could not save the product."));
+    }
   }
 
-  function handleSaveAndAdd() {
-    persistProduct();
-    showSaved(resetForm);
+  async function handleSaveAndAdd() {
+    setSaveError("");
+    try {
+      await persistProduct();
+      showSaved(resetForm);
+    } catch (error) {
+      setSaveError(dbErrorMessage(error, "Could not save the product."));
+    }
   }
 
   const generalValid =
@@ -406,6 +424,11 @@ export default function ProductAddForm({
 
   return (
     <div className="mx-auto max-w-5xl">
+      {saveError && (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {saveError}
+        </div>
+      )}
       {saved && (
         <div className="fixed right-6 top-20 z-50 animate-scale-in">
           <div className="flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-white shadow-elevated">

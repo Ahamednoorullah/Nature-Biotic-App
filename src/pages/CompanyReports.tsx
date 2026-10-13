@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  getCompanyCreditNoteSyncRecords,
   getCompanyRefunds,
   getFinalCompanyStoreSales,
   getApprovedStorePurchaseReturns,
@@ -23,7 +22,6 @@ type DateFilter = SimpleDateFilter;
 
 const STORE_SALES_KEY = "nature-biotic-store-sales-invoices-v2";
 const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
-const STORE_CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
 const STORE_RECEIPT_KEY = "nature-biotic-store-receipts-v3";
 const COMPANY_RECEIPT_KEY = "nature-biotic-company-receipts-v1";
 const COMPANY_EXPENSE_KEY = "nature-biotic-company-expenses-v1";
@@ -138,17 +136,6 @@ function buildReport(filter: DateFilter, from = "", to = "") {
     }
   });
 
-  const companyCredits = new Map<string, number>();
-  getCompanyCreditNoteSyncRecords().forEach((note) => {
-    if (note.status === "Rejected" || note.status === "Draft") return;
-    const invoiceNo = String(note.invoiceNo || note.purchaseRef || "")
-      .trim()
-      .toLowerCase();
-    if (!invoiceNo) return;
-    const key = `${note.storeId}|${invoiceNo}`;
-    companyCredits.set(key, (companyCredits.get(key) || 0) + money(note.returnAmount));
-  });
-
   const companyReceipts = readRows(COMPANY_RECEIPT_KEY);
   const companyPaid = new Map<string, number>();
   companyReceipts.forEach((receipt) => {
@@ -163,7 +150,7 @@ function buildReport(filter: DateFilter, from = "", to = "") {
   const companyRefunds = new Map<string, number>();
   companyInvoices.forEach((invoice, key) => {
     if (!inPeriod(invoice.date, filter, from, to)) return;
-    const net = Math.max(0, invoice.total - (companyCredits.get(key) || 0));
+    const net = invoice.total;
     companyGrossSales.set(
       invoice.storeId,
       (companyGrossSales.get(invoice.storeId) || 0) + net,
@@ -227,10 +214,9 @@ function buildReport(filter: DateFilter, from = "", to = "") {
   const storeBooks = allStores.map((store) => {
     const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
     const returns = readRows(`${STORE_RETURN_KEY}:${store.id}`);
-    const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
     const receipts = readRows(`${STORE_RECEIPT_KEY}:${store.id}`);
     const returned = new Map<string, number>();
-    [...returns, ...credits].forEach((row) => {
+    returns.forEach((row) => {
       if (row.status === "Rejected" || row.status === "Draft") return;
       const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
       if (!invoiceNo) return;
@@ -263,15 +249,14 @@ function buildReport(filter: DateFilter, from = "", to = "") {
       const current = settleLinkedFarmerAccounts({
         invoices,
         receipts,
-        returns: [...readRows(`${STORE_RETURN_KEY}:${store.id}`), ...readRows(`${STORE_CREDIT_KEY}:${store.id}`)].filter(
+        returns: readRows(`${STORE_RETURN_KEY}:${store.id}`).filter(
           (row) => row.status !== "Rejected" && row.status !== "Draft",
         ),
         refunds: readRows(`nature-biotic-store-refunds-v2:${store.id}`),
         linkInvoices: invoices,
-        linkReturns: [
-          ...readRows(`${STORE_RETURN_KEY}:${store.id}`),
-          ...readRows(`${STORE_CREDIT_KEY}:${store.id}`),
-        ].filter((row) => row.status !== "Draft"),
+        linkReturns: readRows(`${STORE_RETURN_KEY}:${store.id}`).filter(
+          (row) => row.status !== "Draft",
+        ),
       });
       return {
         id: store.id,
@@ -337,7 +322,7 @@ function buildReport(filter: DateFilter, from = "", to = "") {
     let sales = 0;
     companyInvoices.forEach((invoice, key) => {
       if (!inBucket(invoice.date)) return;
-      sales += Math.max(0, invoice.total - (companyCredits.get(key) || 0));
+      sales += invoice.total;
     });
     purchaseReturns.forEach((row) => {
       if (inBucket(row.date)) sales -= row.amount;

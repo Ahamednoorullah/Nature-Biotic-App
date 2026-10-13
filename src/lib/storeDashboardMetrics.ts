@@ -56,7 +56,6 @@ export type ExecutiveDashboard = {
 
 const SALES_KEY = "nature-biotic-store-sales-invoices-v2";
 const RETURN_KEY = "nature-biotic-store-sales-returns-v2";
-const CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
 const RECEIPT_KEY = "nature-biotic-store-receipts-v3";
 const VISIT_KEY = "nature-biotic-fro-visits-v1";
 
@@ -286,7 +285,6 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
     (row) => row.id !== "store-sale-1" && String(row.invoiceNo || "").toLowerCase() !== "nb-inv-2001",
   );
   const returns = uniqueRows(readRows(`${RETURN_KEY}:${storeId}`));
-  const credits = uniqueRows(readRows(`${CREDIT_KEY}:${storeId}`));
   const receipts = uniqueRows(readRows(`${RECEIPT_KEY}:${storeId}`));
   const refunds = uniqueRows(readRows(`nature-biotic-store-refunds-v2:${storeId}`));
   const visits = readRows(`${VISIT_KEY}:${storeId}`);
@@ -295,7 +293,7 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
   );
 
   const returned = new Map<string, number>();
-  [...returns, ...credits].forEach((row) => {
+  returns.forEach((row) => {
     if (row.status === "Rejected") return;
     const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
     if (!invoiceNo) return;
@@ -445,7 +443,7 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
         .map((invoice) => String(invoice.invoiceNo || "").trim().toLowerCase())
         .filter(Boolean),
     );
-    const includedReturns = [...returns, ...credits].filter((row) => {
+    const includedReturns = returns.filter((row) => {
       if (row.status === "Rejected") return false;
       const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
       const invoice = invoiceByNo.get(invoiceNo);
@@ -454,7 +452,7 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
     });
     const returnNos = new Set(
       includedReturns
-        .map((row) => String(row.returnNo || row.creditNoteNo || "").trim().toLowerCase())
+        .map((row) => String(row.returnNo || "").trim().toLowerCase())
         .filter(Boolean),
     );
     const includedReceipts = receipts.filter((row) => {
@@ -480,9 +478,9 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
     });
     const includedRefunds = refunds.filter((row) => {
       if (isVoidRefund(row.status)) return false;
-      const salesReturn = [...returns, ...credits].find(
+      const salesReturn = returns.find(
         (item) =>
-          String(item.returnNo || item.creditNoteNo || "")
+          String(item.returnNo || "")
             .trim()
             .toLowerCase() === String(row.referenceNo || "").trim().toLowerCase(),
       );
@@ -511,10 +509,10 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
       returns: includedReturns,
       refunds: includedRefunds,
       linkInvoices: invoices,
-      linkReturns: [...returns, ...credits],
+      linkReturns: returns,
     });
     const currentInvoices = invoices.filter((invoice) => owns(invoice));
-    const currentReturns = [...returns, ...credits].filter((row) => {
+    const currentReturns = returns.filter((row) => {
       if (row.status === "Rejected") return false;
       const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
       return owns(row, invoiceByNo.get(invoiceNo));
@@ -541,9 +539,9 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
     });
     const currentRefunds = refunds.filter((row) => {
       if (isVoidRefund(row.status)) return false;
-      const salesReturn = [...returns, ...credits].find(
+      const salesReturn = returns.find(
         (item) =>
-          String(item.returnNo || item.creditNoteNo || "")
+          String(item.returnNo || "")
             .trim()
             .toLowerCase() === String(row.referenceNo || "").trim().toLowerCase(),
       );
@@ -570,7 +568,7 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
       returns: currentReturns,
       refunds: currentRefunds,
       linkInvoices: invoices,
-      linkReturns: [...returns, ...credits],
+      linkReturns: returns,
     });
     channel.sales = settled.sales;
     channel.collection = settled.collection;

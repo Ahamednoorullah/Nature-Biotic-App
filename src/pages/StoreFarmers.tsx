@@ -104,10 +104,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
     return settleLinkedFarmerAccounts({
       invoices: read("nature-biotic-store-sales-invoices-v2"),
       receipts: read("nature-biotic-store-receipts-v3"),
-      returns: [
-        ...read("nature-biotic-store-sales-returns-v2"),
-        ...read("nature-biotic-store-credit-notes-v3"),
-      ],
+      returns: read("nature-biotic-store-sales-returns-v2"),
       refunds: read("nature-biotic-store-refunds-v2"),
     }).farmers;
   }, [storeId, accountsVersion]);

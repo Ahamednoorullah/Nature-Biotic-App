@@ -11,6 +11,7 @@ import {
   getFROStockHolders,
   getStoreStockAdjustments,
   getStore,
+  getCatalogSellingPrice,
   productCategories,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
@@ -275,7 +276,11 @@ export function buildInventoryRows(
         (purchase as any).price ??
         0,
     );
-    const masterSellingPrice = Number(productMaster?.sellingPrice ?? 0);
+    const masterSellingPrice = getCatalogSellingPrice(
+      productName,
+      packSize,
+      resolvedProductId || productMaster?.id,
+    );
     const unitPrice =
       masterSellingPrice > 0 ? masterSellingPrice : purchaseUnitPrice;
 

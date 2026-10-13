@@ -3,7 +3,7 @@ import { getStore, staff } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon, Input } from "@/components/ui";
-import { changeAccountPassword } from "@/lib/auth/localAuth";
+import { getAuthAdapter } from "@/lib/auth/localAuth";
 import {
   attendanceUpdatedEvent,
   checkInStaff,
@@ -299,7 +299,7 @@ function FROMobileShell({
       setPasswordError("Passwords do not match.");
       return;
     }
-    const result = await changeAccountPassword(
+    const result = await getAuthAdapter().changePassword(
       user.id,
       currentPassword,
       nextPassword,

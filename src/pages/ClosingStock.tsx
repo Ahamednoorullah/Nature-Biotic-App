@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
-import { getFROStockTxns, getProductsByStore } from "@/lib/data";
+import { getFROStockTxns, getCatalogSellingPrice } from "@/lib/data";
 import { buildInventoryRows, getRealPurchases } from "./StoreInventory";
 
 
@@ -153,13 +153,8 @@ export function computeClosingStock(storeId: string, asOfDate: Date) {
     // ignore malformed local data
   }
 
-  // Value = qty x selling price (same rule as Store Overview)
-  const master = getProductsByStore(storeId);
   const priceOf = (name: string, pack: string, fallback: number) => {
-    const m =
-      master.find((p) => stockKey(p.name, p.size) === stockKey(name, pack)) ||
-      master.find((p) => norm(p.name) === norm(name));
-    const selling = Number(m?.sellingPrice ?? 0);
+    const selling = getCatalogSellingPrice(name, pack);
     return Math.round(selling > 0 ? selling : fallback);
   };
 

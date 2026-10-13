@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { getStaffRecords, replaceStaffRegistry, stores, type Staff } from "@/lib/data";
 import { getAuthAdapter } from "@/lib/auth/localAuth";
+import { createStaff, updateStaff } from "@/lib/db/staff";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { formatCurrency } from "@/lib/format";
 
@@ -244,6 +247,43 @@ export default function CompanyStaffManagement() {
       status: editingStaff?.status ?? "Active",
       accountId: editingStaff?.accountId,
     };
+
+    if (usesSupabaseData()) {
+      try {
+        if (editingStaff) await updateStaff(member);
+        else await createStaff(member);
+      } catch (error) {
+        window.alert(dbErrorMessage(error, "Could not save the staff member."));
+        return;
+      }
+      setStaffList([...getStaffRecords()]);
+      const auth = getAuthAdapter();
+      const account = editingStaff?.accountId
+        ? await auth.updateAccount({
+            accountId: editingStaff.accountId,
+            name: member.name,
+            email,
+            role,
+            storeId: member.storeId,
+            staffId: editingStaff.id,
+          })
+        : await auth.createAccount({
+            name: member.name,
+            email,
+            role,
+            subjectType: "staff",
+            subjectId: member.storeId,
+            storeId: member.storeId,
+            staffId: member.storeId,
+          });
+      setAccountNotice(
+        account.account
+          ? `Staff account saved for ${email}.`
+          : `Staff saved. Login was not created: ${account.error || "staff logins are not available from this app yet."}`,
+      );
+      closeAdd();
+      return;
+    }
 
     const auth = getAuthAdapter();
     if (member.accountId) {

@@ -86,6 +86,7 @@ export default function StoreFarmerProfile({
       "nature-biotic-store-refunds-updated",
       "nature-biotic-store-sales-updated",
       "nature-biotic-store-receipts-updated",
+      "nature-biotic-store-inventory-updated",
     ];
     events.forEach((event) => window.addEventListener(event, refresh));
     return () => events.forEach((event) => window.removeEventListener(event, refresh));
@@ -124,6 +125,7 @@ export default function StoreFarmerProfile({
   const farmerNameKey = String(farmer.name || "")
     .trim()
     .toLowerCase();
+  const farmerIdText = String(farmerId || "").trim();
 
   const liveInvoices = readStoreRows<any>(
     "nature-biotic-store-sales-invoices-v2",
@@ -200,6 +202,9 @@ export default function StoreFarmerProfile({
             )
               ? "Paid"
               : "Pending",
+            kind: "sale" as const,
+            packSize,
+            batchNo: String(item.batchNo || ""),
           };
           });
         });
@@ -247,10 +252,52 @@ export default function StoreFarmerProfile({
     }),
   ) as ReturnType<typeof getPaymentsByFarmer>;
 
-  const salesReturns = [
-    ...readStoreRows<any>("nature-biotic-store-sales-returns-v2"),
-    ...readStoreRows<any>("nature-biotic-store-credit-notes-v3"),
-  ];
+  const salesReturns = readStoreRows<any>("nature-biotic-store-sales-returns-v2");
+  const farmerReturns = salesReturns.filter((row: any) => {
+    const status = String(row.status || "").trim().toLowerCase();
+    if (status === "draft") return false;
+    const returnFarmerId = String(row.farmerId || "").trim();
+    const returnName = String(row.partyName || row.farmerName || "")
+      .trim()
+      .toLowerCase();
+    if (returnFarmerId && farmerIdText) return returnFarmerId === farmerIdText;
+    return Boolean(returnName && farmerNameKey && returnName === farmerNameKey);
+  });
+  const returnHistory = farmerReturns.flatMap((row: any) => {
+    const items = Array.isArray(row.items) ? row.items : [];
+    const seen = new Set<string>();
+    return items.flatMap((item: any, index: number) => {
+      const lineId = String(item.key || item.id || `${row.id}-${index}`);
+      const historyId = `return:${row.id || row.returnNo}:${lineId}`;
+      if (seen.has(historyId)) return [];
+      seen.add(historyId);
+      const packSize = String(item.packSize || item.pkgsize || item.product?.size || "").trim();
+      const name = String(
+        item.product?.name || item.productName || item.name || item.product || "Product",
+      );
+      const quantity = Number(item.quantity ?? item.qty ?? 0);
+      const amount = Number(item.total ?? item.rowTotal ?? item.amount ?? 0);
+      const status = String(row.status || "").trim() || "Recorded";
+      return [
+        {
+          id: historyId,
+          farmerId,
+          invoiceNo: String(row.returnNo || row.id || ""),
+          date: String(row.date || row.returnDate || ""),
+          product: packSize ? `${name} - ${packSize}` : name,
+          quantity,
+          amount,
+          paymentStatus: "Pending" as const,
+          kind: "return" as const,
+          packSize,
+          batchNo: String(item.batchNo || ""),
+          status,
+          reason: String(item.reason || row.reason || ""),
+        },
+      ];
+    });
+  });
+  const productHistory = [...purchases, ...returnHistory];
   const storedRefunds = readStoreRows<any>("nature-biotic-store-refunds-v2");
   const allInvoices = readStoreRows<any>("nature-biotic-store-sales-invoices-v2");
   const allReceipts = readStoreRows<any>("nature-biotic-store-receipts-v3");
@@ -429,7 +476,7 @@ export default function StoreFarmerProfile({
           />
         )}
         {tab === "product-history" && (
-          <ProductHistoryTab purchases={purchases} isFro={isFro} />
+          <ProductHistoryTab purchases={productHistory} isFro={isFro} />
         )}
         {tab === "payments" && <PaymentsTab payments={paymentHistory} />}
         {tab === "documents" && <DocumentsTab />}
@@ -856,7 +903,15 @@ function ProductHistoryTab({
   purchases,
   isFro = false,
 }: {
-  purchases: ReturnType<typeof getPurchasesByFarmer>;
+  purchases: Array<
+    ReturnType<typeof getPurchasesByFarmer>[number] & {
+      kind?: "sale" | "return";
+      packSize?: string;
+      batchNo?: string;
+      status?: string;
+      reason?: string;
+    }
+  >;
   isFro?: boolean;
 }) {
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
@@ -868,12 +923,10 @@ function ProductHistoryTab({
     return Boolean(date && date >= startDate);
   });
 
-  // Unique product list for the dropdown (from all purchases, not just filtered)
   const productOptions = Array.from(
     new Set(purchases.map((p) => p.product)),
   ).sort();
 
-  // Apply product filter (if not "all")
   const filteredPurchases =
     selectedProduct === "all"
       ? periodPurchases
@@ -891,51 +944,11 @@ function ProductHistoryTab({
     );
   }
 
-  // Group by product name
-  const grouped = filteredPurchases.reduce(
-    (acc, p) => {
-      if (!acc[p.product]) {
-        acc[p.product] = {
-          product: p.product,
-          totalQuantity: 0,
-          totalAmount: 0,
-          lastDate: p.date,
-          transactions: 0,
-          invoiceNos: [] as string[],
-        };
-      }
-      acc[p.product].totalQuantity += p.quantity;
-      acc[p.product].totalAmount += p.amount;
-      acc[p.product].transactions += 1;
-      if (
-        p.invoiceNo &&
-        !acc[p.product].invoiceNos.includes(String(p.invoiceNo))
-      ) {
-        acc[p.product].invoiceNos.push(String(p.invoiceNo));
-      }
-      const nextDate = parseBusinessDate(p.date);
-      const currentDate = parseBusinessDate(acc[p.product].lastDate);
-      if (nextDate && (!currentDate || nextDate > currentDate)) {
-        acc[p.product].lastDate = p.date;
-      }
-      return acc;
-    },
-    {} as Record<
-      string,
-      {
-        product: string;
-        totalQuantity: number;
-        totalAmount: number;
-        lastDate: string;
-        transactions: number;
-        invoiceNos: string[];
-      }
-    >,
-  );
-
-  const rows = Object.values(grouped).sort(
-    (a, b) => new Date(b.lastDate).getTime() - new Date(a.lastDate).getTime(),
-  );
+  const rows = [...filteredPurchases].sort((a, b) => {
+    const aDate = parseBusinessDate(a.date)?.getTime() || 0;
+    const bDate = parseBusinessDate(b.date)?.getTime() || 0;
+    return bDate - aDate;
+  });
 
   const periodLabel =
     periodOptions.find((p) => p.value === period)?.label ?? "";
@@ -945,7 +958,7 @@ function ProductHistoryTab({
       {/* Filter bar */}
       <div className="px-3 py-3 border-b border-slate-100 bg-slate-50">
         <p className="mb-2 text-[10px] text-slate-500 font-medium">
-          Showing products supplied — {periodLabel.toLowerCase()}
+          Showing sales and farmer returns — {periodLabel.toLowerCase()}
         </p>
         <div
           className={
@@ -995,111 +1008,55 @@ function ProductHistoryTab({
           >
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-[9px] uppercase tracking-wide">
-                <th
-                  className={
-                    isFro
-                      ? "w-[31%] text-left font-semibold px-2 py-2"
-                      : "text-left font-semibold px-5 py-3.5"
-                  }
-                >
-                  Product
-                </th>
-                <th
-                  className={
-                    isFro
-                      ? "w-[18%] text-right font-semibold px-1 py-2"
-                      : "text-right font-semibold px-5 py-3.5"
-                  }
-                >
-                  Total Qty
-                </th>
-                <th
-                  className={
-                    isFro
-                      ? "w-[16%] text-center font-semibold px-1 py-2"
-                      : "text-center font-semibold px-5 py-3.5"
-                  }
-                >
-                  Times
-                </th>
-                <th
-                  className={
-                    isFro
-                      ? "w-[19%] text-left font-semibold px-1 py-2"
-                      : "text-left font-semibold px-5 py-3.5"
-                  }
-                >
-                  Last Date
-                </th>
-                <th
-                  className={
-                    isFro
-                      ? "w-[16%] text-right font-semibold px-1 py-2"
-                      : "text-right font-semibold px-5 py-3.5"
-                  }
-                >
-                  Value
-                </th>
+                <th className={isFro ? "w-[18%] text-left font-semibold px-2 py-2" : "text-left font-semibold px-4 py-3.5"}>Date</th>
+                <th className={isFro ? "w-[14%] text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Type</th>
+                <th className={isFro ? "w-[28%] text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Product</th>
+                {!isFro && <th className="text-left font-semibold px-4 py-3.5">Batch</th>}
+                <th className={isFro ? "w-[12%] text-right font-semibold px-1 py-2" : "text-right font-semibold px-4 py-3.5"}>Qty</th>
+                <th className={isFro ? "w-[28%] text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Reference</th>
+                {!isFro && <th className="text-left font-semibold px-4 py-3.5">Status</th>}
+                {!isFro && <th className="text-left font-semibold px-4 py-3.5">Reason</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((row) => (
-                <tr
-                  key={row.product}
-                  className="hover:bg-slate-50/50 transition-base"
-                >
-                  <td
-                    className={
-                      isFro
-                        ? "px-2 py-2 font-semibold text-slate-700 break-words leading-tight"
-                        : "px-5 py-3.5 font-semibold text-slate-700"
-                    }
-                  >
-                    <span className="block">{row.product}</span>
-                    {row.invoiceNos.length > 0 && (
-                      <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
-                        {row.invoiceNos.join(", ")}
-                      </span>
+              {rows.map((row) => {
+                const isReturn = row.kind === "return";
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50/50 transition-base">
+                    <td className={isFro ? "px-2 py-2 text-slate-600 whitespace-nowrap" : "px-4 py-3 text-slate-600"}>
+                      {formatDate(row.date)}
+                    </td>
+                    <td className={isFro ? "px-1 py-2" : "px-4 py-3"}>
+                      <Badge color={isReturn ? "amber" : "green"}>
+                        {isReturn ? "Return" : "Sale"}
+                      </Badge>
+                    </td>
+                    <td className={isFro ? "px-1 py-2 font-semibold text-slate-700 break-words leading-tight" : "px-4 py-3 font-semibold text-slate-700"}>
+                      <span className="block">{row.product}</span>
+                      {row.packSize && !row.product.includes(row.packSize) ? (
+                        <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
+                          {row.packSize}
+                        </span>
+                      ) : null}
+                    </td>
+                    {!isFro && (
+                      <td className="px-4 py-3 text-slate-600">{row.batchNo || "—"}</td>
                     )}
-                  </td>
-                  <td
-                    className={
-                      isFro
-                        ? "px-1 py-2 text-right text-slate-600"
-                        : "px-5 py-3.5 text-right text-slate-600"
-                    }
-                  >
-                    {row.totalQuantity}
-                  </td>
-                  <td
-                    className={
-                      isFro
-                        ? "px-1 py-2 text-center"
-                        : "px-5 py-3.5 text-center"
-                    }
-                  >
-                    <Badge color="blue">{row.transactions}</Badge>
-                  </td>
-                  <td
-                    className={
-                      isFro
-                        ? "px-1 py-2 text-slate-600 whitespace-nowrap"
-                        : "px-5 py-3.5 text-slate-600"
-                    }
-                  >
-                    {formatDate(row.lastDate)}
-                  </td>
-                  <td
-                    className={
-                      isFro
-                        ? "px-1 py-2 text-right font-bold text-slate-800 whitespace-nowrap"
-                        : "px-5 py-3.5 text-right font-bold text-slate-800"
-                    }
-                  >
-                    {formatCurrency(row.totalAmount)}
-                  </td>
-                </tr>
-              ))}
+                    <td className={isFro ? "px-1 py-2 text-right text-slate-600" : "px-4 py-3 text-right text-slate-600"}>
+                      {isReturn ? `-${row.quantity}` : row.quantity}
+                    </td>
+                    <td className={isFro ? "px-1 py-2 text-slate-600 break-words" : "px-4 py-3 text-slate-600"}>
+                      {row.invoiceNo || "—"}
+                    </td>
+                    {!isFro && (
+                      <td className="px-4 py-3 text-slate-600">{row.status || (isReturn ? "Recorded" : "—")}</td>
+                    )}
+                    {!isFro && (
+                      <td className="px-4 py-3 text-slate-500">{isReturn ? row.reason || "—" : "—"}</td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

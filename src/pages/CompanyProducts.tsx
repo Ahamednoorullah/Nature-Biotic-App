@@ -1,11 +1,14 @@
 import { useEffect, useState, useMemo } from "react";
 import {
   getProductMaster,
-  saveProductMaster,
   productCategories,
   productMasterUpdatedEvent,
+  saveProductMaster,
   type Product,
 } from "@/lib/data";
+import { updateCatalogProduct } from "@/lib/db/products";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import ProductAddForm from "@/components/ProductAddForm";
@@ -130,23 +133,40 @@ export default function CompanyProducts() {
     <ProductDetail
       product={selected.product}
       onBack={() => setSelected(null)}
-      onSave={(updated) => {
-        const current = getProductMaster();
-        const exists = current.some((p) => p.id === updated.id);
-
-        const next = exists
-          ? current.map((p) => (p.id === updated.id ? updated : p))
-          : [...current, updated];
-
-        saveProductMaster(next);
-        setProducts(next);
-
-        setSelected({
-          product: updated,
-          variants: selected.variants.map((v) =>
-            v.id === updated.id ? updated : v,
-          ),
-        });
+      onSave={async (updated) => {
+        try {
+          if (usesSupabaseData()) {
+            await updateCatalogProduct(updated);
+            const next = getProductMaster();
+            setProducts(next);
+            const refreshed = next.find((item) => item.id === updated.id) || updated;
+            setSelected({
+              product: refreshed,
+              variants: next.filter(
+                (item) =>
+                  item.name.trim().toLowerCase() === refreshed.name.trim().toLowerCase() &&
+                  item.hsnCode === refreshed.hsnCode &&
+                  item.productCategory === refreshed.productCategory,
+              ),
+            });
+            return;
+          }
+          const current = getProductMaster();
+          const exists = current.some((p) => p.id === updated.id);
+          const next = exists
+            ? current.map((p) => (p.id === updated.id ? updated : p))
+            : [...current, updated];
+          saveProductMaster(next);
+          setProducts(next);
+          setSelected({
+            product: updated,
+            variants: selected.variants.map((v) =>
+              v.id === updated.id ? updated : v,
+            ),
+          });
+        } catch (error) {
+          window.alert(dbErrorMessage(error, "Could not update the product."));
+        }
       }}
     />
   );

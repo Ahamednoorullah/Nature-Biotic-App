@@ -1,0 +1,62 @@
+# Local ports avoid the Windows excluded range 54242-54341, which blocks the
+# CLI defaults 54321-54324. Database files stay in the existing Docker volume.
+project_id = "NB_App-Frontend"
+
+[api]
+enabled = true
+port = 54421
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54422
+shadow_port = 54420
+major_version = 17
+
+[db.pooler]
+enabled = false
+port = 54429
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54423
+
+[local_smtp]
+enabled = true
+port = 54424
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173/login"
+additional_redirect_urls = [
+  "http://localhost:5173/**",
+  "http://127.0.0.1:5173/**",
+  "http://localhost:5174/**",
+  "http://127.0.0.1:5174/**",
+  "http://localhost:5173/login",
+  "http://127.0.0.1:5173/login",
+  "http://localhost:5174/login",
+  "http://127.0.0.1:5174/login",
+]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+inspector_port = 8083
+
+[analytics]
+enabled = true
+port = 54427

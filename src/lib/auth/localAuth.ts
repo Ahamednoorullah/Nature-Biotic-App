@@ -2,6 +2,7 @@ import { attachAccountLink } from "@/lib/data";
 import { getPasswordResetMailer } from "@/lib/auth/passwordResetMailer";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { roleLabel } from "@/lib/auth/roles";
+import { supabaseAuth } from "@/lib/auth/supabaseAuth";
 import type {
   AuthAccount,
   AuthAdapter,
@@ -413,28 +414,7 @@ async function disableAccount(accountId: string) {
   if (session?.id === accountId) clearSession();
 }
 
-export const localAuth: AuthAdapter = {
-  ensureReady,
-  getSession() {
-    return readSession();
-  },
-  signIn,
-  completePasswordSetup,
-  requestPasswordReset,
-  completePasswordReset,
-  async signOut() {
-    clearSession();
-  },
-  createAccount,
-  updateAccount,
-  disableAccount,
-};
-
-export function getAuthAdapter(): AuthAdapter {
-  return localAuth;
-}
-
-export async function changeAccountPassword(
+async function changePassword(
   accountId: string,
   currentPassword: string,
   nextPassword: string,
@@ -460,4 +440,49 @@ export async function changeAccountPassword(
     { accountId: account.id, ...hashed },
   ]);
   return { error: null };
+}
+
+export const localAuth: AuthAdapter = {
+  ensureReady,
+  getSession() {
+    return readSession();
+  },
+  signIn,
+  completePasswordSetup,
+  requestPasswordReset,
+  completePasswordReset,
+  async signOut() {
+    clearSession();
+  },
+  createAccount,
+  updateAccount,
+  disableAccount,
+  changePassword,
+};
+
+export function isSupabaseAuthEnabled() {
+  return (
+    String(import.meta.env.VITE_AUTH_SOURCE || "")
+      .trim()
+      .toLowerCase() === "supabase"
+  );
+}
+
+export function getAuthAdapter(): AuthAdapter {
+  if (isSupabaseAuthEnabled()) {
+    return supabaseAuth;
+  }
+  return localAuth;
+}
+
+export async function changeAccountPassword(
+  accountId: string,
+  currentPassword: string,
+  nextPassword: string,
+) {
+  return getAuthAdapter().changePassword(
+    accountId,
+    currentPassword,
+    nextPassword,
+  );
 }

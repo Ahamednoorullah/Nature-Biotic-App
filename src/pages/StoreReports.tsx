@@ -309,18 +309,15 @@ function StoreReportView({ storeId }: { storeId: string }) {
       linkInvoices: sales,
       linkReturns: returns,
     });
-    const creditNotes = readRows(`nature-biotic-store-credit-notes-v3:${storeId}`);
     const currentSettled = settleLinkedFarmerAccounts({
       invoices: sales,
       receipts,
-      returns: [...returns, ...creditNotes].filter(
+      returns: returns.filter(
         (row) => row.status !== "Rejected" && row.status !== "Draft",
       ),
       refunds: readRows(`nature-biotic-store-refunds-v2:${storeId}`),
       linkInvoices: sales,
-      linkReturns: [...returns, ...creditNotes].filter(
-        (row) => row.status !== "Draft",
-      ),
+      linkReturns: returns.filter((row) => row.status !== "Draft"),
     });
     const currentByFarmer = new Map(
       currentSettled.farmers.map((row) => [row.farmerName.trim().toLowerCase(), row]),

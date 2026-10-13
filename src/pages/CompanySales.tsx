@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Card,
   Badge,
@@ -9,23 +9,32 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
+import { createPortal } from "react-dom";
 import {
-  stores,
+  getStores,
+  storeRegistryUpdatedEvent,
   getProductMaster,
   productMasterUpdatedEvent,
   getStoredFarmers,
   storeFarmersUpdatedEvent,
-  type Farmer,
-  type Product,
-} from "@/lib/data";
-import { createPortal } from "react-dom";
-
-import {
   getAcceptedStorePurchaseOrders,
   getCompanyStoreSales,
+  getDatabasePurchaseOrders,
+  getStorePurchaseStatuses,
   saveCompanyStoreSales,
+  getStore,
+  getCompanyStoreOutstanding,
+  resolveStoreOutstandingLimit,
+  resolveStoreOutstandingLimitAction,
+  getOutstandingLimitStatus,
+  type Farmer,
+  type Product,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { saveCompanyInvoice, type RpcLine } from "@/lib/db/rpc";
 
 type TaxType = "Tamilnadu (SGST + CGST)" | "Others (IGST)";
 
@@ -39,6 +48,7 @@ type SaleRow = CompanyStoreSaleRecord & {
   discountPercent?: number;
   shippingAddress?: string;
   notes?: string;
+  rowTotal?: number;
 };
 
 type AddedRow = {
@@ -138,6 +148,27 @@ function emptyEntry(): EntryForm {
   };
 }
 
+function batchKey(name: string, size: string) {
+  return `${String(name || "").trim().toLowerCase()}|${String(size || "").trim().toLowerCase()}`;
+}
+
+function expiryForKnownBatch(
+  productName: string,
+  packSize: string,
+  batchNo: string,
+  rows: { product?: string; packSize?: string; pkgsize?: string; batchNo?: string; expiryDate?: string }[],
+) {
+  const batch = String(batchNo || "").trim().toLowerCase();
+  const key = batchKey(productName, packSize);
+  const match = rows.find(
+    (row) =>
+      String(row.batchNo || "").trim().toLowerCase() === batch &&
+      batchKey(String(row.product || ""), String(row.packSize || row.pkgsize || "")) ===
+        key,
+  );
+  return String(match?.expiryDate || "").trim();
+}
+
 function InvoiceInfo({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -199,9 +230,15 @@ export default function CompanySales() {
   } | null>(null);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [editingInvoiceNo, setEditingInvoiceNo] = useState<string | null>(null);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
+  const savingRef = useRef(false);
   const [purchaseStatuses, setPurchaseStatuses] = useState<
     Record<string, "Dispatched" | "Received">
   >(() => {
+    if (usesSupabaseData()) {
+      return getStorePurchaseStatuses() as Record<string, "Dispatched" | "Received">;
+    }
     try {
       const raw = localStorage.getItem(
         "nature-biotic-store-purchase-status-v1",
@@ -224,6 +261,7 @@ export default function CompanySales() {
   const [productMaster, setProductMaster] = useState<Product[]>(() =>
     getProductMaster(),
   );
+  const [stores, setStores] = useState(() => getStores());
 
   const [farmers, setFarmers] = useState<Farmer[]>(() => getStoredFarmers());
   const [shippingQuery, setShippingQuery] = useState("");
@@ -293,6 +331,17 @@ export default function CompanySales() {
         refreshProductMaster,
       );
       window.removeEventListener("focus", refreshProductMaster);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshStores = () => setStores(getStores());
+    refreshStores();
+    window.addEventListener(storeRegistryUpdatedEvent, refreshStores);
+    window.addEventListener("focus", refreshStores);
+    return () => {
+      window.removeEventListener(storeRegistryUpdatedEvent, refreshStores);
+      window.removeEventListener("focus", refreshStores);
     };
   }, []);
 
@@ -466,7 +515,7 @@ export default function CompanySales() {
     >();
 
     filtered.forEach((row) => {
-      const key = `${row.invoiceNo}__${row.storeId}__${row.date}`;
+      const key = `${row.invoiceId && !row.invoiceNo ? row.invoiceId : row.invoiceNo}__${row.storeId}__${row.date}`;
       const existing = grouped.get(key);
 
       if (existing) {
@@ -540,6 +589,26 @@ export default function CompanySales() {
     return Array.from(seen);
   }
 
+  function applyEnteredBatch(batchNo: string) {
+    const batch = batchNo.trim();
+    setEntry((prev) => {
+      const product = productMaster.find((item) => item.id === prev.productId);
+      const knownExpiry = product
+        ? expiryForKnownBatch(
+            product.name,
+            prev.pkgsize,
+            batch,
+            getCompanyStoreSales(),
+          )
+        : "";
+      return {
+        ...prev,
+        batchNo,
+        expiryDate: prev.expiryDate || knownExpiry,
+      };
+    });
+  }
+
   function selectProduct(productId: string) {
     const product = productMaster.find((p) => p.id === productId);
 
@@ -563,13 +632,11 @@ export default function CompanySales() {
         item.size === size &&
         item.status !== "Inactive",
     );
-    const batches = batchesForSale(entryProduct.name, size);
-
     setEntry((prev) => ({
       ...prev,
       productId: variant?.id || prev.productId,
       pkgsize: size,
-      batchNo: batches.length === 1 ? batches[0] : "",
+      batchNo: "",
       sellingPrice: variant?.purchasePrice ?? prev.sellingPrice,
     }));
   }
@@ -807,10 +874,15 @@ export default function CompanySales() {
 
   function openEditInvoice(invoice: { header: SaleRow; rows: SaleRow[] }) {
     if (invoiceIsLocked(invoice.header.invoiceNo)) return;
+    if (usesSupabaseData() && invoice.header.saleStatus !== "Draft") {
+      window.alert("A final invoice cannot be edited.");
+      return;
+    }
 
     const header = invoice.header;
 
     setEditingInvoiceNo(header.invoiceNo);
+    setEditingInvoiceId(header.invoiceId || null);
     setInvoiceNo(header.invoiceNo);
     setSaleDate(header.date);
     setStoreId(header.storeId);
@@ -882,6 +954,7 @@ export default function CompanySales() {
     setEntry(emptyEntry());
     setAdded([]);
     setEditingInvoiceNo(null);
+    setEditingInvoiceId(null);
     setSelectedFarmer(null);
     setShippingQuery("");
     setShippingAddress("");
@@ -890,6 +963,98 @@ export default function CompanySales() {
   function closeForm() {
     setShowCreate(false);
     resetForm();
+  }
+
+  function invoiceRpcLine(row: SaleRow): RpcLine {
+    const taxable = Math.round(Number(row.taxableAmount ?? row.withoutTax ?? 0) * 100) / 100;
+    const sgst = Math.round(Number(row.sgst || 0) * 100) / 100;
+    const cgst = Math.round(Number(row.cgst || 0) * 100) / 100;
+    const igst = Math.round(Number(row.igst || 0) * 100) / 100;
+    const tax = Math.round((sgst + cgst + igst) * 100) / 100;
+    return {
+      variant_id: row.productId,
+      quantity: row.quantity,
+      unit_price: Number(row.unitPrice || row.rate || 0),
+      discount_percent: Number(row.discountPercent || 0),
+      discount_amount: Number(row.discountAmount || row.discount || 0),
+      taxable_amount: taxable,
+      tax_percent: Number(row.taxPercent || 0),
+      sgst_amount: sgst,
+      cgst_amount: cgst,
+      igst_amount: igst,
+      tax_amount: tax,
+      line_total: Math.round((taxable + tax) * 100) / 100,
+      batch_no: String(row.batchNo || "").trim(),
+      expiry_date: row.expiryDate || undefined,
+    };
+  }
+
+  async function persistCompanyInvoice(finalize: boolean) {
+    if (savingRef.current) return;
+    const builtRows = buildFormRows();
+    if (!builtRows?.length) {
+      window.alert(
+        "Enter the store, invoice number, and at least one product before saving.",
+      );
+      return;
+    }
+    const number = invoiceNo.trim();
+    if (!/^NB-INV-\d{4,}$/i.test(number)) {
+      window.alert("Invoice number must match the company pattern, for example NB-INV-0001.");
+      return;
+    }
+    if (builtRows.some((row) => !row.productId || !row.batchNo)) {
+      window.alert("Each invoice line needs a catalog product and a batch number.");
+      return;
+    }
+    const store = stores.find((item) => item.id === storeId);
+    const linkedOrder = purchaseOrderNo
+      ? getDatabasePurchaseOrders().find(
+          (order) =>
+            order.storeId === storeId &&
+            order.poNo === purchaseOrderNo &&
+            order.status === "Accepted",
+        )
+      : undefined;
+    savingRef.current = true;
+    setActionError("");
+    try {
+      const saved = await saveCompanyInvoice(
+        editingInvoiceId,
+        {
+          store_id: storeId,
+          invoice_date: saleDate,
+          ...(linkedOrder ? { purchase_order_id: linkedOrder.id } : {}),
+          place_of_supply: placeOfSupply,
+          store_location: store?.location || "",
+          shipping_address: shippingAddress,
+          notes:
+            remarks.trim() ||
+            "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above.",
+          invoice_no: number.toUpperCase(),
+        },
+        builtRows.map(invoiceRpcLine),
+        finalize,
+      );
+      await refreshPurchasingData();
+      setSales(getCompanyStoreSales());
+      setPurchaseStatuses(
+        getStorePurchaseStatuses() as Record<string, "Dispatched" | "Received">,
+      );
+      resetForm();
+      setShowCreate(false);
+      if (saved?.limit_warning) {
+        window.alert(
+          "The invoice was saved. This store's outstanding is above its limit, and the store policy allowed it.",
+        );
+      }
+    } catch (error) {
+      const message = dbErrorMessage(error, "The invoice could not be saved.");
+      setActionError(message);
+      window.alert(message);
+    } finally {
+      savingRef.current = false;
+    }
   }
 
   function handleSaveDraft() {
@@ -928,6 +1093,11 @@ export default function CompanySales() {
       window.alert(
         "Enter the store, invoice number, and at least one product before saving a draft.",
       );
+      return;
+    }
+
+    if (usesSupabaseData()) {
+      void persistCompanyInvoice(false);
       return;
     }
 
@@ -985,6 +1155,32 @@ export default function CompanySales() {
     const builtRows = buildFormRows();
     if (!builtRows?.length) return;
 
+    const billedStore = getStore(storeId);
+    const outstandingLimit = resolveStoreOutstandingLimit(billedStore);
+    const limitAction = resolveStoreOutstandingLimitAction(billedStore);
+    const currentOutstanding = getCompanyStoreOutstanding(storeId);
+    const previousInvoiceTotal = editingInvoiceNo
+      ? sales
+          .filter((row) => row.invoiceNo === editingInvoiceNo)
+          .reduce((sum, row) => sum + Number(row.rowTotal || row.total || 0), 0)
+      : 0;
+    const projectedOutstanding = Math.max(
+      0,
+      currentOutstanding - previousInvoiceTotal + totals.grandTotal,
+    );
+    const limitStatus = getOutstandingLimitStatus(
+      projectedOutstanding,
+      outstandingLimit,
+    );
+    if (limitStatus === "exceeded") {
+      const message = `This sale would take ${billedStore?.name || "the store"} outstanding to ${formatCurrency(projectedOutstanding)}, which is at or above the limit of ${formatCurrency(outstandingLimit)}.`;
+      if (limitAction === "block") {
+        window.alert(`${message} Saving is blocked by this store's outstanding limit policy.`);
+        return;
+      }
+      if (!window.confirm(`${message} Continue anyway?`)) return;
+    }
+
     if (
       sales.some(
         (row) =>
@@ -993,6 +1189,11 @@ export default function CompanySales() {
       )
     ) {
       window.alert("This invoice number is already saved.");
+      return;
+    }
+
+    if (usesSupabaseData()) {
+      void persistCompanyInvoice(true);
       return;
     }
 
@@ -1031,6 +1232,11 @@ export default function CompanySales() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
+          {actionError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {actionError}
+            </div>
+          )}
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
             Sales
           </h1>
@@ -2058,10 +2264,53 @@ export default function CompanySales() {
                         ) : (
                           <>
                             <textarea
+                              readOnly={
+                                usesSupabaseData() &&
+                                selectedInvoice.header.saleStatus !== "Draft"
+                              }
                               value={
                                 selectedInvoice.header.notes ??
                                 "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above."
                               }
+                              onBlur={(event) => {
+                                if (
+                                  !usesSupabaseData() ||
+                                  selectedInvoice.header.saleStatus !== "Draft" ||
+                                  !selectedInvoice.header.invoiceId
+                                ) {
+                                  return;
+                                }
+                                const note = event.target.value;
+                                void saveCompanyInvoice(
+                                  selectedInvoice.header.invoiceId,
+                                  {
+                                    store_id: selectedInvoice.header.storeId,
+                                    invoice_date: selectedInvoice.header.date,
+                                    ...(selectedInvoice.header.purchaseOrderId
+                                      ? { purchase_order_id: selectedInvoice.header.purchaseOrderId }
+                                      : {}),
+                                    place_of_supply: selectedInvoice.header.placeOfSupply,
+                                    store_location: selectedInvoice.header.storeLocation,
+                                    shipping_address: selectedInvoice.header.shippingAddress,
+                                    notes: note,
+                                    ...(selectedInvoice.header.invoiceNo
+                                      ? { invoice_no: selectedInvoice.header.invoiceNo }
+                                      : {}),
+                                  },
+                                  selectedInvoice.rows.map(invoiceRpcLine),
+                                  false,
+                                )
+                                  .then(() => refreshPurchasingData())
+                                  .then(() => setSales(getCompanyStoreSales()))
+                                  .catch((error) => {
+                                    const message = dbErrorMessage(
+                                      error,
+                                      "The invoice note could not be saved.",
+                                    );
+                                    setActionError(message);
+                                    window.alert(message);
+                                  });
+                              }}
                               onChange={(e) => {
                                 const newNotes = e.target.value;
 
@@ -2092,7 +2341,7 @@ export default function CompanySales() {
                                       : row,
                                   );
 
-                                  saveCompanyStoreSales(updatedSales);
+                                  if (!usesSupabaseData()) saveCompanyStoreSales(updatedSales);
 
                                   return updatedSales;
                                 });
@@ -2449,38 +2698,27 @@ export default function CompanySales() {
                         />
                       </div>
 
-                      {entryProduct &&
-                      entry.pkgsize &&
-                      batchesForSale(entryProduct.name, entry.pkgsize).length > 1 ? (
-                        <Select
-                          label="Batch ID"
-                          value={entry.batchNo}
-                          onChange={(v) =>
-                            setEntry((p) => ({ ...p, batchNo: v }))
-                          }
-                          placeholder="Select batch"
-                          options={batchesForSale(entryProduct.name, entry.pkgsize).map(
-                            (batch) => ({ value: batch, label: batch }),
-                          )}
-                          required
-                        />
-                      ) : (
+                      <div>
                         <Input
                           label="Batch ID"
                           value={entry.batchNo}
-                          onChange={(v) =>
-                            setEntry((p) => ({ ...p, batchNo: v }))
-                          }
-                          placeholder={
-                            entry.pkgsize &&
-                            entryProduct &&
-                            batchesForSale(entryProduct.name, entry.pkgsize).length === 1
-                              ? "Auto"
-                              : "e.g. BAT-001"
-                          }
+                          onChange={applyEnteredBatch}
+                          placeholder="Enter batch ID"
                           required
                         />
-                      )}
+                        {entryProduct &&
+                          entry.pkgsize &&
+                          batchesForSale(entryProduct.name, entry.pkgsize).length >
+                            0 && (
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              Known batches:{" "}
+                              {batchesForSale(
+                                entryProduct.name,
+                                entry.pkgsize,
+                              ).join(", ")}
+                            </p>
+                          )}
+                      </div>
                       <Input
                         label="Expiry Date"
                         type="date"

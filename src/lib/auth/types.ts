@@ -41,6 +41,8 @@ export type CreateAccountInput = {
   subjectId: string;
   storeId?: string;
   staffId?: string;
+  reassign?: boolean;
+  resend?: boolean;
 };
 
 export type UpdateAccountInput = {
@@ -90,9 +92,22 @@ export interface AuthAdapter {
   signOut(): Promise<void>;
   createAccount(
     input: CreateAccountInput,
-  ): Promise<{ account: AuthAccount | null; error: string | null }>;
+  ): Promise<{
+    account: AuthAccount | null;
+    error: string | null;
+    linkedExisting?: boolean;
+    reassigned?: boolean;
+    passwordSetupResent?: boolean;
+    canReassign?: boolean;
+    canResend?: boolean;
+  }>;
   updateAccount(
     input: UpdateAccountInput,
   ): Promise<{ account: AuthAccount | null; error: string | null }>;
   disableAccount(accountId: string): Promise<void>;
+  changePassword(
+    accountId: string,
+    currentPassword: string,
+    nextPassword: string,
+  ): Promise<{ error: string | null }>;
 }

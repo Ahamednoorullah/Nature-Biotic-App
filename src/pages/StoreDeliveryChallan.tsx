@@ -3,7 +3,7 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
 import {
-  getProductsByStore,
+  getProductMaster,
   getStaffByStore,
   getStorePurchasesFromCompanySales,
   getStoreAvailableQty,
@@ -173,7 +173,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   // Batch / expiry / price are read from those purchase records and are not
   // manually entered by the user.
   const storeProducts = useMemo(() => {
-    const products = getProductsByStore(storeId);
+    const products = getProductMaster();
     const purchases = getStorePurchasesFromCompanySales(storeId);
     const productByName = new Map(
       products.map((product: any) => [
@@ -193,14 +193,13 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
               (p: any) => String(p.id) === String(purchase.productId),
             )
           : undefined) ?? productByName.get(productName.toLowerCase());
-      if (!product) return;
 
-      const productId = String(product.id);
+      const productId = String(product?.id || purchase.productId || productName);
       const packSize = String(
         purchase.packSize ??
           purchase.pkgsize ??
           purchase.size ??
-          product.size ??
+          product?.size ??
           "",
       ).trim();
       if (!packSize) return;
@@ -218,7 +217,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       if (purchasedQty <= 0) return;
 
       // Always use the company-declared selling price, never the purchase price
-      const unitValue = Number(product.sellingPrice ?? 0);
+      const unitValue = Number(product?.sellingPrice ?? 0);
 
       
       const key = [
@@ -234,9 +233,9 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       } else {
         groups.set(key, {
           productId,
-          productName: String(product.name || productName),
+          productName: String(product?.name || productName),
           productType: String(
-            product.productType ?? product.productCategory ?? "-",
+            product?.productType ?? product?.productCategory ?? "-",
           ),
           packSize,
           batchNo,
@@ -245,8 +244,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
           unitValue,
           taxPercent: Number(
             purchase.taxPercent ??
-              product.taxPercentage ??
-              product.taxPercent ??
+              product?.taxPercentage ??
+              product?.taxPercent ??
               0,
           ),
         });

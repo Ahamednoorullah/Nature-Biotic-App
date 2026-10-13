@@ -4,6 +4,9 @@ import {
   getStore,
   getFROTotalStockCount,
   products,
+  getCompanyStoreOutstanding,
+  resolveStoreOutstandingLimit,
+  getOutstandingLimitStatus,
 } from "@/lib/data";
 import {
   Card,
@@ -435,6 +438,24 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         </div>,
         document.body,
       )}
+
+      {(() => {
+        const limit = resolveStoreOutstandingLimit(store);
+        const due = getCompanyStoreOutstanding(storeId);
+        if (getOutstandingLimitStatus(due, limit) !== "exceeded") return null;
+        return (
+          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-bold">
+              {due > limit
+                ? "Outstanding limit exceeded"
+                : "Outstanding limit reached for this store."}
+            </p>
+            <p className="mt-1">
+              Outstanding {formatCurrency(due)} · Limit {formatCurrency(limit)}
+            </p>
+          </div>
+        );
+      })()}
 
       {/* ROW 1 — Business Overview */}
       <div className="mb-8 lg:mb-12">

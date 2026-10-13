@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, EmptyState, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
@@ -8,12 +8,17 @@ import {
   type SimpleDateFilter,
 } from "@/lib/format";
 import {
+  getDatabasePurchaseReturns,
   getStoreApprovalRequests,
   rejectStoreApprovalRequest,
   storeApprovalRequestsUpdatedEvent,
   updateStoreApprovalRequestStatus,
   type StoreApprovalRequestStatus,
 } from "@/lib/data";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { decidePurchaseReturn } from "@/lib/db/rpc";
 import { purchaseReturnsUpdatedEvent } from "@/pages/StorePurchaseReturn";
 
 type ReturnLine = {
@@ -35,6 +40,51 @@ type ReturnLine = {
 };
 
 function loadReturnLines(): ReturnLine[] {
+  if (usesSupabaseData()) {
+    const lines: ReturnLine[] = [];
+    getDatabasePurchaseReturns().forEach((row) => {
+      if (row.items.length === 0) {
+        lines.push({
+          id: row.id,
+          approvalId: row.id,
+          date: row.date,
+          returnNo: row.returnNo,
+          storeId: row.storeId,
+          storeName: row.storeName,
+          product: "-",
+          packSize: "-",
+          batchNo: "-",
+          quantity: 0,
+          price: 0,
+          discountAmount: 0,
+          tax: 0,
+          total: row.total,
+          status: row.status,
+        });
+        return;
+      }
+      row.items.forEach((item) => {
+        lines.push({
+          id: item.id,
+          approvalId: row.id,
+          date: row.date,
+          returnNo: row.returnNo,
+          storeId: row.storeId,
+          storeName: row.storeName,
+          product: item.product || "-",
+          packSize: item.packSize || "-",
+          batchNo: item.batchNo || "-",
+          quantity: item.quantity,
+          price: item.price,
+          discountAmount: item.discountAmount,
+          tax: item.sgst + item.cgst + item.igst,
+          total: item.total,
+          status: row.status,
+        });
+      });
+    });
+    return lines.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }
   const requests = getStoreApprovalRequests().filter(
     (request) => request.type === "Purchase Return",
   );
@@ -107,6 +157,8 @@ function loadReturnLines(): ReturnLine[] {
 
 export default function CompanySalesReturn() {
   const [lines, setLines] = useState<ReturnLine[]>([]);
+  const [actionError, setActionError] = useState("");
+  const decidingRef = useRef(false);
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -124,15 +176,34 @@ export default function CompanySalesReturn() {
     };
   }, []);
 
-  function accept(approvalId: string) {
-    updateStoreApprovalRequestStatus(approvalId, "Approved");
-  }
-
-  function reject(approvalId: string) {
-    if (!window.confirm("Reject this purchase return? Stock stays with the store.")) {
+  async function decide(approvalId: string, decision: "approved" | "rejected") {
+    if (decidingRef.current) return;
+    if (decision === "rejected" && !window.confirm("Reject this purchase return? Stock stays with the store.")) {
       return;
     }
-    rejectStoreApprovalRequest(approvalId);
+    if (!usesSupabaseData()) {
+      if (decision === "approved") updateStoreApprovalRequestStatus(approvalId, "Approved");
+      else rejectStoreApprovalRequest(approvalId);
+      return;
+    }
+    decidingRef.current = true;
+    setActionError("");
+    try {
+      await decidePurchaseReturn(approvalId, decision);
+      await refreshPurchasingData();
+      setLines(loadReturnLines());
+    } catch (error) {
+      setActionError(
+        dbErrorMessage(
+          error,
+          decision === "approved"
+            ? "This purchase return could not be accepted."
+            : "This purchase return could not be rejected.",
+        ),
+      );
+    } finally {
+      decidingRef.current = false;
+    }
   }
 
   const visibleLines = useMemo(
@@ -165,6 +236,11 @@ export default function CompanySalesReturn() {
 
   return (
     <div>
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
@@ -319,14 +395,14 @@ export default function CompanySalesReturn() {
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => accept(line.approvalId)}
+                            onClick={() => void decide(line.approvalId, "approved")}
                             className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100"
                           >
                             Accept
                           </button>
                           <button
                             type="button"
-                            onClick={() => reject(line.approvalId)}
+                            onClick={() => void decide(line.approvalId, "rejected")}
                             className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
                           >
                             Reject

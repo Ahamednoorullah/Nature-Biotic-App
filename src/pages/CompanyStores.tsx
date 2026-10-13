@@ -1,21 +1,47 @@
 import { useState } from "react";
-import { getStores, replaceStoreRegistry, type Store } from "@/lib/data";
+import {
+  getStores,
+  replaceStoreRegistry,
+  getCompanyStoreOutstanding,
+  parseOutstandingLimitInput,
+  resolveStoreOutstandingLimit,
+  resolveStoreOutstandingLimitAction,
+  getOutstandingLimitStatus,
+  DEFAULT_STORE_OUTSTANDING_LIMIT,
+  type Store,
+} from "@/lib/data";
 import { getAuthAdapter } from "@/lib/auth/localAuth";
+import { createStore, deleteStore as removeStore, storeAdminEmails, updateStore } from "@/lib/db/stores";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
 import { useNav } from "@/context/NavContext";
-import { Card, Button, Input, Modal, Icon } from "@/components/ui";
+import { Card, Button, Input, Select, Badge, Icon } from "@/components/ui";
+import { formatCurrency } from "@/lib/format";
 import { createPortal } from "react-dom";
 
 export default function CompanyStores() {
   const { goStore } = useNav();
   const [stores, setStores] = useState<Store[]>(() => [...getStores()]);
   const [accountNotice, setAccountNotice] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteNotice, setInviteNotice] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [canReassignLogin, setCanReassignLogin] = useState(false);
+  const [canResendLogin, setCanResendLogin] = useState(false);
+  const [invitedStoreEmails, setInvitedStoreEmails] = useState<Record<string, string>>({});
   const [showAdd, setShowAdd] = useState(false);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [deleteStore, setDeleteStore] = useState<Store | null>(null);
+  const [deleteAdmins, setDeleteAdmins] = useState<string[]>([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [editForm, setEditForm] = useState({
   name: "", code: "", owner: "", phone: "", address: "",
   city: "", district: "", state: "", gst: "", openedDate: "",
+  outstandinglimit: "",
+  outstandingLimitAction: "warn" as "warn" | "block",
   bankAccountName: "", bankAccountNo: "", bankIfsc: "",
   bankName: "", bankBranch: "", bankUpiId: "",
 });
@@ -31,6 +57,7 @@ export default function CompanyStores() {
   state: "",
   gst: "",
   outstandinglimit: "",
+  outstandingLimitAction: "warn",
   openedDate: "",
   bankAccountName: "",
   bankAccountNo: "",
@@ -42,6 +69,75 @@ export default function CompanyStores() {
 
   function update(key: keyof typeof form, value: string) {
     setForm({ ...form, [key]: value });
+  }
+
+  function openStoreDetails(store: Store) {
+    setInviteEmail("");
+    setInviteError("");
+    setInviteNotice("");
+    setCanReassignLogin(false);
+    setCanResendLogin(false);
+    setSelectedStore(store);
+  }
+
+  async function inviteStoreAdmin(action: { reassign?: boolean; resend?: boolean } = {}) {
+    if (!selectedStore || inviteBusy) return;
+    const reassign = action.reassign === true;
+    const resend = action.resend === true;
+    const email = inviteEmail.trim().toLowerCase();
+    setInviteError("");
+    setInviteNotice("");
+    setCanReassignLogin(false);
+    setCanResendLogin(false);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setInviteError("Enter a valid email address.");
+      return;
+    }
+    if (selectedStore.status !== "Active") {
+      setInviteError("An inactive store cannot have a login.");
+      return;
+    }
+    if (!reassign && !resend && invitedStoreEmails[selectedStore.id] === email) {
+      setInviteError("An invitation was already sent to this email.");
+      return;
+    }
+    const fullName = selectedStore.owner.trim() || selectedStore.name.trim();
+    if (!fullName) {
+      setInviteError("Enter the store administrator's name.");
+      return;
+    }
+    setInviteBusy(true);
+    const created = await getAuthAdapter().createAccount({
+      name: fullName,
+      email,
+      role: "store_admin",
+      subjectType: "store",
+      subjectId: selectedStore.id,
+      storeId: selectedStore.id,
+      reassign,
+      resend,
+    });
+    setInviteBusy(false);
+    if (!created.account) {
+      setCanReassignLogin(created.canReassign === true);
+      setCanResendLogin(created.canResend === true);
+      setInviteError(created.error || "The store login could not be created.");
+      return;
+    }
+    setInvitedStoreEmails((current) => ({
+      ...current,
+      [selectedStore.id]: email,
+    }));
+    setInviteEmail("");
+    setInviteNotice(
+      created.passwordSetupResent
+        ? `Password setup email sent again to ${email}. Open that email, set a password, then sign in. The store assignment was not changed.`
+        : created.reassigned
+        ? `${email} now administers this store. After the next sign-in, that account can no longer open the previous store.`
+        : created.linkedExisting
+          ? `${email} already had a login that was not assigned to a store. It is now the administrator for this store and can sign in with the current password.`
+          : `Store login invited for ${email}. A password setup email was sent. They set the password from that email, then sign in.`,
+    );
   }
 
   async function handleSave() {
@@ -66,6 +162,11 @@ export default function CompanyStores() {
   monthlySales: 0,
   totalProfit: 0,
   outstanding: 0,
+  outstandingLimit:
+    parseOutstandingLimitInput(form.outstandinglimit) ??
+    DEFAULT_STORE_OUTSTANDING_LIMIT,
+  outstandingLimitAction:
+    form.outstandingLimitAction === "block" ? "block" : "warn",
   activeCustomers: 0,
   inventoryValue: 0,
   openedDate: form.openedDate || new Date().toISOString().split("T")[0],
@@ -76,6 +177,51 @@ export default function CompanyStores() {
   bankBranch: form.bankBranch,
   bankUpiId: form.bankUpiId,
 } as Store;
+
+    if (usesSupabaseData()) {
+      try {
+        const id = await createStore(newStore);
+        const created = await getAuthAdapter().createAccount({
+          name: form.owner.trim() || form.name.trim(),
+          email,
+          role: "store_admin",
+          subjectType: "store",
+          subjectId: id,
+          storeId: id,
+        });
+        setStores(getStores());
+        setAccountNotice(
+          created.account
+            ? `Store account created for ${email}. A password setup email was sent. They set the password from that email, then sign in here.`
+            : `Store saved. Login was not created: ${created.error || "The store login could not be created."}`,
+        );
+        setForm({
+          name: "",
+          code: "",
+          owner: "",
+          phone: "",
+          email: "",
+          address: "",
+          city: "",
+          district: "",
+          state: "",
+          gst: "",
+          outstandinglimit: "",
+          outstandingLimitAction: "warn",
+          openedDate: "",
+          bankAccountName: "",
+          bankAccountNo: "",
+          bankIfsc: "",
+          bankName: "",
+          bankBranch: "",
+          bankUpiId: "",
+        });
+        setShowAdd(false);
+      } catch (error) {
+        window.alert(dbErrorMessage(error, "Could not save the store."));
+      }
+      return;
+    }
 
     const created = await getAuthAdapter().createAccount({
       name: form.owner.trim() || form.name.trim(),
@@ -109,6 +255,7 @@ export default function CompanyStores() {
   state: "",
   gst: "",
   outstandinglimit: "",
+  outstandingLimitAction: "warn",
   openedDate: "",
   bankAccountName: "",
   bankAccountNo: "",
@@ -133,6 +280,11 @@ export default function CompanyStores() {
     state: location.slice(2).join(", ") || "",
     gst: store.gst || "",
     openedDate: store.openedDate || "",
+    outstandinglimit:
+      typeof store.outstandingLimit === "number"
+        ? String(store.outstandingLimit)
+        : "",
+    outstandingLimitAction: resolveStoreOutstandingLimitAction(store),
     bankAccountName: (store as any).bankAccountName || "",
     bankAccountNo: (store as any).bankAccountNo || "",
     bankIfsc: (store as any).bankIfsc || "",
@@ -148,7 +300,7 @@ export default function CompanyStores() {
     setEditForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleUpdateStore() {
+  async function handleUpdateStore() {
   if (!editingStore || !editForm.name.trim() || !editForm.phone.trim()) return;
   const updated: Store = {
     ...editingStore,
@@ -162,6 +314,10 @@ export default function CompanyStores() {
       .map((v) => v.trim()).filter(Boolean).join(", "),
     gst: editForm.gst.trim(),
     openedDate: editForm.openedDate,
+    outstandingLimit:
+      parseOutstandingLimitInput(editForm.outstandinglimit) ??
+      editingStore.outstandingLimit,
+    outstandingLimitAction: editForm.outstandingLimitAction,
     bankAccountName: editForm.bankAccountName.trim(),
     bankAccountNo: editForm.bankAccountNo.trim(),
     bankIfsc: editForm.bankIfsc.trim(),
@@ -169,6 +325,16 @@ export default function CompanyStores() {
     bankBranch: editForm.bankBranch.trim(),
     bankUpiId: editForm.bankUpiId.trim(),
   } as Store;
+  if (usesSupabaseData()) {
+    try {
+      await updateStore(updated);
+      setStores(getStores());
+      setEditingStore(null);
+    } catch (error) {
+      window.alert(dbErrorMessage(error, "Could not update the store."));
+    }
+    return;
+  }
   setStores((prev) => {
     const next = prev.map((s) => (s.id === editingStore.id ? updated : s));
     replaceStoreRegistry(next);
@@ -177,8 +343,40 @@ export default function CompanyStores() {
   setEditingStore(null);
 }
 
-  function handleDeleteStore() {
-    if (!deleteStore) return;
+  async function askDeleteStore(store: Store) {
+    setDeleteError("");
+    setDeleteAdmins([]);
+    setDeleteStore(store);
+    if (!usesSupabaseData()) return;
+    try {
+      setDeleteAdmins(await storeAdminEmails(store.id));
+    } catch (error) {
+      setDeleteError(dbErrorMessage(error, "Could not check this store's logins."));
+    }
+  }
+
+  async function handleDeleteStore() {
+    if (!deleteStore || deleteBusy) return;
+    if (usesSupabaseData()) {
+      setDeleteBusy(true);
+      setDeleteError("");
+      try {
+        const removedName = deleteStore.name;
+        const removedCode = deleteStore.code;
+        await removeStore(deleteStore.id);
+        setStores(getStores());
+        if (selectedStore?.id === deleteStore.id) setSelectedStore(null);
+        setDeleteStore(null);
+        setAccountNotice(
+          `${removedName} (${removedCode}) was deleted. Its exclusive store admin login was removed.`,
+        );
+      } catch (error) {
+        setDeleteError(dbErrorMessage(error, "Could not delete the store."));
+      } finally {
+        setDeleteBusy(false);
+      }
+      return;
+    }
     if (deleteStore.accountId) {
       void getAuthAdapter().disableAccount(deleteStore.accountId);
     }
@@ -237,12 +435,18 @@ export default function CompanyStores() {
                   <h3 className="mt-1 text-lg font-bold tracking-tight text-slate-800">
                     {store.name}
                   </h3>
+                  {getOutstandingLimitStatus(
+                    getCompanyStoreOutstanding(store.id),
+                    resolveStoreOutstandingLimit(store),
+                  ) === "exceeded" ? (
+                    <StoreLimitBadge store={store} />
+                  ) : null}
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={() => setSelectedStore(store)}
+                      onClick={() => openStoreDetails(store)}
                     >
                       <Icon name="visibility" size={16} />
                       View
@@ -381,12 +585,7 @@ export default function CompanyStores() {
               </p>
             </div>
 
-            {/* Outstanding Limit - 1 column */}
-            <StoreInfoBox
-              icon="wallet"
-              label="Outstanding Limit"
-              value="₹5,00,000"
-            />
+            <StoreLimitDetails store={selectedStore} />
 
           </div>
 
@@ -434,6 +633,62 @@ export default function CompanyStores() {
               />
             </div>
           </div>
+
+          {usesSupabaseData() && (
+            <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-slate-800">
+                Create Store Login
+              </h4>
+              <p className="mt-1 text-sm text-slate-500">
+                Invite a store administrator for this store. They set a password from the email, then sign in.
+              </p>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <Input
+                  className="min-w-0 flex-1"
+                  label="Store Admin email"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(value) => {
+                    setInviteEmail(value);
+                    setInviteError("");
+                    setCanReassignLogin(false);
+                    setCanResendLogin(false);
+                  }}
+                  placeholder="name@company.com"
+                  icon="mail"
+                  required
+                />
+                <Button onClick={() => void inviteStoreAdmin({})} disabled={inviteBusy}>
+                  <Icon name="person_add" size={18} />
+                  {inviteBusy ? "Sending invitation..." : "Invite Store Admin"}
+                </Button>
+              </div>
+              {inviteError && (
+                <p className="mt-2 text-sm font-medium text-red-600">{inviteError}</p>
+              )}
+              {canReassignLogin && (
+                <Button
+                  variant="secondary"
+                  onClick={() => void inviteStoreAdmin({ reassign: true })}
+                  disabled={inviteBusy}
+                >
+                  Move this login to this store
+                </Button>
+              )}
+              {canResendLogin && (
+                <Button
+                  variant="secondary"
+                  onClick={() => void inviteStoreAdmin({ resend: true })}
+                  disabled={inviteBusy}
+                >
+                  Resend password setup email
+                </Button>
+              )}
+              {inviteNotice && (
+                <p className="mt-2 text-sm font-medium text-brand-700">{inviteNotice}</p>
+              )}
+            </div>
+          )}
           </div>
 
         {/* Footer */}
@@ -441,7 +696,7 @@ export default function CompanyStores() {
 
           <Button
             variant="secondary"
-            onClick={() => setDeleteStore(selectedStore)}
+            onClick={() => selectedStore && void askDeleteStore(selectedStore)}
             className="text-red-600 hover:bg-red-50"
           >
             <Icon name="delete" size={18} />
@@ -504,6 +759,27 @@ export default function CompanyStores() {
                   <Input label="Mobile Number" value={editForm.phone} onChange={(v) => updateEdit("phone", v)} icon="call" required />
                   <Input label="GST Number" value={editForm.gst} onChange={(v) => updateEdit("gst", v)} icon="receipt_long" />
                   <Input label="Opening Date" type="date" value={editForm.openedDate} onChange={(v) => updateEdit("openedDate", v)} />
+                  <Input
+                    label="Outstanding Limit"
+                    value={editForm.outstandinglimit}
+                    onChange={(v) => updateEdit("outstandinglimit", v)}
+                    placeholder="5,00,000"
+                    icon="wallet"
+                  />
+                  <Select
+                    label="When limit is reached"
+                    value={editForm.outstandingLimitAction}
+                    onChange={(v) =>
+                      updateEdit(
+                        "outstandingLimitAction",
+                        v === "block" ? "block" : "warn",
+                      )
+                    }
+                    options={[
+                      { value: "warn", label: "Warn (allow the sale)" },
+                      { value: "block", label: "Block the sale" },
+                    ]}
+                  />
                                     <Input label="City" value={editForm.city} onChange={(v) => updateEdit("city", v)} />
                   <Input label="District" value={editForm.district} onChange={(v) => updateEdit("district", v)} />
                   <Input label="State" value={editForm.state} onChange={(v) => updateEdit("state", v)} />
@@ -586,13 +862,27 @@ export default function CompanyStores() {
                 </div>
                 <h2 className="text-lg font-bold text-slate-800">Delete Store?</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Are you sure you want to delete <span className="font-semibold text-slate-700">{deleteStore.name}</span>?
+                  Permanently delete{" "}
+                  <span className="font-semibold text-slate-700">{deleteStore.name}</span>
+                  {" "}({deleteStore.code})?
                 </p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Linked store admin:{" "}
+                  <span className="font-semibold text-slate-700">
+                    {deleteAdmins.length > 0 ? deleteAdmins.join(", ") : "none"}
+                  </span>
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  This removes only that store and a store admin login used only by it. Stores with sales, stock, or other records are not deleted.
+                </p>
+                {deleteError && (
+                  <p className="mt-3 text-sm font-medium text-red-600">{deleteError}</p>
+                )}
               </div>
               <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
-                <Button variant="secondary" onClick={() => setDeleteStore(null)}>Cancel</Button>
-                <Button onClick={handleDeleteStore} className="bg-red-600 hover:bg-red-700">
-                  <Icon name="delete" size={18} /> Delete Store
+                <Button variant="secondary" onClick={() => setDeleteStore(null)} disabled={deleteBusy}>Cancel</Button>
+                <Button onClick={() => void handleDeleteStore()} disabled={deleteBusy} className="bg-red-600 hover:bg-red-700">
+                  <Icon name="delete" size={18} /> {deleteBusy ? "Deleting..." : "Delete Store"}
                 </Button>
               </div>
             </div>
@@ -707,6 +997,15 @@ export default function CompanyStores() {
                       placeholder="5,00,000"
                       icon="wallet"
                     />
+                    <Select
+                      label="When limit is reached"
+                      value={form.outstandingLimitAction}
+                      onChange={(v) => update("outstandingLimitAction", v)}
+                      options={[
+                        { value: "warn", label: "Warn (allow the sale)" },
+                        { value: "block", label: "Block the sale" },
+                      ]}
+                    />
                   </div>
 
                   {/* Opening Date occupies the remaining one column */}
@@ -786,6 +1085,70 @@ export default function CompanyStores() {
           </div>,
           document.body,
         )}
+    </div>
+  );
+}
+
+function storeLimitView(store: Store) {
+  const limit = resolveStoreOutstandingLimit(store);
+  const outstanding = getCompanyStoreOutstanding(store.id);
+  const status = getOutstandingLimitStatus(outstanding, limit);
+  const action = resolveStoreOutstandingLimitAction(store);
+  const label =
+    status === "exceeded"
+      ? action === "block"
+        ? "Limit exceeded — sales blocked"
+        : "Limit reached or exceeded"
+      : status === "approaching"
+        ? "Approaching outstanding limit"
+        : "Within outstanding limit";
+  const color: "green" | "amber" | "red" =
+    status === "exceeded" ? "red" : status === "approaching" ? "amber" : "green";
+  return { limit, outstanding, status, action, label, color };
+}
+
+function StoreLimitBadge({ store }: { store: Store }) {
+  const view = storeLimitView(store);
+  if (view.status !== "exceeded") return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <Badge color="red">
+        {view.outstanding > view.limit
+          ? "Outstanding limit exceeded"
+          : "Outstanding limit reached"}
+      </Badge>
+    </div>
+  );
+}
+
+function StoreLimitDetails({ store }: { store: Store }) {
+  const view = storeLimitView(store);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+        <Icon name="wallet" size={18} />
+      </div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Outstanding Limit
+      </p>
+      <p className="mt-1 break-words text-sm font-bold text-slate-800">
+        {formatCurrency(view.limit)}
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        Current outstanding {formatCurrency(view.outstanding)}
+      </p>
+      {view.status === "exceeded" ? (
+        <div className="mt-2">
+          <Badge color="red">
+            {view.outstanding > view.limit
+              ? "Outstanding limit exceeded"
+              : "Outstanding limit reached for this store."}
+          </Badge>
+        </div>
+      ) : null}
+      <p className="mt-2 text-[11px] text-slate-400">
+        Policy: {view.action === "block" ? "Block sales at limit" : "Warn at limit"}
+      </p>
     </div>
   );
 }

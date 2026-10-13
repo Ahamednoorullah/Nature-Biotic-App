@@ -1,12 +1,12 @@
 ﻿import { useEffect, useState, useMemo } from "react";
 import {
-  stores as allStores,
+  getStores,
+  storeRegistryUpdatedEvent,
   getStoreApprovalRequests,
   updateStoreApprovalRequestStatus,
   approveStorePurchaseOrder,
   storeApprovalRequestsUpdatedEvent,
   getFinalCompanyStoreSales,
-  getCompanyCreditNoteSyncRecords,
   getCompanyRefunds,
   companyRefundParts,
   getCompanyStorePositions,
@@ -14,6 +14,8 @@ import {
   settleCompanyAccount,
   companyRefundsUpdatedEvent,
   settleLinkedFarmerAccounts,
+  resolveStoreOutstandingLimit,
+  getOutstandingLimitStatus,
   type StoreApprovalRequest,
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
@@ -34,7 +36,6 @@ const filterTabs: { key: DateFilter; label: string }[] = [
 
 const STORE_SALES_KEY = "nature-biotic-store-sales-invoices-v2";
 const STORE_RETURN_KEY = "nature-biotic-store-sales-returns-v2";
-const STORE_CREDIT_KEY = "nature-biotic-store-credit-notes-v3";
 const STORE_RECEIPT_KEY = "nature-biotic-store-receipts-v3";
 const COMPANY_RECEIPT_KEY = "nature-biotic-company-receipts-v1";
 
@@ -173,6 +174,7 @@ function ageBucket(invoiceDate: Date | null) {
 }
 
 function buildAdminDashboard(filter: DateFilter) {
+  const allStores = getStores();
   const companyLines = getFinalCompanyStoreSales();
   const companyInvoices = new Map<
     string,
@@ -203,20 +205,6 @@ function buildAdminDashboard(filter: DateFilter) {
     });
   });
 
-  const creditsByInvoice = new Map<string, number>();
-  getCompanyCreditNoteSyncRecords().forEach((note) => {
-    if (note.status === "Rejected" || note.status === "Draft") return;
-    const invoiceNo = String(note.invoiceNo || note.purchaseRef || "")
-      .trim()
-      .toLowerCase();
-    if (!invoiceNo) return;
-    const key = `${note.storeId}|${invoiceNo}`;
-    creditsByInvoice.set(
-      key,
-      (creditsByInvoice.get(key) || 0) + money(note.returnAmount),
-    );
-  });
-
   const companyReceipts = readRows(COMPANY_RECEIPT_KEY);
   const paidByInvoice = new Map<string, number>();
   companyReceipts.forEach((receipt) => {
@@ -237,11 +225,7 @@ function buildAdminDashboard(filter: DateFilter) {
 
   companyInvoices.forEach((invoice) => {
     if (!inPeriod(invoice.date, filter)) return;
-    const invoiceKey = `${invoice.storeId}|${invoice.invoiceNo.trim().toLowerCase()}`;
-    const net = Math.max(
-      0,
-      invoice.total - (creditsByInvoice.get(invoiceKey) || 0),
-    );
+    const net = invoice.total;
     const current = grossSalesByStore.get(invoice.storeId) || {
       name: invoice.storeName || "-",
       sales: 0,
@@ -350,7 +334,6 @@ function buildAdminDashboard(filter: DateFilter) {
   const storeRows: StoreDashboardRow[] = allStores.map((store) => {
     const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
     const returns = readRows(`${STORE_RETURN_KEY}:${store.id}`);
-    const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
     const receipts = readRows(`${STORE_RECEIPT_KEY}:${store.id}`);
 
     const periodInvoices = invoices.filter((invoice) => inPeriod(invoice.date, filter));
@@ -359,14 +342,14 @@ function buildAdminDashboard(filter: DateFilter) {
         .map((invoice) => String(invoice.invoiceNo || "").trim().toLowerCase())
         .filter(Boolean),
     );
-    const includedReturns = [...returns, ...credits].filter((row) => {
+    const includedReturns = returns.filter((row) => {
       if (row.status === "Rejected" || row.status === "Draft") return false;
       const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
       return inPeriod(row.date || row.returnDate, filter) || invoiceNos.has(invoiceNo);
     });
     const returnNos = new Set(
       includedReturns
-        .map((row) => String(row.returnNo || row.creditNoteNo || "").trim().toLowerCase())
+        .map((row) => String(row.returnNo || "").trim().toLowerCase())
         .filter(Boolean),
     );
     const periodReceipts = receipts.filter((row) => inPeriod(row.date, filter));
@@ -385,17 +368,17 @@ function buildAdminDashboard(filter: DateFilter) {
       returns: includedReturns,
       refunds,
       linkInvoices: invoices,
-      linkReturns: [...returns, ...credits].filter((row) => row.status !== "Draft"),
+      linkReturns: returns.filter((row) => row.status !== "Draft"),
     });
     const current = settleLinkedFarmerAccounts({
       invoices,
       receipts,
-      returns: [...returns, ...credits].filter(
+      returns: returns.filter(
         (row) => row.status !== "Rejected" && row.status !== "Draft",
       ),
       refunds: readRows(`nature-biotic-store-refunds-v2:${store.id}`),
       linkInvoices: invoices,
-      linkReturns: [...returns, ...credits].filter((row) => row.status !== "Draft"),
+      linkReturns: returns.filter((row) => row.status !== "Draft"),
     });
 
     return {
@@ -411,20 +394,8 @@ function buildAdminDashboard(filter: DateFilter) {
   allStores.forEach((store) => {
     const invoices = readRows(`${STORE_SALES_KEY}:${store.id}`);
     const returns = readRows(`${STORE_RETURN_KEY}:${store.id}`);
-    const credits = readRows(`${STORE_CREDIT_KEY}:${store.id}`);
     const returnedByInvoice = new Map<string, number>();
     returns.forEach((row) => {
-      const invoiceNo = String(row.invoiceNo || "")
-        .trim()
-        .toLowerCase();
-      if (!invoiceNo) return;
-      returnedByInvoice.set(
-        invoiceNo,
-        (returnedByInvoice.get(invoiceNo) || 0) + money(row.total),
-      );
-    });
-    credits.forEach((row) => {
-      if (row.status === "Rejected" || row.status === "Draft") return;
       const invoiceNo = String(row.invoiceNo || "")
         .trim()
         .toLowerCase();
@@ -493,6 +464,7 @@ export default function CompanyDashboard() {
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
     window.addEventListener("nature-biotic-store-receipts-updated", refresh);
     window.addEventListener("fro-stock-updated", refresh);
+    window.addEventListener(storeRegistryUpdatedEvent, refresh);
     window.addEventListener("focus", refresh);
     return () => {
       window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
@@ -512,6 +484,7 @@ export default function CompanyDashboard() {
         refresh,
       );
       window.removeEventListener("fro-stock-updated", refresh);
+      window.removeEventListener(storeRegistryUpdatedEvent, refresh);
       window.removeEventListener("focus", refresh);
     };
   }, []);
@@ -529,6 +502,7 @@ export default function CompanyDashboard() {
     setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
   };
 
+  const allStores = useMemo(() => getStores(), [dashboardVersion]);
   const dashboard = useMemo(
     () => buildAdminDashboard(dateFilter),
     [dateFilter, dashboardVersion],
@@ -852,6 +826,12 @@ export default function CompanyDashboard() {
               outstanding: 0,
               farmers: 0,
             };
+            const outstandingLimit = resolveStoreOutstandingLimit(store);
+            const limitReached =
+              getOutstandingLimitStatus(
+                metrics.outstanding,
+                outstandingLimit,
+              ) === "exceeded";
             return (
               <Card key={store.id} className="p-5 sm:p-6 animate-fade-in">
                 {/* Store details + KPI cards in one row on desktop */}
@@ -900,6 +880,14 @@ export default function CompanyDashboard() {
                       label="Outstanding"
                       value={formatCurrency(metrics.outstanding)}
                       color="amber"
+                      hint={
+                        limitReached
+                          ? metrics.outstanding > outstandingLimit
+                            ? `Outstanding limit exceeded (${formatCurrency(metrics.outstanding)} / ${formatCurrency(outstandingLimit)})`
+                            : `Outstanding limit reached for this store. (${formatCurrency(outstandingLimit)})`
+                          : undefined
+                      }
+                      tone={limitReached ? "danger" : "ok"}
                     />
                     <StoreKpi
                       icon="groups"
@@ -1167,11 +1155,15 @@ function StoreKpi({
   label,
   value,
   color,
+  hint,
+  tone,
 }: {
   icon: string;
   label: string;
   value: string;
   color: "brand" | "blue" | "amber" | "purple";
+  hint?: string;
+  tone?: "ok" | "warn" | "danger";
 }) {
   const colors: Record<string, string> = {
     brand: "bg-brand-50 text-brand-600",
@@ -1179,8 +1171,14 @@ function StoreKpi({
     amber: "bg-amber-50 text-amber-600",
     purple: "bg-purple-50 text-purple-600",
   };
+  const wrap =
+    tone === "danger"
+      ? "rounded-xl bg-red-50 p-3 transition-base flex items-center gap-2.5"
+      : tone === "warn"
+        ? "rounded-xl bg-amber-50 p-3 transition-base flex items-center gap-2.5"
+        : "rounded-xl bg-slate-50 p-3 transition-base hover:bg-slate-100/70 flex items-center gap-2.5";
   return (
-    <div className="rounded-xl bg-slate-50 p-3 transition-base hover:bg-slate-100/70 flex items-center gap-2.5">
+    <div className={wrap}>
       <div
         className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${colors[color]}`}
       >
@@ -1193,6 +1191,19 @@ function StoreKpi({
         <p className="text-[11px] text-slate-500 font-medium leading-tight truncate">
           {label}
         </p>
+        {hint ? (
+          <p
+            className={`mt-0.5 text-[10px] font-semibold leading-tight ${
+              tone === "danger"
+                ? "text-red-700"
+                : tone === "warn"
+                  ? "text-amber-700"
+                  : "text-slate-400"
+            }`}
+          >
+            {hint}
+          </p>
+        ) : null}
       </div>
     </div>
   );

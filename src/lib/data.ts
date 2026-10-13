@@ -1,4 +1,5 @@
 import { Key } from "react";
+import { usesSupabaseData } from "@/lib/db/mode";
 
 const TRANSACTION_RESET_FLAG = "nature-biotic-transaction-reset-v3";
 
@@ -132,6 +133,10 @@ export type Store = {
   monthlySales: number;
   totalProfit: number;
   outstanding: number;
+  /** Credit ceiling for this store. Missing values use DEFAULT_STORE_OUTSTANDING_LIMIT on display only. */
+  outstandingLimit?: number;
+  /** Matches SQL `outstanding_limit_action`. Default warn. */
+  outstandingLimitAction?: "warn" | "block";
   activeCustomers: number;
   inventoryValue: number;
   openedDate: string;
@@ -217,6 +222,23 @@ export type FarmerCrop = {
   landSize: number;
   soilType: string;
   waterSource: string;
+  createdAt?: string;
+};
+
+export type FarmerFarm = {
+  id?: string;
+  name?: string;
+  village?: string;
+  farmAddress?: string;
+  crops?: FarmerCrop[];
+  createdAt?: string;
+  date?: string;
+};
+
+export type FarmerCropDisplay = {
+  farmLabel: string;
+  cropType: string;
+  landSize: number;
 };
 
 export type Farmer = {
@@ -242,6 +264,7 @@ export type Farmer = {
   farmAddress: string;
   customerCategory: CustomerCategory;
   crops: FarmerCrop[];
+  farms?: FarmerFarm[];
 
   // Legacy compatibility for existing farmer profile/list screens.
   // New farmer entries should use crops[] instead.
@@ -520,11 +543,55 @@ if (typeof window !== "undefined") {
   } catch {}
 }
 
+let databaseProducts: Product[] | null = null;
+let databaseParties: { manufacturers: string[]; vendors: string[] } | null = null;
+
+export function adoptDatabaseProducts(
+  rows: Product[],
+  parties?: { manufacturers: string[]; vendors: string[] },
+) {
+  databaseProducts = rows;
+  if (parties) databaseParties = parties;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(productMasterUpdatedEvent));
+  }
+}
+
 export function getProductMaster(): Product[] {
+  if (usesSupabaseData()) return [...(databaseProducts ?? [])];
   return [...products];
 }
 
+/** Company catalog selling price by product id or name + pack size. Not store-scoped. */
+export function getCatalogSellingPrice(
+  productName?: string,
+  packSize?: string,
+  productId?: string,
+): number {
+  const master = getProductMaster();
+  const id = String(productId || "").trim();
+  const name = String(productName || "").trim().toLowerCase();
+  const size = String(packSize || "").trim().toLowerCase();
+  const byId = id ? master.find((product) => product.id === id) : undefined;
+  if (Number(byId?.sellingPrice) > 0) return Number(byId!.sellingPrice);
+  const byNameSize = master.find(
+    (product) =>
+      product.name.trim().toLowerCase() === name &&
+      product.size.trim().toLowerCase() === size,
+  );
+  if (Number(byNameSize?.sellingPrice) > 0) return Number(byNameSize!.sellingPrice);
+  const byName = master.find(
+    (product) => product.name.trim().toLowerCase() === name,
+  );
+  return Number(byName?.sellingPrice || 0);
+}
+
 export function saveProductMaster(rows: Product[]) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Products are stored in Supabase. Save from the product form so a database error stays visible.",
+    );
+  }
   products = rows;
   if (typeof window === "undefined") return;
   try {
@@ -546,6 +613,9 @@ export function getProductPartyOptions() {
     manufacturers: ["Nature Biotic Pvt. Ltd."],
     vendors: ["Nature Biotic Distribution"],
   };
+  if (usesSupabaseData()) {
+    return databaseParties ?? { manufacturers: [], vendors: [] };
+  }
   if (typeof window === "undefined") return defaults;
   try {
     const raw = window.localStorage.getItem(PRODUCT_PARTY_OPTIONS_KEY);
@@ -568,6 +638,7 @@ export function saveProductPartyOptions(options: {
   manufacturers: string[];
   vendors: string[];
 }) {
+  if (usesSupabaseData()) return;
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
@@ -615,7 +686,136 @@ export type CompanyStoreSaleRecord = {
   productId?: string;
   saleStatus?: "Draft" | "Final";
   purchaseOrderNo?: string;
+  invoiceId?: string;
+  invoiceItemId?: string;
+  purchaseOrderId?: string;
 };
+
+export type DatabasePurchaseOrderItem = {
+  id: string;
+  productId: string;
+  product: string;
+  productName: string;
+  hsnCode: string;
+  packSize: string;
+  quantity: number;
+  price: number;
+  sellingPrice: number;
+  taxPercent: number;
+  discountAmount: number;
+  taxableAmount: number;
+  amount: number;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+  batchNo: string;
+  expiryDate: string;
+};
+
+export type DatabasePurchaseOrder = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  poNo: string;
+  date: string;
+  totalProduct: number;
+  withoutTax: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+  status: "Pending" | "Accepted" | "Rejected";
+  notes?: string;
+  items: DatabasePurchaseOrderItem[];
+};
+
+export type DatabasePurchaseReturnItem = {
+  id: string;
+  sourceItemId: string;
+  product: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  quantity: number;
+  price: number;
+  discountAmount: number;
+  sgst: number;
+  cgst: number;
+  igst: number;
+  total: number;
+  reason: string;
+};
+
+export type DatabasePurchaseReturn = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  returnNo: string;
+  date: string;
+  invoiceId: string;
+  invoiceNo: string;
+  total: number;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  items: DatabasePurchaseReturnItem[];
+};
+
+export type DatabaseStockLine = {
+  storeId: string;
+  variantId: string;
+  batchId: string;
+  productName: string;
+  packSize: string;
+  batchNo: string;
+  quantity: number;
+  available: number;
+};
+
+let databaseCompanySales: CompanyStoreSaleRecord[] | null = null;
+let databasePurchaseOrders: DatabasePurchaseOrder[] | null = null;
+let databasePurchaseReturns: DatabasePurchaseReturn[] | null = null;
+let databasePurchaseStatuses: Record<string, string> | null = null;
+let databaseStockLines: DatabaseStockLine[] | null = null;
+
+function notifyPurchasingCaches() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("company-store-sales-updated"));
+  window.dispatchEvent(new Event("store-purchase-orders-updated"));
+  window.dispatchEvent(new Event("store-approval-requests-updated"));
+  window.dispatchEvent(new Event("nature-biotic-purchase-returns-updated"));
+  window.dispatchEvent(new Event("nature-biotic-store-purchase-status-updated"));
+  window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+}
+
+export function adoptDatabasePurchasing(input: {
+  sales: CompanyStoreSaleRecord[];
+  orders: DatabasePurchaseOrder[];
+  returns: DatabasePurchaseReturn[];
+  statuses: Record<string, string>;
+  stock: DatabaseStockLine[];
+}) {
+  databaseCompanySales = input.sales;
+  databasePurchaseOrders = input.orders;
+  databasePurchaseReturns = input.returns;
+  databasePurchaseStatuses = input.statuses;
+  databaseStockLines = input.stock;
+  notifyPurchasingCaches();
+}
+
+export function getDatabasePurchaseOrders() {
+  return databasePurchaseOrders ?? [];
+}
+
+export function getDatabasePurchaseReturns() {
+  return databasePurchaseReturns ?? [];
+}
+
+export function getStoreStockLines(storeId?: string) {
+  const rows = databaseStockLines ?? [];
+  return storeId ? rows.filter((row) => row.storeId === storeId) : rows;
+}
 
 const COMPANY_STORE_SALES_KEY = "nature-biotic-company-store-sales-v1";
 const APPROVED_PO_RECEIPTS_KEY = "nature-biotic-approved-po-receipts-v1";
@@ -651,6 +851,7 @@ function saveApprovedPurchaseOrders(rows: CompanyStoreSaleRecord[]) {
 }
 
 export function getCompanyStoreSales(): CompanyStoreSaleRecord[] {
+  if (usesSupabaseData()) return [...(databaseCompanySales ?? [])];
   if (typeof window === "undefined") return [];
 
   try {
@@ -672,6 +873,11 @@ export function getCompanyStoreSales(): CompanyStoreSaleRecord[] {
 }
 
 export function saveCompanyStoreSales(rows: CompanyStoreSaleRecord[]) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Company invoices are stored in Supabase. Save from the invoice form so a database error stays visible.",
+    );
+  }
   try {
     localStorage.setItem(COMPANY_STORE_SALES_KEY, JSON.stringify(rows));
 
@@ -826,6 +1032,11 @@ export function syncApprovedPurchaseOrderToSales(
 }
 
 export function approveStorePurchaseOrder(requestId: string) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Purchase orders are accepted in Supabase. Use the company approval action so a database error stays visible.",
+    );
+  }
   const request = getStoreApprovalRequests().find((row) => row.id === requestId);
   if (!request) return getStoreApprovalRequests();
   if (request.status === "Approved" || request.status === "Rejected") {
@@ -874,6 +1085,21 @@ function setStorePurchaseOrderStatus(
 
 /** Store POs the company has accepted, for linking to a company sale. */
 export function getAcceptedStorePurchaseOrders(storeId?: string) {
+  if (usesSupabaseData()) {
+    return getDatabasePurchaseOrders()
+      .filter(
+        (order) =>
+          order.status === "Accepted" && (!storeId || order.storeId === storeId),
+      )
+      .map((order) => ({
+        storeId: order.storeId,
+        storeName: order.storeName,
+        poNo: order.poNo,
+        date: order.date,
+        total: order.total,
+        items: order.items,
+      }));
+  }
   return getStoreApprovalRequests()
     .filter(
       (request) =>
@@ -936,31 +1162,20 @@ export function getApprovedStorePurchaseReturns(
     });
 }
 
-/** Credit notes and approved purchase returns raised against one company invoice. */
+/** Approved purchase returns raised against one company invoice. Credit notes are GST records only. */
 export function getCompanyInvoiceCredits(storeId: string, invoiceNo: string) {
   const key = String(invoiceNo || "").trim().toLowerCase();
   if (!key) return 0;
-  const credited = getCompanyCreditNoteSyncRecords().reduce((sum, note) => {
-    if (
-      note.storeId !== storeId ||
-      note.status === "Rejected" ||
-      note.status === "Draft"
-    ) {
-      return sum;
-    }
-    const noteInvoice = String(note.invoiceNo || note.purchaseRef || "")
-      .trim()
-      .toLowerCase();
-    return noteInvoice === key ? sum + Math.max(0, Number(note.returnAmount) || 0) : sum;
-  }, 0);
-  const returned = getApprovedStorePurchaseReturns(storeId).reduce(
+  return getApprovedStorePurchaseReturns(storeId).reduce(
     (sum, row) => (row.purchaseRef.trim().toLowerCase() === key ? sum + row.amount : sum),
     0,
   );
-  return credited + returned;
 }
 
 export function getStorePurchasesFromCompanySales(storeId: string) {
+  if (usesSupabaseData()) {
+    return getFinalCompanyStoreSales().filter((sale) => sale.storeId === storeId);
+  }
   if (typeof window !== "undefined") {
     try {
       localStorage.removeItem(APPROVED_PO_RECEIPTS_KEY);
@@ -974,6 +1189,7 @@ export const storePurchaseStatusUpdatedEvent =
   "nature-biotic-store-purchase-status-updated";
 
 export function getStorePurchaseStatuses(): Record<string, string> {
+  if (usesSupabaseData()) return { ...(databasePurchaseStatuses ?? {}) };
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(STORE_PURCHASE_STATUS_KEY);
@@ -998,6 +1214,62 @@ export const farmers: Farmer[] = farmerSeed.map((f, i) => ({
 
 const STORE_FARMERS_KEY = "nature-biotic-store-farmers-v2";
 export const storeFarmersUpdatedEvent = "store-farmers-updated";
+
+/** Live crop rows for a farmer, grouped by farm when farms exist. */
+export function farmerCropsForDisplay(
+  farmer?: Farmer | null,
+): FarmerCropDisplay[] {
+  if (!farmer) return [];
+  const seen = new Set<string>();
+  const rows: FarmerCropDisplay[] = [];
+  const add = (cropType: unknown, landSize: unknown, farmLabel: string) => {
+    const name = String(cropType || "").trim();
+    if (!name) return;
+    const acres = Number(landSize || 0);
+    const key = `${farmLabel.trim().toLowerCase()}|${name.toLowerCase()}|${acres}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push({
+      farmLabel: farmLabel.trim(),
+      cropType: name,
+      landSize: Number.isFinite(acres) ? acres : 0,
+    });
+  };
+  const farms = Array.isArray(farmer.farms) ? farmer.farms : [];
+  farms.forEach((farm, index) => {
+    const label =
+      String(farm?.village || farm?.farmAddress || farm?.name || "").trim() ||
+      `Farm ${index + 1}`;
+    (Array.isArray(farm?.crops) ? farm.crops : []).forEach((crop) =>
+      add(crop.cropType, crop.landSize, label),
+    );
+  });
+  if (rows.length === 0) {
+    const fallbackFarm = String(farmer.village || farmer.farmAddress || "").trim();
+    (Array.isArray(farmer.crops) ? farmer.crops : []).forEach((crop) =>
+      add(crop.cropType, crop.landSize, fallbackFarm),
+    );
+  }
+  if (rows.length === 0 && farmer.cropType) {
+    add(
+      farmer.cropType,
+      farmer.landSize,
+      String(farmer.village || farmer.farmAddress || "").trim(),
+    );
+  }
+  return rows;
+}
+
+export function farmerCropSummary(farmer?: Farmer | null) {
+  const crops = farmerCropsForDisplay(farmer);
+  const names = [...new Set(crops.map((row) => row.cropType))];
+  const acres = crops.reduce((sum, row) => sum + Number(row.landSize || 0), 0);
+  return {
+    crops,
+    crop: names.join(", "),
+    acre: acres > 0 ? String(acres) : "",
+  };
+}
 
 function normalizeFarmer(farmer: Farmer): Farmer {
   const crops =
@@ -1032,7 +1304,17 @@ function normalizeFarmer(farmer: Farmer): Farmer {
   };
 }
 
+let databaseFarmers: Farmer[] | null = null;
+
+export function adoptDatabaseFarmers(rows: Farmer[]) {
+  databaseFarmers = rows.map(normalizeFarmer);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(storeFarmersUpdatedEvent));
+  }
+}
+
 export function getStoredFarmers(): Farmer[] {
+  if (usesSupabaseData()) return [...(databaseFarmers ?? [])];
   if (typeof window === "undefined") return farmers.map(normalizeFarmer);
 
   try {
@@ -1046,6 +1328,11 @@ export function getStoredFarmers(): Farmer[] {
 }
 
 export function saveStoredFarmers(rows: Farmer[]) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Farmers are stored in Supabase. A failed save is shown on the form and is not written to this browser.",
+    );
+  }
   if (typeof window === "undefined") return;
 
   try {
@@ -1157,11 +1444,17 @@ function mergeRegistry<T extends { id: string }>(target: T[], saved: T[]) {
   });
 }
 
-const REMOVED_STORE_IDS = new Set(["s2", "s3"]);
-const REMOVED_STORE_NAMES = new Set(["Shriya Tech", "Nature Bio Mart"]);
+const REMOVED_DEMO_STORES = [
+  { id: "s2", name: "Shriya Tech" },
+  { id: "s3", name: "Nature Bio Mart" },
+] as const;
 
 function isRemovedStore(row: { id?: string; name?: string }) {
-  return REMOVED_STORE_IDS.has(row.id ?? "") || REMOVED_STORE_NAMES.has(row.name ?? "");
+  const id = String(row.id ?? "");
+  const name = String(row.name ?? "").trim();
+  return REMOVED_DEMO_STORES.some(
+    (demo) => demo.id === id && demo.name === name,
+  );
 }
 
 function mergeStoreRegistry(target: Store[], saved: Store[]) {
@@ -1185,8 +1478,22 @@ if (savedStores.some((row) => isRemovedStore(row))) {
 }
 mergeRegistry(staff, readRegistry<Staff>(STAFF_REGISTRY_KEY));
 
+export const storeRegistryUpdatedEvent = "store-registry-updated";
+
+export function adoptDatabaseStores(rows: Store[]) {
+  const kept = rows.filter((store) => !isRemovedStore(store));
+  stores.splice(0, stores.length, ...kept);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(storeRegistryUpdatedEvent));
+  }
+}
+
 export function getStores() {
   return stores.filter((store) => !isRemovedStore(store));
+}
+
+export function adoptDatabaseStaff(rows: Staff[]) {
+  staff.splice(0, staff.length, ...rows);
 }
 
 export function getStaffRecords() {
@@ -1194,14 +1501,27 @@ export function getStaffRecords() {
 }
 
 export function replaceStoreRegistry(next: Store[]) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Stores are stored in Supabase. Save from the store form so a database error stays visible.",
+    );
+  }
   const kept = next.filter((store) => !isRemovedStore(store));
   stores.splice(0, stores.length, ...kept);
   try {
     localStorage.setItem(STORE_REGISTRY_KEY, JSON.stringify(stores));
   } catch {}
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(storeRegistryUpdatedEvent));
+  }
 }
 
 export function replaceStaffRegistry(next: Staff[]) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Staff are stored in Supabase. Save from staff management so a database error stays visible.",
+    );
+  }
   staff.splice(0, staff.length, ...next);
   try {
     localStorage.setItem(STAFF_REGISTRY_KEY, JSON.stringify(staff));
@@ -1376,8 +1696,9 @@ export function getStore(id: string): Store | undefined {
   return stores.find((s) => s.id === id);
 }
 
-export function getProductsByStore(storeId: string): Product[] {
-  return products.filter((p) => p.storeId === storeId);
+/** Company catalog. Products are not scoped to a single store id. */
+export function getProductsByStore(_storeId?: string): Product[] {
+  return getProductMaster();
 }
 
 export function getProductById(id: string): Product | undefined {
@@ -1563,6 +1884,35 @@ const STORE_APPROVAL_REQUESTS_KEY = "nature-biotic-store-approval-requests-v1";
 const STORE_APPROVAL_EVENT = "store-approval-requests-updated";
 
 export function getStoreApprovalRequests(): StoreApprovalRequest[] {
+  if (usesSupabaseData()) {
+    const orders = getDatabasePurchaseOrders().map((order) => ({
+      id: order.id,
+      type: "Purchase Order" as const,
+      storeId: order.storeId,
+      storeName: order.storeName,
+      date: order.date,
+      referenceNo: order.poNo,
+      amount: order.total,
+      status: (order.status === "Accepted"
+        ? "Approved"
+        : order.status === "Rejected"
+          ? "Rejected"
+          : "Pending") as StoreApprovalRequestStatus,
+      createdAt: 0,
+    }));
+    const returns = getDatabasePurchaseReturns().map((row) => ({
+      id: row.id,
+      type: "Purchase Return" as const,
+      storeId: row.storeId,
+      storeName: row.storeName,
+      date: row.date,
+      referenceNo: row.returnNo,
+      amount: row.total,
+      status: row.status,
+      createdAt: 0,
+    }));
+    return [...orders, ...returns];
+  }
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(STORE_APPROVAL_REQUESTS_KEY);
@@ -1572,6 +1922,11 @@ export function getStoreApprovalRequests(): StoreApprovalRequest[] {
   }
 }
 export function saveStoreApprovalRequests(rows: StoreApprovalRequest[]) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Purchase approvals are stored in Supabase. Use the approval action so a database error stays visible.",
+    );
+  }
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
@@ -1585,6 +1940,11 @@ export function addStoreApprovalRequest(
   row: Omit<StoreApprovalRequest, "status" | "createdAt"> &
     Partial<Pick<StoreApprovalRequest, "status" | "createdAt">>,
 ) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Purchase documents are stored in Supabase. Save from the document form so a database error stays visible.",
+    );
+  }
   const existing = getStoreApprovalRequests();
   const next: StoreApprovalRequest = {
     ...row,
@@ -1828,6 +2188,60 @@ export function getCompanyStorePositions(): Map<string, CompanyStorePosition> {
 
 export function getCompanyStoreOutstanding(storeId: string) {
   return getCompanyStorePositions().get(storeId)?.outstanding || 0;
+}
+
+/** Placeholder on the create-store form; used only when the user leaves Outstanding Limit blank. */
+export const DEFAULT_STORE_OUTSTANDING_LIMIT = 500000;
+
+export function parseOutstandingLimitInput(value: string): number | null {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^₹\s*/u, "")
+    .replace(/^Rs\.?\s*/i, "")
+    .replace(/,/g, "")
+    .replace(/\s/g, "");
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+export function resolveStoreOutstandingLimit(store?: Store | null): number {
+  const saved = Number(store?.outstandingLimit);
+  if (Number.isFinite(saved) && saved > 0) return saved;
+  if (saved === 0 && store && store.outstandingLimit === 0) return 0;
+  return DEFAULT_STORE_OUTSTANDING_LIMIT;
+}
+
+export function resolveStoreOutstandingLimitAction(
+  store?: Store | null,
+): "warn" | "block" {
+  return store?.outstandingLimitAction === "block" ? "block" : "warn";
+}
+
+export type OutstandingLimitStatus = "normal" | "approaching" | "exceeded";
+
+/** Approaching at 80% of the store's own limit (e.g. ₹8,000 of ₹10,000). */
+export function getOutstandingLimitStatus(
+  outstanding: number,
+  limit: number,
+): OutstandingLimitStatus {
+  const due = Number(outstanding) || 0;
+  const cap = Number(limit) || 0;
+  if (!(cap > 0)) return due > 0 ? "exceeded" : "normal";
+  if (due >= cap) return "exceeded";
+  if (due >= cap * 0.8) return "approaching";
+  return "normal";
+}
+
+export function storeOutstandingLimitReached(store?: Store | null) {
+  if (!store?.id) return false;
+  return (
+    getOutstandingLimitStatus(
+      getCompanyStoreOutstanding(store.id),
+      resolveStoreOutstandingLimit(store),
+    ) === "exceeded"
+  );
 }
 
 export function getCompanyInvoiceDue(storeId: string, invoiceNo: string) {
@@ -2231,7 +2645,6 @@ export function getAcceptedStoreReturnQty(
 
 const STORE_SALES_INVOICE_PREFIX = "nature-biotic-store-sales-invoices-v2";
 const STORE_SALES_RETURN_PREFIX = "nature-biotic-store-sales-returns-v2";
-const STORE_CREDIT_NOTE_PREFIX = "nature-biotic-store-credit-notes-v3";
 const STORE_STOCK_ADJUSTMENT_PREFIX = "nature-biotic-store-stock-adjustments-v1";
 
 type StoreInvoiceDue = {
@@ -2400,63 +2813,24 @@ function directStoreSaleQty(storeId: string, target: any) {
 }
 
 function directStoreReturnQty(storeId: string, target: any) {
-  const salesReturns = readStorageArray(
-    `${STORE_SALES_RETURN_PREFIX}:${storeId}`,
-  ).reduce((sum, row) => {
-    if (isExecutiveMovement(row)) return sum;
-    const lines = Array.isArray(row?.items) ? row.items : [];
-    return (
-      sum +
-      lines.reduce((lineSum: number, line: any) => {
-        return (
-          lineSum +
-          (stockVariantsMatch(variantOf(line), target)
-            ? Math.max(0, Number(line?.quantity ?? line?.qty ?? 0))
-            : 0)
-        );
-      }, 0)
-    );
-  }, 0);
-
-  const creditNotes = readStorageArray(
-    `${STORE_CREDIT_NOTE_PREFIX}:${storeId}`,
-  ).reduce((sum, row) => {
-    if (
-      isExecutiveMovement(row) ||
-      row?.status === "Rejected" ||
-      row?.status === "Draft"
-    ) {
-      return sum;
-    }
-    return (
-      sum +
-      (stockVariantsMatch(variantOf(row), target)
-        ? Math.max(0, Number(row?.quantity || 0))
-        : 0)
-    );
-  }, 0);
-
-  return salesReturns + creditNotes;
-}
-
-function approvedCompanyCreditQty(storeId: string, target: any) {
-  return getCompanyCreditNoteSyncRecords().reduce((sum, row) => {
-    if (row.storeId !== storeId || row.status !== "Approved") return sum;
-    return (
-      sum +
-      (stockVariantsMatch(
-        {
-          productId: (row as any).productId,
-          productName: row.product,
-          packSize: row.packSize || row.pkgsize,
-          batchNo: row.batchNo,
-        },
-        target,
-      )
-        ? Math.max(0, Number(row.quantity || 0))
-        : 0)
-    );
-  }, 0);
+  return readStorageArray(`${STORE_SALES_RETURN_PREFIX}:${storeId}`).reduce(
+    (sum, row) => {
+      if (isExecutiveMovement(row)) return sum;
+      const lines = Array.isArray(row?.items) ? row.items : [];
+      return (
+        sum +
+        lines.reduce((lineSum: number, line: any) => {
+          return (
+            lineSum +
+            (stockVariantsMatch(variantOf(line), target)
+              ? Math.max(0, Number(line?.quantity ?? line?.qty ?? 0))
+              : 0)
+          );
+        }, 0)
+      );
+    },
+    0,
+  );
 }
 
 function approvedPurchaseReturnQty(storeId: string | undefined, target: any) {
@@ -2494,6 +2868,11 @@ export function getStoreStockAdjustments(storeId: string) {
 }
 
 export function recordStoreStockAdjustment(row: StoreStockAdjustmentRecord) {
+  if (usesSupabaseData()) {
+    throw new Error(
+      "Stock adjustments are stored in Supabase. Save from the adjustment form so a database error stays visible.",
+    );
+  }
   if (typeof window === "undefined" || !row?.id) return;
   const key = `${STORE_STOCK_ADJUSTMENT_PREFIX}:${row.storeId}`;
   const existing = getStoreStockAdjustments(row.storeId);
@@ -2591,6 +2970,23 @@ export function getStoreAvailableQty(
   batchNo: string,
   productName?: string,
 ): number {
+  if (usesSupabaseData()) {
+    const batch = String(batchNo || "").trim().toLowerCase();
+    const size = String(packSize || "").trim().toLowerCase();
+    const name = String(productName || "").trim().toLowerCase();
+    return getStoreStockLines(storeId)
+      .filter((line) => {
+        const sameVariant = productId
+          ? line.variantId === productId
+          : name.length > 0 &&
+            line.productName.trim().toLowerCase() === name &&
+            line.packSize.trim().toLowerCase() === size;
+        if (!sameVariant) return false;
+        if (!batch) return true;
+        return line.batchNo.trim().toLowerCase() === batch;
+      })
+      .reduce((sum, line) => sum + line.available, 0);
+  }
   const target = { productId, productName, packSize, batchNo };
   const purchased = getStorePurchasesFromCompanySales(storeId).reduce(
     (sum, purchase) => {
@@ -2626,7 +3022,6 @@ export function getStoreAvailableQty(
   const sold = directStoreSaleQty(storeId, target);
   const customerReturns = directStoreReturnQty(storeId, target);
   const adjustments = storeAdjustmentQty(storeId, target);
-  const companyCredits = approvedCompanyCreditQty(storeId, target);
   const purchaseReturns = approvedPurchaseReturnQty(storeId, target);
 
   return Math.max(
@@ -2637,7 +3032,6 @@ export function getStoreAvailableQty(
       sold +
       customerReturns +
       adjustments -
-      companyCredits -
       purchaseReturns,
   );
 }
@@ -2691,20 +3085,6 @@ export function getCompanyAvailableQty(
     );
   }, 0);
 
-  const returned = getCompanyCreditNoteSyncRecords().reduce((sum, row) => {
-    if (row.status !== "Approved") return sum;
-    return (
-      sum +
-      (sameSize({
-        productId: (row as any).productId,
-        productName: row.product,
-        packSize: row.packSize || row.pkgsize,
-      })
-        ? Math.max(0, Number(row.quantity || 0))
-        : 0)
-    );
-  }, 0);
-
   const purchaseReturned = getApprovedStorePurchaseReturns().reduce(
     (sum, row) =>
       sum +
@@ -2718,7 +3098,7 @@ export function getCompanyAvailableQty(
     0,
   );
 
-  return Math.max(0, opening - sold + returned + purchaseReturned);
+  return Math.max(0, opening - sold + purchaseReturned);
 }
 
 export function approveCompanyCreditNotes(storeId: string, creditNoteNo: string) {
@@ -2728,7 +3108,6 @@ export function approveCompanyCreditNotes(storeId: string, creditNoteNo: string)
       : row,
   );
   saveCompanyCreditNoteSyncRecords(rows);
-  notifyStoreStockChanged();
   return rows;
 }
 

@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { getAuthAdapter } from "@/lib/auth/localAuth";
+import { AUTH_SESSION_EVENT } from "@/lib/auth/events";
 import type {
   AuthUser,
   PasswordResetRequestResult,
@@ -48,6 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       setUser(auth.getSession());
     };
+    const readyTimeout = window.setTimeout(() => {
+      if (cancelled) return;
+      setUser(auth.getSession());
+      setLoading(false);
+    }, 8000);
+
     auth
       .ensureReady()
       .then(applySession)
@@ -55,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setUser(null);
       })
       .finally(() => {
+        window.clearTimeout(readyTimeout);
         if (!cancelled) setLoading(false);
       });
 
@@ -67,11 +75,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener("popstate", onSessionChange);
     window.addEventListener("pageshow", onPageShow);
     window.addEventListener("storage", onSessionChange);
+    window.addEventListener(AUTH_SESSION_EVENT, onSessionChange);
     return () => {
       cancelled = true;
+      window.clearTimeout(readyTimeout);
       window.removeEventListener("popstate", onSessionChange);
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("storage", onSessionChange);
+      window.removeEventListener(AUTH_SESSION_EVENT, onSessionChange);
     };
   }, [auth]);
 

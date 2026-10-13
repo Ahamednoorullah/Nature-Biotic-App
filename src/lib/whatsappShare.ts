@@ -31,6 +31,12 @@ export function shareableWhatsAppPhone(phone: string) {
   return true;
 }
 
+export function whatsappUrl(phone: string, message: string) {
+  const digits = phoneDigits(phone);
+  const text = encodeURIComponent(message);
+  return digits ? `https://wa.me/${digits}?text=${text}` : `https://wa.me/?text=${text}`;
+}
+
 export type DocumentShareLine = {
   name: string;
   packSize: string;
@@ -114,14 +120,14 @@ export function documentShareMessage(input: {
 export function openWhatsAppShare(
   phone: string,
   message: string,
-  options?: { stayOnPage?: boolean },
+  options?: { stayOnPage?: boolean; allowWithoutPhone?: boolean },
 ) {
   const digits = phoneDigits(phone);
-  if (!digits) {
+  if (!digits && !options?.allowWithoutPhone) {
     window.alert("Farmer phone number is not available.");
     return false;
   }
-  const url = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+  const url = whatsappUrl(phone, message);
   const opened = window.open(url, "_blank", "noopener,noreferrer");
   if (!opened) {
     if (options?.stayOnPage) {

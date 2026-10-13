@@ -7,6 +7,7 @@ import {
   storeApprovalRequestsUpdatedEvent,
   type StoreApprovalRequest,
 } from "@/lib/data";
+import { getCompanyOutstandingLimitNotifications } from "@/lib/storeNotifications";
 import { formatDate } from "@/lib/format";
 import {
   readNotificationReads,
@@ -193,10 +194,34 @@ export default function CompanyShell({
     setReads(readNotificationReads(user.id, "company"));
   }, [user?.id]);
 
+  const [limitNotices, setLimitNotices] = useState(() =>
+    getCompanyOutstandingLimitNotifications(),
+  );
+
+  useEffect(() => {
+    const refresh = () =>
+      setLimitNotices(getCompanyOutstandingLimitNotifications());
+    refresh();
+    window.addEventListener("company-store-sales-updated", refresh);
+    window.addEventListener("nature-biotic-company-receipts-updated", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("company-store-sales-updated", refresh);
+      window.removeEventListener(
+        "nature-biotic-company-receipts-updated",
+        refresh,
+      );
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
   const unreadApprovals = pendingApprovals.filter(
     (request) => !reads.includes(request.id),
   );
-  const unreadCount = unreadApprovals.length;
+  const unreadLimitNotices = limitNotices.filter(
+    (item) => !reads.includes(item.id),
+  );
+  const unreadCount = unreadApprovals.length + unreadLimitNotices.length;
 
   function markNotificationRead(id: string) {
     if (!user?.id) return;
@@ -483,12 +508,35 @@ export default function CompanyShell({
                   </p>
                   <p className="text-xs text-slate-500">{unreadCount} unread</p>
                 </div>
-                {unreadApprovals.length === 0 ? (
+                {unreadApprovals.length === 0 &&
+                unreadLimitNotices.length === 0 ? (
                   <p className="px-4 py-6 text-sm text-slate-500">
                     No pending notifications.
                   </p>
                 ) : (
                   <div className="max-h-80 overflow-y-auto">
+                    {unreadLimitNotices.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        data-notification-id={item.id}
+                        onClick={() => {
+                          markNotificationRead(item.id);
+                          setOpenMenu(null);
+                          setMobileSectionHub(null);
+                          goCompany("stores");
+                        }}
+                        className="block w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50 bg-amber-50/60"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                          {item.title}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-800">
+                          {item.description}
+                        </p>
+                        <p className="text-xs text-slate-500">{item.status}</p>
+                      </button>
+                    ))}
                     {unreadApprovals.map((request) => (
                       <button
                         key={request.id}

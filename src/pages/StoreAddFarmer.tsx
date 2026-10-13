@@ -6,6 +6,14 @@ import {
   cropTypes,
   customerCategories,
 } from "@/lib/data";
+import { createFarmer } from "@/lib/db/farmers";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  isValidIndianPincode,
+  lookupIndianPincode,
+  type PincodePostOffice,
+} from "@/lib/pincodeLookup";
 import {
   Card,
   Button,
@@ -74,6 +82,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   const isFRO = user?.role === "fro";
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [profileImage, setProfileImage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -164,6 +173,16 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
     };
   }, []);
 
+  const [pinStatus, setPinStatus] = useState<
+    "idle" | "loading" | "invalid" | "empty" | "error" | "ok"
+  >("idle");
+  const [pinMessage, setPinMessage] = useState("");
+  const [pinOffices, setPinOffices] = useState<PincodePostOffice[]>([]);
+  const [villageManual, setVillageManual] = useState(false);
+  const [districtManual, setDistrictManual] = useState(false);
+  const [stateManual, setStateManual] = useState(false);
+  const pinRequestRef = useRef(0);
+
   const [cropType, setCropType] = useState("");
   const [cropLandSize, setCropLandSize] = useState("");
   const [crops, setCrops] = useState<CropDetail[]>([]);
@@ -193,8 +212,90 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   }
 
   function update<K extends keyof FormState>(key: K, value: string) {
+    if (key === "village") setVillageManual(true);
+    if (key === "district") setDistrictManual(true);
+    if (key === "state") setStateManual(true);
+    if (key === "pincode") {
+      const digits = value.replace(/\D/g, "").slice(0, 6);
+      setForm({ ...form, pincode: digits });
+      return;
+    }
     setForm({ ...form, [key]: value });
   }
+
+  useEffect(() => {
+    const pin = form.pincode.trim();
+    if (pin.length === 0) {
+      setPinStatus("idle");
+      setPinMessage("");
+      setPinOffices([]);
+      return;
+    }
+    if (pin.length < 6) {
+      setPinStatus("idle");
+      setPinMessage("");
+      setPinOffices([]);
+      return;
+    }
+    if (!isValidIndianPincode(pin)) {
+      setPinStatus("invalid");
+      setPinMessage("Enter a valid 6-digit Indian PIN code.");
+      setPinOffices([]);
+      return;
+    }
+
+    const requestId = ++pinRequestRef.current;
+    setPinStatus("loading");
+    setPinMessage("Looking up village and district…");
+    const timer = window.setTimeout(() => {
+      void lookupIndianPincode(pin).then((result) => {
+        if (requestId !== pinRequestRef.current) return;
+        if (result.status === "invalid") {
+          setPinStatus("invalid");
+          setPinMessage("Enter a valid 6-digit Indian PIN code.");
+          setPinOffices([]);
+          return;
+        }
+        if (result.status === "error") {
+          setPinStatus("error");
+          setPinMessage(result.message);
+          setPinOffices([]);
+          return;
+        }
+        if (result.status === "empty") {
+          setPinStatus("empty");
+          setPinMessage("No postal location found. Enter Village and District manually.");
+          setPinOffices([]);
+          return;
+        }
+        setPinStatus("ok");
+        setPinOffices(result.offices);
+        const first = result.offices[0];
+        const sameDistrict = result.offices.every(
+          (office) => office.district.toLowerCase() === first.district.toLowerCase(),
+        );
+        const sameState = result.offices.every(
+          (office) => office.state.toLowerCase() === first.state.toLowerCase(),
+        );
+        setForm((current) => ({
+          ...current,
+          village:
+            !villageManual && result.offices.length === 1
+              ? first.name
+              : current.village,
+          district:
+            !districtManual && sameDistrict ? first.district : current.district,
+          state: !stateManual && sameState && first.state ? first.state : current.state,
+        }));
+        setPinMessage(
+          result.offices.length > 1
+            ? "Multiple post offices found. Select the village or edit it manually."
+            : "Village and District filled from PIN code. You can still edit them.",
+        );
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [form.pincode, villageManual, districtManual, stateManual]);
 
   function buildCurrentFarm(): FarmDetail | null {
     if (!form.village || !form.district || !farmLandSize.trim() || crops.length === 0) {
@@ -218,6 +319,12 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
   }
 
   function resetFarmDraft() {
+    setVillageManual(false);
+    setDistrictManual(false);
+    setStateManual(false);
+    setPinStatus("idle");
+    setPinMessage("");
+    setPinOffices([]);
     setForm((prev) => ({
       ...prev,
       village: "",
@@ -243,7 +350,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
     setFarms((prev) => prev.filter((farm) => farm.id !== id));
   }
 
-  function saveFarmerRecord() {
+  async function saveFarmerRecord() {
     const currentFarm = buildCurrentFarm();
     const allFarms = currentFarm ? [...farms, currentFarm] : farms;
     if (!isValid || allFarms.length === 0) return false;
@@ -252,7 +359,7 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
     const allCrops = allFarms.flatMap((farm) => farm.crops);
     const recordedOn = new Date().toISOString().split("T")[0];
 
-    addFarmer({
+    const draft = {
       storeId,
       name: form.name.trim(),
       phone: form.phone.trim(),
@@ -291,33 +398,43 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
       createdByUserId: isFRO ? user?.id : undefined,
       cropType3: undefined,
       cropType2: undefined,
-    } as any);
+    } as any;
 
+    if (usesSupabaseData()) await createFarmer(draft);
+    else addFarmer(draft);
     return true;
   }
 
-  function handleSave() {
-    if (!saveFarmerRecord()) return;
-
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      goStorePage("farmers");
-    }, 700);
+  async function handleSave() {
+    setSaveError("");
+    try {
+      if (!(await saveFarmerRecord())) return;
+      setSaved(true);
+      setTimeout(() => {
+        setSaved(false);
+        goStorePage("farmers");
+      }, 700);
+    } catch (error) {
+      setSaveError(dbErrorMessage(error, "Could not save the farmer."));
+    }
   }
 
-  function handleSaveAndAdd() {
-    if (!saveFarmerRecord()) return;
-
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      setForm(emptyForm);
-      setCrops([]);
-      setFarms([]);
-      setFarmLandSize("");
-      setProfileImage("");
-    }, 700);
+  async function handleSaveAndAdd() {
+    setSaveError("");
+    try {
+      if (!(await saveFarmerRecord())) return;
+      setSaved(true);
+      setTimeout(() => {
+        setSaved(false);
+        setForm(emptyForm);
+        setCrops([]);
+        setFarms([]);
+        setFarmLandSize("");
+        setProfileImage("");
+      }, 700);
+    } catch (error) {
+      setSaveError(dbErrorMessage(error, "Could not save the farmer."));
+    }
   }
 
   const currentFarmReady =
@@ -333,6 +450,11 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
 
   return (
     <div className="max-w-4xl mx-auto">
+      {saveError && (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {saveError}
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
@@ -534,11 +656,49 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
             </div>
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Input label="Village" value={form.village} onChange={(v) => update("village", v)} placeholder="e.g. Rajapalayam" icon="location_on" required />
+              <div>
+                <Input label="Pincode" value={form.pincode} onChange={(v) => update("pincode", v)} placeholder="e.g. 626117" icon="mark_email_read" />
+                {pinStatus !== "idle" && (
+                  <p
+                    className={`mt-1.5 text-xs ${
+                      pinStatus === "ok"
+                        ? "text-emerald-600"
+                        : pinStatus === "loading"
+                          ? "text-slate-500"
+                          : "text-amber-600"
+                    }`}
+                  >
+                    {pinStatus === "loading" ? "Looking up location…" : pinMessage}
+                  </p>
+                )}
+              </div>
+              {pinOffices.length > 1 ? (
+                <Select
+                  label="Village / Post Office"
+                  value={form.village}
+                  onChange={(v) => update("village", v)}
+                  placeholder="Select village"
+                  options={pinOffices.map((office) => ({
+                    value: office.name,
+                    label: `${office.name} · ${office.district}`,
+                  }))}
+                />
+              ) : (
+                <Input label="Village" value={form.village} onChange={(v) => update("village", v)} placeholder="e.g. Rajapalayam" icon="location_on" required />
+              )}
+              {pinOffices.length > 1 && (
+                <Input
+                  label="Village (edit if needed)"
+                  value={form.village}
+                  onChange={(v) => update("village", v)}
+                  placeholder="Or type village name"
+                  icon="location_on"
+                  required
+                />
+              )}
               <Input label="Landmark" value={form.landmark} onChange={(v) => update("landmark", v)} placeholder="e.g. Near Temple" icon="near_me" />
               <Input label="District" value={form.district} onChange={(v) => update("district", v)} placeholder="e.g. Virudhunagar" icon="location_city" required />
               <Input label="State" value={form.state} onChange={(v) => update("state", v)} placeholder="e.g. Tamil Nadu" icon="public" />
-              <Input label="Pincode" value={form.pincode} onChange={(v) => update("pincode", v)} placeholder="e.g. 626117" icon="mark_email_read" />
               <Input label="Total Farm Land Size (Acres)" type="number" value={farmLandSize} onChange={setFarmLandSize} placeholder="e.g. 5" required />
             </div>
 

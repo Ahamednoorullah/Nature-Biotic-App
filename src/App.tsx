@@ -1,8 +1,14 @@
-import { useEffect, useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { NavProvider, useNav } from "@/context/NavContext";
 import { canAccessStorePage } from "@/lib/access";
 import { Spinner } from "@/components/ui";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { refreshMasterData } from "@/lib/db/masterData";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { passwordSetupRequired } from "@/lib/supabase";
+import { AUTH_SESSION_EVENT } from "@/lib/auth/events";
 import Login from "@/pages/Login";
 import CompanyShell from "@/components/CompanyShell";
 import CompanyDashboard from "@/pages/CompanyDashboard";
@@ -79,24 +85,79 @@ function currentPath() {
 function AppContent() {
   const { user, loading } = useAuth();
   const { route, goStore, goCompany } = useNav();
+  const [masterReady, setMasterReady] = useState(!usesSupabaseData());
+  const [masterError, setMasterError] = useState<string | null>(null);
+  const [masterAttempt, setMasterAttempt] = useState(0);
+  const [setupRequired, setSetupRequired] = useState(passwordSetupRequired);
+
+  useEffect(() => {
+    if (!user || !usesSupabaseData()) {
+      setMasterReady(true);
+      setMasterError(null);
+      return;
+    }
+    let cancelled = false;
+    setMasterReady(false);
+    setMasterError(null);
+    let timer = 0;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = window.setTimeout(
+        () =>
+          reject(
+            new Error("Could not reach Supabase. The local API is not reachable."),
+          ),
+        20000,
+      );
+    });
+    void Promise.race([
+      refreshMasterData().then(() => refreshPurchasingData()),
+      timeout,
+    ])
+      .then(() => {
+        if (!cancelled) setMasterReady(true);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMasterError(
+            dbErrorMessage(error, "Could not load business data from Supabase."),
+          );
+          setMasterReady(true);
+        }
+      })
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [user, masterAttempt]);
 
   const isStoreUser = user?.role === "store_admin";
   const isFROUser = user?.role === "fro";
   const isStoreScopedUser = isStoreUser || isFROUser;
   const ownStoreId = user?.storeId;
 
+  useEffect(() => {
+    const syncSetup = () => setSetupRequired(passwordSetupRequired());
+    window.addEventListener(AUTH_SESSION_EVENT, syncSetup);
+    return () => window.removeEventListener(AUTH_SESSION_EVENT, syncSetup);
+  }, []);
+
   useLayoutEffect(() => {
-    if (loading || user) return;
+    if (loading || (user && !setupRequired)) return;
     if (currentPath() !== "/login") {
       window.history.replaceState(null, "", "/login");
     }
-  }, [loading, user]);
+  }, [loading, user, setupRequired]);
 
   useEffect(() => {
     const enforceLocation = () => {
       if (loading) return;
 
       const path = currentPath();
+      if (passwordSetupRequired()) {
+        if (path !== "/login") window.history.replaceState(null, "", "/login");
+        return;
+      }
       if (!user) {
         if (path !== "/login") window.history.replaceState(null, "", "/login");
         return;
@@ -113,7 +174,7 @@ function AppContent() {
     enforceLocation();
     window.addEventListener("popstate", enforceLocation);
     return () => window.removeEventListener("popstate", enforceLocation);
-  }, [user, loading, goCompany, goStore]);
+  }, [user, loading, setupRequired, goCompany, goStore]);
 
   useEffect(() => {
     if (!user || !isStoreScopedUser || !user.storeId) {
@@ -138,7 +199,7 @@ function AppContent() {
     }
   }, [user, route, goStore]);
 
-  if (loading) {
+  if (loading || (user && usesSupabaseData() && !masterReady)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <Spinner className="text-4xl text-brand-600" />
@@ -146,7 +207,25 @@ function AppContent() {
     );
   }
 
-  if (!user) return <Login />;
+  if (user && masterError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-lg rounded-2xl border border-red-100 bg-white p-6 text-center shadow-sm">
+          <h2 className="font-bold text-slate-800">Business data did not load</h2>
+          <p className="mt-2 text-sm text-slate-600">{masterError}</p>
+          <button
+            type="button"
+            className="mt-4 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white"
+            onClick={() => setMasterAttempt((value) => value + 1)}
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || setupRequired) return <Login />;
 
   // Store-scoped users (Store Admin / FRO) must never see company pages or another store.
   if (isStoreScopedUser) {

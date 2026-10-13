@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   addStoreApprovalRequest,
+  getDatabasePurchaseOrders,
   getStoreApprovalRequest,
   storeApprovalRequestsUpdatedEvent,
   stores,
@@ -9,6 +10,10 @@ import {
   productMasterUpdatedEvent,
   type Product,
 } from "@/lib/data";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { peekDocumentNo, submitPurchaseOrder } from "@/lib/db/rpc";
 import { createPortal } from "react-dom";
 import { formatCurrency, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter, numberToWords } from "@/lib/format";
 
@@ -92,9 +97,12 @@ function rememberPurchaseOrderNo(storeCode: string, poNo: string) {
 export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   const storageKey = `naturebiotic:purchase-orders:${storeId}`;
   const [rows, setRows] = useState<PurchaseOrderRow[]>(() => {
+    if (usesSupabaseData()) {
+      return getDatabasePurchaseOrders().filter((row) => row.storeId === storeId);
+    }
     try {
       const saved = localStorage.getItem(storageKey);
-      const parsed = saved ? (JSON.parse(saved) as PurchaseOrderRow[]) : [];
+      const parsed = saved ? (JSON.parse(saved)) : [];
       return Array.isArray(parsed)
         ? parsed.filter((row) => !isSamplePurchaseOrder(row))
         : [];
@@ -102,6 +110,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
       return [];
     }
   });
+  const [actionError, setActionError] = useState("");
   const savingRef = useRef(false);
   const [productMaster, setProductMaster] = useState<Product[]>(() =>
     getProductMaster(),
@@ -143,6 +152,7 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   }, []);
 
   useEffect(() => {
+    if (usesSupabaseData()) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(rows));
     } catch (error) {
@@ -151,6 +161,19 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
   }, [rows, storageKey]);
 
   useEffect(() => {
+    if (!usesSupabaseData()) return;
+    const reload = () =>
+      setRows(getDatabasePurchaseOrders().filter((row) => row.storeId === storeId));
+    window.addEventListener("store-purchase-orders-updated", reload);
+    window.addEventListener(storeApprovalRequestsUpdatedEvent, reload);
+    return () => {
+      window.removeEventListener("store-purchase-orders-updated", reload);
+      window.removeEventListener(storeApprovalRequestsUpdatedEvent, reload);
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (usesSupabaseData()) return;
     const syncStatuses = () =>
       setRows((current) =>
         current.map((row) => {
@@ -356,9 +379,21 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
     setAdded([]);
   }
 
-  function openForm() {
+  async function openForm() {
     savingRef.current = false;
+    setActionError("");
     resetForm();
+    if (usesSupabaseData()) {
+      try {
+        setPoNo(await peekDocumentNo("purchase_order", storeId));
+        setShowCreate(true);
+      } catch (error) {
+        setActionError(
+          dbErrorMessage(error, "A purchase order number could not be prepared."),
+        );
+      }
+      return;
+    }
     setShowCreate(true);
   }
 
@@ -367,9 +402,46 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
     resetForm();
   }
 
-  function saveOrder() {
+  async function saveOrder() {
     if (savingRef.current || !canSave) return;
     savingRef.current = true;
+    if (usesSupabaseData()) {
+      setActionError("");
+      try {
+        if (added.some((item) => !item.productId)) {
+          throw new Error("Each line needs a product from the catalog.");
+        }
+        await submitPurchaseOrder(
+          {
+            store_id: storeId,
+            po_date: date,
+            notes: `Purchase order raised by ${currentStore?.name || "this store"} to Nature Biotic.`,
+          },
+          added.map((item) => ({
+            variant_id: item.productId,
+            quantity: item.quantity,
+            unit_price: item.price,
+            discount_percent: 0,
+            discount_amount: item.discountAmount || 0,
+            taxable_amount: Number(item.withoutTax || 0),
+            tax_percent: item.taxPercent || 0,
+            sgst_amount: item.sgst,
+            cgst_amount: item.cgst,
+            igst_amount: item.igst,
+            tax_amount: item.sgst + item.cgst + item.igst,
+            line_total: item.total,
+          })),
+        );
+        await refreshPurchasingData();
+        setRows(getDatabasePurchaseOrders().filter((row) => row.storeId === storeId));
+        resetForm();
+        setShowCreate(false);
+      } catch (error) {
+        savingRef.current = false;
+        setActionError(dbErrorMessage(error, "The purchase order could not be saved."));
+      }
+      return;
+    }
     const allocatedNo = nextPurchaseOrderNo(currentStore?.code || "PO", rows);
     if (rows.some((row) => row.poNo.toLowerCase() === allocatedNo.toLowerCase())) {
       savingRef.current = false;
@@ -416,6 +488,11 @@ export default function StorePurchaseOrder({ storeId }: { storeId: string }) {
 
   return (
     <div>
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">

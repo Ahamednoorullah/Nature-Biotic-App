@@ -1,12 +1,16 @@
-import type { StorePage } from "@/context/NavContext";
+import type { CompanyPage, StorePage } from "@/context/NavContext";
 import {
   getCompanyCreditNoteSyncRecords,
   getCompanyRefunds,
+  getCompanyStoreOutstanding,
   getFinalCompanyStoreSales,
   getStaffByStore,
   getStore,
+  getStores,
   getStoreApprovalRequests,
   getStorePurchaseStatuses,
+  getOutstandingLimitStatus,
+  resolveStoreOutstandingLimit,
 } from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { formatCurrency, formatDate, parseBusinessDate } from "@/lib/format";
@@ -85,6 +89,74 @@ function note(
   };
 }
 
+const OUTSTANDING_LIMIT_NOTICE_KEY =
+  "nature-biotic-outstanding-limit-notice-v1";
+
+type OutstandingNoticeState = Record<string, { generation: number }>;
+
+function readOutstandingNoticeState(): OutstandingNoticeState {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(OUTSTANDING_LIMIT_NOTICE_KEY);
+    const rows = raw ? JSON.parse(raw) : {};
+    return rows && typeof rows === "object" ? rows : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOutstandingNoticeState(state: OutstandingNoticeState) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(OUTSTANDING_LIMIT_NOTICE_KEY, JSON.stringify(state));
+}
+
+function outstandingLimitNotification(
+  storeId: string,
+  page: StorePage | CompanyPage,
+): StoreNotification | null {
+  const store = getStore(storeId);
+  if (!store) return null;
+  const limit = resolveStoreOutstandingLimit(store);
+  const outstanding = getCompanyStoreOutstanding(storeId);
+  const reached = getOutstandingLimitStatus(outstanding, limit) === "exceeded";
+  const state = readOutstandingNoticeState();
+
+  if (!reached) {
+    if (state[storeId]) {
+      delete state[storeId];
+      writeOutstandingNoticeState(state);
+    }
+    return null;
+  }
+
+  if (!state[storeId]?.generation) {
+    state[storeId] = { generation: Date.now() };
+    writeOutstandingNoticeState(state);
+  }
+
+  const generation = state[storeId].generation;
+  const exceeded = outstanding > limit;
+  return note({
+    id: `outstanding-limit:${storeId}:${generation}`,
+    title: exceeded
+      ? "Outstanding limit exceeded"
+      : "Outstanding limit reached for this store.",
+    description: `${store.name} · Outstanding ${formatCurrency(outstanding)} · Limit ${formatCurrency(limit)}`,
+    status: exceeded ? "Exceeded" : "Reached",
+    tone: "pending",
+    icon: "warning",
+    at: generation,
+    sourceDate: undefined,
+    page: page as StorePage,
+  });
+}
+
+export function getCompanyOutstandingLimitNotifications(): StoreNotification[] {
+  return getStores()
+    .map((store) => outstandingLimitNotification(store.id, "stores"))
+    .filter((item): item is StoreNotification => Boolean(item));
+}
+
 function assignedFros(storeId: string) {
   const names = new Set<string>();
   const ids = new Set<string>();
@@ -105,6 +177,8 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
   if (!storeId) return [];
   const items: StoreNotification[] = [];
   const purchaseStatus = getStorePurchaseStatuses();
+  const limitNotice = outstandingLimitNotification(storeId, "dashboard");
+  if (limitNotice) items.push(limitNotice);
 
   const invoices = new Map<string, any[]>();
   getFinalCompanyStoreSales()

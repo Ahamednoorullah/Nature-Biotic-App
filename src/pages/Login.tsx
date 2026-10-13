@@ -1,8 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { AUTH_RECOVERY_EVENT } from "@/lib/auth/events";
+import { authUrlCallback, passwordSetupRequired } from "@/lib/supabase";
 import { Logo } from "@/components/ui";
 
-type LoginView = "sign-in" | "forgot" | "sent" | "reset" | "updated";
+type LoginView = "sign-in" | "forgot" | "sent" | "reset" | "setup" | "updated";
+
+const EXPIRED_INVITE =
+  "This invitation link is invalid or has expired. Ask a company admin to open the store and choose Resend password setup email.";
 
 const fieldClass =
   "h-[60px] w-full rounded-2xl border border-slate-200 bg-white pl-20 pr-5 text-base text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 sm:text-lg";
@@ -22,7 +27,9 @@ function passwordErrorFor(value: string) {
 export default function Login() {
   const { signIn, completePasswordSetup, requestPasswordReset, completePasswordReset } =
     useAuth();
-  const [view, setView] = useState<LoginView>("sign-in");
+  const [view, setView] = useState<LoginView>(
+    authUrlCallback?.kind === "invite" || passwordSetupRequired() ? "setup" : "sign-in",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -38,10 +45,28 @@ export default function Login() {
   const [setupMode, setSetupMode] = useState(false);
 
   useEffect(() => {
+    if (authUrlCallback?.kind === "error") {
+      setError(`${authUrlCallback.message} ${EXPIRED_INVITE}`);
+      setView("sign-in");
+      window.history.replaceState(null, "", "/login");
+    } else if (authUrlCallback?.kind === "invite" || passwordSetupRequired()) {
+      setResetToken("supabase-recovery");
+      setView("setup");
+    } else if (authUrlCallback?.kind === "recovery") {
+      setResetToken("supabase-recovery");
+      setView("reset");
+    }
     const token = new URLSearchParams(window.location.search).get("reset");
-    if (!token) return;
-    setResetToken(token);
-    setView("reset");
+    if (token) {
+      setResetToken(token);
+      setView("reset");
+    }
+    const onRecovery = () => {
+      setResetToken("supabase-recovery");
+      setView("reset");
+    };
+    window.addEventListener(AUTH_RECOVERY_EVENT, onRecovery);
+    return () => window.removeEventListener(AUTH_RECOVERY_EVENT, onRecovery);
   }, []);
 
   function clearFieldErrors() {
@@ -78,24 +103,27 @@ export default function Login() {
     if (nextEmailError || nextPasswordError || nextConfirmError) return;
 
     setLoading(true);
-    if (setupMode) {
-      const setup = await completePasswordSetup(email, password, remember);
-      if (setup.error) setError(setup.error);
-      setLoading(false);
-      return;
-    }
+    try {
+      if (setupMode) {
+        const setup = await completePasswordSetup(email, password, remember);
+        if (setup.error) setError(setup.error);
+        return;
+      }
 
-    const result = await signIn(email, password, remember);
-    if (result.needsPasswordSetup) {
-      setSetupMode(true);
-      setPassword("");
-      setConfirmPassword("");
-      setPasswordError("");
+      const result = await signIn(email, password, remember);
+      if (result.needsPasswordSetup) {
+        setSetupMode(true);
+        setPassword("");
+        setConfirmPassword("");
+        setPasswordError("");
+        return;
+      }
+      if (result.error) setError(result.error);
+    } catch {
+      setError("Could not reach Supabase. The local API is not reachable.");
+    } finally {
       setLoading(false);
-      return;
     }
-    if (result.error) setError(result.error);
-    setLoading(false);
   };
 
   const handleForgot = async (e: FormEvent) => {
@@ -106,8 +134,15 @@ export default function Login() {
     if (nextEmailError) return;
 
     setLoading(true);
-    const result = await requestPasswordReset(email);
-    setLoading(false);
+    let result;
+    try {
+      result = await requestPasswordReset(email);
+    } catch {
+      setError("Could not reach Supabase. The local API is not reachable.");
+      return;
+    } finally {
+      setLoading(false);
+    }
     if (result.status === "invalid_email") {
       setEmailError("Please enter a valid email address.");
       return;
@@ -141,8 +176,32 @@ export default function Login() {
     if (nextPasswordError || nextConfirmError) return;
 
     setLoading(true);
-    const result = await completePasswordReset(resetToken, password);
-    setLoading(false);
+    if (view === "setup") {
+      try {
+        const setup = await completePasswordSetup(email, password, true);
+        if (setup.error) {
+          setError(
+            setup.error === "Open the link from your email to set a password."
+              ? EXPIRED_INVITE
+              : setup.error,
+          );
+        }
+      } catch {
+        setError("Could not reach Supabase. The local API is not reachable.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    let result;
+    try {
+      result = await completePasswordReset(resetToken, password);
+    } catch {
+      setError("Could not reach Supabase. The local API is not reachable.");
+      return;
+    } finally {
+      setLoading(false);
+    }
     if (result.error) {
       setError(result.error);
       return;
@@ -159,6 +218,8 @@ export default function Login() {
         ? "Password Reset"
         : view === "reset"
           ? "Reset Password"
+          : view === "setup"
+            ? "Set Password"
           : view === "updated"
             ? "Password Updated"
             : setupMode
@@ -448,8 +509,13 @@ export default function Login() {
               </div>
             )}
 
-            {view === "reset" && (
+            {(view === "reset" || view === "setup") && (
               <form onSubmit={handleReset} noValidate className="space-y-5">
+                {view === "setup" && (
+                  <p className="text-sm leading-6 text-slate-600">
+                    Choose a password for this store login. The store opens after the password is saved.
+                  </p>
+                )}
                 <div>
                   <label
                     htmlFor="new-password"
@@ -532,6 +598,8 @@ export default function Login() {
                 >
                   {loading ? (
                     <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : view === "setup" ? (
+                    "Set Password"
                   ) : (
                     "Reset Password"
                   )}

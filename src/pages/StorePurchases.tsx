@@ -1,13 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Icon, EmptyState, Input, Select, Button } from "@/components/ui";
 import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
 import {
+  getStorePurchaseStatuses,
   getStorePurchasesFromCompanySales,
   STORE_PURCHASE_STATUS_KEY,
   storePurchaseStatusUpdatedEvent,
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { markCompanyInvoiceReceived } from "@/lib/db/rpc";
 
 type PurchaseStatus = "Dispatched" | "Received";
 
@@ -34,8 +39,12 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
     getStorePurchasesFromCompanySales(storeId),
   );
   const [statuses, setStatuses] = useState<Record<string, PurchaseStatus>>(() =>
-    getSavedStatuses(),
+    usesSupabaseData()
+      ? (getStorePurchaseStatuses() as Record<string, PurchaseStatus>)
+      : getSavedStatuses(),
   );
+  const [actionError, setActionError] = useState("");
+  const receivingRef = useRef(false);
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState<string | null>(
     null,
   );
@@ -202,7 +211,29 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
     setPurchaseOrderNotes((selectedInvoice as any)?.notes ?? defaultNotes);
   }, [selectedInvoice]);
 
-  function markReceived(invoiceNo: string) {
+  async function markReceived(invoiceNo: string) {
+    if (usesSupabaseData()) {
+      if (receivingRef.current) return;
+      const invoice = rows.find((row) => row.invoiceNo === invoiceNo);
+      if (!invoice?.invoiceId) {
+        setActionError("This invoice is not available to receive.");
+        return;
+      }
+      if ((statuses[invoiceNo] ?? "Dispatched") === "Received") return;
+      receivingRef.current = true;
+      setActionError("");
+      try {
+        await markCompanyInvoiceReceived(invoice.invoiceId);
+        await refreshPurchasingData();
+        setRows(getStorePurchasesFromCompanySales(storeId));
+        setStatuses(getStorePurchaseStatuses() as Record<string, PurchaseStatus>);
+      } catch (error) {
+        setActionError(dbErrorMessage(error, "This invoice could not be marked received."));
+      } finally {
+        receivingRef.current = false;
+      }
+      return;
+    }
     const latest = getSavedStatuses();
     if (latest[invoiceNo] === "Received") {
       setStatuses(latest);
@@ -218,6 +249,11 @@ export default function StorePurchases({ storeId }: { storeId: string }) {
 
   return (
     <div>
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-slate-800">
           Purchases

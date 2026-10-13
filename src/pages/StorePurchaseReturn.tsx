@@ -1,20 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { formatCurrency, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter, numberToWords } from "@/lib/format";
 import {
   addStoreApprovalRequest,
+  getDatabasePurchaseReturns,
   getStore,
   getStoreApprovalRequest,
   getStoreAvailableQty,
   isStorePurchaseReceived,
   storeApprovalRequestsUpdatedEvent,
   stores,
+  getCompanyStoreSales,
   getStorePurchasesFromCompanySales,
 } from "@/lib/data";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { peekDocumentNo, submitPurchaseReturn } from "@/lib/db/rpc";
 import { createPortal } from "react-dom";
 
 type ReturnItem = {
   id: string;
+  sourceItemId?: string;
   product: string;
   packSize: string;
   batchNo: string;
@@ -56,6 +63,7 @@ type PurchaseReturnRow = {
 
 type PurchaseInvoiceItem = {
   id: string;
+  invoiceId?: string;
   invoiceNo: string;
   date: string;
   product: string;
@@ -127,7 +135,52 @@ function rememberPurchaseReturnNo(storeCode: string, returnNo: string) {
 
 export default function StoreReturnStock({ storeId }: { storeId: string }) {
   const storageKey = `naturebiotic:purchase-returns:${storeId}`;
+  function databaseReturns(): PurchaseReturnRow[] {
+    return getDatabasePurchaseReturns()
+      .filter((row) => row.storeId === storeId)
+      .map((row) => ({
+        id: row.id,
+        returnNo: row.returnNo,
+        date: row.date,
+        purchaseRef: row.invoiceNo,
+        supplier: "Nature Biotic",
+        placeOfReturn: "Rajapalayam",
+        beforeDiscount: 0,
+        discountAmount: row.items.reduce((sum, item) => sum + item.discountAmount, 0),
+        taxableAmount: 0,
+        withoutTax: 0,
+        sgst: row.items.reduce((sum, item) => sum + item.sgst, 0),
+        cgst: row.items.reduce((sum, item) => sum + item.cgst, 0),
+        igst: row.items.reduce((sum, item) => sum + item.igst, 0),
+        total: row.total,
+        reason: row.reason,
+        status: row.status,
+        items: row.items.map((item) => ({
+          id: item.id,
+          sourceItemId: item.sourceItemId,
+          product: item.product,
+          packSize: item.packSize,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          soldQuantity: 0,
+          quantity: item.quantity,
+          price: item.price,
+          reason: item.reason,
+          beforeDiscount: 0,
+          discountPercent: 0,
+          discountAmount: item.discountAmount,
+          taxableAmount: 0,
+          withoutTax: 0,
+          sgst: item.sgst,
+          cgst: item.cgst,
+          igst: item.igst,
+          total: item.total,
+        })),
+      }));
+  }
+
   const [rows, setRows] = useState<PurchaseReturnRow[]>(() => {
+    if (usesSupabaseData()) return databaseReturns();
     try {
       const saved = localStorage.getItem(storageKey);
       const parsed = saved ? (JSON.parse(saved) as PurchaseReturnRow[]) : [];
@@ -136,12 +189,15 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
       return [];
     }
   });
+  const [actionError, setActionError] = useState("");
+  const savingRef = useRef(false);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedReturn, setSelectedReturn] =
     useState<PurchaseReturnRow | null>(null);
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
 
   useEffect(() => {
+    if (usesSupabaseData()) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(rows));
     } catch (error) {
@@ -150,6 +206,18 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
   }, [rows, storageKey]);
 
   useEffect(() => {
+    if (!usesSupabaseData()) return;
+    const reload = () => setRows(databaseReturns());
+    window.addEventListener(purchaseReturnsUpdatedEvent, reload);
+    window.addEventListener(storeApprovalRequestsUpdatedEvent, reload);
+    return () => {
+      window.removeEventListener(purchaseReturnsUpdatedEvent, reload);
+      window.removeEventListener(storeApprovalRequestsUpdatedEvent, reload);
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (usesSupabaseData()) return;
     const syncStatuses = () =>
       setRows((current) =>
         current.map((row) => {
@@ -225,7 +293,8 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
       const taxPercent = Number(row.taxPercent ?? row.taxPercentage ?? 0);
 
       return {
-        id: String(row.id ?? `${row.invoiceNo}-${index}`),
+        id: String(row.invoiceItemId ?? row.id ?? `${row.invoiceNo}-${index}`),
+        invoiceId: row.invoiceId ? String(row.invoiceId) : undefined,
         invoiceNo: String(row.invoiceNo ?? row.purchaseRef ?? ""),
         date: String(row.date ?? ""),
         product: String(row.productName ?? row.product ?? "-"),
@@ -489,6 +558,18 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     pendingLines: ReturnItem[] = [],
   ) {
     const available = getStoreAvailableQty(storeId, "", size, batch, productName);
+    if (usesSupabaseData()) {
+      const heldNow = pendingLines.reduce(
+        (sum, item) =>
+          item.product === productName &&
+          item.packSize === size &&
+          item.batchNo === batch
+            ? sum + Number(item.quantity || 0)
+            : sum,
+        0,
+      );
+      return Math.max(0, available - heldNow);
+    }
     const held = [
       ...rows.flatMap((row) => (row.status === "Pending" ? row.items : [])),
       ...pendingLines,
@@ -574,6 +655,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
 
     const item: ReturnItem = {
       id: `${Date.now()}-${selectedProduct.id}`,
+      sourceItemId: selectedProduct.id,
       product: selectedProduct.product,
       packSize: selectedProduct.packSize,
       batchNo: selectedProduct.batchNo,
@@ -618,15 +700,65 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
     setAdded([]);
   }
 
-  function openForm() {
+  async function openForm() {
+    setActionError("");
+    setDate(new Date().toISOString().split("T")[0]);
+    if (usesSupabaseData()) {
+      try {
+        setReturnNo(await peekDocumentNo("purchase_return", storeId));
+        setShowCreate(true);
+      } catch (error) {
+        setActionError(
+          dbErrorMessage(error, "A purchase return number could not be prepared."),
+        );
+      }
+      return;
+    }
     const storeCode = getStore(storeId)?.code || "ST";
     setReturnNo(nextPurchaseReturnNo(storeCode, rows));
-    setDate(new Date().toISOString().split("T")[0]);
     setShowCreate(true);
   }
 
-  function saveReturn() {
-    if (!canSave) return;
+  async function saveReturn() {
+    if (!canSave || savingRef.current) return;
+    if (usesSupabaseData()) {
+      const invoice = purchaseInvoices.find((item) => item.invoiceNo === purchaseRef.trim());
+      if (!invoice?.invoiceId) {
+        setActionError("Select a received company invoice before saving this return.");
+        return;
+      }
+      if (added.some((item) => !item.sourceItemId)) {
+        setActionError("Each return line must reference a line on the selected invoice.");
+        return;
+      }
+      savingRef.current = true;
+      setActionError("");
+      try {
+        await submitPurchaseReturn(
+          {
+            company_invoice_id: invoice.invoiceId,
+            return_date: date,
+            supplier: "Nature Biotic",
+            place_of_return: "Rajapalayam",
+            reason: Array.from(new Set(added.map((item) => item.reason))).join(", "),
+          },
+          added.map((item) => ({
+            source_item_id: item.sourceItemId,
+            quantity: item.quantity,
+            reason: item.reason,
+          })),
+        );
+        await refreshPurchasingData();
+        setRows(databaseReturns());
+        resetForm();
+        setShowCreate(false);
+      } catch (error) {
+        setActionError(dbErrorMessage(error, "The purchase return could not be saved."));
+      } finally {
+        savingRef.current = false;
+      }
+      return;
+    }
 
     const requested = new Map<string, number>();
     added.forEach((item) => {
@@ -713,6 +845,11 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
 
   return (
     <div>
+      {actionError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError}
+        </div>
+      )}
       <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <h1 className="text-2xl font-bold tracking-tight text-slate-800">
           Purchase Return
