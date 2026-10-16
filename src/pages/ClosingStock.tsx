@@ -1,348 +1,297 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
-import { getFROStockTxns, getCatalogSellingPrice } from "@/lib/data";
-import { buildInventoryRows, getRealPurchases } from "./StoreInventory";
-
-
-// Same executive list used across the app (Store Dashboard, etc.)
-
-
-const SALES_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
-
-
-
-
-type Breakdown = {
-  key: string;
-  productName: string;
-  packSize: string;
-  qty: number;
-  value: number;
-};
+import { formatCurrency, formatDate } from "@/lib/format";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  finalizeStoreMonthClosingDb,
+  loadStoreClosingStocks,
+  loadStoreStockAsOf,
+  type DbClosingStock,
+  type DbClosingStockLine,
+} from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type MonthRow = {
+  id: string;
   label: string;
-  isoDate: string; // the "as of" date used for calculation
+  closingDate: string;
+  yearMonth: string;
   qty: number;
   value: number;
-  breakdown: Breakdown[];
+  kind: "snapshot" | "live";
+  source?: string;
+  lines: DbClosingStockLine[];
 };
 
-function addToMap(
-  map: Map<string, Breakdown>,
-  key: string,
-  productName: string,
-  packSize: string,
-  qty: number,
-  value: number,
-) {
-  const existing = map.get(key);
-  if (existing) {
-    existing.qty += qty;
-    existing.value += value;
-  } else {
-    map.set(key, { key, productName, packSize, qty, value });
-  }
+type DateView =
+  | {
+      mode: "snapshot";
+      label: string;
+      asOf: string;
+      lines: DbClosingStockLine[];
+      qty: number;
+      value: number;
+      snapshotId: string;
+    }
+  | {
+      mode: "ledger";
+      label: string;
+      asOf: string;
+      lines: DbClosingStockLine[];
+      qty: number;
+      value: number;
+    }
+  | {
+      mode: "error";
+      asOf: string;
+      message: string;
+    }
+  | {
+      mode: "loading";
+      asOf: string;
+    };
+
+function kolkataTodayISO() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((p) => p.type === "year")?.value || "1970";
+  const month = parts.find((p) => p.type === "month")?.value || "01";
+  const day = parts.find((p) => p.type === "day")?.value || "01";
+  return `${year}-${month}-${day}`;
 }
 
-function getLastNMonthEnds(n: number): { label: string; date: Date }[] {
-  const result: { label: string; date: Date }[] = [];
-  const now = new Date();
-
-  for (let i = n - 1; i >= 0; i--) {
-    const target = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const isCurrentMonth = i === 0;
-    const monthEnd = isCurrentMonth
-      ? now
-      : new Date(target.getFullYear(), target.getMonth() + 1, 0, 23, 59, 59);
-
-    const label = target.toLocaleDateString("en-IN", {
+function monthLabel(yearMonth: string, closingDate: string) {
+  const [y, m] = yearMonth.split("-").map(Number);
+  if (y && m) {
+    return new Date(y, m - 1, 1).toLocaleDateString("en-IN", {
       month: "short",
       year: "numeric",
     });
-
-    result.push({ label, date: monthEnd });
   }
-
-  return result;
+  return formatDate(closingDate);
 }
 
-const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
-const stockKey = (name: unknown, pack: unknown) =>
-  `${norm(name)}|${norm(pack).replace(/\s+/g, "")}`;
-
-// Stock as on a given date = purchases - delivered to FRO + returned by FRO - direct sales
-export function computeClosingStock(storeId: string, asOfDate: Date) {
-  const qtyMap = new Map<
-    string,
-    { productName: string; packSize: string; qty: number; fallbackPrice: number }
-  >();
-
-  const add = (
-    name: unknown,
-    pack: unknown,
-    qty: number,
-    fallbackPrice = 0,
-  ) => {
-    const productName = String(name || "").trim();
-    if (!productName) return;
-    const key = stockKey(productName, pack);
-    const existing = qtyMap.get(key);
-    if (existing) {
-      existing.qty += qty;
-      if (!existing.fallbackPrice && fallbackPrice) {
-        existing.fallbackPrice = fallbackPrice;
-      }
-    } else {
-      qtyMap.set(key, {
-        productName,
-        packSize: String(pack || "-"),
-        qty,
-        fallbackPrice,
-      });
-    }
-  };
-
-  const isAfter = (value: unknown) => {
-    const d = new Date(String(value));
-    return !Number.isNaN(d.getTime()) && d > asOfDate;
-  };
-
-  // 1) Stock received from Company (+)  (only real data)
-  getRealPurchases(storeId).forEach((row: any) => {
-    if (isAfter(row.date)) return;
-    add(
-      row.product || row.productName,
-      row.packSize || row.pkgsize,
-      Number(row.quantity || 0),
-      Number(row.unitPrice ?? row.rate ?? row.price ?? 0),
-    );
-  });
-
-  // 2) Delivered to FRO (-) and Returned by FRO (+)
-  getFROStockTxns(storeId).forEach((t) => {
-    if (isAfter(t.date)) return;
-    if (t.type === "Delivery") {
-      add(t.productName, t.packSize, -Math.abs(t.qty), Number(t.unitValue || 0));
-    } else if (t.type === "Return") {
-      add(t.productName, t.packSize, Math.abs(t.qty), Number(t.unitValue || 0));
-    }
-  });
-
-  // 3) Direct sales from store (-)
-  try {
-    const raw = localStorage.getItem(`${SALES_STORAGE_KEY}:${storeId}`);
-    const sales = raw ? JSON.parse(raw) : [];
-    sales.forEach((sale: any) => {
-      if (String(sale.through || "").toLowerCase() === "executive") return;
-      const [d, m, y] = String(sale.date || "").split("/");
-      if (!d || !m || !y) return;
-      const saleDate = new Date(Number(`20${y}`), Number(m) - 1, Number(d));
-      if (saleDate > asOfDate) return;
-      (sale.products || []).forEach((p: any) => {
-        add(
-          p.product?.name,
-          p.packSize || p.pkgsize,
-          -Number(p.quantity || 0),
-        );
-      });
-    });
-  } catch {
-    // ignore malformed local data
-  }
-
-  const priceOf = (name: string, pack: string, fallback: number) => {
-    const selling = getCatalogSellingPrice(name, pack);
-    return Math.round(selling > 0 ? selling : fallback);
-  };
-
-  const breakdown: Breakdown[] = Array.from(qtyMap.entries())
-    .filter(([, r]) => r.qty > 0)
-    .map(([key, r]) => ({
-      key,
-      productName: r.productName,
-      packSize: r.packSize,
-      qty: r.qty,
-      value: r.qty * priceOf(r.productName, r.packSize, r.fallbackPrice),
-    }))
-    .sort((a, b) => b.value - a.value);
-
+function lastCompletedYearMonth() {
+  const today = kolkataTodayISO();
+  const [year, month] = today.split("-").map(Number);
+  const d = new Date(year, month - 1, 1);
+  d.setDate(0);
   return {
-    totalQty: breakdown.reduce((s, b) => s + b.qty, 0),
-    totalValue: breakdown.reduce((s, b) => s + b.value, 0),
-    breakdown,
+    year: d.getFullYear(),
+    month: d.getMonth() + 1,
+    yearMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    closingDate: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
   };
 }
 
-// Today's stock = exactly what Store Overview shows (Store Stock only)
-export function liveStoreStock(storeId: string): Breakdown[] {
-  const map = new Map<string, Breakdown>();
-  const inventoryRows = buildInventoryRows(storeId, getRealPurchases(storeId));
-
-  inventoryRows.forEach((p) => {
-    p.packSizes.forEach((pack) => {
-      const qty = Number(pack.availableStock || 0);
-      if (qty <= 0) return;
-      const total = pack.availableStock + pack.stockInHand;
-      const unitPrice =
-        pack.unitPrice ?? (total > 0 ? pack.stockValue / total : 0);
-      addToMap(
-        map,
-        stockKey(p.productName, pack.packSize),
-        p.productName,
-        pack.packSize,
-        qty,
-        qty * unitPrice,
-      );
-    });
-  });
-
-  return Array.from(map.values()).sort((a, b) => b.value - a.value);
+function toMonthRow(snapshot: DbClosingStock): MonthRow {
+  return {
+    id: snapshot.id,
+    label: monthLabel(snapshot.yearMonth, snapshot.closingDate),
+    closingDate: snapshot.closingDate,
+    yearMonth: snapshot.yearMonth,
+    qty: snapshot.totalQty,
+    value: snapshot.totalValue,
+    kind: snapshot.kind,
+    source: snapshot.source,
+    lines: snapshot.lines,
+  };
 }
 
-function StockByDateFilter({
-  selectedDate,
-  onDateChange,
-  items,
-  totalQty,
-  totalValue,
-}: {
-  selectedDate: string;
-  onDateChange: (v: string) => void;
-  items: Breakdown[];
-  totalQty: number;
-  totalValue: number;
-}) {
-  const dateLabel = selectedDate
-    ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      })
-    : "";
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 px-5 py-4">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Select Date
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => onDateChange(e.target.value)}
-            className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => onDateChange("")}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          Clear
-        </button>
-        <div className="ml-auto flex gap-4 text-sm text-slate-500">
-          <span>Store Stock Qty: <b className="text-slate-800">{totalQty}</b></span>
-          <span>Stock Value: <b className="text-indigo-700">{formatCurrency(totalValue)}</b></span>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[600px] table-fixed text-sm">
-          <thead className="sticky top-0 z-10 bg-white">
-            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-              <th className="w-[8%] px-4 py-3 text-center">S.No</th>
-              <th className="w-[16%] px-4 py-3 text-left">Date</th>
-              <th className="w-[30%] px-4 py-3 text-left">Product</th>
-              <th className="w-[16%] px-4 py-3 text-center">Pack Size</th>
-              <th className="w-[14%] px-4 py-3 text-right">Qty</th>
-              <th className="w-[16%] px-4 py-3 text-right">Value</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
-                  {selectedDate
-                    ? "No store stock on this date."
-                    : "Select a date to see the store stock."}
-                </td>
-              </tr>
-            ) : (
-              items.map((item, i) => (
-                <tr key={item.key} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-center text-slate-500">{i + 1}</td>
-                  <td className="px-4 py-3 text-slate-600">{dateLabel}</td>
-                  <td className="px-4 py-3 font-semibold text-slate-700">{item.productName}</td>
-                  <td className="px-4 py-3 text-center text-slate-600">{item.packSize}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-800">{item.qty}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
-                    {formatCurrency(item.value)}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+function totals(lines: DbClosingStockLine[]) {
+  return {
+    qty: lines.reduce((sum, line) => sum + line.qty, 0),
+    value: lines.reduce((sum, line) => sum + line.lineValue, 0),
+  };
 }
 
 export default function ClosingStock({ storeId }: { storeId: string }) {
   const [selectedRow, setSelectedRow] = useState<MonthRow | null>(null);
-  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [snapshots, setSnapshots] = useState<DbClosingStock[]>([]);
+  const [listError, setListError] = useState("");
+  const [closingBusy, setClosingBusy] = useState(false);
+  const [closeMessage, setCloseMessage] = useState("");
+  const [filterDate, setFilterDate] = useState(kolkataTodayISO);
+  const [dateView, setDateView] = useState<DateView>({
+    mode: "loading",
+    asOf: kolkataTodayISO(),
+  });
 
-  const [filterDate, setFilterDate] = useState(""); // "YYYY-MM-DD"
+  const eligible = useMemo(() => lastCompletedYearMonth(), []);
+  const todayISO = useMemo(() => kolkataTodayISO(), []);
 
-  const dateStock = useMemo(() => {
-  if (!filterDate) return { items: [] as Breakdown[], qty: 0, value: 0 };
-  const [y, m, d] = filterDate.split("-").map(Number);
-  const endOfDay = new Date(y, m - 1, d, 23, 59, 59);
-  const isToday = endOfDay.toDateString() === new Date().toDateString();
-
-  const items = (
-    isToday ? liveStoreStock(storeId) : computeClosingStock(storeId, endOfDay).breakdown
-  ).filter((b) => b.qty > 0);
-
-  return {
-    items,
-    qty: items.reduce((s, b) => s + b.qty, 0),
-    value: items.reduce((s, b) => s + b.value, 0),
-  };
-}, [storeId, filterDate]);
-
-
-    const rows = useMemo<MonthRow[]>(() => {
-    const periods = getLastNMonthEnds(6);
-
-    return periods
-      .map(({ label, date }, index) => {
-        const isCurrent = index === periods.length - 1;
-        const breakdown = isCurrent
-          ? liveStoreStock(storeId)
-          : computeClosingStock(storeId, date).breakdown;
-
-        return {
-          label,
-          isoDate: date.toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }),
-          qty: breakdown.reduce((s, b) => s + b.qty, 0),
-          value: breakdown.reduce((s, b) => s + b.value, 0),
-          breakdown,
-        };
-      })
-      // hide old months that have no stock; always keep the current month
-      .filter((r, i, arr) => i === arr.length - 1 || r.qty > 0);
+  const reloadSnapshots = useCallback(async () => {
+    if (!usesSupabaseData() || !storeId) {
+      setSnapshots([]);
+      return;
+    }
+    const saved = await loadStoreClosingStocks(storeId);
+    setSnapshots(saved);
+    setListError("");
   }, [storeId]);
 
+  useEffect(() => {
+    let active = true;
+    reloadSnapshots().catch((error) => {
+      if (!active) return;
+      setSnapshots([]);
+      setListError(dbErrorMessage(error, "Could not load closing stock."));
+    });
+    return () => {
+      active = false;
+    };
+  }, [reloadSnapshots]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId || !filterDate) {
+      setDateView({
+        mode: "error",
+        asOf: filterDate,
+        message: "Select a date to view store stock.",
+      });
+      return;
+    }
+
+    let active = true;
+    setDateView({ mode: "loading", asOf: filterDate });
+
+    const snapshot = snapshots.find((row) => row.closingDate === filterDate);
+    if (snapshot) {
+      setDateView({
+        mode: "snapshot",
+        label: "Finalized Closing Snapshot",
+        asOf: filterDate,
+        lines: snapshot.lines,
+        qty: snapshot.totalQty,
+        value: snapshot.totalValue,
+        snapshotId: snapshot.id,
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    loadStoreStockAsOf(storeId, filterDate)
+      .then((lines) => {
+        if (!active) return;
+        const { qty, value } = totals(lines);
+        setDateView({
+          mode: "ledger",
+          label: "Historical/Live Stock View",
+          asOf: filterDate,
+          lines,
+          qty,
+          value,
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setDateView({
+          mode: "error",
+          asOf: filterDate,
+          message: dbErrorMessage(
+            error,
+            "Could not reconstruct store stock for this date from the stock ledger.",
+          ),
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [storeId, filterDate, snapshots, todayISO]);
+
+  const rows = useMemo<MonthRow[]>(() => snapshots.map(toMonthRow), [snapshots]);
+
+  const needsFinalize = !snapshots.some(
+    (row) => row.yearMonth === eligible.yearMonth,
+  );
+
+  async function finalizeEligibleMonth() {
+    if (!usesSupabaseData()) return;
+    setClosingBusy(true);
+    setCloseMessage("");
+    try {
+      const result = await finalizeStoreMonthClosingDb(
+        storeId,
+        eligible.year,
+        eligible.month,
+      );
+      await reloadSnapshots();
+      setCloseMessage(
+        result.already_finalized
+          ? `Closing for ${result.year_month} was already finalized.`
+          : `Finalized closing stock for ${result.year_month} (as of ${result.closing_date}).`,
+      );
+    } catch (error) {
+      setCloseMessage(dbErrorMessage(error, "Could not finalize month-end closing."));
+    } finally {
+      setClosingBusy(false);
+    }
+  }
+
+  function renderLinesTable(lines: DbClosingStockLine[], emptyMessage: string) {
     return (
+      <table className="w-full min-w-[720px] table-fixed text-sm">
+        <thead className="sticky top-0 z-10 bg-white">
+          <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+            <th className="w-[7%] px-4 py-3 text-center">S.No</th>
+            <th className="w-[24%] px-4 py-3 text-left">Product</th>
+            <th className="w-[12%] px-4 py-3 text-center">Pack Size</th>
+            <th className="w-[14%] px-4 py-3 text-center">Batch</th>
+            <th className="w-[13%] px-4 py-3 text-center">Expiry</th>
+            <th className="w-[10%] px-4 py-3 text-right">Qty</th>
+            <th className="w-[20%] px-4 py-3 text-right">Value</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {lines.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                {emptyMessage}
+              </td>
+            </tr>
+          ) : (
+            lines.map((item, index) => (
+              <tr
+                key={`${item.variantId}-${item.batchId || index}`}
+                className="hover:bg-slate-50"
+              >
+                <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
+                <td className="px-4 py-3 font-semibold text-slate-700">
+                  {item.productName}
+                </td>
+                <td className="px-4 py-3 text-center text-slate-600">
+                  {item.packSize}
+                </td>
+                <td className="px-4 py-3 text-center text-slate-600">
+                  {item.batchNo || "-"}
+                </td>
+                <td className="px-4 py-3 text-center text-slate-600">
+                  {item.expiryDate ? formatDate(item.expiryDate) : "-"}
+                </td>
+                <td className="px-4 py-3 text-right font-bold text-slate-800">
+                  {item.qty}
+                </td>
+                <td className="px-4 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
+                  {formatCurrency(item.lineValue)}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    );
+  }
+
+  return (
     <div>
-    <style>{`
+      <style>{`
         @media print {
           body * { visibility: hidden !important; }
           .closing-stock-print, .closing-stock-print * { visibility: visible !important; }
@@ -364,18 +313,129 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
             font-size: 20px !important;
           }
         }
-    `}</style>
+      `}</style>
 
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Closing Stock</h1>
-        <p className="mt-1 text-slate-500">
-          Month-end stock balance, calculated automatically from stock
-          received, delivered, returned and direct sales.
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">Closing Stock</h1>
+          <p className="mt-1 text-slate-500">
+            Filter store stock by date (Asia/Kolkata). Finalized month-end
+            snapshots are shown when the selected date matches a closing date;
+            otherwise stock is reconstructed from the store ledger only.
+          </p>
+        </div>
+        {usesSupabaseData() ? (
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <Button
+              onClick={() => void finalizeEligibleMonth()}
+              disabled={closingBusy || !needsFinalize}
+            >
+              <Icon name="event_available" size={18} />
+              {closingBusy
+                ? "Finalizing…"
+                : needsFinalize
+                  ? `Finalize ${eligible.yearMonth} closing`
+                  : `${eligible.yearMonth} already finalized`}
+            </Button>
+            <p className="max-w-sm text-right text-[11px] text-slate-500">
+              Changing the date filter never creates or overwrites a snapshot.
+              Month-end finalize remains an explicit, idempotent action.
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      {listError ? (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {listError}
         </p>
-      </div>
-      </div>
+      ) : null}
+      {closeMessage ? (
+        <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          {closeMessage}
+        </p>
+      ) : null}
 
+      <Card className="mb-6 overflow-hidden p-0">
+        <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 px-5 py-4">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Stock as of date
+            <input
+              type="date"
+              value={filterDate}
+              max={todayISO}
+              onChange={(e) => setFilterDate(e.target.value || todayISO)}
+              className="mt-1 block rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setFilterDate(todayISO)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Today
+          </button>
+          {dateView.mode === "snapshot" || dateView.mode === "ledger" ? (
+            <div className="ml-auto flex flex-wrap items-center gap-3">
+              <span
+                className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                  dateView.mode === "snapshot"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-sky-100 text-sky-700"
+                }`}
+              >
+                {dateView.label}
+              </span>
+              <span className="text-sm text-slate-500">
+                Qty{" "}
+                <b className="text-slate-800">{dateView.qty}</b>
+              </span>
+              <span className="text-sm text-slate-500">
+                Value{" "}
+                <b className="text-indigo-700">
+                  {formatCurrency(dateView.value)}
+                </b>
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="min-h-[240px] overflow-auto">
+          {dateView.mode === "loading" ? (
+            <p className="px-4 py-10 text-center text-slate-400">
+              Loading store stock for {formatDate(dateView.asOf)}…
+            </p>
+          ) : dateView.mode === "error" ? (
+            <p className="px-4 py-10 text-center text-sm font-medium text-red-600">
+              {dateView.message}
+            </p>
+          ) : (
+            renderLinesTable(
+              dateView.lines,
+              dateView.mode === "snapshot"
+                ? "No lines on this finalized closing snapshot."
+                : "No store stock on this date (FRO hand stock is excluded).",
+            )
+          )}
+        </div>
+        {dateView.mode === "ledger" ? (
+          <p className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-500">
+            Quantities are reconstructed from store stock movements with
+            movement_date ≤ {formatDate(dateView.asOf)}. This is not a finalized
+            closing snapshot.
+          </p>
+        ) : null}
+        {dateView.mode === "snapshot" ? (
+          <p className="border-t border-slate-100 px-5 py-3 text-[11px] text-slate-500">
+            Showing the saved month-end snapshot for {formatDate(dateView.asOf)}.
+            Values are frozen at finalize time.
+          </p>
+        ) : null}
+      </Card>
+
+      <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-700">
+        Finalized month-end snapshots
+      </h2>
       <Card className="overflow-hidden p-0">
         <table className="w-full table-fixed border-collapse text-sm">
           <thead>
@@ -384,42 +444,61 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                 S.No
               </th>
               <th className="w-[35%] px-2 py-3 text-left font-semibold border-r border-slate-200">
-                Date
+                Period
               </th>
-              <th className="w-[25%] px-2 py-3 text-right font-semibold border-r border-slate-200">
+              <th className="w-[20%] px-2 py-3 text-center font-semibold border-r border-slate-200">
+                Type
+              </th>
+              <th className="w-[15%] px-2 py-3 text-right font-semibold border-r border-slate-200">
                 Qty
               </th>
-              <th className="w-[30%] px-2 py-3 text-right font-semibold">
+              <th className="w-[20%] px-2 py-3 text-right font-semibold">
                 Value
               </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
-              <tr
-                key={row.label}
-                onClick={() => setSelectedRow(row)}
-                className={`cursor-pointer border-b border-slate-100 ${
-                  i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
-                } transition hover:bg-brand-50/30`}
-              >
-                <td className="px-2 py-3 text-center font-medium text-slate-500">
-                  {i + 1}
-                </td>
-                <td className="px-2 py-3 font-semibold text-slate-800">
-                  {row.label}{" "}
-                  <span className="text-xs font-normal text-slate-400">
-                    (as of {row.isoDate})
-                  </span>
-                </td>
-                <td className="px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
-                  {row.qty}
-                </td>
-                <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
-                  {formatCurrency(row.value)}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
+                  No finalized closing snapshots yet.
                 </td>
               </tr>
-            ))}
+            ) : (
+              rows.map((row, i) => (
+                <tr
+                  key={row.id}
+                  onClick={() => {
+                    setFilterDate(row.closingDate);
+                    setSelectedRow(row);
+                  }}
+                  className={`cursor-pointer border-b border-slate-100 ${
+                    i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                  } transition hover:bg-brand-50/30`}
+                >
+                  <td className="px-2 py-3 text-center font-medium text-slate-500">
+                    {i + 1}
+                  </td>
+                  <td className="px-2 py-3 font-semibold text-slate-800">
+                    {row.label}{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (closed {formatDate(row.closingDate)})
+                    </span>
+                  </td>
+                  <td className="px-2 py-3 text-center">
+                    <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                      Finalized Closing Snapshot
+                    </span>
+                  </td>
+                  <td className="px-2 py-3 text-right font-semibold tabular-nums text-slate-700">
+                    {row.qty}
+                  </td>
+                  <td className="px-2 py-3 text-right font-bold tabular-nums text-slate-800">
+                    {formatCurrency(row.value)}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </Card>
@@ -427,14 +506,15 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
       {selectedRow &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
-                        <div className="closing-stock-print flex h-[76vh] w-[92vw] max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="closing-stock-print flex h-[76vh] w-[92vw] max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
                 <div>
                   <h3 className="font-bold text-slate-800">
                     Closing Stock — {selectedRow.label}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    As of {selectedRow.isoDate}
+                    Finalized Closing Snapshot as of{" "}
+                    {formatDate(selectedRow.closingDate)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 closing-stock-print-hide">
@@ -448,8 +528,6 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                   >
                     <Icon name="close" size={19} />
                   </button>
-
-                  
                 </div>
               </div>
 
@@ -460,7 +538,7 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                       Total Qty
                     </span>
                     <span className="text-lg font-extrabold text-slate-800">
-                      {showDateFilter && filterDate ? dateStock.qty : selectedRow.qty}
+                      {selectedRow.qty}
                     </span>
                   </div>
                   <div className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -468,86 +546,27 @@ export default function ClosingStock({ storeId }: { storeId: string }) {
                       Total Value
                     </span>
                     <span className="closing-stock-print-total-value text-lg font-extrabold text-indigo-700">
-                      {formatCurrency(showDateFilter && filterDate ? dateStock.value : selectedRow.value)}
+                      {formatCurrency(selectedRow.value)}
                     </span>
                   </div>
-                  
-                  <button
-                    type="button"
-                    onClick={() => setShowDateFilter((v) => !v)}
-                    className={`inline-flex items-center rounded-xl border px-4 py-3 text-xs font-semibold uppercase tracking-wide transition closing-stock-print-hide ${
-                      showDateFilter
-                        ? "border-indigo-600 bg-indigo-600 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                  Date Filter
-                  </button>
                 </div>
               </div>
 
-              {showDateFilter ? (
-                <StockByDateFilter
-                  selectedDate={filterDate}
-                  onDateChange={setFilterDate}
-                  items={dateStock.items}
-                  totalQty={dateStock.qty}
-                  totalValue={dateStock.value}
-                />
-              ) : (
-                <>
-             
-                
-                  <div className="min-h-0 flex-1 overflow-auto">
-                    <table className="w-full min-w-[600px] table-fixed text-sm">
-                      <thead className="sticky top-0 z-10 bg-white">
-                        <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th className="w-[8%] px-4 py-3 text-center">S.No</th>
-                          <th className="w-[16%] px-4 py-3 text-left">Date</th>
-                          <th className="w-[30%] px-4 py-3 text-left">Product</th>
-                          <th className="w-[16%] px-4 py-3 text-center">Pack Size</th>
-                          <th className="w-[14%] px-4 py-3 text-right">Qty</th>
-                          <th className="w-[16%] px-4 py-3 text-right">Value</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {selectedRow.breakdown.length === 0 ? (
-                          <tr> 
-                            <td
-                              colSpan={6}
-                              className="px-4 py-10 text-center text-slate-400"
-                            >
-                              No stock records for this period.
-                            </td>
-                          </tr>
-                        ) : (
-                          selectedRow.breakdown.map((item, index) => (
-                            <tr key={item.key} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
-                            <td className="px-4 py-3 text-slate-600">{selectedRow.isoDate}</td>
-                            <td className="px-4 py-3 font-semibold text-slate-700">{item.productName}</td>
-                            <td className="px-4 py-3 text-center text-slate-600">{item.packSize}</td>
-                            <td className="px-4 py-3 text-right font-bold text-slate-800">{item.qty}</td>
-                            <td className="px-4 py-3 text-right font-bold text-slate-800 whitespace-nowrap">
-                              {formatCurrency(item.value)}
-                            </td>
-                          </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4 closing-stock-print-hide">
-                    <Button variant="secondary" onClick={() => setSelectedRow(null)}>
-                      Close
-                    </Button>
-                  </div>
-                </>
-              )}
+              <div className="min-h-0 flex-1 overflow-auto">
+                {renderLinesTable(
+                  selectedRow.lines,
+                  "No store stock lines for this snapshot.",
+                )}
+              </div>
+              <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-5 py-4 closing-stock-print-hide">
+                <Button variant="secondary" onClick={() => setSelectedRow(null)}>
+                  Close
+                </Button>
+              </div>
             </div>
           </div>,
           document.body,
         )}
-      </div>
-    );
-  }
+    </div>
+  );
+}

@@ -12,6 +12,36 @@ import {
 import { attendanceUpdatedEvent } from "@/pages/StoreAttendance";
 import { Card, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { dbErrorMessage } from "@/lib/db/errors";
+import {
+  loadVisits,
+  loadFroSalesLedger,
+  loadFroMoneyPosition,
+  loadFroCashLines,
+  buildFroCashBalanceLines,
+  type DbVisit,
+  type FroCashLine,
+  type FroMoneyPosition,
+} from "@/lib/db/operations";
+import type { FROCashPosition } from "@/lib/data";
+
+function buildOfflineCashBalanceLines(position: FROCashPosition): FroCashLine[] {
+  // Offline Cash in Hand = farmer collections − handovers (exclude expense advances).
+  const farmerCash = Math.max(
+    Number(position.cashCollected || 0) - Number(position.cashHandover || 0),
+    0,
+  );
+  return buildFroCashBalanceLines({
+    cashInHand: farmerCash,
+    cashReceipts: position.cashCollected,
+    advancesAccepted: 0,
+    handoversAccepted: position.cashHandover,
+    cashExpenses: 0,
+    cashRefunds: 0,
+  });
+}
+import { inPeriod, summarizeFroAccounts } from "@/lib/storeDashboardMetrics";
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 
@@ -182,14 +212,22 @@ function dateLabel(value: string) {
   }
 }
 
+function shownMoney(value: number | null) {
+  return value == null ? "—" : formatCurrency(value);
+}
+
 function DetailsPage({
   kind,
   rows,
   onBack,
+  emptyMessage,
+  notice,
 }: {
   kind: DetailKind;
   rows: DetailRow[];
   onBack: () => void;
+  emptyMessage?: string;
+  notice?: string;
 }) {
   const titles: Record<DetailKind, string> = {
     sales: "Sales",
@@ -219,9 +257,8 @@ function DetailsPage({
       { key: "amount", label: "Amount", cls: "text-right" },
     ],
     cash: [
-      { key: "date", label: "Date" },
-      { key: "receiptNo", label: "Ref No" },
-      { key: "farmerDetails", label: "Farmer Details" },
+      { key: "transactionType", label: "Description" },
+      { key: "ref", label: "Reference" },
       { key: "amount", label: "Amount", cls: "text-right" },
     ],
     outstanding: [
@@ -277,6 +314,11 @@ function DetailsPage({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {notice ? (
+          <p className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+            {notice}
+          </p>
+        ) : null}
         <table className="w-full table-fixed border-collapse">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50">
@@ -295,7 +337,7 @@ function DetailsPage({
             {rows.length ? (
               rows.map((row, index) => (
                 <tr
-                  key={`${kind}-${index}`}
+                  key={String(row.id || `${kind}-${index}`)}
                   className="align-middle hover:bg-slate-50"
                 >
                   {columns[kind].map((col) => (
@@ -334,7 +376,7 @@ function DetailsPage({
                   colSpan={columns[kind].length}
                   className="px-4 py-10 text-center text-xs text-slate-400"
                 >
-                  No details available.
+                  {emptyMessage || "No details available."}
                 </td>
               </tr>
             )}
@@ -350,6 +392,76 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [detail, setDetail] = useState<DetailKind | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [dbVisits, setDbVisits] = useState<DbVisit[]>([]);
+  const [metricError, setMetricError] = useState("");
+  const [salesLedger, setSalesLedger] = useState<Awaited<ReturnType<typeof loadFroSalesLedger>> | null>(null);
+  const [salesError, setSalesError] = useState("");
+  const [moneyPosition, setMoneyPosition] = useState<FroMoneyPosition | null>(null);
+  const [cashLines, setCashLines] = useState<FroCashLine[] | null>(null);
+  const [cashError, setCashError] = useState("");
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    loadVisits(storeId)
+      .then((rows) => {
+        if (!active) return;
+        setDbVisits(rows);
+        setMetricError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setMetricError(dbErrorMessage(error, "Could not load visits."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId, refresh]);
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    loadFroSalesLedger(storeId)
+      .then((rows) => {
+        if (!active) return;
+        setSalesLedger(rows);
+        setSalesError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSalesError(dbErrorMessage(error, "Could not load sales."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId, refresh]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !user?.staffId) return;
+    let active = true;
+    loadFroMoneyPosition(user.staffId)
+      .then((position) => {
+        if (!active || !position) return;
+        setMoneyPosition(position);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSalesError(dbErrorMessage(error, "Could not load cash in hand."));
+      });
+    loadFroCashLines(user.staffId)
+      .then((lines) => {
+        if (!active) return;
+        setCashLines(lines);
+        setCashError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setCashError(dbErrorMessage(error, "Could not load cash transactions."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId, user?.staffId, refresh]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -363,9 +475,11 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     window.addEventListener("company-store-sales-updated", refresh);
     window.addEventListener("nature-biotic-cash-received-updated", refresh);
     window.addEventListener("nature-biotic-store-sales-updated", refresh);
+    window.addEventListener("nature-biotic-sales-invoices-updated", refresh);
     window.addEventListener("nature-biotic-store-receipts-updated", refresh);
     window.addEventListener("nature-biotic-store-refunds-updated", refresh);
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
+    window.addEventListener("store-farmers-updated", refresh);
     window.addEventListener(attendanceUpdatedEvent, refresh);
     return () => {
       window.removeEventListener("storage", refresh);
@@ -380,9 +494,11 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
       window.removeEventListener("company-store-sales-updated", refresh);
       window.removeEventListener("nature-biotic-cash-received-updated", refresh);
       window.removeEventListener("nature-biotic-store-sales-updated", refresh);
+      window.removeEventListener("nature-biotic-sales-invoices-updated", refresh);
       window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
       window.removeEventListener("nature-biotic-store-refunds-updated", refresh);
       window.removeEventListener("nature-biotic-store-inventory-updated", refresh);
+      window.removeEventListener("store-farmers-updated", refresh);
       window.removeEventListener(attendanceUpdatedEvent, refresh);
     };
   }, []);
@@ -488,20 +604,30 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
 
   const froFarmers = useMemo(() => {
     const farmers = getFarmersByStore(storeId) || [];
+    const staffKey = String(user.staffId || "");
     return farmers
-      .filter(
-        (farmer: any) =>
+      .filter((farmer: any) => {
+        if (usesSupabaseData()) {
+          return (
+            String(farmer.status || "Active") === "Active" &&
+            Boolean(staffKey) &&
+            String(farmer.createdByStaffId || "") === staffKey
+          );
+        }
+        return (
           String(farmer.executiveName || "")
             .trim()
-            .toLowerCase() === froName,
-      )
+            .toLowerCase() === froName
+        );
+      })
       .map((farmer: any, index: number) => ({
         sno: index + 1,
         farmer: farmer.name || "-",
         village: farmer.village || "-",
         phone: farmer.phone || "-",
+        joinedDate: farmer.joinedDate || "",
       }));
-  }, [storeId, froName]);
+  }, [storeId, froName, user.staffId, refresh]);
 
   const filteredSales = useMemo(
     () =>
@@ -660,12 +786,21 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     [storeId, user?.name, user?.staffId, user?.id, refresh],
   );
 
-  const cashRows = cashPosition.lines.map((row) => ({
-    date: dateLabel(row.date),
-    receiptNo: row.ref,
-    farmerName: row.party,
-    village: "",
-    phone: "",
+  const filteredCashLines = useMemo(() => {
+    if (usesSupabaseData()) {
+      // Prefer detailed Supabase lines (per advance / per receipt).
+      if (cashLines) return cashLines;
+      if (moneyPosition) return buildFroCashBalanceLines(moneyPosition);
+      return [];
+    }
+    return buildOfflineCashBalanceLines(cashPosition);
+  }, [cashLines, moneyPosition, cashPosition]);
+
+  const cashRows = filteredCashLines.map((row) => ({
+    id: row.id,
+    transactionType: row.transactionType,
+    ref: row.ref || "—",
+    date: row.date || "",
     amount: row.amount,
   }));
 
@@ -819,7 +954,7 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
    * current hand stock becomes 0.
    */
   const currentHandStock = useMemo(() => {
-    return getFROStockByExecutive(storeId, user?.name || "").map((row, index) => ({
+    return getFROStockByExecutive(storeId, user?.name || "", user?.staffId).map((row, index) => ({
       product: `${row.productName || "-"} - ${row.packSize || "-"}`,
       qty: Number(row.currentQty || 0),
       value: Number(row.currentQty || 0) * Number(row.unitValue || 0),
@@ -829,7 +964,7 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
       unitValue: Number(row.unitValue || 0),
       sno: index + 1,
     }));
-  }, [storeId, user?.name, refresh]);
+  }, [storeId, user?.name, user?.staffId, refresh]);
 
   const handStockValue = useMemo(
     () =>
@@ -839,10 +974,20 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
 
   // Sales and collection follow the selected date.
   // Outstanding is the current unpaid balance and ignores the date filter.
-  const totalSales = periodAccounts.sales;
-  const totalCollection = periodAccounts.collection;
-  const totalOutstanding = currentAccounts.outstanding;
-  const cashInHand = cashPosition.cashInHand;
+  const froAccounts = useMemo(() => {
+    if (!usesSupabaseData() || !salesLedger) return null;
+    return summarizeFroAccounts(salesLedger, String(user.staffId || ""), dateFilter);
+  }, [salesLedger, user.staffId, dateFilter]);
+  const totalSales = usesSupabaseData() ? (froAccounts?.sales ?? null) : periodAccounts.sales;
+  const totalCollection = usesSupabaseData()
+    ? (froAccounts?.collection ?? null)
+    : periodAccounts.collection;
+  const totalOutstanding = usesSupabaseData()
+    ? (froAccounts?.outstanding ?? null)
+    : currentAccounts.outstanding;
+  const cashInHand = usesSupabaseData()
+    ? (moneyPosition?.cashInHand ?? null)
+    : cashPosition.cashInHand;
 
   const stockReceivedValue = filteredStockReceived.reduce(
     (sum, row) => sum + Number(row.value || 0),
@@ -850,6 +995,7 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   );
 
   const farmerCount = froFarmers.filter((farmer: any) => {
+    if (usesSupabaseData()) return inPeriod(farmer.joinedDate, dateFilter);
     const rawDate =
       farmer.createdAt ||
       farmer.createdDate ||
@@ -858,40 +1004,49 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
     return !rawDate || inSelectedRange(rawDate, dateFilter);
   }).length;
 
+  const ownVisits = useMemo(() => {
+    if (!usesSupabaseData()) return null;
+    const staffKey = String(user.staffId || "");
+    const seen = new Set<string>();
+    return dbVisits.filter((visit) => {
+      if (!visit.id || seen.has(visit.id)) return false;
+      seen.add(visit.id);
+      return Boolean(staffKey) && visit.froStaffId === staffKey && inPeriod(visit.visitDate, dateFilter);
+    });
+  }, [dbVisits, user.staffId, dateFilter]);
+
   const cards = [
     {
       label: "Sales",
-      value: formatCurrency(totalSales),
+      value: shownMoney(totalSales),
       icon: "payments",
       kind: "sales" as DetailKind,
       tone: "bg-emerald-50 text-emerald-700",
     },
     {
       label: "Collection",
-      value: formatCurrency(totalCollection),
+      value: shownMoney(totalCollection),
       icon: "account_balance_wallet",
       kind: "collection" as DetailKind,
       tone: "bg-blue-50 text-blue-700",
     },
     {
       label: "Cash in Hand",
-      value: formatCurrency(cashInHand),
+      value: shownMoney(cashInHand),
       icon: "savings",
       kind: "cash" as DetailKind,
       tone: "bg-emerald-50 text-emerald-700",
     },
     {
       label: "Outstanding",
-      value: formatCurrency(totalOutstanding),
+      value: shownMoney(totalOutstanding),
       icon: "receipt_long",
       kind: "outstanding" as DetailKind,
       tone: "bg-amber-50 text-amber-700",
     },
     {
       label: "Visits",
-      value: String(
-        filteredVisitRows.reduce((sum, row) => sum + Number(row.count || 0), 0),
-      ),
+      value: String(ownVisits ? ownVisits.length : filteredVisitRows.reduce((sum, row) => sum + Number(row.count || 0), 0)),
       icon: "event_available",
       kind: "visits" as DetailKind,
       tone: "bg-purple-50 text-purple-700",
@@ -920,22 +1075,56 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
   ];
 
   const detailRows: Record<DetailKind, DetailRow[]> = {
-    sales: filteredSales,
-    collection: filteredCollections,
+    sales: froAccounts
+      ? froAccounts.salesRows.map((row) => ({ ...row, date: dateLabel(row.date) }))
+      : filteredSales,
+    collection: froAccounts
+      ? froAccounts.collectionRows.map((row) => ({ ...row, date: dateLabel(row.date) }))
+      : filteredCollections,
     cash: cashRows,
-    outstanding: outstandingRows,
-    visits: filteredVisitRows,
+    outstanding: froAccounts
+      ? froAccounts.outstandingRows.map((row) => ({ ...row, date: dateLabel(row.date) }))
+      : outstandingRows,
+    visits: ownVisits
+      ? ownVisits.map((visit) => ({
+          farmerName: visit.farmerName,
+          village: visit.village || "-",
+          phone: visit.phone || "-",
+          count: 1,
+          lastVisit: dateLabel(visit.visitDate),
+        }))
+      : filteredVisitRows,
     stockReceived: filteredStockReceived,
     handStock: currentHandStock,
-    farmers: froFarmers,
+    farmers: usesSupabaseData()
+      ? froFarmers.filter((farmer: any) => inPeriod(farmer.joinedDate, dateFilter))
+      : froFarmers,
   };
 
   if (detail) {
+    const cashTotal = filteredCashLines.reduce((sum, row) => sum + row.amount, 0);
+    const cashEmpty =
+      detail === "cash" && usesSupabaseData() && !moneyPosition && cashLines == null
+        ? cashError || "Loading cash balance..."
+        : undefined;
+    const cashDiffers =
+      moneyPosition != null &&
+      Math.abs(cashTotal - moneyPosition.cashInHand) > 0.009;
+    const cashNotice =
+      detail === "cash" && usesSupabaseData()
+        ? cashError
+          ? cashError
+          : cashDiffers
+            ? `Balance entries total ${formatCurrency(cashTotal)} but Cash in Hand is ${formatCurrency(moneyPosition!.cashInHand)}. Please refresh.`
+            : undefined
+        : undefined;
     return (
       <DetailsPage
         kind={detail}
         rows={detailRows[detail]}
         onBack={() => setDetail(null)}
+        emptyMessage={cashEmpty}
+        notice={cashNotice}
       />
     );
   }
@@ -960,6 +1149,12 @@ export default function FRODashboard({ storeId }: { storeId: string }) {
           ))}
         </div>
       </div>
+      {metricError && (
+        <p className="mb-3 text-sm font-medium text-red-600">{metricError}</p>
+      )}
+      {salesError && (
+        <p className="mb-3 text-sm font-medium text-red-600">{salesError}</p>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         {cards.map((card) => (

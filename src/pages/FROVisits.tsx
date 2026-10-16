@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getFarmersByStore } from "@/lib/data";
 import { Icon } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadVisits, recordVisitDb, type DbVisit } from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type FROVisitsProps = { storeId: string };
 
@@ -15,8 +18,16 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
   const { user } = useAuth();
   const farmers = useMemo(() => {
     const froName = String(user?.name || "").trim().toLowerCase();
+    const staffKey = String(user?.staffId || "");
 
     return getFarmersByStore(storeId).filter((farmer: any) => {
+      if (usesSupabaseData()) {
+        return (
+          String(farmer.status || "Active") === "Active" &&
+          Boolean(staffKey) &&
+          String(farmer.createdByStaffId || "") === staffKey
+        );
+      }
       const through = String(farmer.through || "").trim().toLowerCase();
       const executiveName = String(farmer.executiveName || "").trim().toLowerCase();
 
@@ -26,7 +37,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
         executiveName === froName
       );
     });
-  }, [storeId, user?.name]);
+  }, [storeId, user?.name, user?.staffId]);
 
   const [showVisitHistory, setShowVisitHistory] = useState(false);
   const [activeModule, setActiveModule] = useState<"farms" | "crops" | null>(null);
@@ -38,8 +49,40 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
   const [newVillage, setNewVillage] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const [dbVisits, setDbVisits] = useState<DbVisit[]>([]);
+  const [listError, setListError] = useState("");
+
+  const reloadDbVisits = async () => {
+    try {
+      const rows = await loadVisits(storeId);
+      setDbVisits(rows);
+      setListError("");
+    } catch (error) {
+      setListError(dbErrorMessage(error, "Could not load visits."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbVisits();
+  }, [storeId]);
 
   const currentFroVisits = useMemo(() => {
+    if (usesSupabaseData()) {
+      const staffKey = String(user?.staffId || "");
+      return dbVisits.filter((v) => staffKey && v.froStaffId === staffKey).map((v) => ({
+        id: v.id,
+        storeId: v.storeId,
+        froId: v.froStaffId,
+        froName: user?.name || "",
+        date: v.visitDate,
+        farmerId: v.farmerId || "",
+        farmerName: v.farmerName,
+        village: v.village,
+        phone: v.phone,
+        createdAt: v.visitDate,
+      }));
+    }
     const key = `nature-biotic-fro-visits-v1:${storeId}`;
     try {
       const saved = JSON.parse(localStorage.getItem(key) || "[]");
@@ -53,7 +96,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
     } catch {
       return [];
     }
-  }, [storeId, user?.id, user?.name, refresh]);
+  }, [storeId, user?.id, user?.name, user?.staffId, refresh, dbVisits]);
 
   const farmerVisitRows = useMemo(() => {
     const grouped = new Map<string, any>();
@@ -161,7 +204,7 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
     setNewPhone("");
   }
 
-  function saveVisit() {
+  async function saveVisit() {
     if (!date) return;
 
     const farmerName =
@@ -170,6 +213,26 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
         : newFarmerName.trim();
 
     if (!farmerName) return;
+
+    if (usesSupabaseData()) {
+      try {
+        await recordVisitDb({
+          p_farmer_name: farmerName,
+          p_farmer_id: farmerMode === "old" && farmerId ? farmerId : null,
+          p_village: farmerMode === "old" ? selectedFarmer?.village || null : newVillage.trim() || null,
+          p_phone: farmerMode === "old" ? selectedFarmer?.phone || null : newPhone.trim() || null,
+          p_visit_date: date,
+        });
+        resetVisitForm();
+        setShowVisitForm(false);
+        await reloadDbVisits();
+        window.dispatchEvent(new Event("nature-biotic-fro-visits-updated"));
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to record visit"));
+        return;
+      }
+    }
 
     const visit = {
       id: `visit-${Date.now()}`,
@@ -471,6 +534,11 @@ export default function FROVisits({ storeId }: FROVisitsProps) {
             <div className="min-w-0">
               <h1 className="text-xl font-extrabold text-slate-800">Visits</h1>
               <p className="text-xs text-slate-500">Visit history</p>
+              {listError ? (
+                <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  {listError}
+                </p>
+              ) : null}
             </div>
           </div>
 

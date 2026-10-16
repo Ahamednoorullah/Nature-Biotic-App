@@ -119,6 +119,160 @@ async function deleteNewAuthUser(serviceKey: string, userId: string) {
   });
 }
 
+function isFroDesignation(value: string) {
+  const text = value.toLowerCase();
+  return (
+    text.includes("field") ||
+    text.includes("fro") ||
+    text.includes("sales executive")
+  );
+}
+
+async function provisionStaffLogin(input: {
+  userClient: ReturnType<typeof createClient>;
+  serviceKey: string;
+  email: string;
+  fullName: string;
+  staffId: string;
+  redirectTo: string;
+  resend: boolean;
+}) {
+  const { userClient, serviceKey, email, fullName, staffId, redirectTo, resend } = input;
+  if (!isEmail(email)) return json(400, { error: "Enter a valid email address." });
+  if (!isUuid(staffId)) return json(400, { error: "Save the staff member before creating a login." });
+  if (redirectTo && !allowedRedirect(redirectTo)) {
+    return json(400, { error: "The password setup address is not allowed." });
+  }
+
+  const staffResult = await userClient
+    .from("staff")
+    .select("id, store_id, name, email, designation, status")
+    .eq("id", staffId)
+    .maybeSingle();
+  if (staffResult.error || !staffResult.data) {
+    return json(400, { error: "That staff member was not found." });
+  }
+  const staff = staffResult.data;
+  if (!isFroDesignation(String(staff.designation || ""))) {
+    return json(400, { error: "Only a Field Representative can have a login." });
+  }
+  if (staff.status !== "active") {
+    return json(400, { error: "An inactive staff member cannot have a login." });
+  }
+  const staffEmail = String(staff.email || "").trim().toLowerCase();
+  if (staffEmail && staffEmail !== email) {
+    return json(400, { error: "The login email must match the staff member's email." });
+  }
+  const name = fullName || String(staff.name || "").trim();
+  if (!name) return json(400, { error: "Enter the staff member's name." });
+
+  const byStaff = await userClient
+    .from("profiles")
+    .select("id, role, status, store_id, staff_id, email")
+    .eq("staff_id", staffId)
+    .maybeSingle();
+  const byEmail = await userClient
+    .from("profiles")
+    .select("id, role, status, store_id, staff_id, email")
+    .eq("email", email)
+    .maybeSingle();
+  if (byStaff.error || byEmail.error) {
+    return json(400, { error: "The staff login could not be checked." });
+  }
+  const sameStaff = byStaff.data;
+  const otherAccount = byEmail.data && byEmail.data.staff_id !== staffId ? byEmail.data : null;
+  if (otherAccount && !sameStaff) {
+    return json(409, {
+      error: "An account with this email already exists. It was not changed.",
+    });
+  }
+  if (sameStaff) {
+    if (sameStaff.role !== "fro" || sameStaff.store_id !== staff.store_id) {
+      return json(409, {
+        error: "This staff member is already linked to a different account. It was not changed.",
+      });
+    }
+    if (sameStaff.status !== "active") {
+      return json(400, {
+        error: "This FRO login is disabled. The password email was not sent.",
+      });
+    }
+    if (!resend) {
+      return json(200, {
+        id: sameStaff.id,
+        email,
+        full_name: name,
+        role: "fro",
+        store_id: staff.store_id,
+        staff_id: staffId,
+        existing_account_linked: true,
+      });
+    }
+    const resent = await inviteAuthUser(serviceKey, email, name, redirectTo);
+    if (resent.error) {
+      return json(duplicateEmail(resent.error) ? 409 : 400, {
+        error: duplicateEmail(resent.error)
+          ? "This account already completed password setup. Use Forgot password to send a reset email."
+          : resent.error,
+      });
+    }
+    return json(200, {
+      id: sameStaff.id,
+      email,
+      full_name: name,
+      role: "fro",
+      store_id: staff.store_id,
+      staff_id: staffId,
+      password_setup_resent: true,
+    });
+  }
+  if (resend) {
+    return json(400, {
+      error: "This staff member does not have a login yet. Save the FRO to send the first invitation.",
+    });
+  }
+
+  const invited = await inviteAuthUser(serviceKey, email, name, redirectTo);
+  let invitedId = invited.id;
+  let linkedExisting = false;
+  if (invited.error || !invitedId) {
+    if (!duplicateEmail(invited.error || "")) {
+      return json(400, { error: invited.error || "The FRO login could not be created." });
+    }
+    invitedId = await findAuthUserId(serviceKey, email);
+    if (!invitedId) {
+      return json(409, {
+        error: "An account with this email already exists. It was not changed.",
+      });
+    }
+    linkedExisting = true;
+  }
+
+  const linked = await userClient.rpc("link_fro_user", {
+    p_user_id: invitedId,
+    p_staff_id: staffId,
+  });
+  if (linked.error) {
+    if (!linkedExisting) await deleteNewAuthUser(serviceKey, invitedId);
+    const message = linked.error.message || "The FRO login could not be linked.";
+    return json(duplicateEmail(message) ? 409 : 400, {
+      error: duplicateEmail(message)
+        ? "An account with this email already exists. It was not changed."
+        : message,
+    });
+  }
+
+  return json(200, {
+    id: invitedId,
+    email,
+    full_name: name,
+    role: "fro",
+    store_id: staff.store_id,
+    staff_id: staffId,
+    existing_account_linked: linkedExisting,
+  });
+}
+
 function existingAccountMessage(
   profile: { role: string; store_id: string | null },
   storeId: string,
@@ -186,6 +340,7 @@ Deno.serve(async (request) => {
     email?: string;
     full_name?: string;
     store_id?: string;
+    staff_id?: string;
     redirect_to?: string;
     reassign?: boolean;
     resend?: boolean;
@@ -199,9 +354,21 @@ Deno.serve(async (request) => {
   const email = String(body.email || "").trim().toLowerCase();
   const fullName = String(body.full_name || "").trim();
   const storeId = String(body.store_id || "").trim();
+  const staffId = String(body.staff_id || "").trim();
   const redirectTo = String(body.redirect_to || "").trim();
   const reassign = body.reassign === true;
   const resend = body.resend === true;
+  if (staffId) {
+    return provisionStaffLogin({
+      userClient,
+      serviceKey,
+      email,
+      fullName,
+      staffId,
+      redirectTo,
+      resend,
+    });
+  }
   if (!isEmail(email)) return json(400, { error: "Enter a valid email address." });
   if (!fullName) return json(400, { error: "Enter the store administrator's name." });
   if (!isUuid(storeId)) return json(400, { error: "Choose a saved store before creating a login." });

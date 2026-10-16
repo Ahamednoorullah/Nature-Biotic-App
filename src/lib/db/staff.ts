@@ -21,6 +21,13 @@ type StaffRow = {
   target_visits: number;
   status: string;
   id_proof_name: string | null;
+  profile_image_path: string | null;
+};
+
+type LoginStateRow = {
+  staff_id: string;
+  account_status: string;
+  user_id: string;
 };
 
 function uiStatus(value: string): Staff["status"] {
@@ -35,6 +42,11 @@ function dbStatus(value: string) {
   return "active";
 }
 
+function notifyStaffChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("nature-biotic-staff-updated"));
+}
+
 function ageFromDob(dob: string) {
   if (!dob) return 0;
   const born = new Date(dob);
@@ -46,7 +58,18 @@ function ageFromDob(dob: string) {
   return age;
 }
 
-function toStaff(row: StaffRow): Staff {
+function imageName(path: string) {
+  const file = path.split("/").pop() || "";
+  return file.replace(/^\d+-[a-z0-9]+\./, "") || file;
+}
+
+function toStaff(row: StaffRow, signedUrl?: string, login?: LoginStateRow): Staff {
+  const path = row.profile_image_path?.trim() || "";
+  const status = login?.account_status;
+  const loginStatus =
+    status === "invitation_pending" || status === "active" || status === "disabled"
+      ? status
+      : "not_invited";
   return {
     id: row.id,
     storeId: row.store_id,
@@ -60,7 +83,9 @@ function toStaff(row: StaffRow): Staff {
     joinedDate: row.joined_date || "",
     address: row.address || "",
     proofIdName: row.id_proof_name || "",
-    profileImageName: "",
+    profileImage: signedUrl || "",
+    profileImagePath: path,
+    profileImageName: path ? imageName(path) : "",
     designation: row.designation,
     level: (row.level || 1) as Staff["level"],
     targetSales: Number(row.target_sales || 0),
@@ -69,17 +94,79 @@ function toStaff(row: StaffRow): Staff {
     targetVisits: Number(row.target_visits || 0),
     role: row.designation,
     status: uiStatus(row.status),
+    accountId: login?.user_id,
+    loginStatus,
   };
 }
 
 const STAFF_COLUMNS =
-  "id, store_id, name, phone, alternative_phone, email, dob, joined_date, blood_group, address, designation, level, target_sales, target_farmers, target_farms, target_visits, status, id_proof_name";
+  "id, store_id, name, phone, alternative_phone, email, dob, joined_date, blood_group, address, designation, level, target_sales, target_farmers, target_farms, target_visits, status, id_proof_name, profile_image_path";
+
+function base64ToBlob(dataUrl: string) {
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) throw new DbError("The profile image could not be read.");
+  const mime = match[1];
+  if (mime !== "image/jpeg" && mime !== "image/png" && mime !== "image/webp") {
+    throw new DbError("Profile images must be JPG, PNG, or WEBP.");
+  }
+  const binaryStr = atob(match[2]);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+  return { blob: new Blob([bytes], { type: mime }), mime };
+}
+
+export async function uploadStaffProfileImage(
+  storeId: string,
+  staffId: string,
+  imageData: string,
+) {
+  await requireUserId();
+  const { blob, mime } = base64ToBlob(imageData);
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const filePath = `staff/${storeId}/${staffId}/${Date.now()}.${ext}`;
+  const uploaded = await db().storage.from("company-assets").upload(filePath, blob, {
+    contentType: mime,
+    upsert: false,
+  });
+  if (uploaded.error) {
+    throw new DbError(`Could not upload the profile image: ${uploaded.error.message}`);
+  }
+  return filePath;
+}
+
+async function removeStaffImage(path: string) {
+  if (!path.startsWith("staff/")) return;
+  await db().storage.from("company-assets").remove([path]);
+}
 
 export async function loadStaff() {
   await requireUserId();
-  const result = await db().from("staff").select(STAFF_COLUMNS).order("name");
+  const client = db();
+  const result = await client.from("staff").select(STAFF_COLUMNS).order("name");
   throwIfError(result.error, "Could not load staff.");
-  const rows = ((result.data || []) as StaffRow[]).map(toStaff);
+  const rawRows = (result.data || []) as StaffRow[];
+  const paths = Array.from(
+    new Set(rawRows.map((row) => row.profile_image_path).filter((path): path is string => Boolean(path?.trim()))),
+  );
+  const signedUrlMap = new Map<string, string>();
+  if (paths.length > 0) {
+    const signed = await client.storage.from("company-assets").createSignedUrls(paths, 60 * 60 * 24 * 7);
+    if (signed.error) {
+      throw new DbError(`Could not open staff profile images: ${signed.error.message}`);
+    }
+    for (const item of signed.data || []) {
+      if (item.path && item.signedUrl) signedUrlMap.set(item.path, item.signedUrl);
+    }
+  }
+  const logins = await client.rpc("staff_login_states");
+  throwIfError(logins.error, "Could not load staff login status.");
+  const loginByStaff = new Map<string, LoginStateRow>();
+  for (const row of (logins.data || []) as LoginStateRow[]) {
+    if (row.staff_id) loginByStaff.set(row.staff_id, row);
+  }
+  const rows = rawRows.map((row) =>
+    toStaff(row, row.profile_image_path ? signedUrlMap.get(row.profile_image_path) : "", loginByStaff.get(row.id)),
+  );
   adoptDatabaseStaff(rows);
   return rows;
 }
@@ -106,19 +193,79 @@ function payload(member: Staff) {
   };
 }
 
+async function saveProfileImagePath(staffId: string, path: string | null) {
+  const updated = await db().from("staff").update({ profile_image_path: path }).eq("id", staffId);
+  throwIfError(updated.error, "Could not save the profile image.");
+}
+
 export async function createStaff(member: Staff) {
   await requireUserId();
   const inserted = await db().from("staff").insert(payload(member)).select("id").single();
   throwIfError(inserted.error, "Could not save the staff member.");
   const staffId = inserted.data?.id;
   if (!staffId) throw new DbError("Could not save the staff member.");
+  const image = member.profileImage || "";
+  if (!image.startsWith("data:")) {
+    await loadStaff();
+    notifyStaffChanged();
+    return staffId;
+  }
+  let path = "";
+  try {
+    path = await uploadStaffProfileImage(member.storeId, staffId, image);
+    await saveProfileImagePath(staffId, path);
+  } catch (error) {
+    if (path) await removeStaffImage(path);
+    await db().from("staff").delete().eq("id", staffId);
+    throw error;
+  }
   await loadStaff();
+  notifyStaffChanged();
   return staffId;
 }
 
 export async function updateStaff(member: Staff) {
   await requireUserId();
-  const updated = await db().from("staff").update(payload(member)).eq("id", member.id);
-  throwIfError(updated.error, "Could not update the staff member.");
+  const image = member.profileImage || "";
+  let nextPath = member.profileImagePath || "";
+  let uploaded = "";
+  if (image.startsWith("data:")) {
+    uploaded = await uploadStaffProfileImage(member.storeId, member.id, image);
+    nextPath = uploaded;
+  } else if (!image) {
+    nextPath = "";
+  }
+  const updated = await db()
+    .from("staff")
+    .update({ ...payload(member), profile_image_path: nextPath || null })
+    .eq("id", member.id);
+  if (updated.error) {
+    if (uploaded) await removeStaffImage(uploaded);
+    throw new DbError(updated.error.message || "Could not update the staff member.");
+  }
+  if (uploaded && member.profileImagePath && member.profileImagePath !== uploaded) {
+    await removeStaffImage(member.profileImagePath);
+  }
   await loadStaff();
+  notifyStaffChanged();
+}
+
+export async function removeStaffMember(staffId: string, mode: "remove" | "deactivate") {
+  await requireUserId();
+  const result = await db().rpc("remove_staff", { p_staff_id: staffId, p_mode: mode });
+  throwIfError(result.error, "Could not remove the staff member.");
+  const outcome = result.data as { result?: string; name?: string; image_path?: string } | null;
+  const action = outcome?.result;
+  if (action !== "deleted" && action !== "deactivated" && action !== "needs_deactivation") {
+    throw new DbError("Could not remove the staff member.");
+  }
+  let imageWarning = "";
+  if (action === "deleted" && outcome?.image_path?.startsWith("staff/")) {
+    const removed = await db().storage.from("company-assets").remove([outcome.image_path]);
+    if (removed.error) {
+      imageWarning = `The profile image could not be deleted: ${removed.error.message}`;
+    }
+  }
+  if (action !== "needs_deactivation") await loadStaff();
+  return { result: action, name: outcome?.name || "", imageWarning };
 }

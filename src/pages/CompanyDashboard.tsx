@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   getStores,
   storeRegistryUpdatedEvent,
@@ -12,16 +12,26 @@ import {
   getCompanyStorePositions,
   getApprovedStorePurchaseReturns,
   settleCompanyAccount,
+  companyPeriodNetSales,
   companyRefundsUpdatedEvent,
   settleLinkedFarmerAccounts,
   resolveStoreOutstandingLimit,
   getOutstandingLimitStatus,
+  type Store,
   type StoreApprovalRequest,
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
 import { Card, StatCard, Button, Icon } from "@/components/ui";
-import { formatCurrency, formatDate, initials } from "@/lib/format";
+import { businessCalendar, formatCurrency, formatDate, initials } from "@/lib/format";
 import { createPortal } from "react-dom";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadCompanyDashboardSnapshot,
+  type CompanyDashboardSnapshot,
+} from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { decidePurchaseReturn } from "@/lib/db/rpc";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
 
 type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
 type ActualDetailView = "sales" | "collection" | "outstanding" | null;
@@ -103,39 +113,29 @@ function parseTxnDate(value: unknown): Date | null {
 }
 
 function periodBounds(filter: DateFilter) {
-  const now = new Date();
-  const end = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    59,
-    999,
-  );
+  const today = businessCalendar();
+  const end = new Date(today.year, today.month - 1, today.day, 23, 59, 59, 999);
   let start: Date;
 
   switch (filter) {
     case "today":
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      start = new Date(today.year, today.month - 1, today.day);
       break;
     case "weekly": {
-      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const day = start.getDay();
-      const diffToMonday = day === 0 ? 6 : day - 1;
-      start.setDate(start.getDate() - diffToMonday);
+      start = new Date(today.year, today.month - 1, today.day);
+      start.setDate(start.getDate() - (today.weekday === 0 ? 6 : today.weekday - 1));
       break;
     }
     case "monthly":
-      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      start = new Date(today.year, today.month - 1, 1);
       break;
     case "quarterly": {
-      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
-      start = new Date(now.getFullYear(), quarterStartMonth, 1);
+      const quarterStartMonth = Math.floor((today.month - 1) / 3) * 3;
+      start = new Date(today.year, quarterStartMonth, 1);
       break;
     }
     case "yearly":
-      start = new Date(now.getFullYear(), 0, 1);
+      start = new Date(today.year, 0, 1);
       break;
   }
 
@@ -158,6 +158,11 @@ function displayDate(value: unknown) {
 function money(value: unknown) {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function actualSalesCardValue(netSales: number) {
+  if (netSales < 0) return `${formatCurrency(0)} (${formatCurrency(netSales)})`;
+  return formatCurrency(netSales);
 }
 
 function ageBucket(invoiceDate: Date | null) {
@@ -312,7 +317,10 @@ function buildAdminDashboard(filter: DateFilter) {
       receipts: grossCollectionByStore.get(storeId)?.amount || 0,
       refunds: refundsByStore.get(storeId) || 0,
     });
-    actualSales += settled.netSales;
+    actualSales += companyPeriodNetSales(
+      grossSalesByStore.get(storeId)?.sales || 0,
+      returnsByStore.get(storeId) || 0,
+    );
     actualCollection += settled.collection;
   });
 
@@ -437,6 +445,177 @@ function buildAdminDashboard(filter: DateFilter) {
   };
 }
 
+function buildSnapshotDashboard(filter: DateFilter, snapshot: CompanyDashboardSnapshot) {
+  const storeName = new Map(snapshot.stores.map((store) => [store.id, store.name]));
+  const nameOf = (storeId: string) => storeName.get(storeId) || "Store";
+
+  const actualSalesList: SalesDetail[] = [];
+  const actualCollectionList: CollectionDetail[] = [];
+  const grossSalesByStore = new Map<string, number>();
+  const grossCollectionByStore = new Map<string, number>();
+  const returnsByStore = new Map<string, number>();
+  const cashRefundsByStore = new Map<string, number>();
+
+  snapshot.companyInvoices.forEach((invoice) => {
+    if (!inPeriod(invoice.date, filter) || invoice.total <= 0) return;
+    grossSalesByStore.set(
+      invoice.storeId,
+      (grossSalesByStore.get(invoice.storeId) || 0) + invoice.total,
+    );
+    actualSalesList.push({
+      date: displayDate(invoice.date),
+      invoiceNo: invoice.invoiceNo,
+      storeName: nameOf(invoice.storeId),
+      value: invoice.total,
+    });
+  });
+  snapshot.purchaseReturns.forEach((row) => {
+    if (!inPeriod(row.date, filter) || row.amount <= 0) return;
+    returnsByStore.set(row.storeId, (returnsByStore.get(row.storeId) || 0) + row.amount);
+    actualSalesList.push({
+      date: displayDate(row.date),
+      invoiceNo: `Purchase Return ${row.returnNo}`,
+      storeName: nameOf(row.storeId),
+      value: -row.amount,
+    });
+  });
+  snapshot.companyReceipts.forEach((receipt) => {
+    if (!inPeriod(receipt.date, filter) || receipt.amount <= 0) return;
+    grossCollectionByStore.set(
+      receipt.storeId,
+      (grossCollectionByStore.get(receipt.storeId) || 0) + receipt.amount,
+    );
+    actualCollectionList.push({
+      date: displayDate(receipt.date),
+      receiptNo: receipt.receiptNo || "-",
+      storeName: nameOf(receipt.storeId),
+      amount: receipt.amount,
+    });
+  });
+  snapshot.companyRefunds.forEach((refund) => {
+    if (!inPeriod(refund.date, filter) || refund.cashPaid <= 0) return;
+    cashRefundsByStore.set(
+      refund.storeId,
+      (cashRefundsByStore.get(refund.storeId) || 0) + refund.cashPaid,
+    );
+    actualCollectionList.push({
+      date: displayDate(refund.date),
+      receiptNo: `Refund ${refund.refundNo}`,
+      storeName: nameOf(refund.storeId),
+      amount: -refund.cashPaid,
+    });
+  });
+
+  let actualSales = 0;
+  let actualCollection = 0;
+  const periodStoreIds = new Set<string>([
+    ...grossSalesByStore.keys(),
+    ...grossCollectionByStore.keys(),
+    ...returnsByStore.keys(),
+    ...cashRefundsByStore.keys(),
+  ]);
+  periodStoreIds.forEach((storeId) => {
+    const settled = settleCompanyAccount({
+      grossSales: grossSalesByStore.get(storeId) || 0,
+      salesReturns: returnsByStore.get(storeId) || 0,
+      receipts: grossCollectionByStore.get(storeId) || 0,
+      refunds: cashRefundsByStore.get(storeId) || 0,
+    });
+    actualSales += companyPeriodNetSales(
+      grossSalesByStore.get(storeId) || 0,
+      returnsByStore.get(storeId) || 0,
+    );
+    actualCollection += settled.collection;
+  });
+
+  const invoicedByStore = new Map<string, number>();
+  const receivedByStore = new Map<string, number>();
+  const appliedRefundByStore = new Map<string, number>();
+  snapshot.companyInvoices.forEach((invoice) => {
+    invoicedByStore.set(invoice.storeId, (invoicedByStore.get(invoice.storeId) || 0) + invoice.total);
+  });
+  snapshot.companyReceipts.forEach((receipt) => {
+    receivedByStore.set(receipt.storeId, (receivedByStore.get(receipt.storeId) || 0) + receipt.amount);
+  });
+  snapshot.companyRefunds.forEach((refund) => {
+    appliedRefundByStore.set(
+      refund.storeId,
+      (appliedRefundByStore.get(refund.storeId) || 0) + refund.appliedToOutstanding,
+    );
+  });
+  let actualOutstanding = 0;
+  const outstandingMap = new Map<string, OutstandingDetail>();
+  snapshot.stores.forEach((store) => {
+    const due = Math.max(
+      0,
+      (invoicedByStore.get(store.id) || 0) -
+        (receivedByStore.get(store.id) || 0) -
+        (appliedRefundByStore.get(store.id) || 0),
+    );
+    actualOutstanding += due;
+    if (due <= 0) return;
+    outstandingMap.set(store.name, {
+      storeName: store.name,
+      under30: due,
+      over30: 0,
+      over60: 0,
+      over90: 0,
+      totalAmount: due,
+    });
+  });
+
+  const storeRows: StoreDashboardRow[] = snapshot.stores.map((store) => {
+    const invoices = snapshot.salesInvoices.filter((row) => row.storeId === store.id);
+    const returns = snapshot.salesReturns.filter(
+      (row) => row.storeId === store.id && row.status.toLowerCase() === "approved",
+    );
+    const receipts = snapshot.storeReceipts.filter((row) => row.storeId === store.id);
+    const refunds = snapshot.storeRefunds.filter((row) => row.storeId === store.id);
+    const periodInvoices = invoices.filter((row) => inPeriod(row.date, filter));
+    const periodReturns = returns.filter((row) => inPeriod(row.date, filter));
+    const periodReceipts = receipts.filter((row) => inPeriod(row.date, filter));
+    const periodRefunds = refunds.filter((row) => inPeriod(row.date, filter));
+    const settled = settleLinkedFarmerAccounts({
+      invoices: periodInvoices,
+      receipts: periodReceipts,
+      returns: periodReturns,
+      refunds: periodRefunds,
+      linkInvoices: invoices,
+      linkReturns: returns,
+    });
+    const current = settleLinkedFarmerAccounts({
+      invoices,
+      receipts,
+      returns,
+      refunds,
+      linkInvoices: invoices,
+      linkReturns: returns,
+    });
+    return {
+      storeId: store.id,
+      sales: settled.sales,
+      collection: settled.collection,
+      outstanding: current.outstanding,
+      farmers: snapshot.activeFarmersByStore.find((row) => row.storeId === store.id)?.count || 0,
+    };
+  });
+
+  return {
+    actualSales,
+    actualCollection,
+    actualOutstanding,
+    marketSales: storeRows.reduce((sum, row) => sum + row.sales, 0),
+    marketCollection: storeRows.reduce((sum, row) => sum + row.collection, 0),
+    marketOutstanding: storeRows.reduce((sum, row) => sum + row.outstanding, 0),
+    marketFarmers: snapshot.activeFarmersByStore.reduce((sum, row) => sum + row.count, 0),
+    storeRows,
+    actualSalesList,
+    actualCollectionList,
+    actualOutstandingList: Array.from(outstandingMap.values()),
+    stores: snapshot.stores,
+  };
+}
+
 export default function CompanyDashboard() {
   const { goStore, goCompany } = useNav();
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
@@ -446,9 +625,53 @@ export default function CompanyDashboard() {
   const [approvalRequests, setApprovalRequests] = useState<
     StoreApprovalRequest[]
   >([]);
+  const [approvalError, setApprovalError] = useState("");
+  const approvingRef = useRef(false);
   const [showApprovals, setShowApprovals] = useState(false);
 
   const [dashboardVersion, setDashboardVersion] = useState(0);
+  const [snapshot, setSnapshot] = useState<CompanyDashboardSnapshot | null>(null);
+  const [dashboardError, setDashboardError] = useState("");
+  const [dashboardLoading, setDashboardLoading] = useState(usesSupabaseData());
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    refreshPurchasingData()
+      .then(() => {
+        if (active) setApprovalRequests(getStoreApprovalRequests());
+      })
+      .catch((error) => {
+        if (!active) return;
+        setApprovalError(dbErrorMessage(error, "Could not load store approvals."));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    setDashboardLoading(true);
+    loadCompanyDashboardSnapshot()
+      .then((rows) => {
+        if (!active) return;
+        setSnapshot(rows);
+        setDashboardError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSnapshot(null);
+        setDashboardError(dbErrorMessage(error, "Could not load the company dashboard."));
+      })
+      .finally(() => {
+        if (active) setDashboardLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [dashboardVersion]);
 
   useEffect(() => {
     const refresh = () => {
@@ -463,6 +686,9 @@ export default function CompanyDashboard() {
     window.addEventListener(companyRefundsUpdatedEvent, refresh);
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
     window.addEventListener("nature-biotic-store-receipts-updated", refresh);
+    window.addEventListener("nature-biotic-sales-invoices-updated", refresh);
+    window.addEventListener("nature-biotic-sales-returns-updated", refresh);
+    window.addEventListener("nature-biotic-store-refunds-updated", refresh);
     window.addEventListener("fro-stock-updated", refresh);
     window.addEventListener(storeRegistryUpdatedEvent, refresh);
     window.addEventListener("focus", refresh);
@@ -483,6 +709,9 @@ export default function CompanyDashboard() {
         "nature-biotic-store-receipts-updated",
         refresh,
       );
+      window.removeEventListener("nature-biotic-sales-invoices-updated", refresh);
+      window.removeEventListener("nature-biotic-sales-returns-updated", refresh);
+      window.removeEventListener("nature-biotic-store-refunds-updated", refresh);
       window.removeEventListener("fro-stock-updated", refresh);
       window.removeEventListener(storeRegistryUpdatedEvent, refresh);
       window.removeEventListener("focus", refresh);
@@ -494,19 +723,77 @@ export default function CompanyDashboard() {
   );
   const approveRequest = (id: string) => {
     const request = approvalRequests.find((row) => row.id === id);
-    if (!request || request.status !== "Pending") return;
+    if (!request || request.status !== "Pending" || approvingRef.current) return;
     if (request.type === "Purchase Order") {
-      setApprovalRequests(approveStorePurchaseOrder(id));
+      try {
+        setApprovalRequests(approveStorePurchaseOrder(id));
+        setApprovalError("");
+      } catch (error) {
+        setApprovalError(dbErrorMessage(error, "This purchase order could not be approved."));
+      }
       return;
     }
-    setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
+    if (!usesSupabaseData()) {
+      setApprovalRequests(updateStoreApprovalRequestStatus(id, "Approved"));
+      return;
+    }
+    approvingRef.current = true;
+    setApprovalError("");
+    decidePurchaseReturn(id, "approved")
+      .then(() =>
+        refreshPurchasingData().catch((error) => {
+          setApprovalError(
+            dbErrorMessage(error, "The return was approved, but the list could not be refreshed."),
+          );
+        }),
+      )
+      .then(() => {
+        setApprovalRequests(getStoreApprovalRequests());
+      })
+      .catch((error) => {
+        setApprovalError(dbErrorMessage(error, "This purchase return could not be approved."));
+        return refreshPurchasingData()
+          .then(() => setApprovalRequests(getStoreApprovalRequests()))
+          .catch(() => undefined);
+      })
+      .finally(() => {
+        approvingRef.current = false;
+      });
   };
 
   const allStores = useMemo(() => getStores(), [dashboardVersion]);
-  const dashboard = useMemo(
+  const localDashboard = useMemo(
     () => buildAdminDashboard(dateFilter),
     [dateFilter, dashboardVersion],
   );
+  const liveDashboard = useMemo(
+    () => (snapshot ? buildSnapshotDashboard(dateFilter, snapshot) : null),
+    [dateFilter, snapshot],
+  );
+  const dashboard = usesSupabaseData()
+    ? liveDashboard || {
+        actualSales: 0,
+        actualCollection: 0,
+        actualOutstanding: 0,
+        marketSales: 0,
+        marketCollection: 0,
+        marketOutstanding: 0,
+        marketFarmers: 0,
+        storeRows: [],
+        actualSalesList: [],
+        actualCollectionList: [],
+        actualOutstandingList: [],
+        stores: [],
+      }
+    : localDashboard;
+  const overviewStores = usesSupabaseData()
+    ? (liveDashboard?.stores || []).map((store) => ({
+        id: store.id,
+        name: store.name,
+        outstandingLimit: store.outstandingLimit ?? undefined,
+        outstandingLimitAction: store.outstandingLimitAction,
+      }))
+    : allStores;
   const data = {
     actual: {
       receivable: dashboard.actualSales,
@@ -603,6 +890,22 @@ export default function CompanyDashboard() {
       )}
 
       <div className="hidden h-[30px] lg:block" />
+
+      {dashboardError ? (
+        <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {dashboardError}
+        </div>
+      ) : dashboardLoading ? (
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading dashboard figures…
+        </div>
+      ) : null}
+
+      {approvalError ? (
+        <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {approvalError}
+        </div>
+      ) : null}
 
       {pendingApprovals.length > 0 && (
         <section className="mb-8">
@@ -713,7 +1016,7 @@ export default function CompanyDashboard() {
           >
             <StatCard
               label="Sales"
-              value={formatCurrency(data.actual.receivable)}
+              value={actualSalesCardValue(data.actual.receivable)}
               icon="account_balance_wallet"
               color="brand"
             />
@@ -817,7 +1120,7 @@ export default function CompanyDashboard() {
         </div>
 
         <div className="flex flex-col gap-5">
-          {allStores.map((store, index) => {
+          {overviewStores.map((store, index) => {
             const metrics = dashboard.storeRows.find(
               (row) => row.storeId === store.id,
             ) || {
@@ -826,7 +1129,9 @@ export default function CompanyDashboard() {
               outstanding: 0,
               farmers: 0,
             };
-            const outstandingLimit = resolveStoreOutstandingLimit(store);
+            const outstandingLimit = resolveStoreOutstandingLimit({
+              outstandingLimit: store.outstandingLimit,
+            } as Store);
             const limitReached =
               getOutstandingLimitStatus(
                 metrics.outstanding,

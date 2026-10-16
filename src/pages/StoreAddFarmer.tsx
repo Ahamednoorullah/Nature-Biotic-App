@@ -3,10 +3,12 @@ import { useNav } from "@/context/NavContext";
 import { useAuth } from "@/context/AuthContext";
 import {
   addFarmer,
+  updateFarmer,
+  getFarmerById,
   cropTypes,
   customerCategories,
 } from "@/lib/data";
-import { createFarmer } from "@/lib/db/farmers";
+import { createFarmer, updateFarmer as updateFarmerDb } from "@/lib/db/farmers";
 import { dbErrorMessage } from "@/lib/db/errors";
 import { usesSupabaseData } from "@/lib/db/mode";
 import {
@@ -76,18 +78,97 @@ const emptyForm: FormState = {
   customerCategory: "Retail",
 };
 
-export default function StoreAddFarmer({ storeId }: { storeId: string }) {
+export default function StoreAddFarmer({
+  storeId,
+  editFarmerId,
+  onCancel,
+  onSaved,
+}: {
+  storeId: string;
+  editFarmerId?: string;
+  onCancel?: () => void;
+  onSaved?: () => void;
+}) {
   const { goStorePage } = useNav();
   const { user } = useAuth();
   const isFRO = user?.role === "fro";
+  const existingFarmer = editFarmerId ? getFarmerById(editFarmerId) : null;
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [profileImage, setProfileImage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+
+  useEffect(() => {
+    if (!existingFarmer) return;
+    const firstFarm = existingFarmer.farms?.[0];
+    const firstFarmAny = firstFarm as any;
+    setForm({
+      name: existingFarmer.name || "",
+      phone: existingFarmer.phone || "",
+      altMobile: existingFarmer.altMobile || "",
+      email: existingFarmer.email || "",
+      aadhar: existingFarmer.aadhar || "",
+      gst: existingFarmer.gst || "",
+      village: firstFarm?.village || existingFarmer.village || "",
+      landmark: firstFarmAny?.landmark || existingFarmer.landmark || "",
+      district: firstFarmAny?.district || existingFarmer.district || "",
+      state: firstFarmAny?.state || existingFarmer.state || "Tamil Nadu",
+      pincode: firstFarmAny?.pincode || existingFarmer.pincode || "",
+      farmerAddress: firstFarm?.farmAddress || existingFarmer.farmAddress || "",
+      customerCategory: existingFarmer.customerCategory || "Retail",
+    });
+    if (existingFarmer.profileImage) {
+      setProfileImage(existingFarmer.profileImage);
+    }
+    if (existingFarmer.farms && existingFarmer.farms.length > 1) {
+      setFarms(
+        existingFarmer.farms.slice(1).map((f, idx) => {
+          const farmAny = f as any;
+          return {
+            id: f.id || `farm-${idx + 1}`,
+            village: f.village || "",
+            landmark: String(farmAny.landmark || ""),
+            district: String(farmAny.district || ""),
+            state: String(farmAny.state || "Tamil Nadu"),
+            pincode: String(farmAny.pincode || ""),
+            farmAddress: f.farmAddress || "",
+            landSize: String(
+              (f.crops || []).reduce((s, c) => s + Number(c.landSize || 0), 0) || "",
+            ),
+            crops: (f.crops || []).map((c) => ({
+              id: c.id,
+              cropType: c.cropType,
+              landSize: String(c.landSize || ""),
+              soilType: c.soilType || "",
+              waterSource: c.waterSource || "",
+            })),
+          };
+        }),
+      );
+    }
+    const initialCrops = firstFarm?.crops || existingFarmer.crops || [];
+    if (initialCrops.length > 0) {
+      setCrops(
+        initialCrops.map((c) => ({
+          id: c.id || `${Date.now()}-${c.cropType}`,
+          cropType: c.cropType,
+          landSize: String(c.landSize || ""),
+          soilType: c.soilType || "",
+          waterSource: c.waterSource || "",
+        })),
+      );
+      const totalFirstFarmAcres = initialCrops.reduce(
+        (s, c) => s + Number(c.landSize || 0),
+        0,
+      );
+      setFarmLandSize(totalFirstFarmAcres > 0 ? String(totalFirstFarmAcres) : "");
+    }
+  }, [existingFarmer]);
 
   function handleProfileUpload(file?: File) {
     if (!file) return;
@@ -360,6 +441,8 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
     const recordedOn = new Date().toISOString().split("T")[0];
 
     const draft = {
+      ...(existingFarmer ? existingFarmer : {}),
+      id: editFarmerId || undefined,
       storeId,
       name: form.name.trim(),
       phone: form.phone.trim(),
@@ -392,35 +475,60 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
         landSize: Number(crop.landSize || 0),
       })),
       profileImage,
-      through: isFRO ? "Executive" : "Direct",
-      executiveName: isFRO ? (user?.name || "").trim() : "",
-      createdByStaffId: isFRO ? user?.staffId || user?.id : undefined,
-      createdByUserId: isFRO ? user?.id : undefined,
+      through: isFRO ? "Executive" : existingFarmer?.through || "Direct",
+      executiveName: isFRO
+        ? (user?.name || "").trim()
+        : existingFarmer?.executiveName || "",
+      createdByStaffId: isFRO
+        ? user?.staffId
+        : existingFarmer?.createdByStaffId,
+      createdByUserId: isFRO ? user?.id : existingFarmer?.createdByUserId,
       cropType3: undefined,
       cropType2: undefined,
     } as any;
 
-    if (usesSupabaseData()) await createFarmer(draft);
-    else addFarmer(draft);
+    if (editFarmerId) {
+      if (usesSupabaseData()) await updateFarmerDb(draft);
+      else updateFarmer(draft);
+    } else if (usesSupabaseData()) {
+      await createFarmer(draft);
+    } else {
+      addFarmer(draft);
+    }
     return true;
   }
 
   async function handleSave() {
+    if (saving) return;
     setSaveError("");
+    if (isFRO && usesSupabaseData() && !user?.staffId) {
+      setSaveError("This login is not linked to a staff record.");
+      return;
+    }
+    setSaving(true);
     try {
       if (!(await saveFarmerRecord())) return;
       setSaved(true);
       setTimeout(() => {
         setSaved(false);
-        goStorePage("farmers");
+        if (onSaved) onSaved();
+        else goStorePage("farmers");
       }, 700);
     } catch (error) {
       setSaveError(dbErrorMessage(error, "Could not save the farmer."));
+    } finally {
+      setSaving(false);
     }
   }
 
   async function handleSaveAndAdd() {
+    if (saving) return;
     setSaveError("");
+    if (isFRO && usesSupabaseData() && !user?.staffId) {
+      setSaveError("This login is not linked to a staff record.");
+      return;
+    }
+    setSaving(true);
     try {
       if (!(await saveFarmerRecord())) return;
       setSaved(true);
@@ -434,6 +542,8 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
       }, 700);
     } catch (error) {
       setSaveError(dbErrorMessage(error, "Could not save the farmer."));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -458,17 +568,19 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
-          onClick={() => goStorePage("farmers")}
+          onClick={onCancel || (() => goStorePage("farmers"))}
           className="p-2 rounded-xl hover:bg-slate-100 transition-base text-slate-500"
         >
           <Icon name="arrow_back" size={22} />
         </button>
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
-            Add New Farmer
+            {editFarmerId ? "Edit Farmer" : "Add New Farmer"}
           </h1>
           <p className="text-slate-500 mt-1">
-            Register a new farmer or customer in the system.
+            {editFarmerId
+              ? "Update farmer registration, contact details, farms and crop information."
+              : "Register a new farmer or customer in the system."}
           </p>
         </div>
       </div>
@@ -795,21 +907,23 @@ export default function StoreAddFarmer({ storeId }: { storeId: string }) {
         <div className="flex flex-col sm:flex-row gap-3 pt-2 pb-6">
           <Button
             variant="secondary"
-            onClick={() => goStorePage("farmers")}
+            onClick={onCancel || (() => goStorePage("farmers"))}
             className="sm:mr-auto"
           >
             <Icon name="close" size={18} /> Cancel
           </Button>
           <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              variant="secondary"
-              onClick={handleSaveAndAdd}
-              disabled={!isValid}
-            >
-              <Icon name="add" size={18} /> Save & Add Another
-            </Button>
+            {!editFarmerId && (
+              <Button
+                variant="secondary"
+                onClick={handleSaveAndAdd}
+                disabled={!isValid}
+              >
+                <Icon name="add" size={18} /> Save & Add Another
+              </Button>
+            )}
             <Button onClick={handleSave} disabled={!isValid}>
-              <Icon name="save" size={18} /> Save Farmer
+              <Icon name="save" size={18} /> {editFarmerId ? "Save Changes" : "Save Farmer"}
             </Button>
           </div>
         </div>

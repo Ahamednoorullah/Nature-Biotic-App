@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Card,
   Badge,
@@ -8,7 +8,7 @@ import {
   EmptyState,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
+import { formatCurrency, formatDate, formatRoundOff, numberToWords, roundOffToRupee } from "@/lib/format";
 import {
   products as allProducts,
   getStore,
@@ -18,6 +18,11 @@ import {
   type Product,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadStoreCreditNotes, saveStoreCreditNoteDb, issueStoreCreditNoteDb } from "@/lib/db/financials";
+import { loadEligibleSalesReturnCredits, loadSalesInvoices, type EligibleSalesReturnCredit } from "@/lib/db/sales";
+import { peekDocumentNo, type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type StoreSaleType = "Direct" | "Executive";
 
@@ -73,6 +78,8 @@ type CreditNote = {
   sgst: number;
   cgst: number;
   igst: number;
+  roundOff?: number;
+  documentTotal?: number;
   total: number;
   storeLocation: string;
   placeofreturn: string;
@@ -97,6 +104,7 @@ type CreditNote = {
   through?: StoreSaleType;
   executiveName?: string;
   catalogProductId?: string;
+  lines?: CreditNote[];
 };
 
 type AddedProduct = {
@@ -119,7 +127,47 @@ type AddedProduct = {
   igst: number;
   total: number;
   catalogProductId?: string;
+  sourceItemId?: string;
+  farmerId?: string;
+  returnNo?: string;
+  hsnCode?: string;
+  availableQty?: number;
 };
+
+function money(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function wholeCount(value: number): number | null {
+  if (!Number.isFinite(value) || value < 0) return null;
+  const nearest = Math.round(value);
+  if (Math.abs(value - nearest) > 0.000001) return null;
+  return nearest;
+}
+
+function typedWholeCount(raw: string): number | null {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  if (!Number.isSafeInteger(value)) return null;
+  return value;
+}
+
+function creditPortion(line: EligibleSalesReturnCredit, quantity: number) {
+  const ratio = line.returnedQty > 0 ? quantity / line.returnedQty : 0;
+  const taxable = money(line.taxableAmount * ratio);
+  const sgst = money(line.sgst * ratio);
+  const cgst = money(line.cgst * ratio);
+  const igst = money(line.igst * ratio);
+  return {
+    discountAmount: money(line.discountAmount * ratio),
+    taxableAmount: taxable,
+    sgst,
+    cgst,
+    igst,
+    total: money(taxable + sgst + cgst + igst),
+  };
+}
 
 const statusColor: Record<CreditNoteStatus, "green" | "amber" | "red" | "slate"> = {
   Draft: "slate",
@@ -147,6 +195,7 @@ export default function StoreCreditNotes({
   const storageKey = `nature-biotic-store-credit-notes-v3:${currentStoreId}`;
 
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
+    if (usesSupabaseData()) return [];
     try {
       const saved = localStorage.getItem(storageKey);
       return saved ? JSON.parse(saved) : [];
@@ -155,6 +204,90 @@ export default function StoreCreditNotes({
     }
   });
 
+  const [dbInvoices, setDbInvoices] = useState<StoredSaleInvoice[]>([]);
+  const [listError, setListError] = useState("");
+  const [invoiceError, setInvoiceError] = useState("");
+
+  const reloadDbCreditNotes = async () => {
+    try {
+      const dbRows = await loadStoreCreditNotes(currentStoreId);
+      const flat: CreditNote[] = dbRows.map((row) => ({
+        id: row.id,
+        creditNoteNo: row.creditNoteNo,
+        party: row.farmer,
+        Date: row.date,
+        amount: row.amount,
+        sgst: row.sgst,
+        cgst: row.cgst,
+        igst: row.igst,
+        roundOff: row.roundOff,
+        documentTotal: row.total,
+        total: row.total,
+        storeLocation: row.placeOfSupply || "Tamil Nadu",
+        placeofreturn: "",
+        storeId: currentStoreId,
+        status: row.status as CreditNoteStatus,
+        taxableAmount: row.amount,
+        through: row.through,
+        farmerPhone: row.phone,
+        farmerVillage: row.village,
+        lines: (row.items || []).map((item, idx) => ({
+          id: `${row.id}:${idx}`,
+          creditNoteNo: row.creditNoteNo,
+          party: row.farmer,
+          Date: row.date,
+          amount: item.taxableAmount,
+          sgst: item.sgst,
+          cgst: item.cgst,
+          igst: item.igst,
+          roundOff: row.roundOff,
+          documentTotal: row.total,
+          total: item.total,
+          storeLocation: row.placeOfSupply || "Tamil Nadu",
+          placeofreturn: "",
+          storeId: currentStoreId,
+          product: item.productName,
+          quantity: item.quantity,
+          reason: item.reason,
+          status: row.status as CreditNoteStatus,
+          pkgsize: item.packSize,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          sellingPrice: item.unitPrice,
+          discountPercent: item.discountPercent,
+          discountAmount: item.discountAmount,
+          taxableAmount: item.taxableAmount,
+          taxPercent: item.taxPercent,
+          through: row.through,
+          farmerPhone: row.phone,
+          farmerVillage: row.village,
+        })),
+      }));
+      setCreditNotes(flat);
+      setListError("");
+    } catch (error) {
+      setCreditNotes([]);
+      setListError(dbErrorMessage(error, "Could not load store credit notes."));
+    }
+  };
+
+  const reloadDbInvoices = async () => {
+    try {
+      const invoices = await loadSalesInvoices(currentStoreId);
+      setDbInvoices(invoices as unknown as StoredSaleInvoice[]);
+      setInvoiceError("");
+    } catch (error) {
+      setDbInvoices([]);
+      setInvoiceError(dbErrorMessage(error, "Could not load sales invoices."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbCreditNotes();
+    void reloadDbInvoices();
+  }, [currentStoreId]);
+
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState<
     "all" | "today" | "monthly" | "quarterly" | "yearly" | "custom"
@@ -162,7 +295,33 @@ export default function StoreCreditNotes({
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [salesReturnCredits, setSalesReturnCredits] = useState<EligibleSalesReturnCredit[]>([]);
+  const [salesReturnCreditsLoading, setSalesReturnCreditsLoading] = useState(false);
+  const [salesReturnCreditError, setSalesReturnCreditError] = useState("");
+  const [creditQtyRaw, setCreditQtyRaw] = useState("");
   const [editingCreditNo, setEditingCreditNo] = useState("");
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !showCreate) return;
+    let active = true;
+    setSalesReturnCreditsLoading(true);
+    setSalesReturnCreditError("");
+    loadEligibleSalesReturnCredits(currentStoreId)
+      .then((rows) => {
+        if (active) setSalesReturnCredits(rows);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSalesReturnCredits([]);
+        setSalesReturnCreditError(dbErrorMessage(error, "Could not load returned products."));
+      })
+      .finally(() => {
+        if (active) setSalesReturnCreditsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentStoreId, showCreate]);
   const [selectesdreditNote, setSelectesdreditNote] = useState<{
     header: CreditNote;
     rows: CreditNote[];
@@ -175,6 +334,9 @@ export default function StoreCreditNotes({
   const currentStore = getStore(currentStoreId);
 
   const storeSalesInvoices = useMemo<StoredSaleInvoice[]>(() => {
+    if (usesSupabaseData()) {
+      return dbInvoices;
+    }
     try {
       const raw = localStorage.getItem(
         `${STORE_SALES_INVOICE_STORAGE_KEY}:${currentStoreId}`,
@@ -183,7 +345,7 @@ export default function StoreCreditNotes({
     } catch {
       return [];
     }
-  }, [currentStoreId, showCreate]);
+  }, [currentStoreId, showCreate, dbInvoices]);
   const [storeId, setStoreId] = useState(currentStoreId);
   const [placeOfSupply, setPlaceOfSupply] = useState("Tamil Nadu");
   const [farmerId, setFarmerId] = useState("");
@@ -258,8 +420,23 @@ export default function StoreCreditNotes({
       .filter((row) => row.name);
   }, [currentStoreId]);
 
-  const canCreate =
-    Boolean(creditNoteNo && storeId && returnDate && added.length > 0);
+  const selectedReturnLine = salesReturnCredits.find((line) => line.id === entry.productId);
+  const returnLinesReady =
+    added.length > 0 &&
+    added.every((item) => {
+      const line = salesReturnCredits.find((row) => row.id === item.sourceItemId);
+      const available = line ? wholeCount(line.availableQty) : null;
+      return Boolean(
+        line &&
+          available != null &&
+          Number.isInteger(item.quantity) &&
+          item.quantity > 0 &&
+          item.quantity <= available,
+      );
+    });
+  const canCreate = usesSupabaseData()
+    ? Boolean(creditNoteNo && returnDate && returnLinesReady)
+    : Boolean(creditNoteNo && storeId && returnDate && added.length > 0);
 
   function nextCreditNo() {
     return nextStoreDocumentNo(
@@ -586,7 +763,82 @@ export default function StoreCreditNotes({
     return Number.POSITIVE_INFINITY;
   }
 
+  function returnQuantityMessage(line: EligibleSalesReturnCredit, raw: string) {
+    const available = wholeCount(line.availableQty);
+    const label = `${line.productName} ${line.packSize}`.trim();
+    if (available == null) return `Available quantity for ${label} is not a whole number.`;
+    if (!raw.trim()) return "";
+    const quantity = typedWholeCount(raw);
+    if (quantity == null) return `Credit quantity for ${label} must be a whole number.`;
+    const pending = added
+      .filter((item) => item.sourceItemId === line.id)
+      .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    if (quantity + pending > available) {
+      return `Credit quantity for ${label} cannot exceed ${Math.max(0, available - pending)}.`;
+    }
+    return "";
+  }
+
+  function addReturnedProduct() {
+    const line = salesReturnCredits.find((row) => row.id === entry.productId);
+    if (!line) {
+      setSalesReturnCreditError("Select a product from an approved sales return.");
+      return;
+    }
+    const message = returnQuantityMessage(line, creditQtyRaw);
+    const quantity = typedWholeCount(creditQtyRaw);
+    if (message || quantity == null || quantity <= 0) {
+      setSalesReturnCreditError(message || "Enter a credit quantity greater than zero.");
+      return;
+    }
+    if (added.some((item) => item.sourceItemId === line.id)) {
+      setSalesReturnCreditError("This returned product is already on the credit note.");
+      return;
+    }
+    const part = creditPortion(line, quantity);
+    setAdded((prev) => [
+      ...prev,
+      {
+        key: line.id,
+        productId: line.id,
+        sourceItemId: line.id,
+        farmerId: line.farmerId,
+        returnNo: line.returnNo,
+        hsnCode: line.hsnCode,
+        availableQty: line.availableQty,
+        productName: line.productName,
+        pkgsize: line.packSize,
+        batchNo: line.batchNo,
+        expiryDate: line.expiryDate,
+        quantity,
+        sellingPrice: line.unitPrice,
+        discount: line.discountPercent,
+        reason: line.reason,
+        soldQuantity: line.returnedQty,
+        taxPercent: line.taxPercent,
+        ...part,
+      },
+    ]);
+    setSalesReturnCreditError("");
+    setCreditQtyRaw("");
+    setEntry({
+      productName: "",
+      productId: "",
+      pkgsize: "",
+      batchNo: "",
+      expiryDate: "",
+      quantity: 0,
+      sellingPrice: 0,
+      discount: 0,
+      reason: "",
+    });
+  }
+
   function addProduct() {
+    if (usesSupabaseData()) {
+      addReturnedProduct();
+      return;
+    }
     if (!canAdd) return;
     if (comboAlreadyAdded(entry.productName, entry.pkgsize, entry.batchNo)) {
       window.alert(
@@ -687,6 +939,15 @@ export default function StoreCreditNotes({
     setAdded((prev) =>
       prev.map((item) => {
         if (item.key !== key) return item;
+        if (item.sourceItemId) {
+          const line = salesReturnCredits.find((row) => row.id === item.sourceItemId);
+          const quantity = updates.quantity ?? item.quantity;
+          const part =
+            line && Number.isInteger(quantity) && quantity > 0
+              ? creditPortion(line, quantity)
+              : { discountAmount: 0, taxableAmount: 0, sgst: 0, cgst: 0, igst: 0, total: 0 };
+          return { ...item, quantity, ...part };
+        }
         const merged = { ...item, ...updates };
         const computed = computeLine(
           merged.productId,
@@ -704,12 +965,15 @@ export default function StoreCreditNotes({
   }
 
   function openCreditNote(row: CreditNote) {
-    const relatedRows = creditNotes.filter(
-      (item) =>
-        item.creditNoteNo === row.creditNoteNo &&
-        (item.storeId || item.party) === (row.storeId || row.party) &&
-        item.Date === row.Date,
-    );
+    const relatedRows = row.lines?.length
+      ? row.lines
+      : creditNotes.filter(
+          (item) =>
+            item.creditNoteNo === row.creditNoteNo &&
+            (item.storeId || item.party) === (row.storeId || row.party) &&
+            item.Date === row.Date &&
+            item.product,
+        );
     if (row.status === "Draft") {
       const lines = (relatedRows.length > 0 ? relatedRows : [row]).filter(
         (item) => item.product,
@@ -761,7 +1025,15 @@ export default function StoreCreditNotes({
 
   function resetForm() {
     setReturnDate(new Date().toISOString().split("T")[0]);
-    setCreditNoteNo(nextCreditNo());
+    if (usesSupabaseData()) {
+      peekDocumentNo("store_credit_note", currentStoreId).then((nextNo) => {
+        if (nextNo) setCreditNoteNo(nextNo);
+      }).catch(() => {
+        setCreditNoteNo(nextCreditNo());
+      });
+    } else {
+      setCreditNoteNo(nextCreditNo());
+    }
     setFarmerId("");
     setInvoiceNo("");
     setStoreId(currentStoreId);
@@ -787,11 +1059,62 @@ export default function StoreCreditNotes({
       reason: "",
     });
     setAdded([]);
+    setCreditQtyRaw("");
+    setSalesReturnCreditError("");
   }
 
-  function persistCreditNote(status: "Draft" | "Pending") {
+  async function persistCreditNote(status: "Draft" | "Pending") {
     if (!selectedStore || !creditNoteNo) return;
     if (status === "Pending" && !canCreate) return;
+
+    if (usesSupabaseData()) {
+      const farmerIds = [...new Set(added.map((item) => item.farmerId).filter(Boolean))];
+      const partyNames = [
+        ...new Set(
+          added
+            .map((item) => {
+              const line = salesReturnCredits.find((row) => row.id === item.sourceItemId);
+              return String(line?.partyName || "").trim();
+            })
+            .filter(Boolean),
+        ),
+      ];
+      const dbLines: RpcLine[] = added.map((item) => ({
+        source_item_id: item.sourceItemId || null,
+        quantity: item.quantity,
+        line_type: "return",
+        reason: item.reason || remarks || null,
+      }));
+
+      try {
+        const res = await saveStoreCreditNoteDb(
+          null,
+          {
+            store_id: currentStoreId,
+            credit_note_date: returnDate,
+            farmer_id: farmerIds.length === 1 ? farmerIds[0] : null,
+            party_name:
+              farmerIds.length > 1
+                ? "Multiple farmers"
+                : partyNames[0] || farmerName || null,
+            notes: remarks || null,
+            reason: remarks || null,
+          },
+          dbLines,
+        );
+        if (status === "Pending") {
+          await issueStoreCreditNoteDb(res.id);
+        }
+        await reloadDbCreditNotes();
+        closeForm();
+        if (status === "Draft") window.alert("Credit Note saved as draft.");
+        return;
+      } catch (err: any) {
+        window.alert(dbErrorMessage(err, "Failed to save store credit note."));
+        return;
+      }
+    }
+
     const allocatedNo = editingCreditNo || creditNoteNo;
     const createdAt = new globalThis.Date().getTime();
     const lines = added.length
@@ -953,7 +1276,11 @@ export default function StoreCreditNotes({
       const matchesSearch =
         !q ||
         c.creditNoteNo.toLowerCase().includes(q) ||
-        c.party.toLowerCase().includes(q);
+        c.party.toLowerCase().includes(q) ||
+        `${c.product || ""} ${c.batchNo || ""}`.toLowerCase().includes(q) ||
+        (c.lines || []).some((line) =>
+          `${line.product || ""} ${line.batchNo || ""}`.toLowerCase().includes(q),
+        );
 
       return matchesSearch && isWithinDateFilter(c.Date);
     });
@@ -971,8 +1298,13 @@ export default function StoreCreditNotes({
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
             Store Credit Notes
           </h1>
+          {listError || invoiceError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError || invoiceError}
+            </p>
+          ) : null}
           <p className="text-slate-500 mt-1">
-            GST credit notes for documentation and reporting. These records do not change sales or stock.
+            Credit notes issued by this store. Company debit notes received from Nature Biotic are listed under Debit Notes.
           </p>
         </div>
         <Button
@@ -1074,68 +1406,56 @@ export default function StoreCreditNotes({
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] table-fixed text-sm border-collapse">
+            <table className="w-full min-w-[900px] table-fixed text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
                   <th
                     rowSpan={2}
-                    className="w-[5%] text-center font-semibold px-1 py-3 border-r border-slate-200"
+                    className="w-[6%] text-center font-semibold px-1 py-3 border-r border-slate-200"
                   >
                     S.No
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[8%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap"
+                    className="w-[12%] text-center font-semibold px-1 py-3 border-r border-slate-200 whitespace-nowrap"
                   >
                     Date
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[16%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     CN No.
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[14%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap"
-                  >
-                    Farmer Name
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[9%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                  >
-                    Place
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[14%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Without Tax
                   </th>
 
                   <th
                     colSpan={2}
-                    className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                    className="w-[14%] px-1 py-2 text-center font-semibold border-r border-slate-200"
                   >
                     SGST
                   </th>
                   <th
                     colSpan={2}
-                    className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                    className="w-[14%] px-1 py-2 text-center font-semibold border-r border-slate-200"
                   >
                     CGST
                   </th>
                   <th
                     colSpan={2}
-                    className="w-[12%] px-1 py-2 text-center font-semibold border-r border-slate-200"
+                    className="w-[14%] px-1 py-2 text-center font-semibold border-r border-slate-200"
                   >
                     IGST
                   </th>
 
                   <th
                     rowSpan={2}
-                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[14%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Total
                   </th>
@@ -1178,12 +1498,6 @@ export default function StoreCreditNotes({
                     </td>
                     <td className="px-3 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">
                       {c.creditNoteNo}
-                    </td>
-                    <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 whitespace-nowrap">
-                      {c.party}
-                    </td>
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
-                      {c.placeofreturn}
                     </td>
                     <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.amount)}
@@ -1286,8 +1600,8 @@ export default function StoreCreditNotes({
 
               <div className="credit-note-scroll min-h-0 flex-1 overflow-y-auto p-2">
                 <div className="min-h-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-                  <div className="grid grid-cols-[1.2fr_.8fr] border-b border-slate-300">
-                    <div className="border-r border-slate-300 px-8 py-4">
+                  <div className="grid grid-cols-[1.35fr_.65fr] border-b border-slate-300">
+                    <div className="border-r border-slate-300 px-6 py-4">
                       <div className="flex items-start gap-4">
                         <div className="flex h-16 w-24 shrink-0 items-center justify-center">
                           <img
@@ -1301,95 +1615,54 @@ export default function StoreCreditNotes({
                             {currentStore?.name || "STORE"}
                           </h3>
                           <p className="mt-1 text-[10px] font-semibold leading-4 text-slate-600">
-                            4/130/A1, Velavan Nagar, Velayudhampuram,
-                            Rajapalayam, Tamil Nadu - 626102
+                            {currentStore?.address ||
+                              currentStore?.location ||
+                              "-"}
                           </p>
-                          <p className="text-[10px] text-slate-600">
-                            GSTIN: 33AEZPV5328P1ZC
-                          </p>
-                          <p className="text-[10px] text-slate-600">
-                            Cell: 96008 44446
-                          </p>
+                          {currentStore?.gst ? (
+                            <p className="text-[10px] text-slate-600">
+                              GSTIN: {currentStore.gst}
+                            </p>
+                          ) : null}
+                          {currentStore?.phone ? (
+                            <p className="text-[10px] text-slate-600">
+                              Cell: {currentStore.phone}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-center p-4">
-                      <div className="text-center">
-                        <h3 className="text-2xl font-extrabold uppercase text-slate-900">
-                          Credit Note
-                        </h3>
-                        {/* <p className="mt-1 text-[10px] text-slate-500">
-                          Nature Biotic to Store
-                        </p> */}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 border-b border-slate-300 text-[10px] leading-5">
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase text-slate-500">
-                        Billing Address
-                      </p>
-                      <p className="font-bold text-slate-900">
-                        {selectesdreditNote.header.party}
-                      </p>
-                      <p className="text-slate-600">
-                        {selectesdreditNote.header.storeLocation || "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        GSTIN:{" "}
-                        {getStore(selectesdreditNote.header.storeId || currentStoreId)
-                          ?.gst || "-"}
-                      </p>
-                    </div>
-
-                    <div className="border-r border-slate-300 p-3">
-                      <p className="mb-1 font-bold uppercase text-slate-500">
-                        Return Details
-                      </p>
-                      <p className="font-bold text-slate-900">
-                        {selectesdreditNote.header.party}
-                      </p>
-                      <p className="text-slate-600">
-                        Address:{" "}
-                        {selectesdreditNote.header.farmerVillage ||
-                          selectesdreditNote.header.placeofreturn ||
-                          "-"}
-                      </p>
-                      <p className="text-slate-600">
-                        Mobile: {selectesdreditNote.header.farmerPhone || "-"}
-                      </p>
-                    </div>
-
-                    <div className="p-3">
-                      <p className="mb-1 font-bold uppercase text-slate-500">
+                    <div className="p-3 text-[10px] leading-5">
+                      <p className="mb-1 font-bold uppercase tracking-wide text-slate-500">
                         Credit Note Details
                       </p>
-                      <div className="grid grid-cols-[95px_1fr] gap-y-0.5">
+                      <div className="grid grid-cols-[110px_1fr] gap-y-0.5">
                         <span className="text-slate-500">CN No</span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-slate-800">
                           {selectesdreditNote.header.creditNoteNo}
                         </span>
                         <span className="text-slate-500">Date</span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-slate-800">
                           {formatDate(selectesdreditNote.header.Date)}
                         </span>
-                        <span className="text-slate-500">Invoice No</span>
-                        <span className="font-semibold">
-                          {selectesdreditNote.header.invoiceNo || "-"}
-                        </span>
                         <span className="text-slate-500">Through</span>
-                        <span className="font-semibold">
+                        <span className="font-semibold text-slate-800">
                           {selectesdreditNote.header.through || "Direct"}
                         </span>
-                        <span className="text-slate-500">POS</span>
-                        <span className="font-semibold">
+                        <span className="text-slate-500">Place of Supply</span>
+                        <span className="font-semibold text-slate-800">
                           {selectesdreditNote.header.storeLocation ||
                             "Tamil Nadu"}
                         </span>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="border-b border-slate-300 px-4 py-3 text-center">
+                    <h3 className="text-xl font-extrabold uppercase tracking-wide text-slate-900">
+                      Credit Note
+                    </h3>
                   </div>
 
                   <div className="overflow-x-auto">
@@ -1714,52 +1987,60 @@ export default function StoreCreditNotes({
 
                   {/* ROW 1: Amount in Words (left) + Round Off / Total (right) */}
                   <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
+                    {(() => {
+                      const header = selectesdreditNote.header;
+                      const rows = selectesdreditNote.rows;
+                      const lineSum = rows.reduce(
+                        (sum, row) => sum + Number(row.total || 0),
+                        0,
+                      );
+                      const computed = roundOffToRupee(lineSum);
+                      const taxable = rows.reduce(
+                        (sum, row) =>
+                          sum + Number(row.taxableAmount ?? row.amount ?? 0),
+                        0,
+                      );
+                      const sgst = rows.reduce((sum, row) => sum + Number(row.sgst || 0), 0);
+                      const cgst = rows.reduce((sum, row) => sum + Number(row.cgst || 0), 0);
+                      const igst = rows.reduce((sum, row) => sum + Number(row.igst || 0), 0);
+                      const roundOff =
+                        typeof header.roundOff === "number"
+                          ? Number(header.roundOff)
+                          : computed.roundOff;
+                      const grandTotal =
+                        typeof header.documentTotal === "number"
+                          ? Number(header.documentTotal)
+                          : computed.payable;
+                      return (
+                        <>
                     <div className="border-r border-slate-300 p-3 flex items-center">
                       <p className="text-[12px] font-semibold text-slate-700">
                         Amount in Words:{" "}
                         <span className="font-bold text-slate-900">
-                          {numberToWords(
-                            selectesdreditNote.rows.reduce(
-                              (sum, row) => sum + Number(row.total || 0),
-                              0,
-                            ),
-                          )}
+                          {numberToWords(grandTotal)}
                         </span>
                       </p>
                     </div>
 
                     <div className="space-y-1.5 p-3 text-[11px]">
-                      <SummaryRow
-                        label="Round Off"
-                        value={formatCurrency(
-                          Math.round(
-                            selectesdreditNote.rows.reduce(
-                              (sum, row) => sum + Number(row.total || 0),
-                              0,
-                            ),
-                          ) -
-                            selectesdreditNote.rows.reduce(
-                              (sum, row) => sum + Number(row.total || 0),
-                              0,
-                            ),
-                        )}
-                        muted
-                      />
+                      <SummaryRow label="Taxable Amount" value={formatCurrency(taxable)} />
+                      <SummaryRow label="SGST" value={formatCurrency(sgst)} />
+                      <SummaryRow label="CGST" value={formatCurrency(cgst)} />
+                      <SummaryRow label="IGST" value={formatCurrency(igst)} />
+                      <SummaryRow label="Round Off" value={formatRoundOff(roundOff)} muted />
 
                       <div className="flex items-center justify-between border-t border-slate-300 pt-2">
                         <span className="text-sm font-bold text-slate-900">
-                          Total
+                          Grand Total
                         </span>
                         <span className="text-base font-extrabold text-slate-900">
-                          {formatCurrency(
-                            selectesdreditNote.rows.reduce(
-                              (sum, row) => sum + Number(row.total || 0),
-                              0,
-                            ),
-                          )}
+                          {formatCurrency(grandTotal)}
                         </span>
                       </div>
                     </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
@@ -1839,7 +2120,9 @@ export default function StoreCreditNotes({
                     Create Credit Note
                   </h2>
                   <p className="text-sm text-slate-500 mt-1">
-                    Create a GST credit note. This does not change sales, stock, or payments.
+                    {usesSupabaseData()
+                      ? "Credit products from this store's approved sales returns. This store credit note does not change stock or payments."
+                      : "Create a GST credit note. This does not change sales, stock, or payments."}
                   </p>
                 </div>
                 <button
@@ -1906,6 +2189,131 @@ export default function StoreCreditNotes({
                     Add Product
                   </h4>
 
+                  {usesSupabaseData() ? (
+                    <div className="mx-6 rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
+                      {salesReturnCreditsLoading ? (
+                        <p className="text-sm text-slate-500">Loading returned products…</p>
+                      ) : salesReturnCreditError && salesReturnCredits.length === 0 ? (
+                        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                          {salesReturnCreditError}
+                        </p>
+                      ) : salesReturnCredits.length === 0 ? (
+                        <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500">
+                          No approved sales return quantity is left to credit for this store.
+                        </p>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <Select
+                              label="Select Product"
+                              value={entry.productId}
+                              onChange={(id) => {
+                                const line = salesReturnCredits.find((row) => row.id === id);
+                                setCreditQtyRaw("");
+                                setSalesReturnCreditError("");
+                                if (!line) {
+                                  setEntry((current) => ({
+                                    ...current,
+                                    productId: "",
+                                    productName: "",
+                                    pkgsize: "",
+                                    batchNo: "",
+                                    expiryDate: "",
+                                    quantity: 0,
+                                    sellingPrice: 0,
+                                    discount: 0,
+                                  }));
+                                  return;
+                                }
+                                setEntry((current) => ({
+                                  ...current,
+                                  productId: line.id,
+                                  productName: line.productName,
+                                  pkgsize: line.packSize,
+                                  batchNo: line.batchNo,
+                                  expiryDate: line.expiryDate,
+                                  quantity: 0,
+                                  sellingPrice: line.unitPrice,
+                                  discount: line.discountPercent,
+                                  reason: line.reason,
+                                }));
+                              }}
+                              placeholder="Select a returned product"
+                              options={salesReturnCredits.map((line) => ({
+                                value: line.id,
+                                label: salesReturnCredits.filter((row) => row.productName === line.productName).length > 1
+                                  ? `${line.productName} · ${line.packSize} · ${line.batchNo} · ${line.returnNo}`
+                                  : line.productName,
+                              }))}
+                            />
+                            <div>
+                              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                                Quantity
+                              </label>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={selectedReturnLine ? wholeCount(selectedReturnLine.availableQty) ?? 0 : 0}
+                                step={1}
+                                value={creditQtyRaw}
+                                disabled={!selectedReturnLine}
+                                onKeyDown={(event) => {
+                                  if (["e", "E", "+", "-", "."].includes(event.key)) event.preventDefault();
+                                }}
+                                onChange={(event) => {
+                                  const next = event.target.value;
+                                  if (next !== "" && !/^\d+$/.test(next)) {
+                                    setSalesReturnCreditError("Credit quantity must be a whole number.");
+                                    return;
+                                  }
+                                  setCreditQtyRaw(next);
+                                  setSalesReturnCreditError(
+                                    selectedReturnLine ? returnQuantityMessage(selectedReturnLine, next) : "",
+                                  );
+                                }}
+                                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-800 focus:border-brand-500 focus:outline-none"
+                              />
+                              {selectedReturnLine ? (
+                                <p className="mt-1 text-xs font-medium text-slate-500">
+                                  Available {wholeCount(selectedReturnLine.availableQty) ?? selectedReturnLine.availableQty}
+                                </p>
+                              ) : null}
+                            </div>
+                            <Button
+                              onClick={addProduct}
+                              disabled={!selectedReturnLine || !creditQtyRaw || Boolean(returnQuantityMessage(selectedReturnLine!, creditQtyRaw)) || typedWholeCount(creditQtyRaw) === 0}
+                              className="h-[50px] self-end"
+                            >
+                              <Icon name="add" size={18} />
+                              Add Product
+                            </Button>
+                          </div>
+                          {salesReturnCreditError ? (
+                            <p className="mt-3 text-sm text-red-600">{salesReturnCreditError}</p>
+                          ) : null}
+                          {selectedReturnLine ? (
+                            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 sm:grid-cols-4 lg:grid-cols-6">
+                              <DetailField label="Product" value={selectedReturnLine.productName} />
+                              <DetailField label="HSN" value={selectedReturnLine.hsnCode || "-"} />
+                              <DetailField label="Package size" value={selectedReturnLine.packSize || "-"} />
+                              <DetailField label="Batch" value={selectedReturnLine.batchNo || "-"} />
+                              <DetailField label="Expiry" value={selectedReturnLine.expiryDate ? formatDate(selectedReturnLine.expiryDate) : "-"} />
+                              <DetailField label="Sales return" value={selectedReturnLine.returnNo} />
+                              <DetailField label="Unit rate" value={formatCurrency(selectedReturnLine.unitPrice)} />
+                              <DetailField label="Discount" value={formatCurrency(selectedReturnLine.discountAmount)} />
+                              <DetailField label="GST %" value={`${selectedReturnLine.taxPercent.toFixed(2)}%`} />
+                              <DetailField label="SGST" value={formatCurrency(selectedReturnLine.sgst)} />
+                              <DetailField label="CGST" value={formatCurrency(selectedReturnLine.cgst)} />
+                              <DetailField label="IGST" value={formatCurrency(selectedReturnLine.igst)} />
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {!usesSupabaseData() && (
                   <div className="mx-6 rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-9 gap-3 items-end">
                       <Select
@@ -2083,6 +2491,7 @@ export default function StoreCreditNotes({
                       </div>
                     )}
                   </div>
+                  )}
                 </section>
 
                 {/* Added Products list */}
@@ -2149,11 +2558,19 @@ export default function StoreCreditNotes({
                               <td className="px-3 py-2 text-center">
                                 <input
                                   type="number"
+                                  min={0}
+                                  max={item.sourceItemId ? item.availableQty : undefined}
+                                  step={item.sourceItemId ? 1 : undefined}
                                   className="w-16 rounded border border-slate-200 px-1 py-0.5 text-center"
                                   value={item.quantity}
+                                  onKeyDown={(event) => {
+                                    if (item.sourceItemId && ["e", "E", "+", "-", "."].includes(event.key)) {
+                                      event.preventDefault();
+                                    }
+                                  }}
                                   onChange={(e) =>
                                     updateAdded(item.key, {
-                                      quantity: Number(e.target.value) || 0,
+                                      quantity: e.target.value === "" ? 0 : Number(e.target.value),
                                     })
                                   }
                                 />
@@ -2161,7 +2578,8 @@ export default function StoreCreditNotes({
                               <td className="px-3 py-2 text-center">
                                 <input
                                   type="number"
-                                  className="w-20 rounded border border-slate-200 px-1 py-0.5 text-center"
+                                  readOnly={Boolean(item.sourceItemId)}
+                                  className="w-20 rounded border border-slate-200 px-1 py-0.5 text-center read-only:bg-slate-50"
                                   value={item.sellingPrice}
                                   onChange={(e) =>
                                     updateAdded(item.key, {
@@ -2173,7 +2591,8 @@ export default function StoreCreditNotes({
                               <td className="px-3 py-2 text-center">
                                 <input
                                   type="number"
-                                  className="w-16 rounded border border-slate-200 px-1 py-0.5 text-center"
+                                  readOnly={Boolean(item.sourceItemId)}
+                                  className="w-16 rounded border border-slate-200 px-1 py-0.5 text-center read-only:bg-slate-50"
                                   value={item.discount}
                                   onChange={(e) =>
                                     updateAdded(item.key, {

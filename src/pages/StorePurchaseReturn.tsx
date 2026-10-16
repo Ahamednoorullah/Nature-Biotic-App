@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
-import { formatCurrency, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter, numberToWords } from "@/lib/format";
+import { businessDate, formatCurrency, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter, numberToWords } from "@/lib/format";
 import {
   addStoreApprovalRequest,
   getDatabasePurchaseReturns,
@@ -702,7 +702,7 @@ export default function StoreReturnStock({ storeId }: { storeId: string }) {
 
   async function openForm() {
     setActionError("");
-    setDate(new Date().toISOString().split("T")[0]);
+    setDate(businessDate());
     if (usesSupabaseData()) {
       try {
         setReturnNo(await peekDocumentNo("purchase_return", storeId));

@@ -2,19 +2,23 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
+  formatRoundOff,
   matchesSimpleDate,
   type SimpleDateFilter,
 } from "@/lib/format";
 import { createPortal } from "react-dom";
 import { QuotationBill } from "@/components/QuotationBill";
 import {
-  products as allProducts,
+  getProductMaster,
+  productMasterUpdatedEvent,
   farmerCropsForDisplay,
   farmerCropSummary,
   getFarmersByStore,
   getStore,
   type Farmer,
+  type Product,
 } from "@/lib/data";
+import { loadCatalog } from "@/lib/db/products";
 import { formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
@@ -34,9 +38,15 @@ import {
   printDocumentPdf,
   shareDocumentPdf,
 } from "@/lib/documentPdf";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadQuotations, saveQuotationDb } from "@/lib/db/sales";
+import { type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type ProductRow = {
   id: string;
+  variantId?: string;
+  productId?: string;
   product: string;
   productName: string;
   pkgsize: string;
@@ -162,11 +172,40 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     );
   }, [storeFarmers, isFRO, user?.name]);
 
+  const [productMaster, setProductMaster] = useState<Product[]>(() =>
+    getProductMaster(),
+  );
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
+
+  useEffect(() => {
+    const refresh = () => setProductMaster(getProductMaster());
+    window.addEventListener(productMasterUpdatedEvent, refresh);
+
+    if (usesSupabaseData() && getProductMaster().length === 0) {
+      setCatalogLoading(true);
+      setCatalogError("");
+      loadCatalog()
+        .then((rows) => {
+          setProductMaster(rows);
+        })
+        .catch((err) => {
+          setCatalogError(dbErrorMessage(err, "Could not load products."));
+        })
+        .finally(() => {
+          setCatalogLoading(false);
+        });
+    }
+
+    return () => window.removeEventListener(productMasterUpdatedEvent, refresh);
+  }, []);
+
   const storeProducts = useMemo(() => {
     const unique = new Map<
       string,
       {
         key: string;
+        variantId: string;
         productId: string;
         name: string;
         size: string;
@@ -174,7 +213,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         taxPercentage: number;
       }
     >();
-    allProducts
+    productMaster
       .filter((product) => product.status !== "Inactive")
       .forEach((product) => {
         const name = String(product.name || "").trim();
@@ -184,7 +223,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         if (unique.has(key)) return;
         unique.set(key, {
           key,
-          productId: product.id,
+          variantId: product.variantId || product.id,
+          productId: product.productId || product.id,
           name,
           size,
           sellingPrice: Number(product.sellingPrice || 0),
@@ -192,13 +232,15 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         });
       });
     return Array.from(unique.values());
-  }, []);
+  }, [productMaster]);
 
   const [selectedQuotation, setSelectedQuotation] = useState<Row | null>(null);
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
+  const [listLoading, setListLoading] = useState(usesSupabaseData());
+  const [listError, setListError] = useState("");
 
   function withoutSampleQuotations(list: Row[]) {
     return list.filter(
@@ -209,9 +251,28 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         ),
     );
   }
+  const reloadDbQuotations = async () => {
+    setListLoading(true);
+    setListError("");
+    try {
+      const dbRows = await loadQuotations(storeId);
+      setRows(dbRows as Row[]);
+    } catch (error) {
+      setRows([]);
+      setListError(dbErrorMessage(error, "Could not load quotations."));
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbQuotations();
+  }, [storeId]);
 
   // Keep quotations shared between FRO and Store views for the same store.
   useEffect(() => {
+    if (usesSupabaseData()) return;
     try {
       const saved = window.localStorage.getItem(quotationStorageKey);
       if (!saved) return;
@@ -270,6 +331,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     { value: "custom", label: "Custom Date" },
   ];
 
+  const quotationListMessage = listError
+    || (listLoading ? "Loading quotations..." : "No quotations found.");
+
   const listedRows = useMemo(
     () =>
       visibleRows.filter((row) =>
@@ -294,6 +358,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
   const emptyDraftProduct = (): ProductRow => ({
     id: String(Date.now()),
+    variantId: "",
+    productId: "",
     product: "",
     productName: "",
     pkgsize: "",
@@ -332,6 +398,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
   function chooseQuotationProduct(value: string) {
     setDraftProduct((current) => ({
       ...current,
+      variantId: "",
+      productId: "",
       product: value,
       productName: value,
       pkgsize: "",
@@ -354,6 +422,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
     );
     setDraftProduct((current) => ({
       ...current,
+      variantId: variant?.variantId || "",
+      productId: variant?.productId || "",
       pkgsize: variant?.size || value,
       batchNo: "",
       rate: variant ? String(variant.sellingPrice || 0) : current.rate,
@@ -544,6 +614,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     const nextItem: ProductRow = {
       id: `${Date.now()}-${selectedStockVariant.key}`,
+      variantId: selectedStockVariant.variantId,
+      productId: selectedStockVariant.productId,
       product: selectedStockVariant.name,
       productName: selectedStockVariant.name,
       pkgsize: selectedStockVariant.size,
@@ -595,7 +667,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
         item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
     );
 
-  function save() {
+  async function save() {
     const hasValidProduct = products.some(
       (item) =>
         item.product.trim() && Number(item.qty) > 0 && Number(item.rate) > 0,
@@ -613,6 +685,84 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
 
     if (!hasValidProduct) {
       alert("Please add at least one product.");
+      return;
+    }
+
+    if (usesSupabaseData()) {
+      const dbLines: RpcLine[] = products.map((item) => {
+        const prod = storeProducts.find(
+          (p) =>
+            (item.variantId && p.variantId === item.variantId) ||
+            (p.name.trim().toLowerCase() === item.product.trim().toLowerCase() &&
+              p.size.trim().toLowerCase() === item.pkgsize.trim().toLowerCase()),
+        );
+        const resolvedVariantId = item.variantId || prod?.variantId || prod?.productId;
+        const qty = Number(item.qty || 0);
+        const rate = Number(item.rate || 0);
+        const taxRate = Number(item.taxPercent || 0);
+        const gross = qty * rate;
+        const discountAmount = 0;
+        const taxable = gross - discountAmount;
+        const isInter = (placeOfSupply || "").toLowerCase() !== "tamil nadu";
+        const taxAmount = Math.round(taxable * (taxRate / 100) * 100) / 100;
+        const sgstAmount = isInter ? 0 : Math.round((taxAmount / 2) * 100) / 100;
+        const cgstAmount = isInter ? 0 : Math.round((taxAmount - sgstAmount) * 100) / 100;
+        const igstAmount = isInter ? taxAmount : 0;
+        const lineTotal = Math.round((taxable + taxAmount) * 100) / 100;
+
+        return {
+          variant_id: resolvedVariantId || null,
+          product_id: prod?.productId || null,
+          product_name: item.productName || item.product,
+          pack_size: item.pkgsize,
+          quantity: qty,
+          unit_price: rate,
+          discount_percent: 0,
+          discount_amount: discountAmount,
+          taxable_amount: taxable,
+          tax_percent: taxRate,
+          sgst_amount: sgstAmount,
+          cgst_amount: cgstAmount,
+          igst_amount: igstAmount,
+          tax_amount: taxAmount,
+          line_total: lineTotal,
+        };
+      });
+
+      if (dbLines.some((line) => !line.variant_id)) {
+        alert("Each line needs a product variant from the catalog.");
+        return;
+      }
+
+      try {
+        await saveQuotationDb(
+          null,
+          {
+            store_id: storeId,
+            fro_staff_id: isFRO ? (user?.staffId || user?.id) : null,
+            farmer_id: farmerId || null,
+            farmer_name: farmer.trim(),
+            customer_name: farmer.trim(),
+            phone: phone.trim() || null,
+            customer_phone: phone.trim() || null,
+            village: village.trim() || null,
+            customer_village: village.trim() || null,
+            crop: crop.trim() || null,
+            acre: acre.trim() || null,
+            place_of_supply: placeOfSupply || "Tamil Nadu",
+            quotation_date: new Date().toISOString().split("T")[0],
+            remarks: remarks || null,
+            notes: remarks || null,
+            channel: isFRO ? "executive" : "direct",
+          },
+          dbLines,
+        );
+        await reloadDbQuotations();
+        resetForm();
+        setShow(false);
+      } catch (err: any) {
+        alert(dbErrorMessage(err, "Failed to save quotation."));
+      }
       return;
     }
 
@@ -840,6 +990,7 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
               <div className="flex items-center justify-between gap-3"><span className="text-slate-500">SGST</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.sgst)}</span></div>
               <div className="flex items-center justify-between gap-3"><span className="text-slate-500">CGST</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.cgst)}</span></div>
               <div className="flex items-center justify-between gap-3"><span className="text-slate-500">IGST</span><span className="font-semibold text-slate-700">{formatCurrency(quotation.igst)}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Round Off</span><span className="font-semibold text-slate-700">{formatRoundOff(quotation.roundOff || 0)}</span></div>
               <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-2"><span className="font-bold text-slate-800">Grand Total</span><span className="text-base font-extrabold text-brand-700">{formatCurrency(quotation.amount)}</span></div>
             </div>
           </Card>
@@ -1005,9 +1156,13 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     value={draftProduct.product}
                     onChange={chooseQuotationProduct}
                     placeholder={
-                      productNameOptions.length
-                        ? "Select product"
-                        : "No company products"
+                      catalogLoading
+                        ? "Loading company products..."
+                        : catalogError
+                          ? catalogError
+                          : productNameOptions.length
+                            ? "Select product"
+                            : "No company products found"
                     }
                     options={productNameOptions}
                   />
@@ -1667,9 +1822,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                   <tr>
                     <td
                       colSpan={4}
-                      className="px-3 py-10 text-center text-xs text-slate-400"
+                      className={`px-3 py-10 text-center text-xs ${listError ? "font-medium text-red-600" : "text-slate-400"}`}
                     >
-                      No quotations found.
+                      {quotationListMessage}
                     </td>
                   </tr>
                 ) : (
@@ -1808,9 +1963,9 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                     <tr>
                       <td
                         colSpan={13}
-                        className="px-4 py-12 text-center text-sm text-slate-400"
+                        className={`px-4 py-12 text-center text-sm ${listError ? "font-medium text-red-600" : "text-slate-400"}`}
                       >
-                        No quotations found.
+                        {quotationListMessage}
                       </td>
                     </tr>
                   ) : (
@@ -1878,8 +2033,8 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
             {/* Mobile */}
             <div className="divide-y divide-slate-100 md:hidden">
               {listedRows.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-slate-400">
-                  No quotations found.
+                <div className={`px-4 py-12 text-center text-sm ${listError ? "font-medium text-red-600" : "text-slate-400"}`}>
+                  {quotationListMessage}
                 </div>
               ) : (
                 listedRows.map((r, index) => (
@@ -2081,9 +2236,13 @@ export default function StoreQuotation({ storeId }: { storeId: string }) {
                           value={draftProduct.product}
                           onChange={chooseQuotationProduct}
                           placeholder={
-                            productNameOptions.length
-                              ? "Select product"
-                              : "No company products"
+                            catalogLoading
+                              ? "Loading company products..."
+                              : catalogError
+                                ? catalogError
+                                : productNameOptions.length
+                                  ? "Select product"
+                                  : "No company products found"
                           }
                           options={productNameOptions}
                         />

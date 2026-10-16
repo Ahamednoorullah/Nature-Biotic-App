@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { getStaffRecords, replaceStaffRegistry, stores, type Staff } from "@/lib/data";
 import { getAuthAdapter } from "@/lib/auth/localAuth";
-import { createStaff, updateStaff } from "@/lib/db/staff";
+import { createStaff, loadStaff, removeStaffMember, updateStaff } from "@/lib/db/staff";
 import { dbErrorMessage } from "@/lib/db/errors";
 import { usesSupabaseData } from "@/lib/db/mode";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
@@ -20,6 +20,7 @@ type StaffForm = {
   alternativePhone: string;
   familyRelation: string;
   profileImage: string;
+  profileImagePath: string;
   email: string;
   dob: string;
   bloodGroup: string;
@@ -42,6 +43,7 @@ const emptyForm: StaffForm = {
   alternativePhone: "",
   familyRelation: "",
   profileImage: "",
+  profileImagePath: "",
   email: "",
   dob: "",
   bloodGroup: "",
@@ -80,6 +82,14 @@ const familyRelations = [
   "Other",
 ];
 
+function loginLabel(member: Staff) {
+  if (roleForStaffDesignation(member.designation) !== "fro") return "";
+  if (member.loginStatus === "invitation_pending") return "Invitation Pending";
+  if (member.loginStatus === "active") return "Active";
+  if (member.loginStatus === "disabled") return "Disabled";
+  return "Not Invited";
+}
+
 function calculateAge(dob: string) {
   if (!dob) return 0;
 
@@ -109,9 +119,31 @@ export default function CompanyStaffManagement() {
     null,
   );
   const [form, setForm] = useState<StaffForm>(emptyForm);
+  const [staffToRemove, setStaffToRemove] = useState<StaffWithProfile | null>(null);
+  const [staffToDeactivate, setStaffToDeactivate] = useState<StaffWithProfile | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState("");
+  const canRemoveStaff = getAuthAdapter().getSession()?.role === "company_admin" || !usesSupabaseData();
 
   const age = useMemo(() => calculateAge(form.dob), [form.dob]);
   const profileImageRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let cancelled = false;
+    loadStaff()
+      .then((rows) => {
+        if (!cancelled) setStaffList(rows);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAccountNotice(dbErrorMessage(error, "Could not load staff."));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function update<K extends keyof StaffForm>(key: K, value: StaffForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -125,11 +157,101 @@ export default function CompanyStaffManagement() {
     return stores.find((store) => store.id === id)?.location ?? "-";
   }
 
+  async function sendStaffLogin(member: Staff, resend: boolean) {
+    const account = await getAuthAdapter().createAccount({
+      name: member.name,
+      email: member.email,
+      role: "fro",
+      subjectType: "staff",
+      subjectId: member.id,
+      storeId: member.storeId,
+      staffId: member.id,
+      resend,
+    });
+    if (!account.account) {
+      setAccountNotice(account.error || "The password email could not be sent.");
+      return;
+    }
+    try {
+      const rows = await loadStaff();
+      setStaffList(rows);
+      const refreshed = rows.find((item) => item.id === member.id);
+      if (refreshed) setSelectedStaff(refreshed);
+    } catch (error) {
+      setAccountNotice(dbErrorMessage(error, "The email was sent, but the staff list could not be refreshed."));
+      return;
+    }
+    setAccountNotice(
+      account.passwordSetupResent
+        ? `Password setup email resent to ${member.email}.`
+        : `Invitation sent to ${member.email}.`,
+    );
+  }
+
+  function askRemoveStaff(member: StaffWithProfile) {
+    setRemoveError("");
+    setStaffToDeactivate(null);
+    setStaffToRemove(member);
+  }
+
+  async function confirmRemoveStaff() {
+    if (!staffToRemove || removeBusy) return;
+    const member = staffToRemove;
+    if (!usesSupabaseData()) {
+      const next = staffList.filter((item) => item.id !== member.id);
+      replaceStaffRegistry(next);
+      setStaffList(next);
+      setSelectedStaff(null);
+      setStaffToRemove(null);
+      setAccountNotice(`${member.name} was removed.`);
+      return;
+    }
+    setRemoveBusy(true);
+    setRemoveError("");
+    try {
+      const outcome = await removeStaffMember(member.id, "remove");
+      if (outcome.result === "needs_deactivation") {
+        setStaffToRemove(null);
+        setStaffToDeactivate(member);
+        return;
+      }
+      setStaffList([...getStaffRecords()]);
+      setSelectedStaff(null);
+      setStaffToRemove(null);
+      const removedMessage = outcome.result === "deleted"
+        ? `${member.name} was removed. Their login and store access were removed.`
+        : `${member.name} was deactivated. Their history was kept and their login was disabled.`;
+      setAccountNotice(outcome.imageWarning ? `${removedMessage} ${outcome.imageWarning}` : removedMessage);
+    } catch (error) {
+      setRemoveError(dbErrorMessage(error, "Could not remove the staff member."));
+    } finally {
+      setRemoveBusy(false);
+    }
+  }
+
+  async function confirmDeactivateStaff() {
+    if (!staffToDeactivate || removeBusy) return;
+    const member = staffToDeactivate;
+    setRemoveBusy(true);
+    setRemoveError("");
+    try {
+      await removeStaffMember(member.id, "deactivate");
+      setStaffList([...getStaffRecords()]);
+      setSelectedStaff(null);
+      setStaffToDeactivate(null);
+      setAccountNotice(`${member.name} was deactivated. Their history was kept and their login was disabled.`);
+    } catch (error) {
+      setRemoveError(dbErrorMessage(error, "Could not deactivate the staff member."));
+    } finally {
+      setRemoveBusy(false);
+    }
+  }
+
   function handleProfileImage(file?: File) {
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      window.alert("Please select a valid image file.");
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      window.alert("Profile images must be JPG, PNG, or WEBP.");
       return;
     }
 
@@ -176,6 +298,7 @@ export default function CompanyStaffManagement() {
       alternativePhone: member.alternativePhone ?? "",
       familyRelation: member.familyRelation ?? "",
       profileImage: member.profileImage ?? "",
+      profileImagePath: member.profileImagePath ?? "",
       email: member.email,
       dob: member.dob,
       bloodGroup: member.bloodGroup,
@@ -229,6 +352,7 @@ export default function CompanyStaffManagement() {
       alternativePhone: form.alternativePhone,
       familyRelation: form.familyRelation,
       profileImage: form.profileImage,
+      profileImagePath: form.profileImagePath,
       email,
       dob: form.dob,
       age,
@@ -249,38 +373,61 @@ export default function CompanyStaffManagement() {
     };
 
     if (usesSupabaseData()) {
+      let staffId = editingStaff?.id || "";
       try {
-        if (editingStaff) await updateStaff(member);
-        else await createStaff(member);
+        if (editingStaff) await updateStaff({ ...member, id: editingStaff.id });
+        else staffId = await createStaff(member);
       } catch (error) {
         window.alert(dbErrorMessage(error, "Could not save the staff member."));
         return;
       }
+      const saved = getStaffRecords().find((item) => item.id === staffId);
       setStaffList([...getStaffRecords()]);
-      const auth = getAuthAdapter();
-      const account = editingStaff?.accountId
-        ? await auth.updateAccount({
-            accountId: editingStaff.accountId,
-            name: member.name,
-            email,
-            role,
-            storeId: member.storeId,
-            staffId: editingStaff.id,
-          })
-        : await auth.createAccount({
-            name: member.name,
-            email,
-            role,
-            subjectType: "staff",
-            subjectId: member.storeId,
-            storeId: member.storeId,
-            staffId: member.storeId,
-          });
-      setAccountNotice(
-        account.account
-          ? `Staff account saved for ${email}.`
-          : `Staff saved. Login was not created: ${account.error || "staff logins are not available from this app yet."}`,
-      );
+      if (role !== "fro") {
+        setAccountNotice("Staff saved. This designation does not receive a login.");
+        closeAdd();
+        return;
+      }
+      if (saved?.status !== "Active") {
+        setAccountNotice("Staff saved. Inactive staff do not receive a login.");
+        closeAdd();
+        return;
+      }
+      if (saved?.loginStatus === "disabled") {
+        setAccountNotice("Staff saved. This FRO login is disabled, so no invitation was sent.");
+        closeAdd();
+        return;
+      }
+      if (saved?.accountId) {
+        setAccountNotice("Staff saved. The existing FRO login was left unchanged.");
+        closeAdd();
+        return;
+      }
+      const account = await getAuthAdapter().createAccount({
+        name: member.name,
+        email,
+        role: "fro",
+        subjectType: "staff",
+        subjectId: staffId,
+        storeId: member.storeId,
+        staffId,
+      });
+      if (account.account) {
+        try {
+          setStaffList(await loadStaff());
+        } catch (error) {
+          setAccountNotice(dbErrorMessage(error, "The invitation was sent, but the staff list could not be refreshed."));
+          closeAdd();
+          return;
+        }
+        setAccountNotice(
+          account.passwordSetupResent
+            ? `Password setup email resent to ${email}.`
+            : `Invitation sent to ${email}. The FRO sets their own password from that email.`,
+        );
+      } else {
+        setAccountNotice(`Staff saved. The login was not created: ${account.error || "the invitation failed."}`);
+      }
       closeAdd();
       return;
     }
@@ -415,6 +562,11 @@ export default function CompanyStaffManagement() {
 
                   <td className="truncate border-r border-slate-100 px-2 py-3 font-semibold">
                     {member.name}
+                    {loginLabel(member) && (
+                      <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                        {loginLabel(member)}
+                      </p>
+                    )}
                   </td>
 
                   <td className="border-r border-slate-100 px-2 py-3">
@@ -537,6 +689,7 @@ export default function CompanyStaffManagement() {
                               setForm((prev) => ({
                                 ...prev,
                                 profileImage: "",
+                                profileImagePath: "",
                                 profileImageName: "",
                               }))
                             }
@@ -792,11 +945,38 @@ export default function CompanyStaffManagement() {
                     <p className="mt-1 text-sm text-slate-500">
                       {selectedStaff.designation} ·{" "}
                       {storeName(selectedStaff.storeId)}
+                      {loginLabel(selectedStaff) ? ` · ${loginLabel(selectedStaff)}` : ""}
                     </p>
+                    {roleForStaffDesignation(selectedStaff.designation) === "fro" &&
+                      selectedStaff.loginStatus !== "active" &&
+                      selectedStaff.loginStatus !== "disabled" && (
+                        <Button
+                          className="mt-3"
+                          onClick={() =>
+                            void sendStaffLogin(
+                              selectedStaff,
+                              selectedStaff.loginStatus === "invitation_pending",
+                            )
+                          }
+                        >
+                          {selectedStaff.loginStatus === "invitation_pending"
+                            ? "Resend invitation"
+                            : "Send invitation"}
+                        </Button>
+                      )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {canRemoveStaff && (
+                    <Button
+                      variant="danger"
+                      onClick={() => askRemoveStaff(selectedStaff)}
+                    >
+                      <Icon name="delete" size={16} />
+                      Remove
+                    </Button>
+                  )}
                   <Button onClick={() => openEdit(selectedStaff)}>
                     <Icon name="edit" size={16} />
                     Edit Staff
@@ -938,6 +1118,59 @@ export default function CompanyStaffManagement() {
                   onClick={() => setSelectedStaff(null)}
                 >
                   Close
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {staffToRemove &&
+        createPortal(
+          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+            <div className="w-[94vw] max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="p-6">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <Icon name="delete" size={24} />
+                </div>
+                <h2 className="text-lg font-bold text-slate-800">Remove {staffToRemove.name}?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  This disables their login and removes their access to the assigned store.
+                  Staff with attendance, visits, expenses, or sales history are not deleted.
+                </p>
+                {removeError && <p className="mt-3 text-sm font-medium text-red-600">{removeError}</p>}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={() => setStaffToRemove(null)} disabled={removeBusy}>
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={() => void confirmRemoveStaff()} disabled={removeBusy}>
+                  {removeBusy ? "Removing..." : "Remove staff"}
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {staffToDeactivate &&
+        createPortal(
+          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+            <div className="w-[94vw] max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="p-6">
+                <h2 className="text-lg font-bold text-slate-800">Deactivate {staffToDeactivate.name}?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  This staff member has business history, so the record was not deleted.
+                  Deactivation disables the login and store access. Attendance, visits, sales, and other records stay.
+                </p>
+                {removeError && <p className="mt-3 text-sm font-medium text-red-600">{removeError}</p>}
+              </div>
+              <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                <Button variant="secondary" onClick={() => setStaffToDeactivate(null)} disabled={removeBusy}>
+                  Cancel
+                </Button>
+                <Button variant="danger" onClick={() => void confirmDeactivateStaff()} disabled={removeBusy}>
+                  {removeBusy ? "Deactivating..." : "Deactivate"}
                 </Button>
               </div>
             </div>

@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Icon, EmptyState, Input, Select } from "@/components/ui";
-import { formatCurrency, formatDate, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter, numberToWords } from "@/lib/format";
+import { formatCurrency, formatDate, formatRoundOff, matchesSimpleDate, simpleDateFilterOptions, type SimpleDateFilter, numberToWords, roundOffToRupee } from "@/lib/format";
 import { purchaseReturnsUpdatedEvent } from "@/pages/StorePurchaseReturn";
 import {
   getStoreDebitNotesFromCompanyCredits,
@@ -10,6 +10,9 @@ import {
   storeApprovalRequestsUpdatedEvent,
   type CompanyCreditNoteSyncRecord,
 } from "@/lib/data";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadStoreDebitNotes, acceptDebitNoteDb } from "@/lib/db/financials";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type DebitNote = {
   unit: any;
@@ -40,6 +43,13 @@ type DebitNote = {
   cgst: number;
   igst: number;
   returnAmount: number;
+  creditNoteId?: string;
+  documentTaxable?: number;
+  documentSgst?: number;
+  documentCgst?: number;
+  documentIgst?: number;
+  documentRoundOff?: number;
+  documentTotal?: number;
   status: "Pending" | "Approved" | "Rejected";
 };
 
@@ -149,9 +159,69 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       };
     });
 
-  const [allNotes, setAllNotes] = useState<DebitNote[]>(() =>
-    mapSyncRows(getStoreDebitNotesFromCompanyCredits(storeId)),
-  );
+  const [allNotes, setAllNotes] = useState<DebitNote[]>(() => {
+    if (usesSupabaseData()) return [];
+    return mapSyncRows(getStoreDebitNotesFromCompanyCredits(storeId));
+  });
+  const [listError, setListError] = useState("");
+  const [approving, setApproving] = useState(false);
+  const approvingRef = useRef(false);
+
+  const reloadDbDebitNotes = async () => {
+    try {
+      const dbRows = await loadStoreDebitNotes(storeId);
+      const flat: DebitNote[] = dbRows.flatMap((row) =>
+        (row.items || []).map((item, idx) => ({
+          unit: "",
+          size: item.packSize || "",
+          pkgsize: item.packSize || "",
+          packSize: item.packSize || "",
+          total: item.total,
+          amount: item.taxableAmount,
+          sellingPrice: item.unitPrice,
+          id: `${row.id}:${idx}`,
+          creditNoteId: row.id,
+          debitNoteNo: row.creditNoteNo,
+          date: row.date,
+          vendor: "Nature Biotic",
+          purchaseRef: "",
+          product: item.productName || "-",
+          batchNo: item.batchNo || "-",
+          expiryDate: item.expiryDate || "",
+          quantity: item.quantity,
+          reason: item.reason || row.reason || "Purchase Return",
+          placeOfReturn: "",
+          documentTaxable: row.amount,
+          documentSgst: row.sgst,
+          documentCgst: row.cgst,
+          documentIgst: row.igst,
+          documentRoundOff: row.roundOff,
+          documentTotal: row.total,
+          unitPrice: item.unitPrice,
+          beforeDiscount: item.taxableAmount + item.discountAmount,
+          discountPercent: item.discountPercent,
+          discountAmount: item.discountAmount,
+          taxableAmount: item.taxableAmount,
+          withoutTax: item.taxableAmount,
+          sgst: item.sgst,
+          cgst: item.cgst,
+          igst: item.igst,
+          returnAmount: item.total,
+          status: row.status as "Pending" | "Approved" | "Rejected",
+        })),
+      );
+      setAllNotes(flat);
+      setListError("");
+    } catch (error) {
+      setAllNotes([]);
+      setListError(dbErrorMessage(error, "Could not load debit notes."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbDebitNotes();
+  }, [storeId]);
 
   const [search, setSearch] = useState("");
   const [vendorFilter, setVendorFilter] = useState("all");
@@ -165,6 +235,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
 
   useEffect(() => {
+    if (usesSupabaseData()) return;
     const refresh = () => {
       let purchaseReturns: DebitNote[] = [];
       try {
@@ -279,32 +350,35 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
 
     filtered.forEach((note) => {
       const existing = map.get(note.debitNoteNo);
+      const persisted = typeof note.documentTotal === "number";
       if (existing) {
-        existing.beforeDiscount += note.beforeDiscount;
         existing.discountAmount += note.discountAmount;
-        existing.taxableAmount += note.taxableAmount;
-        existing.withoutTax += note.withoutTax;
-        existing.sgst += note.sgst;
-        existing.cgst += note.cgst;
-        existing.igst += note.igst;
-        existing.total += note.returnAmount;
         existing.quantity += note.quantity;
         existing.items.push(note);
+        if (!persisted) {
+          existing.beforeDiscount += note.beforeDiscount;
+          existing.taxableAmount += note.taxableAmount;
+          existing.withoutTax += note.withoutTax;
+          existing.sgst += note.sgst;
+          existing.cgst += note.cgst;
+          existing.igst += note.igst;
+          existing.total += note.returnAmount;
+        }
       } else {
         map.set(note.debitNoteNo, {
           debitNoteNo: note.debitNoteNo,
           date: note.date,
           vendor: note.vendor,
-          placeOfReturn: note.placeOfReturn,
           purchaseRef: note.purchaseRef,
           beforeDiscount: note.beforeDiscount,
           discountAmount: note.discountAmount,
-          taxableAmount: note.taxableAmount,
-          withoutTax: note.withoutTax,
-          sgst: note.sgst,
-          cgst: note.cgst,
-          igst: note.igst,
-          total: note.returnAmount,
+          taxableAmount: persisted ? note.documentTaxable : note.taxableAmount,
+          withoutTax: persisted ? note.documentTaxable : note.withoutTax,
+          sgst: persisted ? note.documentSgst : note.sgst,
+          cgst: persisted ? note.documentCgst : note.cgst,
+          igst: persisted ? note.documentIgst : note.igst,
+          roundOff: persisted ? note.documentRoundOff : undefined,
+          total: persisted ? note.documentTotal : note.returnAmount,
           quantity: note.quantity,
           status: note.status,
           items: [note],
@@ -312,9 +386,15 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
       }
     });
 
-    return Array.from(map.values()).sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    return Array.from(map.values())
+      .map((group) => {
+        if (typeof group.roundOff === "number") return group;
+        const computed = roundOffToRupee(group.total);
+        return { ...group, roundOff: computed.roundOff, total: computed.payable };
+      })
+      .sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      );
   }, [filtered]);
 
   const allGroupedNotes = useMemo(() => {
@@ -337,7 +417,11 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     datedGroups.set(note.debitNoteNo, list);
   });
   const totalNotes = datedGroups.size;
-  const totalReturnValue = datedNotes.reduce((s, n) => s + n.returnAmount, 0);
+  const totalReturnValue = Array.from(datedGroups.values()).reduce((sum, items) => {
+    const first = items[0];
+    if (typeof first?.documentTotal === "number") return sum + first.documentTotal;
+    return sum + roundOffToRupee(items.reduce((line, note) => line + note.returnAmount, 0)).payable;
+  }, 0);
   const pending = Array.from(datedGroups.values()).filter((items) =>
     items.some((item) => item.status === "Pending"),
   ).length;
@@ -350,39 +434,76 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
     : [];
 
   const selectedSummary = selectedItems.length
-    ? {
-        debitNoteNo: selectedItems[0].debitNoteNo,
-        date: selectedItems[0].date,
-        vendor: selectedItems[0].vendor,
-        purchaseRef: selectedItems[0].purchaseRef,
-        placeOfReturn: selectedItems[0].placeOfReturn,
-        status: selectedItems.every((item) => item.status === "Approved")
-          ? "Approved"
-          : "Pending",
-        beforeDiscount: selectedItems.reduce(
-          (sum, item) => sum + item.beforeDiscount,
+    ? (() => {
+        const first = selectedItems[0];
+        const persisted = typeof first.documentTotal === "number";
+        const lineTotal = selectedItems.reduce(
+          (sum, item) => sum + item.returnAmount,
           0,
-        ),
-        discountAmount: selectedItems.reduce(
-          (sum, item) => sum + item.discountAmount,
-          0,
-        ),
-        taxableAmount: selectedItems.reduce(
-          (sum, item) => sum + item.taxableAmount,
-          0,
-        ),
-        withoutTax: selectedItems.reduce(
-          (sum, item) => sum + item.withoutTax,
-          0,
-        ),
-        sgst: selectedItems.reduce((sum, item) => sum + item.sgst, 0),
-        cgst: selectedItems.reduce((sum, item) => sum + item.cgst, 0),
-        igst: selectedItems.reduce((sum, item) => sum + item.igst, 0),
-        total: selectedItems.reduce((sum, item) => sum + item.returnAmount, 0),
-      }
+        );
+        const computed = roundOffToRupee(lineTotal);
+        return {
+          debitNoteNo: first.debitNoteNo,
+          date: first.date,
+          vendor: first.vendor,
+          purchaseRef: first.purchaseRef,
+          status: selectedItems.every((item) => item.status === "Approved")
+            ? "Approved"
+            : "Pending",
+          beforeDiscount: selectedItems.reduce(
+            (sum, item) => sum + item.beforeDiscount,
+            0,
+          ),
+          discountAmount: selectedItems.reduce(
+            (sum, item) => sum + item.discountAmount,
+            0,
+          ),
+          taxableAmount: persisted
+            ? Number(first.documentTaxable || 0)
+            : selectedItems.reduce((sum, item) => sum + item.taxableAmount, 0),
+          withoutTax: persisted
+            ? Number(first.documentTaxable || 0)
+            : selectedItems.reduce((sum, item) => sum + item.withoutTax, 0),
+          sgst: persisted
+            ? Number(first.documentSgst || 0)
+            : selectedItems.reduce((sum, item) => sum + item.sgst, 0),
+          cgst: persisted
+            ? Number(first.documentCgst || 0)
+            : selectedItems.reduce((sum, item) => sum + item.cgst, 0),
+          igst: persisted
+            ? Number(first.documentIgst || 0)
+            : selectedItems.reduce((sum, item) => sum + item.igst, 0),
+          roundOff: persisted
+            ? Number(first.documentRoundOff || 0)
+            : computed.roundOff,
+          total: persisted ? Number(first.documentTotal) : computed.payable,
+        };
+      })()
     : null;
 
-  function approveDebitNoteGroup(debitNoteNo: string) {
+  async function approveDebitNoteGroup(debitNoteNo: string) {
+    if (usesSupabaseData()) {
+      if (approvingRef.current) return;
+      const match = allNotes.find((n) => n.debitNoteNo === debitNoteNo);
+      const id = match?.creditNoteId;
+      if (!id) {
+        window.alert("Could not find this debit note.");
+        return;
+      }
+      approvingRef.current = true;
+      setApproving(true);
+      try {
+        await acceptDebitNoteDb(id);
+        await reloadDbDebitNotes();
+        setSelectedDebitNoteNo(null);
+      } catch (err: unknown) {
+        window.alert(dbErrorMessage(err, "Failed to approve debit note."));
+      } finally {
+        approvingRef.current = false;
+        setApproving(false);
+      }
+      return;
+    }
     approveCompanyCreditNotes(storeId, debitNoteNo);
     setAllNotes((prev) =>
       prev.map((note) =>
@@ -401,8 +522,13 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Debit Notes
           </h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-500">
-            Purchase return notes raised against vendors.
+            Debit notes received from Nature Biotic. These are company credit notes, not store-issued credit notes, and they do not change cash or stock.
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
@@ -590,15 +716,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[11%] px-2 py-3 text-center font-semibold border-r border-slate-200"
+                    className="w-[16%] px-2 py-3 text-center font-semibold border-r border-slate-200"
                   >
                     Vendor
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[10%] px-2 py-3 text-center font-semibold border-r border-slate-200"
-                  >
-                    Place
                   </th>
                   <th
                     rowSpan={2}
@@ -690,9 +810,6 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                     <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 truncate">
                       {note.vendor}
                     </td>
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
-                      {note.placeOfReturn}
-                    </td>
                     <td className="px-2 py-3 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(note.discountAmount || 0)}
                     </td>
@@ -732,11 +849,12 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                       {note.status === "Pending" ? (
                         <button
                           type="button"
+                          disabled={approving}
                           onClick={(event) => {
                             event.stopPropagation();
                             approveDebitNoteGroup(note.debitNoteNo);
                           }}
-                          className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100"
+                          className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60"
                           title="Click to approve"
                         >
                           Pending
@@ -877,12 +995,6 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                           {selectedSummary.purchaseRef}
                         </span>
                       </p> */}
-                      <p className="text-slate-600">
-                        Place of Return:{" "}
-                        <span className="font-semibold text-slate-800">
-                          {selectedSummary.placeOfReturn}
-                        </span>
-                      </p>
                       <p className="text-slate-600">
                         Total Qty:{" "}
                         <span className="font-semibold text-slate-800">
@@ -1327,12 +1439,7 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                   <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
                     <div className="border-r border-slate-300 p-2.5 flex items-center">
                       {(() => {
-                        const grandTotal = selectedItems.reduce(
-                          (sum, row) => sum + Number(row.total || 0),
-                          0,
-                        );
-
-                        const roundedTotal = Math.round(grandTotal);
+                        const roundedTotal = selectedSummary.total;
 
                         return (
                           <p className="text-[10px] font-semibold text-slate-700">
@@ -1346,38 +1453,18 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                     </div>
 
                     <div className="space-y-1 p-2.5 text-[11px]">
-                      <Summary
-                        label="Round Off"
-                        value={formatCurrency(
-                          selectedItems.reduce(
-                            (sum, row) => sum + Number(row.total || 0),
-                            0,
-                          ) -
-                            selectedItems.reduce(
-                              (sum, row) =>
-                                sum +
-                                Number(row.withoutTax || 0) +
-                                Number(row.sgst || 0) +
-                                Number(row.cgst || 0) +
-                                Number(row.igst || 0),
-                              0,
-                            ),
-                        )}
-                        muted
-                      />
-
+                      <Summary label="Taxable Amount" value={formatCurrency(selectedSummary.taxableAmount)} />
+                      <Summary label="SGST" value={formatCurrency(selectedSummary.sgst)} />
+                      <Summary label="CGST" value={formatCurrency(selectedSummary.cgst)} />
+                      <Summary label="IGST" value={formatCurrency(selectedSummary.igst)} />
+                      <Summary label="Round Off" value={formatRoundOff(selectedSummary.roundOff)} muted />
                       <div className="border-t border-slate-300 pt-1.5">
-                      <Summary
-                        label="Grand Total"
-                        value={formatCurrency(
-                          selectedItems.reduce(
-                            (sum, row) => sum + Number(row.total || 0),
-                            0,
-                          ),
-                        )}
-                        bold
-                      />
-                    </div>
+                        <Summary
+                          label="Grand Total"
+                          value={formatCurrency(selectedSummary.total)}
+                          bold
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -1391,9 +1478,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                       </p>
 
                       {(() => {
-                        const defaultNotes = `Purchase order raised by ${
-                          selectedSummary?.placeOfReturn ?? "this store"
-                        } to Nature Biotic.`;
+                        const defaultNotes = `Debit note received from ${
+                          selectedSummary?.vendor || "Nature Biotic"
+                        }.`;
 
                         return (
                           <>
@@ -1431,9 +1518,9 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
               <div className="debit-note-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                 {selectedSummary.status === "Pending" && (
                   <Button
+                    disabled={approving}
                     onClick={() => {
-                      approveDebitNoteGroup(selectedSummary.debitNoteNo);
-                      setSelectedDebitNoteNo(null);
+                      void approveDebitNoteGroup(selectedSummary.debitNoteNo);
                     }}
                   >
                     <Icon name="check_circle" size={18} />
@@ -1449,8 +1536,8 @@ export default function StoreDebitNotes({ storeId }: { storeId: string }) {
                 </Button>
 
                 <Button onClick={() => window.print()}>
-                  <Icon name="print" size={18} />
-                  Print Debit Note
+                  <Icon name="download" size={18} />
+                  Download PDF
                 </Button>
               </div>
             </div>

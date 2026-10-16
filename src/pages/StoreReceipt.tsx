@@ -13,6 +13,11 @@ import {
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadStoreReceipts as loadDbStoreReceipts, createStoreReceiptDb, loadSalesInvoiceBalances } from "@/lib/db/financials";
+import { loadSalesInvoices } from "@/lib/db/sales";
+import { peekDocumentNo } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type StoredSaleInvoice = {
   id: string;
@@ -32,7 +37,17 @@ type StoredSaleInvoice = {
   cgst: number;
   igst: number;
   amount: number;
+  status?: string;
 };
+
+function receiptMethod(label: string) {
+  const value = label.trim().toLowerCase();
+  if (value === "cash") return "cash";
+  if (value === "upi") return "upi";
+  if (value === "cheque") return "cheque";
+  if (value === "bank transfer" || value === "bank_transfer") return "bank_transfer";
+  return null;
+}
 
 const STORE_SALES_INVOICE_STORAGE_KEY = "nature-biotic-store-sales-invoices-v2";
 
@@ -51,9 +66,20 @@ type Receipt = {
   receivedBy?: string;
   createdByStaffId?: string;
   remarks?: string;
+  collectionAccount?: "store" | "fro";
 };
 
 const methods = ["Cash", "Bank Transfer", "UPI", "Cheque"];
+const accountOptions = [
+  { value: "store", label: "Store Account" },
+  { value: "fro", label: "My Account (FRO)" },
+];
+
+function accountLabel(value?: string) {
+  if (value === "fro") return "My Account (FRO)";
+  if (value === "store") return "Store Account";
+  return "";
+}
 
 function money(value: unknown) {
   const amount = Number(value);
@@ -87,7 +113,50 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
   // Declare create-form state before any memo that depends on it.
 
+  const [dbInvoices, setDbInvoices] = useState<StoredSaleInvoice[]>([]);
+  const [invoiceBalances, setInvoiceBalances] = useState<Map<string, number>>(new Map());
+  const [listError, setListError] = useState("");
+  const [invoiceError, setInvoiceError] = useState("");
+
+  const reloadDbReceipts = async () => {
+    try {
+      const rows = await loadDbStoreReceipts(storeId);
+      setCreatedReceipts(rows as Receipt[]);
+      setListError("");
+    } catch (error) {
+      setCreatedReceipts([]);
+      setListError(dbErrorMessage(error, "Could not load store receipts."));
+    }
+  };
+
+  const reloadDbInvoices = async () => {
+    try {
+      const [invoices, balances] = await Promise.all([
+        loadSalesInvoices(storeId),
+        loadSalesInvoiceBalances(storeId),
+      ]);
+      setDbInvoices(invoices as unknown as StoredSaleInvoice[]);
+      setInvoiceBalances(
+        new Map(balances.map((row) => [row.salesInvoiceId, row.outstanding])),
+      );
+      setInvoiceError("");
+    } catch (error) {
+      setDbInvoices([]);
+      setInvoiceBalances(new Map());
+      setInvoiceError(dbErrorMessage(error, "Could not load sales invoices."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbReceipts();
+    void reloadDbInvoices();
+  }, [storeId]);
+
   const saleInvoices = useMemo<StoredSaleInvoice[]>(() => {
+    if (usesSupabaseData()) {
+      return dbInvoices;
+    }
     try {
       const raw = localStorage.getItem(
         `${STORE_SALES_INVOICE_STORAGE_KEY}:${storeId}`,
@@ -96,7 +165,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     } catch {
       return [];
     }
-  }, [storeId, showCreate]);
+  }, [storeId, showCreate, dbInvoices]);
 
   const visibleSaleInvoices = useMemo(() => {
     if (!isFRO || !user?.name) return saleInvoices;
@@ -125,6 +194,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   >("list");
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
   const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>(() => {
+    if (usesSupabaseData()) return [];
     try {
       const raw = localStorage.getItem(storageKey);
       return raw ? JSON.parse(raw) : [];
@@ -134,6 +204,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   });
   const savingRef = useRef(false);
   useEffect(() => {
+    if (usesSupabaseData()) return;
     try {
       const raw = localStorage.getItem(storageKey);
       const rows = raw ? JSON.parse(raw) : [];
@@ -145,13 +216,19 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   const invoiceChoices = useMemo(
     () =>
       visibleSaleInvoices
+        .filter((invoice) => {
+          if (!usesSupabaseData()) return true;
+          return String(invoice.status || "final").toLowerCase() === "final";
+        })
         .map((invoice) => {
           const total = money(invoice.amount);
-          const remaining = getStoreInvoiceOutstanding(storeId, invoice.invoiceNo);
+          const remaining = usesSupabaseData()
+            ? invoiceBalances.get(invoice.id) ?? 0
+            : getStoreInvoiceOutstanding(storeId, invoice.invoiceNo);
           return { invoice, total, remaining };
         })
-        .filter((row) => row.remaining > 0),
-    [visibleSaleInvoices, createdReceipts, storeId],
+        .filter((row) => row.remaining > 0.009),
+    [visibleSaleInvoices, createdReceipts, storeId, invoiceBalances],
   );
   const invoiceOptions = useMemo(
     () =>
@@ -169,6 +246,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
   const [receiptDate, setReceiptDate] = useState(localIsoDate);
   const [receiptNo, setReceiptNo] = useState("");
   const [method, setMethod] = useState("");
+  const [collectionAccount, setCollectionAccount] = useState<"" | "store" | "fro">("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
   const [amountReceived, setAmountReceived] = useState(0);
   const [receivedBy, setReceivedBy] = useState(user?.name ?? "");
@@ -181,6 +259,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     !!receiptNo.trim() &&
     !!selectedInvoice &&
     !!method &&
+    (!isFRO || collectionAccount === "store" || collectionAccount === "fro") &&
     amountReceived > 0 &&
     amountReceived <= outstandingBefore;
 
@@ -194,9 +273,20 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
   function resetCreateForm() {
     setReceiptDate(new Date().toISOString().split("T")[0]);
-    setReceiptNo(allocateReceiptNo());
+    if (usesSupabaseData()) {
+      peekDocumentNo("store_receipt", storeId).then((nextNo) => {
+        if (nextNo) setReceiptNo(nextNo);
+        else setReceiptNo("");
+      }).catch((error) => {
+        setReceiptNo("");
+        setInvoiceError(dbErrorMessage(error, "Could not load the next receipt number."));
+      });
+    } else {
+      setReceiptNo(allocateReceiptNo());
+    }
     setInvoiceNo("");
     setMethod("");
+    setCollectionAccount("");
     setInvoiceAmount(0);
     setAmountReceived(0);
     setReceivedBy(user?.name ?? "");
@@ -224,23 +314,57 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
     }
   }
 
-  function handleCreateReceipt() {
+  async function handleCreateReceipt() {
     if (savingRef.current || !canCreate || !selectedInvoice) return;
     savingRef.current = true;
 
     try {
       const latest = loadStoreReceipts();
       const total = money(selectedInvoice.amount);
-      const remaining = getStoreInvoiceOutstanding(
-        storeId,
-        selectedInvoice.invoiceNo,
-      );
-      if (amountReceived <= 0 || amountReceived > remaining) {
+      const remaining = usesSupabaseData()
+        ? outstandingBefore
+        : getStoreInvoiceOutstanding(storeId, selectedInvoice.invoiceNo);
+      if (amountReceived <= 0 || amountReceived > remaining + 0.001) {
         savingRef.current = false;
         window.alert(
           "Amount received cannot exceed the outstanding balance of this invoice.",
         );
         return;
+      }
+
+      if (usesSupabaseData()) {
+        const methodCode = receiptMethod(method);
+        if (!methodCode) {
+          savingRef.current = false;
+          window.alert("Choose Cash, UPI, Bank Transfer, or Cheque.");
+          return;
+        }
+        if (isFRO && collectionAccount !== "store" && collectionAccount !== "fro") {
+          savingRef.current = false;
+          window.alert("Choose Store Account or My Account (FRO).");
+          return;
+        }
+        try {
+          await createStoreReceiptDb({
+            sales_invoice_id: selectedInvoice.id,
+            amount: amountReceived,
+            method: methodCode,
+            receipt_date: receiptDate,
+            received_by_name: receivedBy.trim() || user?.name || null,
+            remarks: remarks || null,
+            collection_account: isFRO && collectionAccount === "fro" ? "fro" : "store",
+          });
+          await reloadDbReceipts();
+          await reloadDbInvoices();
+          window.dispatchEvent(new Event("nature-biotic-store-receipts-updated"));
+          window.dispatchEvent(new Event("nature-biotic-sales-invoices-updated"));
+          closeCreateForm();
+          return;
+        } catch (err: any) {
+          savingRef.current = false;
+          window.alert(dbErrorMessage(err, "The receipt could not be saved."));
+          return;
+        }
       }
 
       const allocatedNo = nextStoreDocumentNo(
@@ -267,6 +391,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
         farmerId: selectedInvoice.farmerId || "",
         farmerName: selectedInvoice.partyName || "Farmer",
         method,
+        collectionAccount: isFRO && collectionAccount === "fro" ? "fro" : "store",
         invoiceNo: selectedInvoice.invoiceNo,
         invoiceAmount: total,
         amount: amountReceived,
@@ -401,6 +526,11 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
 
   return (
     <>
+      {listError || invoiceError ? (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {listError || invoiceError}
+        </p>
+      ) : null}
       {isFRO ? (
         froReceiptMode === "create" ? (
           <div className="min-h-full">
@@ -457,6 +587,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   }}
                   placeholder="Select sales invoice"
                   options={invoiceOptions}
+                  menuPortal
                   required
                 />
                 <Input
@@ -494,6 +625,18 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   options={methods.map((m) => ({ value: m, label: m }))}
                   required
                 />
+                {isFRO && (
+                  <Select
+                    label="Payment Account"
+                    value={collectionAccount}
+                    onChange={(value) =>
+                      setCollectionAccount(value === "fro" ? "fro" : value === "store" ? "store" : "")
+                    }
+                    placeholder="Select account"
+                    options={accountOptions}
+                    required
+                  />
+                )}
                 <Input
                   label="Invoice Amount"
                   type="number"
@@ -624,6 +767,10 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                   <DetailField
                     label="Payment Method"
                     value={viewReceipt.method}
+                  />
+                  <DetailField
+                    label="Payment Account"
+                    value={accountLabel(viewReceipt.collectionAccount) || "-"}
                   />
                 </div>
                 <div className="grid grid-cols-2 border-t border-slate-200 sm:grid-cols-4">
@@ -1300,6 +1447,10 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                               value={viewReceipt.method}
                             />
                             <DetailField
+                              label="Payment Account"
+                              value={accountLabel(viewReceipt.collectionAccount) || "-"}
+                            />
+                            <DetailField
                               label="Invoice Amount"
                               value={formatCurrency(viewReceipt.invoiceAmount)}
                             />
@@ -1427,6 +1578,13 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                                 </span>
                                 <span className="font-semibold text-slate-800">
                                   {viewReceipt.method}
+                                </span>
+
+                                <span className="text-slate-500">
+                                  Payment Account
+                                </span>
+                                <span className="font-semibold text-slate-800">
+                                  {accountLabel(viewReceipt.collectionAccount) || "-"}
                                 </span>
                               </div>
                             </div>
@@ -1604,6 +1762,7 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                         }}
                         placeholder="Select sales invoice"
                         options={invoiceOptions}
+                        menuPortal
                         required
                       />
 
@@ -1647,6 +1806,18 @@ export default function StoreReceipt({ storeId }: { storeId: string }) {
                         options={methods.map((m) => ({ value: m, label: m }))}
                         required
                       />
+                      {isFRO && (
+                        <Select
+                          label="Payment Account"
+                          value={collectionAccount}
+                          onChange={(value) =>
+                            setCollectionAccount(value === "fro" ? "fro" : value === "store" ? "store" : "")
+                          }
+                          placeholder="Select account"
+                          options={accountOptions}
+                          required
+                        />
+                      )}
 
                       <Input
                         label="Invoice Amount"

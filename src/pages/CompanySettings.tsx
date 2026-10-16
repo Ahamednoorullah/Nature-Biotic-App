@@ -7,6 +7,9 @@ import {
   saveCompanyUserSettings,
   type StoreThemeChoice,
 } from "@/lib/storeSettings";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadCompanyProfile, updateCompanyProfileDb } from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type AdminDetails = {
   name: string;
@@ -148,6 +151,37 @@ export default function CompanySettings() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    loadCompanyProfile()
+      .then((data: any) => {
+        if (!data) return;
+        if (data.company_name) setCompany(data.company_name);
+        if (data.phone) setPhone(data.phone);
+        if (data.email) setEmail(data.email);
+        const addr = [data.address_line1, data.address_line2, data.city, data.state, data.pincode]
+          .filter(Boolean)
+          .join(", ");
+        if (addr) setCompanyAddress(addr);
+        if (data.bank_name || data.bank_account_no) {
+          setBankDetails((prev) => ({
+            ...prev,
+            bankName: data.bank_name || prev.bankName,
+            accountNumber: data.bank_account_no || prev.accountNumber,
+            ifscCode: data.bank_ifsc || prev.ifscCode,
+            upiId: data.upi_id || prev.upiId,
+          }));
+        }
+        if (data.gstin) {
+          setCompanyInfo((prev) => ({
+            ...prev,
+            gstNumber: data.gstin || prev.gstNumber,
+          }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const updateAdmin = (field: keyof AdminDetails, value: string) => {
     setAdminDetails((prev) => ({ ...prev, [field]: value }));
   };
@@ -172,6 +206,14 @@ export default function CompanySettings() {
   };
 
   const saveBankDetails = () => {
+    if (usesSupabaseData()) {
+      updateCompanyProfileDb({
+        bank_name: bankDetails.bankName,
+        bank_account_no: bankDetails.accountNumber,
+        bank_ifsc: bankDetails.ifscCode,
+        upi_id: bankDetails.upiId,
+      }).catch(() => {});
+    }
     try {
       localStorage.setItem(BANK_STORAGE_KEY, JSON.stringify(bankDetails));
       setEditingBank(false);
@@ -183,6 +225,11 @@ export default function CompanySettings() {
   };
 
   const saveCompanyInfo = () => {
+    if (usesSupabaseData()) {
+      updateCompanyProfileDb({
+        gstin: companyInfo.gstNumber,
+      }).catch(() => {});
+    }
     try {
       localStorage.setItem(COMPANY_INFO_KEY, JSON.stringify(companyInfo));
       setEditingCompany(false);
@@ -194,6 +241,11 @@ export default function CompanySettings() {
   };
 
   const saveCompanyAddress = () => {
+    if (usesSupabaseData()) {
+      updateCompanyProfileDb({
+        address_line1: companyAddress,
+      }).catch(() => {});
+    }
     try {
       localStorage.setItem(COMPANY_ADDRESS_KEY, companyAddress);
       setEditingAddress(false);

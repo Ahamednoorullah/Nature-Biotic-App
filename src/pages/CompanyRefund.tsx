@@ -15,6 +15,7 @@ import {
   getCompanyRefunds,
   getCompanyStoreOutstanding,
   previewRefundSettlement,
+  getDatabasePurchaseReturns,
   getStoreApprovalRequests,
   nextStoreDocumentNo,
   purchaseReturnRefundable,
@@ -23,6 +24,16 @@ import {
   type CompanyRefund,
 } from "@/lib/data";
 import { purchaseReturnsUpdatedEvent } from "@/pages/StorePurchaseReturn";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadCompanyRefunds,
+  loadReturnRefundSources,
+  createCompanyRefundForReturnDb,
+  type ReturnRefundSource,
+} from "@/lib/db/financials";
+import { peekDocumentNo } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 const methods = ["Cash", "UPI", "Bank Transfer", "Cheque"];
 const reasons = [
@@ -35,12 +46,19 @@ const reasons = [
 ];
 
 type ApprovedReturn = {
+  sourceId: string;
+  purchaseReturnId: string;
+  creditNoteId: string;
+  creditNoteNo: string;
   storeId: string;
   storeName: string;
   returnNo: string;
   date: string;
   purchaseRef: string;
   total: number;
+  refundedTotal: number;
+  remaining: number;
+  outstanding: number;
   items: Array<{
     product?: string;
     packSize?: string;
@@ -48,6 +66,42 @@ type ApprovedReturn = {
     total?: number;
   }>;
 };
+
+function refundMethod(label: string) {
+  const value = label.trim().toLowerCase();
+  if (value === "cash") return "cash";
+  if (value === "upi") return "upi";
+  if (value === "cheque") return "cheque";
+  if (value === "bank transfer" || value === "bank_transfer") return "bank_transfer";
+  return null;
+}
+
+function sourceToReturn(source: ReturnRefundSource): ApprovedReturn {
+  const cached = getDatabasePurchaseReturns().find(
+    (row) => row.id === source.purchaseReturnId,
+  );
+  return {
+    sourceId: source.purchaseReturnId,
+    purchaseReturnId: source.purchaseReturnId,
+    creditNoteId: source.creditNoteId,
+    creditNoteNo: source.creditNoteNo,
+    storeId: source.storeId,
+    storeName: source.storeName,
+    returnNo: source.returnNo,
+    date: source.date,
+    purchaseRef: source.invoiceNo,
+    total: source.returnAmount,
+    refundedTotal: source.refundedTotal,
+    remaining: source.remaining,
+    outstanding: source.outstanding,
+    items: (cached?.items || []).map((item) => ({
+      product: item.product,
+      packSize: item.packSize,
+      quantity: item.quantity,
+      total: item.total,
+    })),
+  };
+}
 
 function localDate() {
   const now = new Date();
@@ -76,12 +130,19 @@ function loadApprovedReturns(): ApprovedReturn[] {
         match = null;
       }
       return {
+        sourceId: request.referenceNo,
+        purchaseReturnId: request.id,
+        creditNoteId: "",
+        creditNoteNo: "",
         storeId: request.storeId,
         storeName: request.storeName,
         returnNo: request.referenceNo,
         date: String(match?.date || request.date || ""),
         purchaseRef: String(match?.purchaseRef || ""),
         total: Number(match?.total || request.amount || 0),
+        refundedTotal: 0,
+        remaining: 0,
+        outstanding: 0,
         items: Array.isArray(match?.items) ? match.items : [],
       };
     });
@@ -105,33 +166,91 @@ export default function CompanyRefund() {
   const [applyToOutstanding, setApplyToOutstanding] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [refundError, setRefundError] = useState("");
+  const [listError, setListError] = useState("");
   const savingRefund = useRef(false);
 
+  const reloadDbCompanyRefunds = async () => {
+    const [dbRows, sourceRows] = await Promise.all([
+      loadCompanyRefunds(),
+      loadReturnRefundSources(),
+    ]);
+    const byReturn = new Map(sourceRows.map((row) => [row.purchaseReturnId, row]));
+    const byCredit = new Map(
+      sourceRows.filter((row) => row.creditNoteId).map((row) => [row.creditNoteId, row]),
+    );
+    setReturns(sourceRows.map(sourceToReturn));
+    setRows(
+      dbRows.map((r) => {
+        const source = byReturn.get(r.purchaseReturnId) || byCredit.get(r.creditNoteId);
+        return {
+          id: r.id,
+          refundNo: r.refundNo,
+          date: r.date,
+          storeId: r.storeId,
+          storeName: r.storeName,
+          referenceNo: source?.returnNo || r.creditNoteNo,
+          amount: r.amount,
+          reason: r.reason,
+          paymentMethod: r.method,
+          remarks: r.remarks,
+          balance: r.paidOutAmount,
+          purchaseRef: source?.invoiceNo || "",
+          applyToOutstanding: r.appliedToOutstanding > 0,
+          appliedToOutstanding: r.appliedToOutstanding,
+        };
+      }),
+    );
+    setListError("");
+  };
+
   useEffect(() => {
+    let active = true;
+    const fail = (error: unknown) => {
+      if (!active) return;
+      setRows([]);
+      setReturns([]);
+      setListError(dbErrorMessage(error, "Could not load company refunds."));
+    };
+    const loadDb = () => {
+      if (!usesSupabaseData()) {
+        setReturns(loadApprovedReturns());
+        setRows(getCompanyRefunds());
+        setListError("");
+        return;
+      }
+      reloadDbCompanyRefunds().catch(fail);
+    };
     const refresh = () => {
+      if (usesSupabaseData()) {
+        refreshPurchasingData().catch(() => undefined).then(loadDb);
+        return;
+      }
       setReturns(loadApprovedReturns());
       setRows(getCompanyRefunds());
+      setListError("");
     };
     refresh();
     window.addEventListener(storeApprovalRequestsUpdatedEvent, refresh);
-    window.addEventListener(purchaseReturnsUpdatedEvent, refresh);
+    window.addEventListener(purchaseReturnsUpdatedEvent, loadDb);
     window.addEventListener(companyRefundsUpdatedEvent, refresh);
     window.addEventListener("focus", refresh);
     return () => {
+      active = false;
       window.removeEventListener(storeApprovalRequestsUpdatedEvent, refresh);
-      window.removeEventListener(purchaseReturnsUpdatedEvent, refresh);
+      window.removeEventListener(purchaseReturnsUpdatedEvent, loadDb);
       window.removeEventListener(companyRefundsUpdatedEvent, refresh);
       window.removeEventListener("focus", refresh);
     };
   }, []);
 
   const selectedReturn = useMemo(
-    () => returns.find((row) => row.returnNo === referenceNo),
+    () => returns.find((row) => row.sourceId === referenceNo),
     [returns, referenceNo],
   );
 
   const alreadyRefunded = useMemo(() => {
     if (!selectedReturn) return 0;
+    if (usesSupabaseData()) return selectedReturn.refundedTotal;
     return rows
       .filter(
         (row) =>
@@ -142,10 +261,14 @@ export default function CompanyRefund() {
   }, [rows, selectedReturn]);
 
   const refundable = selectedReturn
-    ? purchaseReturnRefundable(selectedReturn.storeId, selectedReturn.returnNo)
+    ? usesSupabaseData()
+      ? selectedReturn.remaining
+      : purchaseReturnRefundable(selectedReturn.storeId, selectedReturn.returnNo)
     : 0;
   const accountOutstanding = selectedReturn
-    ? getCompanyStoreOutstanding(selectedReturn.storeId)
+    ? usesSupabaseData()
+      ? selectedReturn.outstanding
+      : getCompanyStoreOutstanding(selectedReturn.storeId)
     : 0;
   const settlement = previewRefundSettlement({
     refundable,
@@ -158,12 +281,16 @@ export default function CompanyRefund() {
   const returnOptions = useMemo(
     () =>
       returns
-        .filter(
-          (row) => purchaseReturnRefundable(row.storeId, row.returnNo) > 0,
+        .filter((row) =>
+          usesSupabaseData()
+            ? row.remaining > 0
+            : purchaseReturnRefundable(row.storeId, row.returnNo) > 0,
         )
         .map((row) => ({
-          value: row.returnNo,
-          label: `${row.returnNo} - ${row.storeName}`,
+          value: row.sourceId,
+          label: usesSupabaseData()
+            ? `${row.returnNo} - ${row.storeName} - ${row.purchaseRef} - ${formatCurrency(row.remaining)}`
+            : `${row.returnNo} - ${row.storeName}`,
         })),
     [returns, rows],
   );
@@ -181,13 +308,22 @@ export default function CompanyRefund() {
 
   function resetForm() {
     setDate(localDate());
-    setRefundNo(
-      nextStoreDocumentNo(
-        "NB",
-        "REF",
-        getCompanyRefunds().map((row) => String(row.refundNo || "")),
-      ),
-    );
+    if (usesSupabaseData()) {
+      peekDocumentNo("company_refund").then((nextNo) => {
+        setRefundNo(nextNo || "");
+      }).catch((error) => {
+        setRefundNo("");
+        setRefundError(dbErrorMessage(error, "Could not reserve the next refund number."));
+      });
+    } else {
+      setRefundNo(
+        nextStoreDocumentNo(
+          "NB",
+          "REF",
+          getCompanyRefunds().map((row) => String(row.refundNo || "")),
+        ),
+      );
+    }
     setReferenceNo("");
     setReason("");
     setPaymentMethod("");
@@ -204,10 +340,18 @@ export default function CompanyRefund() {
 
   function selectReturn(value: string) {
     setReferenceNo(value);
-    const row = returns.find((item) => item.returnNo === value);
-    const full = row ? purchaseReturnRefundable(row.storeId, row.returnNo) : 0;
-    setAmount(full);
-    setApplyToOutstanding(false);
+    const row = returns.find((item) => item.sourceId === value);
+    if (usesSupabaseData()) {
+      const available = row?.remaining || 0;
+      const due = row?.outstanding || 0;
+      const applied = Math.min(available, Math.max(0, due));
+      setApplyToOutstanding(true);
+      setAmount(Math.max(0, available - applied));
+    } else {
+      const full = row ? purchaseReturnRefundable(row.storeId, row.returnNo) : 0;
+      setAmount(full);
+      setApplyToOutstanding(false);
+    }
     setRefundError("");
   }
 
@@ -240,7 +384,7 @@ export default function CompanyRefund() {
     setRefundError("");
   }
 
-  function createRefund() {
+  async function createRefund() {
     if (savingRefund.current || !selectedReturn) return;
     savingRefund.current = true;
     if (settlement.exceeds || settlement.settled <= 0) {
@@ -251,6 +395,34 @@ export default function CompanyRefund() {
       );
       savingRefund.current = false;
       return;
+    }
+
+    if (usesSupabaseData()) {
+      const cashPaid = Math.min(Math.max(0, amount), settlement.maxCash);
+      const methodCode = cashPaid > 0 ? refundMethod(paymentMethod) : null;
+      if (cashPaid > 0 && !methodCode) {
+        setRefundError("Choose a payment method for the cash portion of this refund.");
+        savingRefund.current = false;
+        return;
+      }
+      try {
+        await createCompanyRefundForReturnDb({
+          p_return_id: selectedReturn.purchaseReturnId,
+          p_amount: settlement.settled,
+          p_method: methodCode,
+          p_reason: reason,
+          p_remarks: remarks || null,
+          p_refund_date: date,
+        });
+        await reloadDbCompanyRefunds();
+        savingRefund.current = false;
+        closeForm();
+        return;
+      } catch (err: any) {
+        savingRefund.current = false;
+        setRefundError(dbErrorMessage(err, "Failed to save company refund."));
+        return;
+      }
     }
     const result = addCompanyRefund({
       storeId: selectedReturn.storeId,
@@ -276,12 +448,13 @@ export default function CompanyRefund() {
     closeForm();
   }
 
+  const cashPaidNow = Math.min(Math.max(0, amount), settlement.maxCash);
   const canCreate =
     !!selectedReturn &&
     settlement.settled > 0 &&
     !settlement.exceeds &&
     !!reason &&
-    !!paymentMethod &&
+    (cashPaidNow <= 0 || !!paymentMethod) &&
     !refundError;
 
   return (
@@ -291,6 +464,11 @@ export default function CompanyRefund() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Refund
           </h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-500">
             Refunds issued against approved store purchase returns.
           </p>
@@ -445,6 +623,7 @@ export default function CompanyRefund() {
                     onChange={selectReturn}
                     placeholder="Select approved purchase return"
                     options={returnOptions}
+                    menuPortal
                     required
                   />
                   <Input
@@ -491,6 +670,12 @@ export default function CompanyRefund() {
                       <p className="mt-2 font-semibold">
                         Remaining refundable: {formatCurrency(refundable)}
                       </p>
+                      {selectedReturn.creditNoteNo ? (
+                        <p className="mt-1">
+                          <span className="font-semibold">Credit note:</span>{" "}
+                          {selectedReturn.creditNoteNo}
+                        </p>
+                      ) : null}
                     </div>
                   )}
                   <Select
@@ -529,15 +714,18 @@ export default function CompanyRefund() {
                         <input
                           type="checkbox"
                           className="mt-1"
-                          checked={applyToOutstanding}
+                          checked={usesSupabaseData() || applyToOutstanding}
+                          disabled={usesSupabaseData()}
                           onChange={(event) =>
                             toggleApplyOutstanding(event.target.checked)
                           }
                         />
                         <span>
-                          {accountOutstanding > 0
-                            ? "Outstanding exists for this account. Apply refund against outstanding?"
-                            : "Apply refund against outstanding? There is no outstanding, so the full return stays refundable."}
+                          {usesSupabaseData()
+                            ? "Outstanding is applied first. Only the remaining amount is paid in cash."
+                            : accountOutstanding > 0
+                              ? "Outstanding exists for this account. Apply refund against outstanding?"
+                              : "Apply refund against outstanding? There is no outstanding, so the full return stays refundable."}
                         </span>
                       </label>
                       {applyToOutstanding && (

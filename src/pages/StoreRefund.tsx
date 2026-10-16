@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import {
@@ -19,6 +19,21 @@ import {
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadStoreRefunds,
+  createStoreRefundDb,
+  decideStoreFarmerRefundDb,
+  previewStoreRefundDb,
+  loadSalesReturnRefundUsage,
+} from "@/lib/db/financials";
+import { loadSalesReturns } from "@/lib/db/sales";
+import { peekDocumentNo } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
+import {
+  froRefundFromLabel,
+  type FroRefundFrom,
+} from "@/lib/db/operations";
 
 type SalesReturnSource = {
   id: string;
@@ -32,11 +47,14 @@ type SalesReturnSource = {
   farmerVillage?: string;
   placeOfSupply?: string;
   executiveName?: string;
+  froStaffId?: string;
   discountAmount?: number;
   sgst?: number;
   cgst?: number;
   igst?: number;
   total: number;
+  status?: string;
+  remainingRefundable?: number;
   items?: Array<{
     product?: { name?: string };
     packSize?: string;
@@ -75,6 +93,11 @@ function ReturnSummary({ row }: { row: SalesReturnSource }) {
       <p className="mt-2 font-semibold">
         Return total: {formatCurrency(Number(row.total || 0))}
       </p>
+      {row.remainingRefundable != null && (
+        <p className="mt-1 font-semibold">
+          Remaining refundable: {formatCurrency(Number(row.remainingRefundable || 0))}
+        </p>
+      )}
     </div>
   );
 }
@@ -99,9 +122,34 @@ type RefundRow = {
   through?: "Direct" | "Executive";
   executiveName?: string;
   placeOfSupply?: string;
+  froStaffId?: string;
+  status?: string;
+  refundFrom?: FroRefundFrom | null;
 };
 
 const methods = ["Cash", "UPI", "Bank Transfer", "Cheque"];
+
+const refundFromOptions: { value: FroRefundFrom; label: string }[] = [
+  { value: "fro_cash", label: "My Account (FRO Cash in Hand)" },
+  { value: "store_account", label: "Store Account" },
+];
+
+function refundStatusLabel(status?: string) {
+  const value = String(status || "final").toLowerCase();
+  if (value === "pending") return "Pending";
+  if (value === "rejected") return "Rejected";
+  if (value === "cancelled") return "Cancelled";
+  return "Accepted";
+}
+
+function refundMethod(label: string) {
+  const value = label.trim().toLowerCase();
+  if (value === "cash") return "cash";
+  if (value === "upi") return "upi";
+  if (value === "cheque") return "cheque";
+  if (value === "bank transfer" || value === "bank_transfer") return "bank_transfer";
+  return null;
+}
 const reasons = [
   "Product Return",
   "Billing Correction",
@@ -217,7 +265,77 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [referenceNo, setReferenceNo] = useState("");
 
+  const [dbReturns, setDbReturns] = useState<SalesReturnSource[]>([]);
+  const [listError, setListError] = useState("");
+  const [sourceError, setSourceError] = useState("");
+
+  const reloadDbRefunds = async () => {
+    try {
+      const dbRows = await loadStoreRefunds(storeId);
+      setRows(
+        dbRows.map((r) => ({
+          id: r.id,
+          date: r.date,
+          refundNo: r.refundNo,
+          farmerId: "",
+          farmerName: r.farmer,
+          phone: r.farmerPhone,
+          village: "",
+          referenceNo: r.referenceNo,
+          invoiceAmount: r.amount,
+          reason: r.reason,
+          paymentMethod: r.paymentMode,
+          amount: r.amount,
+          appliedToOutstanding: r.appliedToOutstanding,
+          balance: r.paidOutAmount,
+          remarks: r.remarks,
+          through: r.channel === "executive" ? "Executive" : "Direct",
+          froStaffId: r.froStaffId,
+          status: r.status,
+          refundFrom: r.refundFrom,
+        })),
+      );
+      setListError("");
+    } catch (error) {
+      setRows([]);
+      setListError(dbErrorMessage(error, "Could not load store refunds."));
+      console.error("[StoreRefund] load", error);
+    }
+  };
+
+  const reloadDbReturns = async () => {
+    try {
+      const returns = await loadSalesReturns(storeId);
+      const approved = returns.filter(
+        (row) => String(row.status || "").toLowerCase() === "approved",
+      );
+      const usage = await loadSalesReturnRefundUsage(approved.map((row) => row.id));
+      setDbReturns(
+        approved.map((row) => ({
+          ...(row as unknown as SalesReturnSource),
+          remainingRefundable: Math.max(
+            0,
+            Number(row.total || 0) - (usage.get(row.id) || 0),
+          ),
+        })),
+      );
+      setSourceError("");
+    } catch (error) {
+      setDbReturns([]);
+      setSourceError(dbErrorMessage(error, "Could not load sales returns."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbRefunds();
+    void reloadDbReturns();
+  }, [storeId]);
+
   const salesReturns = useMemo<SalesReturnSource[]>(() => {
+    if (usesSupabaseData()) {
+      return dbReturns;
+    }
     try {
       const raw = localStorage.getItem(
         `${STORE_SALES_RETURN_STORAGE_KEY}:${storeId}`,
@@ -227,41 +345,85 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     } catch {
       return [];
     }
-  }, [storeId, showCreate]);
+  }, [storeId, showCreate, dbReturns]);
 
   const visibleSalesReturns = useMemo(() => {
-    if (!isFRO || !user?.name) return salesReturns;
-
-    const froName = user.name.trim().toLowerCase();
-
-    return salesReturns.filter(
-      (row) =>
-        row.through === "Executive" &&
+    if (!isFRO) return salesReturns;
+    const staffId = String(user?.staffId || "").trim();
+    const froName = (user?.name || "").trim().toLowerCase();
+    return salesReturns.filter((row) => {
+      if (row.through !== "Executive") return false;
+      const rowStaff = String(row.froStaffId || "").trim();
+      if (staffId && rowStaff) return rowStaff === staffId;
+      return (
         String(row.executiveName || "")
           .trim()
-          .toLowerCase() === froName,
-    );
-  }, [salesReturns, isFRO, user?.name]);
+          .toLowerCase() === froName
+      );
+    });
+  }, [salesReturns, isFRO, user?.staffId, user?.name]);
 
   const selectedReturn = useMemo(
     () => visibleSalesReturns.find((row) => row.returnNo === referenceNo),
     [visibleSalesReturns, referenceNo],
   );
 
-  function selectSalesReturn(value: string) {
+  const [serverOutstanding, setServerOutstanding] = useState(0);
+  const [previouslyRefunded, setPreviouslyRefunded] = useState(0);
+
+  async function selectSalesReturn(value: string) {
     setReferenceNo(value);
     const salesReturn = visibleSalesReturns.find((row) => row.returnNo === value);
-    const original = Number(salesReturn?.total || 0);
+    setRefundError("");
+    if (!salesReturn) {
+      setInvoiceAmount(0);
+      setAmount(0);
+      setServerOutstanding(0);
+      setPreviouslyRefunded(0);
+      return;
+    }
+    if (usesSupabaseData()) {
+      try {
+        const preview = await previewStoreRefundDb("sales_return", salesReturn.id);
+        if (!preview.eligible || preview.remainingRefundable <= 0) {
+          setRefundError("This sales return has no remaining refundable balance.");
+          setServerOutstanding(0);
+          setAmount(0);
+          return;
+        }
+        const remaining = preview.remainingRefundable;
+        const sourceTotal = preview.sourceTotal || Number(salesReturn.total || 0);
+        const outstanding = preview.outstandingBefore;
+        setServerOutstanding(outstanding);
+        setPreviouslyRefunded(Math.max(0, sourceTotal - remaining));
+        setInvoiceAmount(sourceTotal);
+        setApplyToOutstanding(true);
+        setAmount(Math.max(0, remaining - Math.min(remaining, outstanding)));
+        setDbReturns((current) =>
+          current.map((row) =>
+            row.id === salesReturn.id ? { ...row, remainingRefundable: remaining } : row,
+          ),
+        );
+      } catch (error) {
+        setServerOutstanding(0);
+        setPreviouslyRefunded(0);
+        setAmount(0);
+        setRefundError(dbErrorMessage(error, "Could not load this sales return."));
+      }
+      return;
+    }
+    const original = Number(salesReturn.total || 0);
     const refunded = rows
       .filter((row) => row.referenceNo === value)
       .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
     setInvoiceAmount(original);
+    setPreviouslyRefunded(refunded);
     setAmount(Math.max(0, original - refunded));
     setApplyToOutstanding(false);
-    setRefundError("");
   }
 
   const [rows, setRows] = useState<RefundRow[]>(() => {
+    if (usesSupabaseData()) return [];
     return loadRows(storageKey);
   });
 
@@ -277,6 +439,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const [applyToOutstanding, setApplyToOutstanding] = useState(false);
   const [refundError, setRefundError] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [refundFrom, setRefundFrom] = useState<FroRefundFrom>("fro_cash");
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const alreadyRefunded = useMemo(() => {
     if (!selectedReturn) return 0;
@@ -285,15 +449,21 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
   }, [rows, selectedReturn]);
 
-  const refundable = Math.max(
-    0,
-    Number(selectedReturn?.total || 0) - alreadyRefunded,
-  );
+  const refundable = usesSupabaseData()
+    ? Math.max(0, Number(selectedReturn?.remainingRefundable || 0))
+    : Math.max(0, Number(selectedReturn?.total || 0) - alreadyRefunded);
 
   const returnOptions = useMemo(
     () =>
       visibleSalesReturns
         .filter((salesReturn) => {
+          const status = String(salesReturn.status || "approved").toLowerCase();
+          if (status === "pending" || status === "rejected" || status === "cancelled") {
+            return false;
+          }
+          if (usesSupabaseData()) {
+            return Number(salesReturn.remainingRefundable || 0) > 0.009;
+          }
           const refunded = rows
             .filter((row) => row.referenceNo === salesReturn.returnNo)
             .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
@@ -301,7 +471,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
         })
         .map((row) => ({
           value: row.returnNo,
-          label: `${row.returnNo} - ${row.partyName}`,
+          label: row.returnNo,
         })),
     [visibleSalesReturns, rows],
   );
@@ -336,13 +506,15 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const selectedFarmer = farmers.find(
     (farmer) => farmer.id === selectedReturn?.farmerId,
   );
-  const accountOutstanding = selectedReturn
-    ? getStoreFarmerOutstanding(
-        storeId,
-        String(selectedReturn.farmerId || selectedFarmer?.id || ""),
-        selectedReturn.partyName,
-      )
-    : 0;
+  const accountOutstanding = usesSupabaseData()
+    ? serverOutstanding
+    : selectedReturn
+      ? getStoreFarmerOutstanding(
+          storeId,
+          String(selectedReturn.farmerId || selectedFarmer?.id || ""),
+          selectedReturn.partyName,
+        )
+      : 0;
   const settlement = previewRefundSettlement({
     refundable,
     outstanding: accountOutstanding,
@@ -352,6 +524,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
   const balanceValue = Math.max(0, settlement.settled - settlement.applied);
 
   function toggleApplyOutstanding(checked: boolean) {
+    if (usesSupabaseData()) return;
     const next = previewRefundSettlement({
       refundable,
       outstanding: accountOutstanding,
@@ -363,29 +536,24 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     setRefundError("");
   }
 
+  const cashRefund = settlement.cash > 0.009;
   const canCreate =
     !!date &&
     !!refundNo.trim() &&
     !!selectedReturn &&
     !!reason &&
-    !!paymentMethod &&
+    (cashRefund ? !!paymentMethod : !usesSupabaseData() ? !!paymentMethod : true) &&
     settlement.settled > 0 &&
     !settlement.exceeds &&
     !refundError;
 
   const scopedRows = useMemo(() => {
-    if (!isFRO || !user?.name) return rows;
-
-    const froName = user.name.trim().toLowerCase();
-
-    return rows.filter(
-      (row) =>
-        row.through === "Executive" &&
-        String(row.executiveName || "")
-          .trim()
-          .toLowerCase() === froName,
-    );
-  }, [rows, isFRO, user?.name]);
+    if (!isFRO) return rows;
+    const staffId = String(user?.staffId || "").trim();
+    if (!staffId) return [];
+    // Farmer sales refunds only — never expense-advance (fro_cash_refunds) rows.
+    return rows.filter((row) => String(row.froStaffId || "") === staffId);
+  }, [rows, isFRO, user?.staffId]);
 
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
@@ -418,15 +586,28 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
 
   function resetForm() {
     setDate(new Date().toISOString().split("T")[0]);
-    setRefundNo(nextRefundNo());
+    if (usesSupabaseData()) {
+      peekDocumentNo("store_refund", storeId).then((nextNo) => {
+        if (nextNo) setRefundNo(nextNo);
+        else setRefundNo("");
+      }).catch((error) => {
+        setRefundNo("");
+        setRefundError(dbErrorMessage(error, "Could not load the next refund number."));
+      });
+    } else {
+      setRefundNo(nextRefundNo());
+    }
     setReferenceNo("");
     setInvoiceAmount(0);
+    setPreviouslyRefunded(0);
     setReason("");
     setPaymentMethod("");
     setAmount(0);
-    setApplyToOutstanding(false);
+    setServerOutstanding(0);
+    setApplyToOutstanding(usesSupabaseData());
     setRefundError("");
     setRemarks("");
+    setRefundFrom("fro_cash");
   }
 
   function closeForm() {
@@ -443,18 +624,20 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
     } catch {}
   }
 
-  function createRefund() {
+  async function createRefund() {
     if (savingRefund.current || !canCreate || !selectedReturn) return;
     savingRefund.current = true;
     const originalTotal = Number(selectedReturn.total || 0);
     const already = rows
       .filter((row) => row.referenceNo === selectedReturn.returnNo)
       .reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
-    const remaining = Math.max(0, originalTotal - already);
+    const remaining = usesSupabaseData()
+      ? refundable
+      : Math.max(0, originalTotal - already);
     const preview = previewRefundSettlement({
       refundable: remaining,
       outstanding: accountOutstanding,
-      apply: applyToOutstanding,
+      apply: usesSupabaseData() ? true : applyToOutstanding,
       cash: amount,
     });
     if (preview.exceeds || preview.settled <= 0) {
@@ -465,6 +648,44 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
       );
       savingRefund.current = false;
       return;
+    }
+
+    if (usesSupabaseData()) {
+      const methodCode = preview.cash > 0.009 ? refundMethod(paymentMethod) : null;
+      if (preview.cash > 0.009 && !methodCode) {
+        savingRefund.current = false;
+        setRefundError("Choose a payment method for the cash or bank refund.");
+        return;
+      }
+      try {
+        if (isFRO && !refundFrom) {
+          savingRefund.current = false;
+          setRefundError("Select Refund From: My Account or Store Account.");
+          return;
+        }
+        await createStoreRefundDb({
+          p_source_type: "sales_return",
+          p_source_id: selectedReturn.id,
+          p_amount: preview.settled,
+          p_method: methodCode,
+          p_reason: reason,
+          p_remarks: remarks || null,
+          p_refund_date: date,
+          p_refund_from: isFRO ? refundFrom : null,
+        });
+        await reloadDbRefunds();
+        await reloadDbReturns();
+        window.dispatchEvent(new Event("nature-biotic-store-refunds-updated"));
+        window.dispatchEvent(new Event("nature-biotic-sales-invoices-updated"));
+        window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+        savingRefund.current = false;
+        closeForm();
+        return;
+      } catch (err: any) {
+        savingRefund.current = false;
+        setRefundError(dbErrorMessage(err, "Failed to process store refund."));
+        return;
+      }
     }
 
     const allocatedNo = nextRefundNo();
@@ -545,7 +766,16 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                 Refund
               </h1>
             </div>
-            {!isFRO && (
+            {listError || sourceError ? (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                {listError || sourceError}
+              </p>
+            ) : null}
+            {isFRO ? (
+              <p className="mt-1 text-slate-500">
+                Farmer refunds after sales returns. Expense-advance returns to Store are under Expenses.
+              </p>
+            ) : (
               <p className="mt-1 text-slate-500">
                 Refunds issued against store sales and farmer transactions.
               </p>
@@ -609,6 +839,96 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
         </div>
       )}
 
+      {!isFRO &&
+        usesSupabaseData() &&
+        rows.some((row) => String(row.status || "").toLowerCase() === "pending") && (
+          <Card className="mb-5 overflow-hidden border-amber-200">
+            <div className="border-b border-amber-100 bg-amber-50 px-4 py-3">
+              <h2 className="text-sm font-semibold text-amber-900">
+                Pending FRO farmer refunds
+              </h2>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Accept to apply outstanding / cash rules. Reject to leave farmer and FRO cash unchanged.
+              </p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {rows
+                .filter((row) => String(row.status || "").toLowerCase() === "pending")
+                .map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">
+                        {row.refundNo} · {row.farmerName}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {row.referenceNo}
+                        {row.refundFrom
+                          ? ` · ${froRefundFromLabel(row.refundFrom)}`
+                          : ""}
+                        {" · "}
+                        {formatCurrency(row.amount)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        variant="secondary"
+                        disabled={decidingId === row.id}
+                        onClick={async () => {
+                          setDecidingId(row.id);
+                          try {
+                            await decideStoreFarmerRefundDb(row.id, "rejected");
+                            await reloadDbRefunds();
+                            window.dispatchEvent(
+                              new Event("nature-biotic-store-refunds-updated"),
+                            );
+                            window.dispatchEvent(
+                              new Event("nature-biotic-cash-received-updated"),
+                            );
+                          } catch (error) {
+                            window.alert(
+                              dbErrorMessage(error, "Could not reject farmer refund."),
+                            );
+                          } finally {
+                            setDecidingId(null);
+                          }
+                        }}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        disabled={decidingId === row.id}
+                        onClick={async () => {
+                          setDecidingId(row.id);
+                          try {
+                            await decideStoreFarmerRefundDb(row.id, "accepted");
+                            await reloadDbRefunds();
+                            window.dispatchEvent(
+                              new Event("nature-biotic-store-refunds-updated"),
+                            );
+                            window.dispatchEvent(
+                              new Event("nature-biotic-cash-received-updated"),
+                            );
+                          } catch (error) {
+                            window.alert(
+                              dbErrorMessage(error, "Could not accept farmer refund."),
+                            );
+                          } finally {
+                            setDecidingId(null);
+                          }
+                        }}
+                      >
+                        Accept
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </Card>
+        )}
+
       {(!isFRO || (!showCreate && !selectedRefund)) && (
         <Card className="mb-5 p-4">
           <div className="max-w-md">
@@ -667,6 +987,15 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     <td className="border-r border-slate-100 px-2 py-3 text-left">
                       <p className="truncate text-xs font-semibold text-slate-800">
                         {row.farmerName || "-"}
+                      </p>
+                      <p className="truncate text-[10px] text-slate-500">
+                        {row.refundNo}
+                        {row.referenceNo ? ` · ${row.referenceNo}` : ""}
+                        {" · "}
+                        {refundStatusLabel(row.status)}
+                        {row.refundFrom
+                          ? ` · ${froRefundFromLabel(row.refundFrom)}`
+                          : ""}
                       </p>
                       <p className="truncate text-[10px] text-slate-500">
                         {row.village || "-"}
@@ -870,6 +1199,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     onChange={selectSalesReturn}
                     placeholder="Select sales return"
                     options={returnOptions}
+                    menuPortal
                     required
                   />
 
@@ -919,6 +1249,18 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                     value={String(invoiceAmount)}
                     onChange={() => {}}
                     placeholder="Auto-filled from sales return"
+                    readOnly
+                  />
+                  <Input
+                    label="Previously Refunded"
+                    value={formatCurrency(previouslyRefunded)}
+                    onChange={() => {}}
+                    readOnly
+                  />
+                  <Input
+                    label="Remaining Refundable"
+                    value={formatCurrency(refundable)}
+                    onChange={() => {}}
                     readOnly
                   />
 
@@ -1408,6 +1750,7 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                 onChange={selectSalesReturn}
                 placeholder="Select sales return"
                 options={returnOptions}
+                menuPortal
                 required
               />
               <Input label="Farmer Name" value={selectedReturn?.partyName || ""} onChange={() => {}} placeholder="Auto-filled from sales return" readOnly />
@@ -1427,6 +1770,8 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
               />
               <Input label="Original Invoice" value={selectedReturn?.invoiceNo || ""} onChange={() => {}} placeholder="Auto-filled from sales return" readOnly />
               <Input label="Return Amount" type="number" value={String(invoiceAmount)} onChange={() => {}} placeholder="Auto-filled from sales return" readOnly />
+              <Input label="Previously Refunded" value={formatCurrency(previouslyRefunded)} onChange={() => {}} readOnly />
+              <Input label="Remaining Refundable" value={formatCurrency(refundable)} onChange={() => {}} readOnly />
               {selectedReturn && <ReturnSummary row={selectedReturn} />}
               <Select
                 label="Reason"
@@ -1444,6 +1789,18 @@ export default function StoreRefund({ storeId }: { storeId: string }) {
                 options={methods.map((item) => ({ value: item, label: item }))}
                 required
               />
+              <Select
+                label="Refund From"
+                value={refundFrom}
+                onChange={(value) => setRefundFrom(value as FroRefundFrom)}
+                options={refundFromOptions}
+                required
+              />
+              <p className="text-xs text-slate-500 md:col-span-2 lg:col-span-3">
+                {refundFrom === "fro_cash"
+                  ? "My Account refunds deduct FRO Cash in Hand only after the Store accepts."
+                  : "Store Account refunds do not deduct FRO Cash in Hand. Store acceptance is still required."}
+              </p>
               {selectedReturn && (
                 <RefundOutstandingNotice
                   outstanding={accountOutstanding}

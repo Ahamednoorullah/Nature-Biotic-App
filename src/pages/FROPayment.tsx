@@ -9,6 +9,9 @@ import {
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadCashHandovers, createCashHandoverDb, loadFroMoneyPosition, loadDigitalSettlements, createDigitalSettlementDb, type DbHandover } from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type Receipt = {
   id: string;
@@ -32,7 +35,7 @@ type Handover = {
   handedOverBy: string;
   createdByStaffId?: string;
   remarks?: string;
-  status?: "pending" | "accepted";
+  status?: "pending" | "accepted" | "rejected";
   acceptedAt?: string;
   acceptedBy?: string;
 };
@@ -52,6 +55,74 @@ export default function FROPayment({ storeId }: { storeId: string }) {
 
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [handovers, setHandovers] = useState<Handover[]>([]);
+  const [listError, setListError] = useState("");
+  const [moneyPosition, setMoneyPosition] = useState<{ cashInHand: number; digitalInAccount: number } | null>(null);
+  const [digitalRows, setDigitalRows] = useState<Handover[]>([]);
+  const [showDigital, setShowDigital] = useState(false);
+  const [digitalDate, setDigitalDate] = useState(new Date().toISOString().split("T")[0]);
+  const [digitalAmount, setDigitalAmount] = useState("");
+  const [digitalMethod, setDigitalMethod] = useState<"UPI" | "Bank Transfer">("UPI");
+  const [digitalRemarks, setDigitalRemarks] = useState("");
+  const savingDigital = useRef(false);
+
+  const reloadDbHandovers = async () => {
+    try {
+      const rows = await loadCashHandovers(storeId);
+      setHandovers(
+        rows.map((r) => ({
+          id: r.id,
+          date: r.date,
+          amount: r.amount,
+          method: r.method,
+          handedOverBy: r.handedOverBy,
+          remarks: r.remarks,
+          status: r.status,
+          acceptedAt: r.decidedAt,
+        })),
+      );
+      setListError("");
+    } catch (error) {
+      setListError(dbErrorMessage(error, "Could not load cash handovers."));
+    }
+  };
+
+  const reloadMoney = async () => {
+    if (!user?.staffId) return;
+    try {
+      const position = await loadFroMoneyPosition(user.staffId);
+      if (position) setMoneyPosition(position);
+    } catch (error) {
+      setListError(dbErrorMessage(error, "Could not load cash in hand."));
+    }
+  };
+
+  const reloadDigital = async () => {
+    try {
+      const rows = await loadDigitalSettlements(storeId);
+      setDigitalRows(
+        rows.map((row) => ({
+          id: row.id,
+          date: row.date,
+          amount: row.amount,
+          method: row.method,
+          handedOverBy: row.handedOverBy,
+          remarks: row.remarks,
+          status: row.status,
+          acceptedAt: row.decidedAt,
+          createdByStaffId: row.froStaffId,
+        })),
+      );
+    } catch (error) {
+      setListError(dbErrorMessage(error, "Could not load digital collections."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbHandovers();
+    void reloadMoney();
+    void reloadDigital();
+  }, [storeId, user?.staffId]);
   const [showHandover, setShowHandover] = useState(false);
   const [showHandoverDetails, setShowHandoverDetails] = useState(false);
   const [dateFilter, setDateFilter] = useState<PaymentDateFilter>("today");
@@ -149,19 +220,16 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     [filteredAcceptedHandovers],
   );
 
-  const currentCashInHand = useMemo(
-    () =>
-      getFROCashPosition(storeId, user?.name || "", user?.staffId, user?.id)
-        .cashInHand,
-    [storeId, user?.name, user?.staffId, user?.id, receipts, handovers],
-  );
+  const currentCashInHand = usesSupabaseData()
+    ? (moneyPosition?.cashInHand ?? null)
+    : getFROCashPosition(storeId, user?.name || "", user?.staffId, user?.id).cashInHand;
   const froNameKey = (user?.name || "").trim().toLowerCase();
   const pendingCashReserved = useMemo(
     () =>
       handovers
         .filter((handover) => {
-          if (handover.status !== "pending") return false;
-          if ((handover.method || "Cash") !== "Cash") return false;
+          if (String(handover.status || "").toLowerCase() !== "pending") return false;
+          if (String(handover.method || "cash").toLowerCase() !== "cash") return false;
           return handoverBelongsToFro(handover, user?.name || "", [
             user?.staffId,
             user?.id,
@@ -171,10 +239,10 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     [handovers, froNameKey],
   );
   const cashAvailableForHandover = Math.max(
-    currentCashInHand - pendingCashReserved,
+    (currentCashInHand ?? 0) - pendingCashReserved,
     0,
   );
-  const cashHandover = handoverMethod === "Cash";
+  const cashHandover = usesSupabaseData() || handoverMethod === "Cash";
   const requestedAmount = Number(handoverAmount) || 0;
   const handoverExceedsCash =
     cashHandover && requestedAmount > cashAvailableForHandover;
@@ -182,7 +250,11 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     requestedAmount > 0 &&
     !!user?.name &&
     (!cashHandover || requestedAmount <= cashAvailableForHandover);
-  const balanceAmount = currentCashInHand;
+  const balanceAmount = currentCashInHand ?? 0;
+  const pendingDigital = digitalRows
+    .filter((row) => row.status === "pending")
+    .reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+  const digitalAvailable = Math.max((moneyPosition?.digitalInAccount ?? 0) - pendingDigital, 0);
 
   function loadPaymentData() {
     try {
@@ -199,15 +271,24 @@ export default function FROPayment({ storeId }: { storeId: string }) {
 
   useEffect(() => {
     window.scrollTo(0, 0);
-    loadPaymentData();
+    if (!usesSupabaseData()) loadPaymentData();
 
-    const refresh = () => loadPaymentData();
+    const refresh = () => {
+      if (usesSupabaseData()) {
+        void reloadDbHandovers();
+        void reloadMoney();
+        void reloadDigital();
+        return;
+      }
+      loadPaymentData();
+    };
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-handover-updated", refresh);
     window.addEventListener("nature-biotic-store-receipts-updated", refresh);
     window.addEventListener("nature-biotic-store-refunds-updated", refresh);
     window.addEventListener("nature-biotic-cash-received-updated", refresh);
+    window.addEventListener("nature-biotic-digital-settlement-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
@@ -216,8 +297,9 @@ export default function FROPayment({ storeId }: { storeId: string }) {
       window.removeEventListener("nature-biotic-store-receipts-updated", refresh);
       window.removeEventListener("nature-biotic-store-refunds-updated", refresh);
       window.removeEventListener("nature-biotic-cash-received-updated", refresh);
+      window.removeEventListener("nature-biotic-digital-settlement-updated", refresh);
     };
-  }, [receiptStorageKey, handoverStorageKey]);
+  }, [receiptStorageKey, handoverStorageKey, storeId, user?.staffId]);
 
   function resetHandoverForm() {
     setHandoverDate(new Date().toISOString().split("T")[0]);
@@ -231,9 +313,31 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     resetHandoverForm();
   }
 
-  function handleCreateHandover() {
+  async function handleCreateHandover() {
     if (savingHandover.current || !canCreateHandover || !user?.name) return;
     savingHandover.current = true;
+
+    if (usesSupabaseData()) {
+      try {
+        const methodKey = "cash" as const;
+
+        await createCashHandoverDb(
+          requestedAmount,
+          methodKey,
+          handoverDate,
+          handoverRemarks.trim() || undefined,
+        );
+        savingHandover.current = false;
+        closeHandoverForm();
+        setShowHandoverDetails(true);
+        await reloadDbHandovers();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to submit cash handover"));
+        savingHandover.current = false;
+        return;
+      }
+    }
 
     const newHandover: Handover = {
       id: `fro-ho-${Date.now()}`,
@@ -253,6 +357,33 @@ export default function FROPayment({ storeId }: { storeId: string }) {
     closeHandoverForm();
     setShowHandoverDetails(true);
     window.dispatchEvent(new Event("nature-biotic-handover-updated"));
+  }
+
+  const digitalRequested = Number(digitalAmount) || 0;
+  const canSettleDigital =
+    usesSupabaseData() &&
+    digitalRequested > 0 &&
+    digitalRequested <= digitalAvailable;
+
+  async function handleCreateDigitalSettlement() {
+    if (savingDigital.current || !canSettleDigital) return;
+    savingDigital.current = true;
+    try {
+      await createDigitalSettlementDb(
+        digitalRequested,
+        digitalMethod === "Bank Transfer" ? "bank_transfer" : "upi",
+        digitalDate,
+        digitalRemarks.trim() || undefined,
+      );
+      setDigitalAmount("");
+      setDigitalRemarks("");
+      await reloadDigital();
+      window.dispatchEvent(new Event("nature-biotic-digital-settlement-updated"));
+    } catch (error) {
+      window.alert(dbErrorMessage(error, "Could not submit the digital settlement."));
+    } finally {
+      savingDigital.current = false;
+    }
   }
 
   return (
@@ -276,6 +407,11 @@ export default function FROPayment({ storeId }: { storeId: string }) {
               <h1 className="mt-1 text-xl font-extrabold text-slate-800">
                 Payment
               </h1>
+              {listError ? (
+                <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  {listError}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -290,11 +426,11 @@ export default function FROPayment({ storeId }: { storeId: string }) {
         </div>
 
         {/* Only these two boxes are shown on the main Payment page. */}
-        {!showHandoverDetails && !showHandover && (
+        {!showHandoverDetails && !showHandover && !showDigital && (
           <div className="grid grid-cols-2 gap-3">
           <SummaryCard
             label="Cash in Hand"
-            value={formatCurrency(balanceAmount)}
+            value={currentCashInHand == null ? "—" : formatCurrency(currentCashInHand)}
             icon="payments"
             tone="bg-emerald-50 text-emerald-700"
           />
@@ -312,6 +448,92 @@ export default function FROPayment({ storeId }: { storeId: string }) {
               clickable
             />
           </button>
+          {usesSupabaseData() && (
+            <button
+              type="button"
+              onClick={() => setShowDigital(true)}
+              className="col-span-2 text-left"
+            >
+              <SummaryCard
+                label="Digital Collection"
+                value={moneyPosition == null ? "—" : formatCurrency(moneyPosition.digitalInAccount)}
+                icon="account_balance_wallet"
+                tone="bg-violet-50 text-violet-700"
+                clickable
+              />
+            </button>
+          )}
+          </div>
+        )}
+
+        {showDigital && (
+          <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => setShowDigital(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                aria-label="Back to Payment"
+              >
+                <Icon name="arrow_back" size={21} />
+              </button>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-brand-600">
+                  MY ACCOUNT
+                </p>
+                <h2 className="mt-1 text-lg font-extrabold text-slate-800">
+                  Digital Collection
+                </h2>
+              </div>
+            </div>
+            <div className="space-y-4 p-4">
+              <p className="text-sm text-slate-500">
+                UPI and bank receipts collected into My Account stay here. This transfer does not change Cash in Hand, and it stays pending until the store accepts it.
+              </p>
+              <p className="text-sm font-semibold text-slate-700">
+                Available to transfer {formatCurrency(digitalAvailable)}
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label="Date" type="date" value={digitalDate} onChange={setDigitalDate} required />
+                <Input
+                  label="Amount"
+                  type="number"
+                  value={digitalAmount}
+                  onChange={setDigitalAmount}
+                  placeholder="Enter amount"
+                  required
+                />
+                <Select
+                  label="Transfer Method"
+                  value={digitalMethod}
+                  onChange={(value) => setDigitalMethod(value === "Bank Transfer" ? "Bank Transfer" : "UPI")}
+                  options={[
+                    { value: "UPI", label: "UPI" },
+                    { value: "Bank Transfer", label: "Bank Transfer" },
+                  ]}
+                  required
+                />
+                <Input label="Remarks" value={digitalRemarks} onChange={setDigitalRemarks} />
+              </div>
+              <Button onClick={handleCreateDigitalSettlement} disabled={!canSettleDigital}>
+                <Icon name="save" size={18} /> Transfer to Store
+              </Button>
+              <div className="space-y-2">
+                {digitalRows.length === 0 ? (
+                  <p className="text-sm text-slate-400">No digital transfers yet.</p>
+                ) : (
+                  digitalRows.map((row) => (
+                    <div key={row.id} className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2 text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-800">{formatCurrency(row.amount)}</p>
+                        <p className="text-xs text-slate-500">{row.method} · {formatDate(row.date)}</p>
+                      </div>
+                      <span className="text-xs font-bold uppercase text-slate-500">{row.status || "pending"}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -476,9 +698,9 @@ export default function FROPayment({ storeId }: { storeId: string }) {
                 />
                 <Select
                   label="Payment Method"
-                  value={handoverMethod}
+                  value={usesSupabaseData() ? "Cash" : handoverMethod}
                   onChange={setHandoverMethod}
-                  options={handoverMethods.map((method) => ({
+                  options={(usesSupabaseData() ? ["Cash"] : handoverMethods).map((method) => ({
                     value: method,
                     label: method,
                   }))}
@@ -504,7 +726,7 @@ export default function FROPayment({ storeId }: { storeId: string }) {
                       Cash in Hand
                     </span>
                     <span className="text-base font-extrabold text-emerald-800">
-                      {formatCurrency(currentCashInHand)}
+                      {formatCurrency(currentCashInHand ?? 0)}
                     </span>
                   </div>
                   {handoverExceedsCash && (

@@ -11,9 +11,23 @@ import {
   elapsedSinceCheckIn,
   findOpenAttendance,
   formatAttendanceTime,
+  formatWorkedDuration,
   latestStaffAttendance,
 } from "@/pages/StoreAttendance";
-import { getFroNotifications } from "@/lib/storeNotifications";
+import { getFroNotifications, rememberDeliveryNotifications, type StoreNotification } from "@/lib/storeNotifications";
+import { checkInDb, checkOutDb, loadAttendance, loadStockDeliveries } from "@/lib/db/operations";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { dbErrorMessage } from "@/lib/db/errors";
+import {
+  loadCashHandoverNotifications,
+  loadFroCashAdvanceNotifications,
+  loadFroStockReturnNotifications,
+  loadFroExpenseDecisionNotifications,
+  loadFroCashRefundDecisionNotifications,
+  loadFroSalesRefundDecisionNotifications,
+  loadNotificationReadKeys,
+  markNotificationsRead,
+} from "@/lib/db/notifications";
 import {
   readNotificationReads,
   readStoreUserSettings,
@@ -33,10 +47,53 @@ function FroAttendanceControl({
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [version, setVersion] = useState(0);
+  const [serverRecord, setServerRecord] = useState<AttendanceView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const reloadServer = async () => {
+    if (!usesSupabaseData() || !storeId) return;
+    const rows = await loadAttendance(storeId);
+    const mine = rows
+      .filter((row) => row.staffId === staffId && row.checkIn)
+      .sort((a, b) => String(b.checkInAt || b.date).localeCompare(String(a.checkInAt || a.date)));
+    const latest = mine[0];
+    if (!latest) {
+      setServerRecord(null);
+      return;
+    }
+    const worked =
+      latest.checkInAt && latest.checkOutAt
+        ? formatWorkedDuration(
+            new Date(latest.checkOutAt).getTime() - new Date(latest.checkInAt).getTime(),
+          )
+        : undefined;
+    setServerRecord({
+      id: latest.id,
+      staffId: latest.staffId,
+      date: latest.date,
+      checkIn: latest.checkIn,
+      checkOut: latest.checkOut,
+      checkInAt: latest.checkInAt,
+      checkOutAt: latest.checkOutAt,
+      status: latest.status as AttendanceView["status"],
+      note: latest.note,
+      workedDuration: worked,
+    });
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    const refresh = () => setVersion((current) => current + 1);
+    const refresh = () => {
+      setVersion((current) => current + 1);
+      if (usesSupabaseData()) {
+        reloadServer().catch((err) => {
+          setError(dbErrorMessage(err, "Could not load attendance."));
+        });
+      }
+    };
+    refresh();
     window.addEventListener(attendanceUpdatedEvent, refresh);
     window.addEventListener("focus", refresh);
     return () => {
@@ -44,11 +101,66 @@ function FroAttendanceControl({
       window.removeEventListener(attendanceUpdatedEvent, refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, []);
+  }, [storeId, staffId]);
 
-  const open = findOpenAttendance(storeId, staffId);
-  const latest = latestStaffAttendance(storeId, staffId);
+  const open = usesSupabaseData()
+    ? serverRecord?.checkIn && !serverRecord.checkOut
+      ? serverRecord
+      : null
+    : findOpenAttendance(storeId, staffId);
+  const latest = usesSupabaseData()
+    ? serverRecord
+    : latestStaffAttendance(storeId, staffId);
+  const finishedToday =
+    usesSupabaseData() &&
+    !open &&
+    !!latest?.checkOut &&
+    latest.date ===
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
   void version;
+
+  async function markAttendance() {
+    if (busy) return;
+    setMessage("");
+    setError("");
+    if (!storeId) {
+      setError("This account is not assigned to a store.");
+      return;
+    }
+    if (usesSupabaseData() && !/^[0-9a-f-]{36}$/i.test(staffId)) {
+      setError("This login is not linked to a staff record.");
+      return;
+    }
+    if (finishedToday) {
+      setError("Already checked in for today.");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (usesSupabaseData()) {
+        if (open) await checkOutDb(staffId, "Checked out");
+        else await checkInDb(staffId, "checked_in", "Checked in");
+        await reloadServer();
+        setMessage(open ? "Checked out." : "Checked in.");
+      } else if (open) {
+        if (!checkOutStaff(storeId, staffId)) {
+          setError("No open check-in found for today.");
+          return;
+        }
+        setMessage("Checked out.");
+      } else if (!checkInStaff(storeId, staffId)) {
+        setError("Already checked in for today.");
+        return;
+      } else {
+        setMessage("Checked in.");
+      }
+      window.dispatchEvent(new Event(attendanceUpdatedEvent));
+    } catch (err) {
+      setError(dbErrorMessage(err, open ? "Could not check out." : "Could not check in."));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div>
@@ -85,18 +197,33 @@ function FroAttendanceControl({
       ) : null}
       <button
         type="button"
+        disabled={busy || finishedToday}
         onClick={() => {
-          if (open) checkOutStaff(storeId, staffId);
-          else checkInStaff(storeId, staffId);
+          void markAttendance();
         }}
-        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Icon name="schedule" size={18} />
-        {open ? "Check Out" : "Check In"}
+        {busy ? "Saving..." : open ? "Check Out" : finishedToday ? "Checked out" : "Check In"}
       </button>
+      {message && <p className="mt-2 text-xs font-medium text-emerald-700">{message}</p>}
+      {error && <p className="mt-2 text-xs font-medium text-red-600">{error}</p>}
     </div>
   );
 }
+
+type AttendanceView = {
+  id: string;
+  staffId: string;
+  date: string;
+  checkIn: string;
+  checkOut: string;
+  checkInAt?: string;
+  checkOutAt?: string;
+  workedDuration?: string;
+  status: "Present" | "Leave" | "Absent" | "Half Day" | "Checked In" | "Checked Out";
+  note: string;
+};
 
 export default function FROShell({
   storeId,
@@ -150,6 +277,11 @@ function FROMobileShell({
   const [reads, setReads] = useState<string[]>(() =>
     readNotificationReads(user.id, store?.id || ""),
   );
+  const [handoverNotes, setHandoverNotes] = useState<StoreNotification[]>([]);
+  const [stockReturnNotes, setStockReturnNotes] = useState<StoreNotification[]>([]);
+  const [cashAdvanceNotes, setCashAdvanceNotes] = useState<StoreNotification[]>([]);
+  const [expenseDecisionNotes, setExpenseDecisionNotes] = useState<StoreNotification[]>([]);
+  const [refundDecisionNotes, setRefundDecisionNotes] = useState<StoreNotification[]>([]);
   const [systemDark, setSystemDark] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -172,12 +304,19 @@ function FROMobileShell({
 
   const notifications = useMemo(
     () =>
-      getFroNotifications(
-        store?.id || "",
-        user.name,
-        String((user as { staffId?: string }).staffId || user.id || ""),
-      ),
-    [store?.id, user.name, user.id, noticeVersion],
+      [
+        ...getFroNotifications(
+          store?.id || "",
+          user.name,
+          String((user as { staffId?: string }).staffId || user.id || ""),
+        ).filter((item) => !usesSupabaseData() || !item.id.startsWith("fro-handover-")),
+        ...handoverNotes,
+        ...stockReturnNotes,
+        ...cashAdvanceNotes,
+        ...expenseDecisionNotes,
+        ...refundDecisionNotes,
+      ].sort((a, b) => b.at - a.at),
+    [store?.id, user.name, user.id, noticeVersion, handoverNotes, stockReturnNotes, cashAdvanceNotes, expenseDecisionNotes, refundDecisionNotes],
   );
   const readIds = useMemo(() => new Set(reads), [reads]);
   const unreadNotifications = notifications.filter((item) => !readIds.has(item.id));
@@ -207,7 +346,114 @@ function FROMobileShell({
     }
     setSettings(next);
     setReads(readNotificationReads(userId, storeId));
+    if (!usesSupabaseData()) return;
+    let active = true;
+    loadNotificationReadKeys()
+      .then((keys) => {
+        if (!active) return;
+        setReads((current) => Array.from(new Set([...current, ...keys])));
+      })
+      .catch(() => {
+        if (!active) return;
+      });
+    return () => {
+      active = false;
+    };
   }, [user.id, store?.id]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !store?.id) return;
+    let active = true;
+    const load = () => {
+      loadCashHandoverNotifications(store.id)
+        .then((rows) => {
+          if (active) setHandoverNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-handover-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [store?.id]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !store?.id) return;
+    let active = true;
+    const load = () => {
+      loadFroStockReturnNotifications(store.id)
+        .then((rows) => {
+          if (active) setStockReturnNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-fro-stock-return-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [store?.id]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !store?.id) return;
+    let active = true;
+    const load = () => {
+      loadFroCashAdvanceNotifications(store.id)
+        .then((rows) => {
+          if (active) setCashAdvanceNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-cash-received-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [store?.id]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !store?.id) return;
+    let active = true;
+    const load = () => {
+      Promise.all([
+        loadFroExpenseDecisionNotifications(store.id),
+        loadFroCashRefundDecisionNotifications(store.id),
+        loadFroSalesRefundDecisionNotifications(store.id),
+      ])
+        .then(([expenseRows, expenseRefundRows, salesRefundRows]) => {
+          if (!active) return;
+          setExpenseDecisionNotes(expenseRows);
+          setRefundDecisionNotes([...expenseRefundRows, ...salesRefundRows]);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = [
+      "nature-biotic-expense-updated",
+      "nature-biotic-cash-received-updated",
+      "focus",
+    ];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [store?.id]);
 
   useEffect(() => {
     const refresh = () => setNoticeVersion((current) => current + 1);
@@ -229,6 +475,29 @@ function FROMobileShell({
       window.removeEventListener("storage", refresh);
     };
   }, []);
+
+  useEffect(() => {
+    const storeId = store?.id || "";
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      loadStockDeliveries(storeId)
+        .then((rows) => {
+          if (!active) return;
+          rememberDeliveryNotifications(rows);
+          setNoticeVersion((current) => current + 1);
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("nature-biotic-delivery-challan-updated", load);
+    window.addEventListener("focus", load);
+    return () => {
+      active = false;
+      window.removeEventListener("nature-biotic-delivery-challan-updated", load);
+      window.removeEventListener("focus", load);
+    };
+  }, [store?.id]);
 
   useEffect(() => {
     if (settings.theme !== "system") return;
@@ -276,6 +545,9 @@ function FROMobileShell({
       saveNotificationReads(user.id, store?.id || "", next);
       return next;
     });
+    if (usesSupabaseData()) {
+      void markNotificationsRead([id]).catch(() => undefined);
+    }
   }
 
   function clearPasswordForm() {
@@ -452,6 +724,25 @@ function FROMobileShell({
                           onClick={() => {
                             markNotificationRead(item.id);
                             setOpenMenu(null);
+                            if (
+                              item.page === "expenses" &&
+                              (item.id.startsWith("cash-advance-notice:") ||
+                                item.id.startsWith("fro-cash:"))
+                            ) {
+                              try {
+                                sessionStorage.setItem(
+                                  "nature-biotic-open-pending-cash",
+                                  item.targetId || "",
+                                );
+                              } catch {
+                                // ignore
+                              }
+                              window.dispatchEvent(
+                                new CustomEvent("nature-biotic-open-pending-cash", {
+                                  detail: { advanceId: item.targetId || "" },
+                                }),
+                              );
+                            }
                             onNavigate(item.page);
                           }}
                           className={`block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
@@ -591,7 +882,7 @@ function FROMobileShell({
                   <div className="border-t border-slate-100 px-4 py-3">
                     <FroAttendanceControl
                       storeId={store?.id || ""}
-                      staffId={String(user.staffId || user.id)}
+                      staffId={String(user.staffId || "")}
                     />
                   </div>
                   <button

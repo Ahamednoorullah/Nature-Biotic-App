@@ -1,4 +1,4 @@
-import { formatCurrency, numberToWords } from "@/lib/format";
+import { formatCurrency, formatRoundOff, money, numberToWords, roundOffToRupee } from "@/lib/format";
 import { getStore } from "@/lib/data";
 import {
   blankProductSlots,
@@ -8,6 +8,15 @@ import {
   type DocumentType,
 } from "@/lib/documentModel";
 
+
+function storedTaxPart(
+  item: { cgst?: unknown; sgst?: unknown; igst?: unknown },
+  key: "cgst" | "sgst" | "igst",
+  fallback: number,
+) {
+  const value = Number(item?.[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
 
 /** Shared print/PDF bill for quotation, sales invoice, and sales return. */
 export function CommonDocumentBill({
@@ -284,7 +293,7 @@ export function CommonDocumentBill({
           </div>
           <div className="flex items-center justify-between gap-3 border-t border-slate-300 pt-1.5">
             <span className="text-slate-500">Round Off</span>
-            <span className="font-semibold text-slate-500">{formatCurrency(data.roundOff)}</span>
+            <span className="font-semibold text-slate-500">{formatRoundOff(data.roundOff)}</span>
           </div>
           <div className="border-t border-slate-300 pt-1.5">
             <div className="flex items-center justify-between gap-3">
@@ -459,8 +468,27 @@ export type StoreInvoiceSale = {
   cgst: number;
   igst: number;
   amount: number;
+  roundOff?: number;
   products: any[];
 };
+
+function invoicePayable(sale: StoreInvoiceSale) {
+  const lineExact = (sale.products || []).reduce(
+    (sum, row) => sum + Number(row.rowTotal || 0),
+    0,
+  );
+  if (typeof sale.roundOff === "number" && Number.isFinite(sale.roundOff)) {
+    return { roundOff: money(sale.roundOff), grandTotal: money(sale.amount) };
+  }
+  const exact = sale.products?.length
+    ? lineExact
+    : Number(sale.withoutTax || 0) +
+      Number(sale.sgst || 0) +
+      Number(sale.cgst || 0) +
+      Number(sale.igst || 0);
+  const rounded = roundOffToRupee(exact);
+  return { roundOff: rounded.roundOff, grandTotal: rounded.payable };
+}
 
 
 export function SalesInvoiceDocument({
@@ -809,13 +837,13 @@ export function SalesInvoiceDocument({
                                 ? Number(item.taxPercent || 0)
                                 : 0;
                               const cgstAmt = isTamilNadu
-                                ? Number(item.taxAmount || 0) / 2
+                                ? storedTaxPart(item, "cgst", Number(item.taxAmount || 0) / 2)
                                 : 0;
                               const sgstAmt = isTamilNadu
-                                ? Number(item.taxAmount || 0) / 2
+                                ? storedTaxPart(item, "sgst", Number(item.taxAmount || 0) / 2)
                                 : 0;
                               const igstAmt = !isTamilNadu
-                                ? Number(item.taxAmount || 0)
+                                ? storedTaxPart(item, "igst", Number(item.taxAmount || 0))
                                 : 0;
 
                               return (
@@ -824,7 +852,7 @@ export function SalesInvoiceDocument({
                                     {index + 1}
                                   </td>
                                   <td className="border-r border-slate-300 px-1 py-1.5 font-semibold">
-                                    {item.product?.name || "Product"}
+                                    {item.product?.name || item.productName || "—"}
                                   </td>
                                   <td className="border-r border-slate-300 px-1 py-1.5 text-center">
                                     {item.hsn || "-"}
@@ -955,7 +983,7 @@ export function SalesInvoiceDocument({
                             const totalCGST = isTamilNadu
                               ? products.reduce(
                                   (sum, item) =>
-                                    sum + Number(item.taxAmount || 0) / 2,
+                                    sum + storedTaxPart(item, "cgst", Number(item.taxAmount || 0) / 2),
                                   0,
                                 )
                               : 0;
@@ -963,7 +991,7 @@ export function SalesInvoiceDocument({
                             const totalSGST = isTamilNadu
                               ? products.reduce(
                                   (sum, item) =>
-                                    sum + Number(item.taxAmount || 0) / 2,
+                                    sum + storedTaxPart(item, "sgst", Number(item.taxAmount || 0) / 2),
                                   0,
                                 )
                               : 0;
@@ -971,7 +999,7 @@ export function SalesInvoiceDocument({
                             const totalIGST = !isTamilNadu
                               ? products.reduce(
                                   (sum, item) =>
-                                    sum + Number(item.taxAmount || 0),
+                                    sum + storedTaxPart(item, "igst", Number(item.taxAmount || 0)),
                                   0,
                                 )
                               : 0;
@@ -1066,20 +1094,12 @@ export function SalesInvoiceDocument({
                     <div className="grid grid-cols-[1fr_300px] border-t border-slate-300">
                       <div className="border-r border-slate-300 p-2.5 flex items-center">
                         {(() => {
-                          const grandTotal = sale.products.length
-                            ? sale.products.reduce(
-                                (sum, row) => sum + Number(row.rowTotal || 0),
-                                0,
-                              )
-                            : Number(sale.amount || 0);
-
-                          const roundedTotal = Math.round(grandTotal);
-
+                          const payable = invoicePayable(sale);
                           return (
                             <p className="text-[10px] font-semibold text-slate-700">
                               Amount in Words :{" "}
                               <span className="font-bold text-slate-900">
-                                {numberToWords(roundedTotal)}
+                                {numberToWords(payable.grandTotal)}
                               </span>
                             </p>
                           );
@@ -1089,43 +1109,14 @@ export function SalesInvoiceDocument({
                       <div className="space-y-1 p-2.5 text-[11px]">
                         <SummaryRow
                           label="Round Off"
-                          value={formatCurrency(
-                            (sale.products.length
-                              ? sale.products.reduce(
-                                  (sum, row) => sum + Number(row.rowTotal || 0),
-                                  0,
-                                )
-                              : Number(sale.amount || 0)) -
-                              (sale.products.length
-                                ? sale.products.reduce(
-                                    (sum, row) =>
-                                      sum +
-                                      Number(row.withoutTax || 0) +
-                                      Number(row.sgst || 0) +
-                                      Number(row.cgst || 0) +
-                                      Number(row.igst || 0),
-                                    0,
-                                  )
-                                : Number(sale.withoutTax || 0) +
-                                  Number(sale.sgst || 0) +
-                                  Number(sale.cgst || 0) +
-                                  Number(sale.igst || 0)),
-                          )}
+                          value={formatRoundOff(invoicePayable(sale).roundOff)}
                           muted
                         />
 
                         <div className="border-t border-slate-300 pt-1.5">
                           <SummaryRow
                             label="Grand Total"
-                            value={formatCurrency(
-                              sale.products.length
-                                ? sale.products.reduce(
-                                    (sum, row) =>
-                                      sum + Number(row.rowTotal || 0),
-                                    0,
-                                  )
-                                : Number(sale.amount || 0),
-                            )}
+                            value={formatCurrency(invoicePayable(sale).grandTotal)}
                             bold
                           />
                         </div>
@@ -1170,13 +1161,7 @@ export function SalesInvoiceDocument({
                         </div>
 
                         {(() => {
-                          const exactTotal = sale.products.length
-                            ? sale.products.reduce(
-                                (sum, row) => sum + Number(row.rowTotal || 0),
-                                0,
-                              )
-                            : Number(sale.amount || 0);
-                          const payableTotal = Math.round(exactTotal);
+                          const payableTotal = invoicePayable(sale).grandTotal;
 
                           return (
                             <div className="mt-1.5">

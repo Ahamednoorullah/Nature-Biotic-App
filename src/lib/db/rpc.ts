@@ -1,23 +1,30 @@
 import { db, requireUserId, throwIfError } from "@/lib/db/client";
 
 export type RpcLine = {
-  variant_id?: string;
+  product_id?: string | null;
+  product_name?: string | null;
+  pack_size?: string | null;
+  variant_id?: string | null;
   quantity: number;
   unit_price?: number;
   discount_percent?: number;
   discount_amount?: number;
   taxable_amount?: number;
   tax_percent?: number;
+  tax_rate?: number;
+  hsn_code?: string | null;
   sgst_amount?: number;
   cgst_amount?: number;
   igst_amount?: number;
   tax_amount?: number;
   line_total?: number;
-  batch_id?: string;
-  batch_no?: string;
-  expiry_date?: string;
-  source_item_id?: string;
-  reason?: string;
+  batch_id?: string | null;
+  batch_no?: string | null;
+  expiry_date?: string | null;
+  source_item_id?: string | null;
+  line_type?: string | null;
+  reason?: string | null;
+  notes?: string | null;
 };
 
 async function callRpc<T>(fn: string, args: Record<string, unknown>) {

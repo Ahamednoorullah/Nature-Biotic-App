@@ -7,7 +7,7 @@ import { Logo } from "@/components/ui";
 type LoginView = "sign-in" | "forgot" | "sent" | "reset" | "setup" | "updated";
 
 const EXPIRED_INVITE =
-  "This invitation link is invalid or has expired. Ask a company admin to open the store and choose Resend password setup email.";
+  "This invitation link is invalid or has expired. Ask a company admin to resend the password setup email.";
 
 const fieldClass =
   "h-[60px] w-full rounded-2xl border border-slate-200 bg-white pl-20 pr-5 text-base text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 sm:text-lg";
@@ -513,7 +513,7 @@ export default function Login() {
               <form onSubmit={handleReset} noValidate className="space-y-5">
                 {view === "setup" && (
                   <p className="text-sm leading-6 text-slate-600">
-                    Choose a password for this store login. The store opens after the password is saved.
+                    Choose a password for this account. You can sign in after it is saved.
                   </p>
                 )}
                 <div>

@@ -1,4 +1,5 @@
-import { type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export function Logo({
   size = 40,
@@ -224,6 +225,8 @@ export function Select({
   placeholder,
   required = false,
   className = "",
+  menuPortal = false,
+  menuLimit,
 }: {
   label?: string;
   value: string;
@@ -232,7 +235,50 @@ export function Select({
   placeholder?: string;
   required?: boolean;
   className?: string;
+  /** Draw the option list in a portal, aligned to this field. */
+  menuPortal?: boolean;
+  /** Keep this many options visible, then scroll inside the field. */
+  menuLimit?: number;
 }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const selected = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom - 8;
+      const spaceAbove = rect.top - 8;
+      const openUp = spaceBelow < 160 && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(120, Math.min(240, openUp ? spaceAbove : spaceBelow));
+      setMenuBox({
+        top: openUp ? Math.max(8, rect.top - maxHeight - 4) : rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        maxHeight,
+      });
+    };
+    place();
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    document.addEventListener("mousedown", close);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      document.removeEventListener("mousedown", close);
+    };
+  }, [open]);
+
   return (
     <div className={className}>
       {label && (
@@ -240,27 +286,139 @@ export function Select({
           {label} {required && <span className="text-red-500">*</span>}
         </label>
       )}
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          required={required}
-          className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus appearance-none cursor-pointer"
-        >
-          {placeholder && <option value="">{placeholder}</option>}
-          {options.map((o) => (
-            <option key={o.value} value={o.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <span
-          className="material-symbols-rounded absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 pointer-events-none"
-          style={{ fontSize: 20 }}
-        >
-          expand_more
-        </span>
-      </div>
+      {menuPortal ? (
+        <div className="relative">
+          <button
+            ref={anchorRef}
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={() => setOpen((current) => !current)}
+            className="flex w-full items-center pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-left text-slate-800 dark:text-slate-100 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus"
+          >
+            <span className={`min-w-0 flex-1 truncate ${selected ? "" : "text-slate-400"}`}>
+              {selected?.label || placeholder || "Select"}
+            </span>
+          </button>
+          <span
+            className="material-symbols-rounded absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            style={{ fontSize: 20 }}
+          >
+            expand_more
+          </span>
+          {open && menuBox && createPortal(
+            <div
+              ref={menuRef}
+              role="listbox"
+              style={{
+                position: "fixed",
+                top: menuBox.top,
+                left: menuBox.left,
+                width: menuBox.width,
+                maxHeight: menuBox.maxHeight,
+                zIndex: 11000,
+              }}
+              className="overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+            >
+              {options.length === 0 ? (
+                <p className="px-4 py-2 text-sm text-slate-500">{placeholder || "No options"}</p>
+              ) : (
+                options.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    onClick={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    className={`block w-full px-4 py-2 text-left text-sm break-words hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                      option.value === value ? "bg-brand-50 font-semibold text-brand-800" : "text-slate-700 dark:text-slate-100"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))
+              )}
+            </div>,
+            document.body,
+          )}
+        </div>
+      ) : menuLimit ? (
+        <div className={`relative ${open ? "z-30" : ""}`}>
+          <button
+            ref={anchorRef}
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={() => setOpen((current) => !current)}
+            className="flex w-full items-center pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-left text-slate-800 dark:text-slate-100 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus"
+          >
+            <span className={`min-w-0 flex-1 truncate ${selected ? "" : "text-slate-400"}`}>
+              {selected?.label || placeholder || "Select"}
+            </span>
+          </button>
+          <span
+            className="material-symbols-rounded absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+            style={{ fontSize: 20 }}
+          >
+            expand_more
+          </span>
+          {open && (
+            <div
+              ref={menuRef}
+              role="listbox"
+              style={{ maxHeight: menuLimit * 40 }}
+              className="absolute left-0 right-0 top-full z-30 mt-1 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-slate-800"
+            >
+              {options.length === 0 ? (
+                <p className="px-4 py-2 text-sm text-slate-500">{placeholder || "No options"}</p>
+              ) : (
+                options.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={option.value === value}
+                    onClick={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    className={`block w-full px-4 py-2 text-left text-sm break-words hover:bg-slate-50 dark:hover:bg-slate-700 ${
+                      option.value === value ? "bg-brand-50 font-semibold text-brand-800" : "text-slate-700 dark:text-slate-100"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="relative">
+          <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            required={required}
+            className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-base focus:outline-none focus:border-brand-500 dark:focus:border-brand-500 focus:shadow-focus appearance-none cursor-pointer"
+          >
+            {placeholder && <option value="">{placeholder}</option>}
+            {options.map((o) => (
+              <option key={o.value} value={o.value} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span
+            className="material-symbols-rounded absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-400 pointer-events-none"
+            style={{ fontSize: 20 }}
+          >
+            expand_more
+          </span>
+        </div>
+      )}
     </div>
   );
 }

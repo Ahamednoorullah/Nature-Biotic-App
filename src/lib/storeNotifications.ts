@@ -14,6 +14,24 @@ import {
 } from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { formatCurrency, formatDate, parseBusinessDate } from "@/lib/format";
+import { usesSupabaseData } from "@/lib/db/mode";
+
+type DeliveryNotice = {
+  id: string;
+  storeId: string;
+  sdNo: string;
+  executive: string;
+  executiveId?: string;
+  status: string;
+  date: string;
+  acceptedAt?: string;
+};
+
+let deliveryNotices: DeliveryNotice[] = [];
+
+export function rememberDeliveryNotifications(rows: DeliveryNotice[]) {
+  deliveryNotices = rows.filter((row) => row.id && row.storeId);
+}
 
 export type StoreNotification = {
   id: string;
@@ -25,6 +43,8 @@ export type StoreNotification = {
   at: number;
   timeLabel: string;
   page: StorePage;
+  /** Optional linked document id (e.g. cash advance / stock return). */
+  targetId?: string;
 };
 
 function readArray(key: string) {
@@ -171,6 +191,26 @@ function assignedFros(storeId: string) {
 
 function isDummySale(row: any) {
   return row?.id === "store-sale-1" || row?.invoiceNo === "nb-inv-2001";
+}
+
+export function notificationForCompanyReceipt(row: {
+  id: string;
+  receiptNo: string;
+  invoiceNo: string;
+  amount: number;
+  date: string;
+}): StoreNotification {
+  return note({
+    id: `company-receipt:${row.id}`,
+    title: "Payment receipt recorded",
+    description: `${row.receiptNo || "Receipt"} · ${row.invoiceNo || "Invoice"} · ${formatCurrency(row.amount)} · ${formatDate(row.date)}`,
+    status: "Recorded",
+    tone: "accepted",
+    icon: "payments",
+    at: timeValue(row.date),
+    sourceDate: row.date,
+    page: "payments",
+  });
 }
 
 export function getStoreNotifications(storeId: string): StoreNotification[] {
@@ -353,6 +393,29 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
       );
     });
 
+  if (usesSupabaseData()) {
+    deliveryNotices
+      .filter(
+        (row) =>
+          row.storeId === storeId &&
+          String(row.status || "").toLowerCase() === "accepted",
+      )
+      .forEach((row) => {
+        items.push(
+          note({
+            id: `delivery-accepted:${storeId}:${row.id}`,
+            title: "Stock Delivery Accepted",
+            description: `${row.sdNo || "Delivery"} · ${row.executive || "FRO"} accepted.`,
+            status: "Accepted",
+            tone: "accepted",
+            icon: "local_shipping",
+            at: timeValue(row.acceptedAt || row.date, row.acceptedAt),
+            sourceDate: row.date,
+            page: "delivery-challan",
+          }),
+        );
+      });
+  } else {
   readArray(`nature-biotic-store-delivery-challans-v2:${storeId}`).forEach((row) => {
     if (!row?.id || String(row.status || "").toLowerCase() !== "accepted") return;
     items.push(
@@ -369,6 +432,7 @@ export function getStoreNotifications(storeId: string): StoreNotification[] {
       }),
     );
   });
+  }
 
   const seen = new Set<string>();
   return items
@@ -394,6 +458,30 @@ export function getFroNotifications(
   if (!storeId || !name) return [];
   const items: StoreNotification[] = [];
   const storeName = getStore(storeId)?.name || "Store";
+  if (usesSupabaseData()) {
+    deliveryNotices
+      .filter((row) => {
+        if (row.storeId !== storeId) return false;
+        if (String(row.status || "pending").toLowerCase() === "accepted") return false;
+        if (_staffId && row.executiveId && row.executiveId === _staffId) return true;
+        return samePerson(row.executive, name);
+      })
+      .forEach((row) => {
+        items.push(
+          note({
+            id: `fro-delivery:${storeId}:${row.id}`,
+            title: "Stock Delivery Pending",
+            description: `${row.sdNo || "Delivery"} · Pending acceptance from FRO.`,
+            status: "Pending",
+            tone: "pending",
+            icon: "local_shipping",
+            at: timeValue(row.date),
+            sourceDate: row.date,
+            page: "stock-management",
+          }),
+        );
+      });
+  } else {
   const deliveries = new Map<string, any>();
   [
     ...readArray(`nature-biotic-store-delivery-challans-v2:${storeId}`),
@@ -425,25 +513,29 @@ export function getFroNotifications(
       }),
     );
   });
+  }
 
-  readArray(`nature-biotic-fro-cash-received-v1:${storeId}`)
-    .filter((row) => samePerson(row?.requestedFor, name))
-    .forEach((row) => {
-      if (String(row.status || "pending").toLowerCase() === "accepted") return;
-      items.push(
-        note({
-          id: `fro-cash:${storeId}:${row.id}`,
-          title: "Cash receipt pending",
-          description: `${storeName} · ${formatCurrency(Number(row.amount || 0))} · Pending acceptance from FRO.`,
-          status: "Pending",
-          tone: "pending",
-          icon: "savings",
-          at: timeValue(row.date, row.acceptedAt),
-          sourceDate: row.date,
-          page: "expenses",
-        }),
-      );
-    });
+  if (!usesSupabaseData()) {
+    readArray(`nature-biotic-fro-cash-received-v1:${storeId}`)
+      .filter((row) => samePerson(row?.requestedFor, name))
+      .forEach((row) => {
+        if (String(row.status || "pending").toLowerCase() === "accepted") return;
+        items.push(
+          note({
+            id: `fro-cash:${storeId}:${row.id}`,
+            title: "Cash receipt pending",
+            description: `${storeName} · ${formatCurrency(Number(row.amount || 0))} · Pending acceptance from FRO.`,
+            status: "Pending",
+            tone: "pending",
+            icon: "savings",
+            at: timeValue(row.date, row.acceptedAt),
+            sourceDate: row.date,
+            page: "expenses",
+            targetId: String(row.id || ""),
+          }),
+        );
+      });
+  }
 
   readArray(`nature-biotic-fro-handovers-v1:${storeId}`)
     .filter((row) => samePerson(row?.handedOverBy, name) && row?.id)

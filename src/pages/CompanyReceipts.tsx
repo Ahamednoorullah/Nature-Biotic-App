@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, EmptyState, Icon } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -11,6 +11,11 @@ import {
   stores,
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadCompanyReceipts as loadCompanyReceiptsDb, createCompanyReceiptDb, loadOpenCompanyInvoices, type OpenCompanyInvoice } from "@/lib/db/financials";
+import { peekDocumentNo } from "@/lib/db/rpc";
+import { loadStores } from "@/lib/db/stores";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type Receipt = {
   id: string;
@@ -48,6 +53,15 @@ function receiptBalance(receipt: Receipt) {
   return Math.max(receipt.invoiceAmount - receipt.amount, 0);
 }
 
+function receiptMethod(label: string): "cash" | "upi" | "bank_transfer" | "cheque" | null {
+  const value = label.trim().toLowerCase();
+  if (value === "cash") return "cash";
+  if (value === "upi") return "upi";
+  if (value === "cheque") return "cheque";
+  if (value === "bank transfer" || value === "bank_transfer") return "bank_transfer";
+  return null;
+}
+
 function money(value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
@@ -66,15 +80,63 @@ export default function CompanyReceipts() {
   const [customTo, setCustomTo] = useState("");
   const [viewReceipt, setViewReceipt] = useState<Receipt | null>(null);
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
-  const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>(() =>
-    loadCompanyReceipts(),
-  );
+  const [createdReceipts, setCreatedReceipts] = useState<Receipt[]>(() => {
+    if (usesSupabaseData()) return [];
+    return loadCompanyReceipts();
+  });
+  const [listError, setListError] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [openInvoices, setOpenInvoices] = useState<OpenCompanyInvoice[]>([]);
+  const [invoiceError, setInvoiceError] = useState("");
+  const [storeVersion, setStoreVersion] = useState(0);
+
+  const reloadDbReceipts = async () => {
+    try {
+      const rows = await loadCompanyReceiptsDb();
+      setCreatedReceipts(rows as Receipt[]);
+      setListError("");
+    } catch (error) {
+      setCreatedReceipts([]);
+      setListError(dbErrorMessage(error, "Could not load company receipts."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbReceipts();
+    loadStores()
+      .then(() => setStoreVersion((value) => value + 1))
+      .catch((error) => {
+        setListError(dbErrorMessage(error, "Could not load stores."));
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    loadOpenCompanyInvoices()
+      .then((rows) => {
+        if (!active) return;
+        setOpenInvoices(rows);
+        setInvoiceError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setOpenInvoices([]);
+        setInvoiceError(dbErrorMessage(error, "Could not load company invoices."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [createdReceipts]);
+
   const [showCreate, setShowCreate] = useState(false);
   const [receiptDate, setReceiptDate] = useState(
     new Date().toISOString().split("T")[0],
   );
   const [receiptNo, setReceiptNo] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
+  const [companyInvoiceId, setCompanyInvoiceId] = useState("");
   const [createStoreId, setCreateStoreId] = useState("");
   const [method, setMethod] = useState("");
   const [invoiceAmount, setInvoiceAmount] = useState(0);
@@ -85,19 +147,31 @@ export default function CompanyReceipts() {
   const createStore = stores.find((s) => s.id === createStoreId);
   const storeInvoices = useMemo(() => {
     if (!createStoreId) return [];
+    if (usesSupabaseData()) {
+      return openInvoices
+        .filter((invoice) => invoice.storeId === createStoreId)
+        .map((invoice) => ({
+          invoiceId: invoice.invoiceId,
+          invoiceNo: invoice.invoiceNo,
+          total: invoice.total,
+          date: invoice.date,
+          remaining: invoice.outstanding,
+        }));
+    }
 
     const grouped = new Map<
       string,
-      { invoiceNo: string; total: number; date: string }
+      { invoiceId: string; invoiceNo: string; total: number; date: string }
     >();
     getFinalCompanyStoreSales()
       .filter((sale) => sale.storeId === createStoreId)
       .forEach((sale) => {
-        const invoiceNo = String(sale.invoiceNo || "").trim();
-        if (!invoiceNo) return;
-        const key = invoiceNo.toLowerCase();
+        const nextInvoiceNo = String(sale.invoiceNo || "").trim();
+        if (!nextInvoiceNo) return;
+        const key = nextInvoiceNo.toLowerCase();
         const current = grouped.get(key) || {
-          invoiceNo,
+          invoiceId: "",
+          invoiceNo: nextInvoiceNo,
           total: 0,
           date: sale.date,
         };
@@ -113,9 +187,11 @@ export default function CompanyReceipts() {
         };
       })
       .filter((invoice) => invoice.remaining > 0);
-  }, [createStoreId, createdReceipts]);
-  const selectedInvoice = storeInvoices.find(
-    (invoice) => invoice.invoiceNo === invoiceNo,
+  }, [createStoreId, createdReceipts, openInvoices, storeVersion]);
+  const selectedInvoice = storeInvoices.find((invoice) =>
+    usesSupabaseData()
+      ? invoice.invoiceId === companyInvoiceId
+      : invoice.invoiceNo === invoiceNo,
   );
   const outstandingBefore = selectedInvoice?.remaining ?? 0;
   const canCreate =
@@ -128,8 +204,23 @@ export default function CompanyReceipts() {
 
   function resetCreateForm() {
     setReceiptDate(new Date().toISOString().split("T")[0]);
-    setReceiptNo(nextReceiptNumber());
+    if (usesSupabaseData()) {
+      peekDocumentNo("company_receipt")
+        .then((nextNo) => {
+          if (nextNo) setReceiptNo(nextNo);
+        })
+        .catch((error) => {
+          setReceiptNo("");
+          setCreateError(
+            dbErrorMessage(error, "Could not reserve the next receipt number."),
+          );
+        });
+    } else {
+      setReceiptNo(nextReceiptNumber());
+    }
     setInvoiceNo("");
+    setCompanyInvoiceId("");
+    setCreateError("");
     setCreateStoreId("");
     setMethod("");
     setInvoiceAmount(0);
@@ -152,20 +243,24 @@ export default function CompanyReceipts() {
   function handleStoreChange(storeId: string) {
     setCreateStoreId(storeId);
     setInvoiceNo("");
+    setCompanyInvoiceId("");
     setInvoiceAmount(0);
     setAmountReceived(0);
+    setCreateError("");
   }
 
-  function handleInvoiceChange(nextInvoiceNo: string) {
-    const invoice = storeInvoices.find(
-      (item) => item.invoiceNo === nextInvoiceNo,
+  function handleInvoiceChange(nextKey: string) {
+    const invoice = storeInvoices.find((item) =>
+      usesSupabaseData() ? item.invoiceId === nextKey : item.invoiceNo === nextKey,
     );
     setInvoiceNo(invoice?.invoiceNo || "");
+    setCompanyInvoiceId(invoice?.invoiceId || "");
     setInvoiceAmount(invoice ? invoice.total : 0);
     setAmountReceived(invoice ? invoice.remaining : 0);
+    setCreateError("");
   }
 
-  function handleCreateReceipt() {
+  async function handleCreateReceipt() {
     if (savingRef.current || !canCreate || !createStore || !selectedInvoice) {
       return;
     }
@@ -173,16 +268,51 @@ export default function CompanyReceipts() {
 
     try {
       const latest = loadCompanyReceipts();
-      const remaining = getCompanyInvoiceDue(
-        createStore.id,
-        selectedInvoice.invoiceNo,
-      );
+      const remaining = usesSupabaseData()
+        ? selectedInvoice.remaining
+        : getCompanyInvoiceDue(createStore.id, selectedInvoice.invoiceNo);
       if (amountReceived <= 0 || amountReceived > remaining) {
         savingRef.current = false;
-        window.alert(
+        setCreateError(
           "Amount received cannot exceed the outstanding balance of this invoice.",
         );
+        if (!usesSupabaseData()) {
+          window.alert(
+            "Amount received cannot exceed the outstanding balance of this invoice.",
+          );
+        }
         return;
+      }
+
+      if (usesSupabaseData()) {
+        const methodCode = receiptMethod(method);
+        if (!selectedInvoice.invoiceId || !methodCode) {
+          savingRef.current = false;
+          setCreateError(
+            selectedInvoice.invoiceId
+              ? "Choose a payment method before recording this receipt."
+              : "Select a final company invoice before recording this receipt.",
+          );
+          return;
+        }
+        try {
+          await createCompanyReceiptDb({
+            company_invoice_id: selectedInvoice.invoiceId,
+            amount: amountReceived,
+            method: methodCode,
+            receipt_date: receiptDate,
+            received_by_name: user?.name || receivedBy || null,
+            remarks: remarks || null,
+          });
+          await reloadDbReceipts();
+          window.dispatchEvent(new Event("nature-biotic-company-receipts-updated"));
+          closeCreateForm();
+          return;
+        } catch (err: any) {
+          savingRef.current = false;
+          setCreateError(dbErrorMessage(err, "The receipt could not be saved."));
+          return;
+        }
       }
 
       const allocatedNo = nextReceiptNumber();
@@ -341,6 +471,11 @@ export default function CompanyReceipts() {
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
             Receipts
           </h1>
+          {listError || invoiceError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError || invoiceError}
+            </p>
+          ) : null}
           <p className="text-slate-500 mt-1">
             Payment receipts collected from stores. Read-only overview.
           </p>
@@ -833,6 +968,11 @@ export default function CompanyReceipts() {
 
               {/* Scrollable body */}
               <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                {createError || invoiceError ? (
+                  <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {createError || invoiceError}
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Input
                     label="Date"
@@ -864,13 +1004,13 @@ export default function CompanyReceipts() {
 
                   <Select
                     label="Invoice Number"
-                    value={invoiceNo}
+                    value={usesSupabaseData() ? companyInvoiceId : invoiceNo}
                     onChange={handleInvoiceChange}
                     placeholder={
                       createStoreId ? "Select invoice" : "Choose a store first"
                     }
                     options={storeInvoices.map((invoice) => ({
-                      value: invoice.invoiceNo,
+                      value: usesSupabaseData() ? invoice.invoiceId : invoice.invoiceNo,
                       label: invoice.invoiceNo,
                     }))}
                     required

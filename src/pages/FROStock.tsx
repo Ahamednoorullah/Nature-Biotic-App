@@ -6,10 +6,20 @@ import {
   addFROStock,
   getStoreAvailableQty,
   getFROStockByExecutive,
-  getProductsByStore,
   persistDeliveryChallanAccepted,
 } from "@/lib/data";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  acceptStockDeliveryDb,
+  loadStockDeliveries,
+  loadStockReturns,
+  submitStockReturnDb,
+} from "@/lib/db/operations";
+import { rememberDeliveryNotifications } from "@/lib/storeNotifications";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type DeliveryItem = {
   productId: string;
@@ -66,7 +76,7 @@ type ReturnRequest = {
   froName: string;
   reason: string;
   discount?: number;
-  status: "pending" | "accepted";
+  status: "pending" | "accepted" | "rejected";
   createdAt: string;
   acceptedAt?: string;
   acceptedBy?: string;
@@ -181,6 +191,91 @@ export default function FROStock() {
   };
 
   useEffect(() => {
+    if (usesSupabaseData()) {
+      let active = true;
+      const load = () => {
+        const id = user?.storeId;
+        if (!id) return;
+        loadStockDeliveries(id)
+          .then((rows) => {
+            if (!active) return;
+            rememberDeliveryNotifications(rows);
+            setChallans(
+              rows.map((row) => ({
+                id: row.id,
+                sdNo: row.sdNo,
+                storeId: row.storeId,
+                date: row.date,
+                executive: row.executive,
+                status: row.status,
+                acceptedAt: row.acceptedAt,
+                items: row.items,
+              })),
+            );
+          })
+          .catch(() => {
+            if (active) setChallans([]);
+          });
+        loadStockReturns(id)
+          .then((rows) => {
+            if (!active) return;
+            const staffId = String(user?.staffId || "").trim();
+            const name = String(user?.name || "").trim().toLowerCase();
+            setReturnRequests(
+              rows
+                .filter((row) =>
+                  staffId
+                    ? String(row.executiveId || "") === staffId
+                    : String(row.executive || "").trim().toLowerCase() === name,
+                )
+                .map((row) => ({
+                  id: row.id,
+                  rcNo: row.srNo,
+                  date: row.date,
+                  storeId: row.storeId,
+                  froName: row.executive,
+                  reason: row.reason || "Stock return",
+                  status: row.status,
+                  createdAt: row.date,
+                  acceptedAt: row.acceptedAt,
+                  items: row.items.map((item) => ({
+                    productId: item.productId,
+                    product: item.product,
+                    packSize: item.packSize,
+                    batchNo: item.batchNo,
+                    expiryDate: item.expiryDate,
+                    qty: Number(item.qty || 0),
+                    unitValue: Number(item.unitValue || 0),
+                    reason: item.reason,
+                  })),
+                })),
+            );
+          })
+          .catch(() => {
+            if (active) setReturnRequests([]);
+          });
+        void refreshPurchasingData()
+          .then(() => {
+            if (active) setStockVersion((version) => version + 1);
+          })
+          .catch(() => undefined);
+      };
+      load();
+      window.addEventListener("nature-biotic-delivery-challan-updated", load);
+      window.addEventListener("nature-biotic-sales-invoices-updated", load);
+      window.addEventListener("nature-biotic-sales-returns-updated", load);
+      window.addEventListener("nature-biotic-fro-stock-return-updated", load);
+      window.addEventListener("focus", load);
+      return () => {
+        active = false;
+        window.removeEventListener("nature-biotic-delivery-challan-updated", load);
+        window.removeEventListener("nature-biotic-sales-invoices-updated", load);
+        window.removeEventListener("nature-biotic-sales-returns-updated", load);
+        window.removeEventListener("nature-biotic-fro-stock-return-updated", load);
+        window.removeEventListener("focus", load);
+      };
+    }
+
     loasdhallans();
 
     const refresh = () => {
@@ -239,7 +334,7 @@ export default function FROStock() {
     [myAllChallans],
   );
 
-  function acceptChallan(challan: DeliveryChallan) {
+  async function acceptChallan(challan: DeliveryChallan) {
     if (challan.status === "accepted") return;
 
     const storeId = challan.storeId || user?.storeId || "default";
@@ -285,6 +380,16 @@ export default function FROStock() {
       challan.date,
       challan.id,
     );
+
+    if (usesSupabaseData()) {
+      try {
+        await acceptStockDeliveryDb(challan.id);
+        await refreshPurchasingData();
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to accept stock delivery"));
+        return;
+      }
+    }
 
     const acceptedAt = new Date().toISOString();
     const acceptedBy = user?.name || challan.executive;
@@ -340,9 +445,25 @@ export default function FROStock() {
     return `SR-${String(maxNo + 1).padStart(4, "0")}`;
   }, [returnRequests]);
 
-  function createReturnRequest() {
+  async function createReturnRequest() {
     if (!returnLinesValid) return;
     const items = returnLineTotals.filter((line) => line.qty > 0);
+
+    const missingIds = items.find((item) => !item.variantId || !item.batchId);
+    if (missingIds) {
+      window.alert(
+        `Cannot return ${missingIds.product || "this product"}: the product variant or batch is missing. Reselect the hand-stock product and try again.`,
+      );
+      return;
+    }
+
+    const fractional = items.find((item) => !Number.isInteger(item.qty));
+    if (fractional) {
+      window.alert(
+        `Return quantity for ${fractional.product} must be a whole number.`,
+      );
+      return;
+    }
 
     const request: ReturnRequest = {
       id: `fro-return-${Date.now()}`,
@@ -359,7 +480,7 @@ export default function FROStock() {
       status: "pending",
       createdAt: new Date().toISOString(),
       items: items.map((item) => ({
-        productId: item.productId,
+        productId: item.variantId || item.productId,
         product: item.product,
         packSize: item.packSize,
         batchNo: item.batchNo,
@@ -369,6 +490,76 @@ export default function FROStock() {
         reason: item.reason,
       })),
     };
+
+    if (usesSupabaseData()) {
+      try {
+        const dbLines: RpcLine[] = items.map((item) => ({
+          variant_id: item.variantId,
+          batch_id: item.batchId,
+          product_name: item.product,
+          pack_size: item.packSize,
+          batch_no: item.batchNo,
+          expiry_date: item.expiryDate || null,
+          quantity: item.qty,
+          unit_price: item.unitValue,
+          reason: item.reason || null,
+        }));
+        const saved = await submitStockReturnDb(
+          {
+            store_id: user?.storeId || undefined,
+            return_date: new Date().toISOString().split("T")[0],
+            reason: request.reason,
+          },
+          dbLines,
+        );
+        request.id = String(saved.id);
+        request.rcNo = String(saved.return_no || request.rcNo);
+        window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
+        setShowReturnForm(false);
+        setActiveStockView("returned");
+        resetReturnForm();
+        const storeId = user?.storeId;
+        if (storeId) {
+          const rows = await loadStockReturns(storeId);
+          const staffId = String(user?.staffId || "").trim();
+          const name = String(user?.name || "").trim().toLowerCase();
+          setReturnRequests(
+            rows
+              .filter((row) =>
+                staffId
+                  ? String(row.executiveId || "") === staffId
+                  : String(row.executive || "").trim().toLowerCase() === name,
+              )
+              .map((row) => ({
+                id: row.id,
+                rcNo: row.srNo,
+                date: row.date,
+                storeId: row.storeId,
+                froName: row.executive,
+                reason: row.reason || "Stock return",
+                status: row.status,
+                createdAt: row.date,
+                acceptedAt: row.acceptedAt,
+                items: row.items.map((item) => ({
+                  productId: item.productId,
+                  product: item.product,
+                  packSize: item.packSize,
+                  batchNo: item.batchNo,
+                  expiryDate: item.expiryDate,
+                  qty: Number(item.qty || 0),
+                  unitValue: Number(item.unitValue || 0),
+                  reason: item.reason,
+                })),
+              })),
+          );
+          setStockVersion((version) => version + 1);
+        }
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to submit stock return"));
+        return;
+      }
+    }
 
     const next = [request, ...returnRequests];
     setReturnRequests(next);
@@ -407,53 +598,41 @@ export default function FROStock() {
 
   const returnStockOptions = useMemo(() => {
     const storeId = user?.storeId || "default";
-    return getFROStockByExecutive(storeId, user?.name || "").map((item) => ({
-      productId: String(item.productId || ""),
-      product: String(item.productName || ""),
-      packSize: String(item.packSize || ""),
-      batchNo: String(item.batchNo || ""),
-      expiryDate: String(item.expiryDate || ""),
-      qty: Number(item.currentQty || 0),
-      unitValue: Number(item.unitValue || 0),
-    }));
-  }, [user?.storeId, user?.name, stockVersion]);
+    return getFROStockByExecutive(storeId, user?.name || "", user?.staffId)
+      .map((item) => {
+        const variantId = String(item.variantId || item.productId || "");
+        const batchId = String(item.batchId || "");
+        return {
+          key: `${variantId}|${batchId}`,
+          productId: variantId,
+          variantId,
+          batchId,
+          product: String(item.productName || ""),
+          packSize: String(item.packSize || ""),
+          batchNo: String(item.batchNo || ""),
+          expiryDate: String(item.expiryDate || ""),
+          qty: Number(item.currentQty || 0),
+          unitValue: Number(item.unitValue || 0),
+        };
+      })
+      .filter((item) => item.qty > 0 && item.variantId);
+  }, [user?.storeId, user?.name, user?.staffId, stockVersion]);
 
   const returnLineTotals = useMemo(() => {
-    const catalog = getProductsByStore(user?.storeId || "default");
     const used = new Map<string, number>();
     return returnLines.map((line) => {
-      const stock = returnStockOptions.find(
-        (item) => `${item.product}|${item.packSize}|${item.batchNo}` === line.stockKey,
-      );
+      const stock = returnStockOptions.find((item) => item.key === line.stockKey);
       const qty = Math.max(0, Number(line.qty || 0));
       const already = used.get(line.stockKey) || 0;
       if (stock && line.stockKey) used.set(line.stockKey, already + qty);
       const available = Math.max(0, Number(stock?.qty || 0) - already);
-      const product = catalog.find(
-        (item) =>
-          item.id === stock?.productId ||
-          item.name.trim().toLowerCase() === String(stock?.product || "").trim().toLowerCase(),
-      );
-      const taxType = String(product?.taxType || "").toLowerCase();
-      const explicitCgst = Number(product?.cgst || 0);
-      const explicitSgst = Number(product?.sgst || 0);
-      const explicitIgst = Number(product?.igst || 0);
-      let cgstPercent = explicitCgst;
-      let sgstPercent = explicitSgst;
-      let igstPercent = explicitIgst;
-      if (!cgstPercent && !sgstPercent && !igstPercent) {
-        const totalTax = Number(product?.taxPercentage || 0);
-        if (taxType.includes("interstate") || taxType.includes("igst")) {
-          igstPercent = totalTax;
-        } else {
-          cgstPercent = totalTax / 2;
-          sgstPercent = totalTax / 2;
-        }
-      }
+      const whole = qty === 0 || Number.isInteger(qty);
       return {
         key: line.key,
         stock,
         productId: stock?.productId || "",
+        variantId: stock?.variantId || "",
+        batchId: stock?.batchId || "",
         product: stock?.product || "",
         packSize: stock?.packSize || "",
         batchNo: stock?.batchNo || "",
@@ -463,13 +642,12 @@ export default function FROStock() {
         available,
         reason: line.reason.trim(),
         base: qty * Number(stock?.unitValue || 0),
-        cgstPercent,
-        sgstPercent,
-        igstPercent,
         over: !!stock && qty > available,
+        notWhole: !!stock && qty > 0 && !whole,
+        missingIds: !!stock && (!stock.variantId || !stock.batchId),
       };
     });
-  }, [returnLines, returnStockOptions, user?.storeId]);
+  }, [returnLines, returnStockOptions]);
 
   const returnTotals = useMemo(() => {
     const beforeDiscount = returnLineTotals.reduce((sum, line) => sum + line.base, 0);
@@ -477,26 +655,15 @@ export default function FROStock() {
       Math.max(0, Number(returnDiscount || 0)),
       beforeDiscount,
     );
-    let taxable = 0;
-    let sgst = 0;
-    let cgst = 0;
-    let igst = 0;
-    returnLineTotals.forEach((line) => {
-      const share = beforeDiscount > 0 ? line.base / beforeDiscount : 0;
-      const lineTaxable = Math.max(0, line.base - discount * share);
-      taxable += lineTaxable;
-      sgst += (lineTaxable * line.sgstPercent) / 100;
-      cgst += (lineTaxable * line.cgstPercent) / 100;
-      igst += (lineTaxable * line.igstPercent) / 100;
-    });
+    const taxable = Math.max(0, beforeDiscount - discount);
     return {
       beforeDiscount,
       discount,
       taxable,
-      sgst,
-      cgst,
-      igst,
-      grandTotal: taxable + sgst + cgst + igst,
+      sgst: 0,
+      cgst: 0,
+      igst: 0,
+      grandTotal: taxable,
     };
   }, [returnLineTotals, returnDiscount]);
 
@@ -505,7 +672,16 @@ export default function FROStock() {
   );
   const returnLinesValid =
     filledReturnLines.length > 0 &&
-    filledReturnLines.every((line) => line.stock && line.qty > 0 && !line.over);
+    filledReturnLines.every(
+      (line) =>
+        line.stock &&
+        line.qty > 0 &&
+        !line.over &&
+        !line.notWhole &&
+        !line.missingIds &&
+        !!line.variantId &&
+        !!line.batchId,
+    );
 
   function updateReturnLine(key: string, patch: Partial<ReturnLineDraft>) {
     setReturnLines((current) =>
@@ -542,14 +718,12 @@ export default function FROStock() {
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
                 >
                   <option value="">Select stock</option>
-                  {returnStockOptions.map((item) => {
-                    const value = `${item.product}|${item.packSize}|${item.batchNo}`;
-                    return (
-                      <option key={value} value={value}>
-                        {item.product} • Available {item.qty}
-                      </option>
-                    );
-                  })}
+                  {returnStockOptions.map((item) => (
+                    <option key={item.key} value={item.key}>
+                      {item.product} · {item.packSize}
+                      {item.batchNo ? ` · ${item.batchNo}` : ""} • Available {item.qty}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -575,6 +749,7 @@ export default function FROStock() {
                 <input
                   type="number"
                   min="1"
+                  step="1"
                   value={line.qty}
                   onChange={(e) => updateReturnLine(line.key, { qty: e.target.value })}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none"
@@ -583,6 +758,16 @@ export default function FROStock() {
                 {totals?.over && (
                   <p className="mt-1 text-[11px] font-semibold text-red-600">
                     Available {totals.available}
+                  </p>
+                )}
+                {totals?.notWhole && (
+                  <p className="mt-1 text-[11px] font-semibold text-red-600">
+                    Quantity must be a whole number
+                  </p>
+                )}
+                {totals?.missingIds && (
+                  <p className="mt-1 text-[11px] font-semibold text-red-600">
+                    Product variant or batch is missing — reselect stock
                   </p>
                 )}
               </div>
@@ -622,13 +807,10 @@ export default function FROStock() {
           />
         </div>
         <div className="space-y-1 rounded-xl bg-slate-50 p-3 text-xs">
-          <div className="flex justify-between"><span>Total Before Discount</span><span>{formatCurrency(returnTotals.beforeDiscount)}</span></div>
+          <div className="flex justify-between"><span>Stock Value</span><span>{formatCurrency(returnTotals.beforeDiscount)}</span></div>
           <div className="flex justify-between"><span>Discount</span><span>{formatCurrency(returnTotals.discount)}</span></div>
-          <div className="flex justify-between"><span>Taxable Total</span><span>{formatCurrency(returnTotals.taxable)}</span></div>
-          <div className="flex justify-between"><span>SGST</span><span>{formatCurrency(returnTotals.sgst)}</span></div>
-          <div className="flex justify-between"><span>CGST</span><span>{formatCurrency(returnTotals.cgst)}</span></div>
-          <div className="flex justify-between"><span>IGST</span><span>{formatCurrency(returnTotals.igst)}</span></div>
-          <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>Grand Total</span><span>{formatCurrency(returnTotals.grandTotal)}</span></div>
+          <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span>Return Value</span><span>{formatCurrency(returnTotals.grandTotal)}</span></div>
+          <p className="pt-1 text-[11px] text-slate-500">No GST — hand-stock returns are quantity only.</p>
         </div>
       </>
     );
@@ -656,10 +838,10 @@ export default function FROStock() {
     >();
 
     returnStockOptions.forEach((item) => {
-      const key = `${item.product}|${item.packSize}`;
+      const key = `${item.product}|${item.packSize}|${item.batchNo}`;
       const row = map.get(key) || {
         product: item.product,
-        packSize: item.packSize,
+        packSize: item.batchNo ? `${item.packSize} · ${item.batchNo}` : item.packSize,
         qty: 0,
         value: 0,
       };

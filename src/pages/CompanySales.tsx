@@ -8,7 +8,7 @@ import {
   EmptyState,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
+import { formatCurrency, formatDate, formatRoundOff, numberToWords } from "@/lib/format";
 import { createPortal } from "react-dom";
 import {
   getStores,
@@ -34,7 +34,7 @@ import {
 import { dbErrorMessage } from "@/lib/db/errors";
 import { usesSupabaseData } from "@/lib/db/mode";
 import { refreshPurchasingData } from "@/lib/db/purchasing";
-import { saveCompanyInvoice, type RpcLine } from "@/lib/db/rpc";
+import { peekDocumentNo, saveCompanyInvoice, type RpcLine } from "@/lib/db/rpc";
 
 type TaxType = "Tamilnadu (SGST + CGST)" | "Others (IGST)";
 
@@ -945,6 +945,24 @@ export default function CompanySales() {
     setShowCreate(true);
   }
 
+  function suggestInvoiceNumber() {
+    if (!usesSupabaseData()) return;
+    peekDocumentNo("company_invoice")
+      .then((nextNo) => {
+        const suggested = String(nextNo || "").trim().toUpperCase();
+        if (!suggested) return;
+        setInvoiceNo((current) => (current.trim() ? current : suggested));
+      })
+      .catch((error) => {
+        window.alert(
+          dbErrorMessage(
+            error,
+            "Could not suggest the next invoice number. Enter an NB-INV number before saving.",
+          ),
+        );
+      });
+  }
+
   function resetForm() {
     setInvoiceNo("");
     setSaleDate(new Date().toISOString().split("T")[0]);
@@ -998,8 +1016,8 @@ export default function CompanySales() {
       );
       return;
     }
-    const number = invoiceNo.trim();
-    if (!/^NB-INV-\d{4,}$/i.test(number)) {
+    const number = invoiceNo.trim().toUpperCase();
+    if (!/^NB-INV-\d{4,}$/.test(number)) {
       window.alert("Invoice number must match the company pattern, for example NB-INV-0001.");
       return;
     }
@@ -1031,7 +1049,7 @@ export default function CompanySales() {
           notes:
             remarks.trim() ||
             "This invoice is generated for goods supplied by Nature Biotic to the registered store shown above.",
-          invoice_no: number.toUpperCase(),
+          invoice_no: number,
         },
         builtRows.map(invoiceRpcLine),
         finalize,
@@ -1065,7 +1083,7 @@ export default function CompanySales() {
       return;
     }
 
-    const number = invoiceNo.trim();
+    const number = invoiceNo.trim().toUpperCase();
     const editingFinal =
       !!editingInvoiceNo &&
       sales.some(
@@ -1079,12 +1097,13 @@ export default function CompanySales() {
 
     const numberTaken = sales.some(
       (row) =>
-        row.invoiceNo === number &&
+        row.invoiceNo.trim().toUpperCase() === number &&
         row.saleStatus !== "Draft" &&
-        row.invoiceNo !== editingInvoiceNo,
+        row.invoiceNo.trim().toUpperCase() !==
+          String(editingInvoiceNo || "").trim().toUpperCase(),
     );
     if (numberTaken) {
-      window.alert("This invoice number is already saved.");
+      window.alert(`Invoice number ${number} is already used.`);
       return;
     }
 
@@ -1181,14 +1200,16 @@ export default function CompanySales() {
       if (!window.confirm(`${message} Continue anyway?`)) return;
     }
 
+    const number = invoiceNo.trim().toUpperCase();
     if (
       sales.some(
         (row) =>
-          row.invoiceNo === invoiceNo.trim() &&
-          row.invoiceNo !== editingInvoiceNo,
+          row.invoiceNo.trim().toUpperCase() === number &&
+          row.invoiceNo.trim().toUpperCase() !==
+            String(editingInvoiceNo || "").trim().toUpperCase(),
       )
     ) {
-      window.alert("This invoice number is already saved.");
+      window.alert(`Invoice number ${number} is already used.`);
       return;
     }
 
@@ -1248,6 +1269,7 @@ export default function CompanySales() {
           onClick={() => {
             resetForm();
             setShowCreate(true);
+            suggestInvoiceNumber();
           }}
         >
           <Icon name="add" size={20} fill /> Create Invoice
@@ -2169,14 +2191,12 @@ export default function CompanySales() {
                             0,
                           );
 
-                          const roundedTotal = Math.round(grandTotal);
-
                           return (
                             <div className="flex h-full items-center">
                               <p className="text-[12px] font-semibold text-slate-700">
                                 Amount in Words :{" "}
                                 <span className="font-bold text-slate-900">
-                                  {numberToWords(roundedTotal)}
+                                  {numberToWords(grandTotal)}
                                 </span>
                               </p>
                             </div>
@@ -2225,14 +2245,11 @@ export default function CompanySales() {
                             0,
                           );
 
-                          const roundedTotal = Math.round(exactTotal);
-                          const roundOff = roundedTotal - exactTotal;
-
                           return (
                             <div className="space-y-1.5">
                               <SummaryRow
                                 label="Round Off"
-                                value={formatCurrency(roundOff)}
+                                value={formatRoundOff(0)}
                               />
 
                               <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2">
@@ -2240,7 +2257,7 @@ export default function CompanySales() {
                                   Total
                                 </span>
                                 <span className="text-base font-extrabold text-slate-900">
-                                  {formatCurrency(roundedTotal)}
+                                  {formatCurrency(exactTotal)}
                                 </span>
                               </div>
                             </div>
@@ -2542,8 +2559,8 @@ export default function CompanySales() {
                     <Input
                       label="Invoice Number"
                       value={invoiceNo}
-                      onChange={setInvoiceNo}
-                      placeholder="e.g. NB-INV-2050"
+                      onChange={(value) => setInvoiceNo(value.toUpperCase())}
+                      placeholder="e.g. NB-INV-0001"
                       readOnly={!!editingInvoiceNo}
                       required
                     />

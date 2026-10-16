@@ -4,7 +4,22 @@ import { useAuth } from "@/context/AuthContext";
 import { useNav, type StorePage } from "@/context/NavContext";
 import { Icon, Input } from "@/components/ui";
 import { getAuthAdapter } from "@/lib/auth/localAuth";
-import { getStoreNotifications } from "@/lib/storeNotifications";
+import { getStoreNotifications, notificationForCompanyReceipt, rememberDeliveryNotifications, type StoreNotification } from "@/lib/storeNotifications";
+import { loadStockDeliveries } from "@/lib/db/operations";
+import { loadStoreCompanyReceipts } from "@/lib/db/financials";
+import {
+  loadNotificationReadKeys,
+  loadStaffAssignmentNotifications,
+  loadCashHandoverNotifications,
+  loadDebitNoteNotifications,
+  loadStoreStockReturnNotifications,
+  loadStoreCashAdvanceAcceptedNotifications,
+  loadStoreFroExpensePendingNotifications,
+  loadStoreFroCashRefundPendingNotifications,
+  loadStoreFroSalesRefundPendingNotifications,
+  markNotificationsRead,
+} from "@/lib/db/notifications";
+import { usesSupabaseData } from "@/lib/db/mode";
 import StoreMobileSectionHub from "./StoreMobileSectionHub";
 import {
   readNotificationReads,
@@ -249,6 +264,14 @@ export default function StoreShell({
     "profile" | "notifications" | "settings" | null
   >(null);
   const [noticeVersion, setNoticeVersion] = useState(0);
+  const [receiptNotes, setReceiptNotes] = useState<StoreNotification[]>([]);
+  const [assignmentNotes, setAssignmentNotes] = useState<StoreNotification[]>([]);
+  const [handoverNotes, setHandoverNotes] = useState<StoreNotification[]>([]);
+  const [debitNoteNotes, setDebitNoteNotes] = useState<StoreNotification[]>([]);
+  const [stockReturnNotes, setStockReturnNotes] = useState<StoreNotification[]>([]);
+  const [cashAdvanceNotes, setCashAdvanceNotes] = useState<StoreNotification[]>([]);
+  const [froExpenseNotes, setFroExpenseNotes] = useState<StoreNotification[]>([]);
+  const [froRefundNotes, setFroRefundNotes] = useState<StoreNotification[]>([]);
   const [settings, setSettings] = useState<StoreUserSettings>(() =>
     readStoreUserSettings(user?.id || ""),
   );
@@ -279,8 +302,13 @@ export default function StoreShell({
   const displayName = user?.name || store?.name || "Store Admin";
 
   const notifications = useMemo(
-    () => getStoreNotifications(storeId),
-    [storeId, noticeVersion],
+    () =>
+      [...getStoreNotifications(storeId).filter(
+        (item) => !usesSupabaseData() || !item.id.startsWith("cash-handover:"),
+      ), ...receiptNotes, ...assignmentNotes, ...handoverNotes, ...debitNoteNotes, ...stockReturnNotes, ...cashAdvanceNotes, ...froExpenseNotes, ...froRefundNotes].sort(
+        (a, b) => b.at - a.at,
+      ),
+    [storeId, noticeVersion, receiptNotes, assignmentNotes, handoverNotes, debitNoteNotes, stockReturnNotes, cashAdvanceNotes, froExpenseNotes, froRefundNotes],
   );
   const readIds = useMemo(() => new Set(reads), [reads]);
   const unreadNotifications = notifications.filter(
@@ -295,8 +323,185 @@ export default function StoreShell({
       : resolveStoreTheme(settings.theme);
 
   useEffect(() => {
+    if (!usesSupabaseData()) {
+      setReceiptNotes([]);
+      return;
+    }
+    let active = true;
+    const load = () => {
+      loadStoreCompanyReceipts(storeId)
+        .then((rows) => {
+          if (!active) return;
+          setReceiptNotes(rows.map(notificationForCompanyReceipt));
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-company-receipts-updated", "nature-biotic-staff-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) {
+      setAssignmentNotes([]);
+      return;
+    }
+    let active = true;
+    const load = () => {
+      loadStaffAssignmentNotifications(storeId)
+        .then((rows) => {
+          if (active) setAssignmentNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-staff-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      loadCashHandoverNotifications(storeId)
+        .then((rows) => {
+          if (active) setHandoverNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-handover-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      loadDebitNoteNotifications(storeId)
+        .then((rows) => {
+          if (active) setDebitNoteNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", load);
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      loadStoreStockReturnNotifications(storeId)
+        .then((rows) => {
+          if (active) setStockReturnNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-fro-stock-return-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      loadStoreCashAdvanceAcceptedNotifications(storeId)
+        .then((rows) => {
+          if (active) setCashAdvanceNotes(rows);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = ["nature-biotic-cash-received-updated", "focus"];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      Promise.all([
+        loadStoreFroExpensePendingNotifications(storeId),
+        loadStoreFroCashRefundPendingNotifications(storeId),
+        loadStoreFroSalesRefundPendingNotifications(storeId),
+      ])
+        .then(([expenseRows, expenseRefundRows, salesRefundRows]) => {
+          if (!active) return;
+          setFroExpenseNotes(expenseRows);
+          setFroRefundNotes([...expenseRefundRows, ...salesRefundRows]);
+        })
+        .catch(() => {
+          if (!active) return;
+        });
+    };
+    load();
+    const events = [
+      "nature-biotic-expense-updated",
+      "nature-biotic-cash-received-updated",
+      "focus",
+    ];
+    events.forEach((event) => window.addEventListener(event, load));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, load));
+    };
+  }, [storeId]);
+
+  useEffect(() => {
     setSettings(readStoreUserSettings(user?.id || ""));
-    setReads(readNotificationReads(user?.id || "", storeId));
+    const localReads = readNotificationReads(user?.id || "", storeId);
+    setReads(localReads);
+    if (!usesSupabaseData() || !user?.id) return;
+    let active = true;
+    loadNotificationReadKeys()
+      .then((keys) => {
+        if (!active) return;
+        setReads(Array.from(new Set([...localReads, ...keys])));
+      })
+      .catch(() => {
+        if (!active) return;
+      });
+    return () => {
+      active = false;
+    };
   }, [user?.id, storeId]);
 
   useEffect(() => {
@@ -313,6 +518,8 @@ export default function StoreShell({
       "nature-biotic-store-inventory-updated",
       "nature-biotic-handover-updated",
       "nature-biotic-delivery-challan-updated",
+      "nature-biotic-cash-received-updated",
+      "nature-biotic-expense-updated",
       "focus",
     ];
     events.forEach((event) => window.addEventListener(event, refresh));
@@ -322,6 +529,28 @@ export default function StoreShell({
       window.removeEventListener("storage", refresh);
     };
   }, []);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || !storeId) return;
+    let active = true;
+    const load = () => {
+      loadStockDeliveries(storeId)
+        .then((rows) => {
+          if (!active) return;
+          rememberDeliveryNotifications(rows);
+          setNoticeVersion((current) => current + 1);
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("nature-biotic-delivery-challan-updated", load);
+    window.addEventListener("focus", load);
+    return () => {
+      active = false;
+      window.removeEventListener("nature-biotic-delivery-challan-updated", load);
+      window.removeEventListener("focus", load);
+    };
+  }, [storeId]);
 
   useEffect(() => {
     if (settings.theme !== "system") return;
@@ -371,6 +600,9 @@ export default function StoreShell({
       saveNotificationReads(user.id, storeId, next);
       return next;
     });
+    if (usesSupabaseData()) {
+      void markNotificationsRead([id]).catch(() => undefined);
+    }
   }
 
   async function submitPassword() {
@@ -698,13 +930,13 @@ export default function StoreShell({
                     {unreadCount} unread
                   </p>
                 </div>
-                {unreadNotifications.length === 0 ? (
+                {notifications.length === 0 ? (
                   <p className="px-4 py-6 text-sm text-slate-500">
-                    No new notifications
+                    No notifications
                   </p>
                 ) : (
                   <div className="max-h-80 overflow-y-auto">
-                    {unreadNotifications.map((item) => (
+                    {notifications.map((item) => (
                       <button
                         key={item.id}
                         type="button"
@@ -713,7 +945,39 @@ export default function StoreShell({
                           markNotificationRead(item.id);
                           setOpenMenu(null);
                           setMobileSectionHub(null);
-                          goStorePage(item.page);
+                          if (item.id.startsWith("fro-expense-notice:")) {
+                            try {
+                              sessionStorage.setItem(
+                                "nature-biotic-open-fro-expense",
+                                item.targetId || "",
+                              );
+                            } catch {
+                              // ignore
+                            }
+                            window.dispatchEvent(
+                              new CustomEvent("nature-biotic-open-fro-expense", {
+                                detail: { expenseId: item.targetId || "" },
+                              }),
+                            );
+                          }
+                          if (item.id.startsWith("fro-refund-notice:")) {
+                            try {
+                              sessionStorage.setItem(
+                                "nature-biotic-open-fro-refund",
+                                item.targetId || "",
+                              );
+                            } catch {
+                              // ignore
+                            }
+                            window.dispatchEvent(
+                              new CustomEvent("nature-biotic-open-fro-refund", {
+                                detail: { refundId: item.targetId || "" },
+                              }),
+                            );
+                          }
+                          if (!item.id.startsWith("staff-assignment:")) {
+                            goStorePage(item.page);
+                          }
                         }}
                         className={`block w-full border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
                           readIds.has(item.id) ? "" : "bg-brand-50/40"

@@ -66,6 +66,8 @@ function toProduct(
   const interstate = product.tax_type === "interstate";
   return {
     id: variant.id,
+    variantId: variant.id,
+    productId: product.id,
     storeId: "catalog",
     name: product.name,
     purpose: product.purpose,

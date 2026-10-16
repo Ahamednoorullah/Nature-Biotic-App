@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { StoreInvoiceBillModal } from "@/components/StoreInvoiceBillModal";
+import StoreAddFarmer from "@/pages/StoreAddFarmer";
 import {
   getFarmerById,
   getPurchasesByFarmer,
@@ -15,6 +16,9 @@ import {
 } from "@/lib/data";
 import { useNav } from "@/context/NavContext";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadFarmers, loadFarmerActivity, type FarmerActivity } from "@/lib/db/farmers";
+import { dbErrorMessage } from "@/lib/db/errors";
 import {
   Card,
   Badge,
@@ -24,7 +28,6 @@ import {
   Input,
   Select,
   Textarea,
-  Modal,
 } from "@/components/ui";
 import { formatCurrency, formatDate, initials, parseBusinessDate } from "@/lib/format";
 
@@ -78,20 +81,76 @@ export default function StoreFarmerProfile({
   });
   const [openInvoice, setOpenInvoice] = useState<any | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [, setRefresh] = useState(0);
+  const [refresh, setRefresh] = useState(0);
+  const [loadedFarmer, setLoadedFarmer] = useState<Farmer | undefined>();
+  const [activity, setActivity] = useState<FarmerActivity | null>(null);
+  const [profileLoading, setProfileLoading] = useState(usesSupabaseData());
+  const [profileError, setProfileError] = useState("");
   useEffect(() => {
     const refresh = () => setRefresh((value) => value + 1);
     const events = [
       "focus",
       "nature-biotic-store-refunds-updated",
       "nature-biotic-store-sales-updated",
+      "nature-biotic-sales-invoices-updated",
       "nature-biotic-store-receipts-updated",
       "nature-biotic-store-inventory-updated",
     ];
     events.forEach((event) => window.addEventListener(event, refresh));
     return () => events.forEach((event) => window.removeEventListener(event, refresh));
   }, []);
-  const farmer = getFarmerById(farmerId);
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    setProfileLoading(true);
+    setProfileError("");
+    Promise.all([loadFarmers(), loadFarmerActivity(_storeId, farmerId)])
+      .then(([rows, ledger]) => {
+        if (!active) return;
+        setLoadedFarmer(rows.find((row) => row.id === farmerId && row.storeId === _storeId));
+        setActivity(ledger);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setProfileError(dbErrorMessage(error, "Could not load this farmer."));
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [farmerId, _storeId, refresh]);
+  const farmer = usesSupabaseData() ? loadedFarmer : getFarmerById(farmerId);
+
+  if (profileLoading) {
+    return (
+      <Card className="p-0">
+        <EmptyState
+          icon="person"
+          title="Loading farmer"
+          description="Reading this farmer's details and transactions."
+        />
+      </Card>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <Card className="p-0">
+        <EmptyState
+          icon="error"
+          title="Could not load farmer"
+          description={profileError}
+          action={
+            <Button onClick={() => goStorePage("farmers")}>
+              <Icon name="arrow_back" size={18} /> Back to Farmers
+            </Button>
+          }
+        />
+      </Card>
+    );
+  }
 
   if (!farmer) {
     return (
@@ -107,6 +166,20 @@ export default function StoreFarmerProfile({
           }
         />
       </Card>
+    );
+  }
+
+  if (editOpen) {
+    return (
+      <StoreAddFarmer
+        storeId={farmer.storeId || _storeId}
+        editFarmerId={farmerId}
+        onCancel={() => setEditOpen(false)}
+        onSaved={() => {
+          setEditOpen(false);
+          setRefresh((value) => value + 1);
+        }}
+      />
     );
   }
 
@@ -126,8 +199,28 @@ export default function StoreFarmerProfile({
     .trim()
     .toLowerCase();
   const farmerIdText = String(farmerId || "").trim();
+  const dbMode = usesSupabaseData() && activity;
+  const paidByInvoice = new Map<string, number>();
+  if (dbMode) {
+    activity.receipts.forEach((receipt) => {
+      if (receipt.status.toLowerCase() === "cancelled" || !receipt.invoiceNo) return;
+      paidByInvoice.set(
+        receipt.invoiceNo,
+        (paidByInvoice.get(receipt.invoiceNo) || 0) + receipt.amount,
+      );
+    });
+  }
+  const invoicePaymentStatus = (invoiceNo: string, amount: number, status: string) => {
+    if (!dbMode) return "";
+    if (status.toLowerCase() === "cancelled") return "Cancelled";
+    return (paidByInvoice.get(invoiceNo) || 0) + 0.009 >= Number(amount || 0)
+      ? "Paid"
+      : "Pending";
+  };
 
-  const liveInvoices = readStoreRows<any>(
+  const liveInvoices = dbMode
+    ? activity.invoices
+    : readStoreRows<any>(
     "nature-biotic-store-sales-invoices-v2",
   ).filter((invoice: any) => {
     if (invoice.id === "store-sale-1") return false;
@@ -152,7 +245,9 @@ export default function StoreFarmerProfile({
     return sameId || sameName;
   });
 
-  const liveReceipts = readStoreRows<any>(
+  const liveReceipts = dbMode
+    ? activity.receipts.filter((receipt) => receipt.status.toLowerCase() !== "cancelled")
+    : readStoreRows<any>(
     "nature-biotic-store-receipts-v3",
   ).filter((receipt: any) => {
     const receiptFarmerId = String(receipt.farmerId || "").trim();
@@ -166,7 +261,13 @@ export default function StoreFarmerProfile({
     return idMatch || nameMatch;
   });
 
-  const purchases = liveInvoices.flatMap((invoice: any) => {
+  const purchaseSource = dbMode
+    ? liveInvoices.filter(
+        (invoice: { status?: string }) =>
+          String(invoice.status || "").toLowerCase() === "final",
+      )
+    : liveInvoices;
+  const purchases = purchaseSource.flatMap((invoice: any) => {
           const products = Array.isArray(invoice.products)
             ? invoice.products
             : Array.isArray(invoice.items)
@@ -181,9 +282,9 @@ export default function StoreFarmerProfile({
               item.pkgsize || item.packSize || item.product?.size || "",
             ).trim();
             const name = String(
-              item.product?.name || item.productName || item.name || item.product || "Product",
-            );
-            const lineAmount = Number(item.rowTotal ?? item.total ?? 0);
+              item.product?.name || item.productName || item.name || "",
+            ).trim();
+            const lineAmount = Number(item.rowTotal ?? item.lineTotal ?? item.total ?? 0);
             const amount =
               lineAmount > 0
                 ? lineAmount
@@ -195,13 +296,17 @@ export default function StoreFarmerProfile({
             product: packSize ? `${name} - ${packSize}` : name,
             quantity,
             amount,
-            paymentStatus: liveReceipts.some(
+            paymentStatus: invoicePaymentStatus(
+              String(invoice.invoiceNo || ""),
+              Number(invoice.amount || 0),
+              String(invoice.status || ""),
+            ) || (liveReceipts.some(
               (receipt: any) =>
                 String(receipt.invoiceNo || "") ===
                 String(invoice.invoiceNo || ""),
             )
               ? "Paid"
-              : "Pending",
+              : "Pending"),
             kind: "sale" as const,
             packSize,
             batchNo: String(item.batchNo || ""),
@@ -214,9 +319,7 @@ export default function StoreFarmerProfile({
     const productLabel = products.length
       ? products
           .map((item: any) =>
-            String(
-              item.product?.name || item.productName || item.product || "Product",
-            ),
+            String(item.product?.name || item.productName || item.product || "—"),
           )
           .join(", ")
       : "—";
@@ -224,7 +327,14 @@ export default function StoreFarmerProfile({
       (sum: number, item: any) => sum + Number(item.quantity ?? item.qty ?? 0),
       0,
     );
-    const paid = liveReceipts.some(
+    const paidStatus = invoicePaymentStatus(
+      String(invoice.invoiceNo || ""),
+      Number(invoice.amount || 0),
+      String(invoice.status || ""),
+    );
+    const paid = paidStatus
+      ? paidStatus === "Paid"
+      : liveReceipts.some(
       (receipt: any) =>
         String(receipt.invoiceNo || "") === String(invoice.invoiceNo || ""),
     );
@@ -235,7 +345,7 @@ export default function StoreFarmerProfile({
       product: productLabel,
       quantity,
       amount: Number(invoice.amount || 0),
-      paymentStatus: paid ? "Paid" : "Pending",
+      paymentStatus: paidStatus || (paid ? "Paid" : "Pending"),
     };
   });
 
@@ -252,7 +362,9 @@ export default function StoreFarmerProfile({
     }),
   ) as ReturnType<typeof getPaymentsByFarmer>;
 
-  const salesReturns = readStoreRows<any>("nature-biotic-store-sales-returns-v2");
+  const salesReturns = dbMode
+    ? activity.returns.filter((row) => row.status.toLowerCase() === "approved")
+    : readStoreRows<any>("nature-biotic-store-sales-returns-v2");
   const farmerReturns = salesReturns.filter((row: any) => {
     const status = String(row.status || "").trim().toLowerCase();
     if (status === "draft") return false;
@@ -273,10 +385,10 @@ export default function StoreFarmerProfile({
       seen.add(historyId);
       const packSize = String(item.packSize || item.pkgsize || item.product?.size || "").trim();
       const name = String(
-        item.product?.name || item.productName || item.name || item.product || "Product",
-      );
+        item.product?.name || item.productName || item.name || "",
+      ).trim();
       const quantity = Number(item.quantity ?? item.qty ?? 0);
-      const amount = Number(item.total ?? item.rowTotal ?? item.amount ?? 0);
+      const amount = Number(item.lineTotal ?? item.total ?? item.rowTotal ?? item.amount ?? 0);
       const status = String(row.status || "").trim() || "Recorded";
       return [
         {
@@ -298,19 +410,46 @@ export default function StoreFarmerProfile({
     });
   });
   const productHistory = [...purchases, ...returnHistory];
-  const storedRefunds = readStoreRows<any>("nature-biotic-store-refunds-v2");
-  const allInvoices = readStoreRows<any>("nature-biotic-store-sales-invoices-v2");
-  const allReceipts = readStoreRows<any>("nature-biotic-store-receipts-v3");
+  const storedRefunds = dbMode
+    ? activity.refunds
+    : readStoreRows<any>("nature-biotic-store-refunds-v2");
+  const allInvoices = dbMode
+    ? activity.invoices
+    : readStoreRows<any>("nature-biotic-store-sales-invoices-v2");
+  const allReceipts = dbMode
+    ? activity.receipts
+    : readStoreRows<any>("nature-biotic-store-receipts-v3");
+  const accountInvoices = dbMode
+    ? allInvoices.filter((row) => String(row.status || "").toLowerCase() === "final")
+    : allInvoices;
+  const accountReceipts = dbMode
+    ? allReceipts.filter((row) => String(row.status || "").toLowerCase() === "final")
+    : allReceipts;
+  const accountRefunds = dbMode
+    ? storedRefunds.filter((row) => String(row.status || "").toLowerCase() === "final")
+    : storedRefunds;
   const account = settleLinkedFarmerAccounts({
-    invoices: allInvoices,
-    receipts: allReceipts,
+    invoices: accountInvoices,
+    receipts: accountReceipts,
     returns: salesReturns,
-    refunds: storedRefunds,
+    refunds: accountRefunds,
   }).farmers.find((row) => {
     if (row.farmerId && row.farmerId === String(farmerId)) return true;
     return !row.farmerId && row.farmerName.trim().toLowerCase() === farmerNameKey;
   }) || { sales: 0, collection: 0, outstanding: 0 };
-  const farmerRefunds = storedRefunds.flatMap((refund) => {
+  const farmerRefunds = dbMode
+    ? activity.refunds
+        .filter((refund) => refund.status.toLowerCase() !== "cancelled")
+        .map((refund) => ({
+          id: refund.id,
+          farmerId,
+          receiptNo: refund.refundNo || "Refund",
+          date: refund.date,
+          method: "Refund",
+          note: `Reference ${refund.referenceNo || "-"}`,
+          amount: refund.amount,
+        }))
+    : storedRefunds.flatMap((refund) => {
     const linked = farmerFromRefund(refund, salesReturns, allInvoices);
     const sameId = Boolean(linked.farmerId) && linked.farmerId === String(farmerId);
     const sameName =
@@ -481,15 +620,6 @@ export default function StoreFarmerProfile({
         {tab === "payments" && <PaymentsTab payments={paymentHistory} />}
         {tab === "documents" && <DocumentsTab />}
       </div>
-      <EditFarmerModal
-        open={editOpen}
-        farmer={farmer}
-        onClose={() => setEditOpen(false)}
-        onSaved={() => {
-          setEditOpen(false);
-          setRefresh((value) => value + 1);
-        }}
-      />
       {openInvoice && (
         <StoreInvoiceBillModal
           storeId={farmer.storeId || _storeId}
@@ -749,18 +879,14 @@ function InvoicesTab({
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[760px]">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <th className="text-left font-semibold px-5 py-3.5">S.No</th>
-              <th className="text-left font-semibold px-5 py-3.5">Invoice No</th>
               <th className="text-left font-semibold px-5 py-3.5">Date</th>
-              <th className="text-left font-semibold px-5 py-3.5">Product</th>
-              <th className="text-right font-semibold px-5 py-3.5">Quantity</th>
+              <th className="text-left font-semibold px-5 py-3.5">Invoice No</th>
               <th className="text-right font-semibold px-5 py-3.5">Amount</th>
-              <th className="text-center font-semibold px-5 py-3.5">
-                Payment Status
-              </th>
+              <th className="text-center font-semibold px-5 py-3.5">Payment</th>
               <th className="text-center font-semibold px-5 py-3.5">Action</th>
             </tr>
           </thead>
@@ -772,17 +898,11 @@ function InvoicesTab({
                 className="cursor-pointer hover:bg-slate-50/50 transition-base"
               >
                 <td className="px-5 py-3.5 text-slate-500">{index + 1}</td>
-                <td className="px-5 py-3.5 font-semibold text-brand-600">
-                  {inv.invoiceNo}
-                </td>
                 <td className="px-5 py-3.5 text-slate-600">
                   {formatDate(inv.date)}
                 </td>
-                <td className="px-5 py-3.5 font-semibold text-slate-700">
-                  {inv.product}
-                </td>
-                <td className="px-5 py-3.5 text-right text-slate-600">
-                  {inv.quantity}
+                <td className="px-5 py-3.5 font-semibold text-brand-600">
+                  {inv.invoiceNo}
                 </td>
                 <td className="px-5 py-3.5 text-right font-bold text-slate-800">
                   {formatCurrency(inv.amount)}
@@ -944,9 +1064,32 @@ function ProductHistoryTab({
     );
   }
 
-  const rows = [...filteredPurchases].sort((a, b) => {
-    const aDate = parseBusinessDate(a.date)?.getTime() || 0;
-    const bDate = parseBusinessDate(b.date)?.getTime() || 0;
+  const groups = new Map<
+    string,
+    { product: string; quantity: number; times: number; lastDate: string; value: number }
+  >();
+  for (const row of filteredPurchases) {
+    const current = groups.get(row.product) || {
+      product: row.product,
+      quantity: 0,
+      times: 0,
+      lastDate: "",
+      value: 0,
+    };
+    const signed = row.kind === "return" ? -1 : 1;
+    current.quantity += signed * Number(row.quantity || 0);
+    current.value += signed * Number(row.amount || 0);
+    if (row.kind !== "return") {
+      current.times += 1;
+      const currentTime = parseBusinessDate(current.lastDate)?.getTime() || 0;
+      const nextTime = parseBusinessDate(row.date)?.getTime() || 0;
+      if (!current.lastDate || nextTime >= currentTime) current.lastDate = row.date;
+    }
+    groups.set(row.product, current);
+  }
+  const rows = Array.from(groups.values()).sort((a, b) => {
+    const aDate = parseBusinessDate(a.lastDate)?.getTime() || 0;
+    const bDate = parseBusinessDate(b.lastDate)?.getTime() || 0;
     return bDate - aDate;
   });
 
@@ -958,7 +1101,7 @@ function ProductHistoryTab({
       {/* Filter bar */}
       <div className="px-3 py-3 border-b border-slate-100 bg-slate-50">
         <p className="mb-2 text-[10px] text-slate-500 font-medium">
-          Showing sales and farmer returns — {periodLabel.toLowerCase()}
+          Product purchases — {periodLabel.toLowerCase()}
         </p>
         <div
           className={
@@ -1008,55 +1151,33 @@ function ProductHistoryTab({
           >
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-[9px] uppercase tracking-wide">
-                <th className={isFro ? "w-[18%] text-left font-semibold px-2 py-2" : "text-left font-semibold px-4 py-3.5"}>Date</th>
-                <th className={isFro ? "w-[14%] text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Type</th>
-                <th className={isFro ? "w-[28%] text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Product</th>
-                {!isFro && <th className="text-left font-semibold px-4 py-3.5">Batch</th>}
-                <th className={isFro ? "w-[12%] text-right font-semibold px-1 py-2" : "text-right font-semibold px-4 py-3.5"}>Qty</th>
-                <th className={isFro ? "w-[28%] text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Reference</th>
-                {!isFro && <th className="text-left font-semibold px-4 py-3.5">Status</th>}
-                {!isFro && <th className="text-left font-semibold px-4 py-3.5">Reason</th>}
+                <th className={isFro ? "text-left font-semibold px-2 py-2" : "text-left font-semibold px-4 py-3.5"}>Product</th>
+                <th className={isFro ? "text-right font-semibold px-1 py-2" : "text-right font-semibold px-4 py-3.5"}>Total Qty</th>
+                <th className={isFro ? "text-right font-semibold px-1 py-2" : "text-right font-semibold px-4 py-3.5"}>Times</th>
+                <th className={isFro ? "text-left font-semibold px-1 py-2" : "text-left font-semibold px-4 py-3.5"}>Last Date</th>
+                <th className={isFro ? "text-right font-semibold px-1 py-2" : "text-right font-semibold px-4 py-3.5"}>Value</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((row) => {
-                const isReturn = row.kind === "return";
-                return (
-                  <tr key={row.id} className="hover:bg-slate-50/50 transition-base">
-                    <td className={isFro ? "px-2 py-2 text-slate-600 whitespace-nowrap" : "px-4 py-3 text-slate-600"}>
-                      {formatDate(row.date)}
-                    </td>
-                    <td className={isFro ? "px-1 py-2" : "px-4 py-3"}>
-                      <Badge color={isReturn ? "amber" : "green"}>
-                        {isReturn ? "Return" : "Sale"}
-                      </Badge>
-                    </td>
-                    <td className={isFro ? "px-1 py-2 font-semibold text-slate-700 break-words leading-tight" : "px-4 py-3 font-semibold text-slate-700"}>
-                      <span className="block">{row.product}</span>
-                      {row.packSize && !row.product.includes(row.packSize) ? (
-                        <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
-                          {row.packSize}
-                        </span>
-                      ) : null}
-                    </td>
-                    {!isFro && (
-                      <td className="px-4 py-3 text-slate-600">{row.batchNo || "—"}</td>
-                    )}
-                    <td className={isFro ? "px-1 py-2 text-right text-slate-600" : "px-4 py-3 text-right text-slate-600"}>
-                      {isReturn ? `-${row.quantity}` : row.quantity}
-                    </td>
-                    <td className={isFro ? "px-1 py-2 text-slate-600 break-words" : "px-4 py-3 text-slate-600"}>
-                      {row.invoiceNo || "—"}
-                    </td>
-                    {!isFro && (
-                      <td className="px-4 py-3 text-slate-600">{row.status || (isReturn ? "Recorded" : "—")}</td>
-                    )}
-                    {!isFro && (
-                      <td className="px-4 py-3 text-slate-500">{isReturn ? row.reason || "—" : "—"}</td>
-                    )}
-                  </tr>
-                );
-              })}
+              {rows.map((row) => (
+                <tr key={row.product} className="hover:bg-slate-50/50 transition-base">
+                  <td className={isFro ? "px-2 py-2 font-semibold text-slate-700 break-words leading-tight" : "px-4 py-3 font-semibold text-slate-700"}>
+                    {row.product}
+                  </td>
+                  <td className={isFro ? "px-1 py-2 text-right text-slate-600" : "px-4 py-3 text-right text-slate-600"}>
+                    {row.quantity}
+                  </td>
+                  <td className={isFro ? "px-1 py-2 text-right text-slate-600" : "px-4 py-3 text-right text-slate-600"}>
+                    {row.times}
+                  </td>
+                  <td className={isFro ? "px-1 py-2 text-slate-600 whitespace-nowrap" : "px-4 py-3 text-slate-600"}>
+                    {row.lastDate ? formatDate(row.lastDate) : "—"}
+                  </td>
+                  <td className={isFro ? "px-1 py-2 text-right font-semibold text-slate-800" : "px-4 py-3 text-right font-semibold text-slate-800"}>
+                    {formatCurrency(row.value)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -1141,289 +1262,5 @@ function DocumentsTab() {
         </div>
       </Card>
     </div>
-  );
-}
-
-function EditFarmerModal({
-  open,
-  farmer,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  farmer: Farmer;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [form, setForm] = useState<Farmer>(() => ({
-    ...farmer,
-    crops: farmer.crops?.map((crop) => ({ ...crop })) ?? [],
-  }));
-  const [cropType, setCropType] = useState("");
-  const [cropLandSize, setCropLandSize] = useState("");
-  const [soilType, setSoilType] = useState("");
-  const [waterSource, setWaterSource] = useState("");
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
-  if (!open) return null;
-
-  const change = (key: keyof Farmer, value: any) =>
-    setForm((current) => ({ ...current, [key]: value }));
-
-  const uploadImage = (file?: File) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/"))
-      return alert("Please select an image file.");
-    if (file.size > 1024 * 1024)
-      return alert("Profile image must be 1 MB or less.");
-    const reader = new FileReader();
-    reader.onload = () =>
-      setForm((current) => ({
-        ...current,
-        profileImage:
-          typeof reader.result === "string"
-            ? reader.result
-            : current.profileImage,
-      }));
-    reader.readAsDataURL(file);
-  };
-
-  const adsdrop = () => {
-    if (!cropType || !cropLandSize) return;
-    setForm((current) => ({
-      ...current,
-      crops: [
-        ...(current.crops ?? []),
-        {
-          id: `crop-${Date.now()}`,
-          cropType,
-          landSize: Number(cropLandSize),
-          soilType,
-          waterSource,
-          createdAt: new Date().toISOString().split("T")[0],
-        },
-      ],
-    }));
-    setCropType("");
-    setCropLandSize("");
-    setSoilType("");
-    setWaterSource("");
-  };
-
-  const removeCrop = (id: string) =>
-    setForm((current) => ({
-      ...current,
-      crops: current.crops.filter((crop) => crop.id !== id),
-    }));
-
-  const save = () => {
-    if (!form.name.trim() || !form.phone.trim() || !form.farmAddress.trim())
-      return;
-    updateFarmer(form);
-    onSaved();
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Edit Farmer" size="xl">
-      <div className="max-h-[75vh] overflow-y-auto pr-1 space-y-6">
-        <div>
-          <h3 className="font-bold text-slate-800 mb-3">General Information</h3>
-          <div className="flex items-center gap-4 mb-5">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => uploadImage(e.target.files?.[0])}
-            />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="w-20 h-20 rounded-full overflow-hidden border-2 border-dashed border-slate-300 flex items-center justify-center bg-slate-50"
-            >
-              {form.profileImage ? (
-                <img
-                  src={form.profileImage}
-                  className="w-full h-full object-cover"
-                  alt="Profile"
-                />
-              ) : (
-                <Icon name="add_a_photo" size={24} className="text-slate-400" />
-              )}
-            </button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => fileRef.current?.click()}
-            >
-              <Icon name="upload" size={16} /> Change Photo
-            </Button>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Input
-              label="Farmer Name"
-              value={form.name}
-              onChange={(v) => change("name", v)}
-              required
-            />
-            <Input
-              label="Mobile Number"
-              value={form.phone}
-              onChange={(v) => change("phone", v)}
-              required
-            />
-            <Input
-              label="Alternative Mobile"
-              value={form.altMobile}
-              onChange={(v) => change("altMobile", v)}
-            />
-            <Input
-              label="Aadhar Number"
-              value={form.aadhar}
-              onChange={(v) => change("aadhar", v)}
-            />
-            <Input
-              label="GST Number"
-              value={form.gst}
-              onChange={(v) => change("gst", v)}
-            />
-            <Select
-              label="Customer Category"
-              value={form.customerCategory}
-              onChange={(v) => change("customerCategory", v)}
-              options={customerCategories.map((v) => ({ value: v, label: v }))}
-            />
-            <div className="sm:col-span-2">
-              <Textarea
-                label="Farmer Address"
-                value={form.farmAddress}
-                onChange={(v) => change("farmAddress", v)}
-                rows={2}
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-slate-200 pt-5">
-          <h3 className="font-bold text-slate-800 mb-3">Location Details</h3>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Input
-              label="Village"
-              value={form.village}
-              onChange={(v) => change("village", v)}
-            />
-            <Input
-              label="Landmark"
-              value={form.landmark}
-              onChange={(v) => change("landmark", v)}
-            />
-            <Input
-              label="District"
-              value={form.district}
-              onChange={(v) => change("district", v)}
-            />
-            <Input
-              label="State"
-              value={form.state}
-              onChange={(v) => change("state", v)}
-            />
-            <Input
-              label="Pincode"
-              value={form.pincode}
-              onChange={(v) => change("pincode", v)}
-            />
-          </div>
-        </div>
-
-        <div className="border-t border-slate-200 pt-5">
-          <h3 className="font-bold text-slate-800 mb-3">Crop Details</h3>
-          <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-3">
-            <Select
-              label="Crop"
-              value={cropType}
-              onChange={setCropType}
-              placeholder="Select crop"
-              options={cropTypes.map((v) => ({ value: v, label: v }))}
-            />
-            <Input
-              label="Land (Acres)"
-              type="number"
-              value={cropLandSize}
-              onChange={setCropLandSize}
-            />
-            <Select
-              label="Soil Type"
-              value={soilType}
-              onChange={setSoilType}
-              placeholder="Select soil"
-              options={soilTypes.map((v) => ({ value: v, label: v }))}
-            />
-            <Select
-              label="Water Source"
-              value={waterSource}
-              onChange={setWaterSource}
-              placeholder="Select source"
-              options={waterSources.map((v) => ({ value: v, label: v }))}
-            />
-            <div className="flex items-end">
-              <Button type="button" className="w-full" onClick={adsdrop}>
-                <Icon name="add" size={17} /> Add
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-3 py-3 text-left">Crop</th>
-                  <th className="px-3 py-3 text-center">Land</th>
-                  <th className="px-3 py-3 text-left">Soil</th>
-                  <th className="px-3 py-3 text-left">Water</th>
-                  <th className="px-3 py-3 text-center"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {form.crops.map((crop) => (
-                  <tr key={crop.id}>
-                    <td className="px-3 py-3 font-semibold">{crop.cropType}</td>
-                    <td className="px-3 py-3 text-center">{crop.landSize}</td>
-                    <td className="px-3 py-3">{crop.soilType || "—"}</td>
-                    <td className="px-3 py-3">{crop.waterSource || "—"}</td>
-                    <td className="px-3 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => removeCrop(crop.id)}
-                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"
-                      >
-                        <Icon name="delete" size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            onClick={save}
-            disabled={
-              !form.name.trim() ||
-              !form.phone.trim() ||
-              !form.farmAddress.trim()
-            }
-          >
-            <Icon name="save" size={17} /> Save Changes
-          </Button>
-        </div>
-      </div>
-    </Modal>
   );
 }

@@ -3,15 +3,25 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatDate, numberToWords } from "@/lib/format";
 import {
+  getCatalogSellingPrice,
   getProductMaster,
   getStaffByStore,
-  getStorePurchasesFromCompanySales,
+  getStores,
   getStoreAvailableQty,
+  getStorePurchasesFromCompanySales,
+  getStoreStockLines,
 } from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadStockDeliveries, createStockDeliveryDb } from "@/lib/db/operations";
+import { peekDocumentNo, type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { rememberDeliveryNotifications } from "@/lib/storeNotifications";
 
 type Item = {
   productId: string;
+  variantId: string;
+  batchId: string;
   product: string;
   packSize: string;
   batchNo: string;
@@ -20,6 +30,9 @@ type Item = {
   unitValue: string;
   taxPercent: number;
 };
+
+const variantUuid =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 type Challan = {
   id: string;
   sdNo: string;
@@ -36,6 +49,8 @@ function emptyItems(): Item[] {
   return [
     {
       productId: "",
+      variantId: "",
+      batchId: "",
       product: "",
       packSize: "",
       batchNo: "",
@@ -54,6 +69,7 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
 
   const [challans, setChallans] = useState<Challan[]>(() => {
+    if (usesSupabaseData()) return [];
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) return JSON.parse(saved);
@@ -61,6 +77,24 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
 
     return [];
   });
+  const [listError, setListError] = useState("");
+
+  const reloadDbDeliveries = async () => {
+    try {
+      const rows = await loadStockDeliveries(storeId);
+      rememberDeliveryNotifications(rows);
+      setChallans(rows as unknown as Challan[]);
+      setListError("");
+    } catch (error) {
+      setChallans([]);
+      setListError(dbErrorMessage(error, "Could not load stock deliveries."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbDeliveries();
+  }, [storeId]);
 
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState<Challan | null>(null);
@@ -173,6 +207,40 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   // Batch / expiry / price are read from those purchase records and are not
   // manually entered by the user.
   const storeProducts = useMemo(() => {
+    if (usesSupabaseData()) {
+      const byProduct = new Map<string, any>();
+      getStoreStockLines(storeId)
+        .filter((line) => line.available > 0 && line.variantId && line.batchId)
+        .forEach((line) => {
+          const productName = line.productName.trim();
+          const packSize = line.packSize.trim();
+          const batchNo = line.batchNo.trim();
+          if (!productName || !packSize || !batchNo) return;
+          const nameKey = productName.toLowerCase();
+          const product = byProduct.get(nameKey) ?? {
+            id: nameKey,
+            name: productName,
+            variants: [],
+          };
+          product.variants.push({
+            productId: line.variantId,
+            variantId: line.variantId,
+            batchId: line.batchId,
+            productName,
+            packSize,
+            batchNo,
+            expiryDate: line.expiryDate || "",
+            availableQty: line.available,
+            unitValue: getCatalogSellingPrice(productName, packSize, line.variantId),
+            taxPercent: 0,
+          });
+          byProduct.set(nameKey, product);
+        });
+      return Array.from(byProduct.values()).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+    }
+
     const products = getProductMaster();
     const purchases = getStorePurchasesFromCompanySales(storeId);
     const productByName = new Map(
@@ -292,6 +360,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
           ? {
               ...item,
               productId: variant.productId,
+              variantId: String(variant.variantId || ""),
+              batchId: String(variant.batchId || ""),
               product: variant.productName,
               packSize: variant.packSize,
               batchNo: variant.batchNo,
@@ -312,9 +382,14 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     return item.product.trim().toLowerCase();
   }
 
-  function comboKey(item: Pick<Item, "product" | "packSize" | "batchNo">) {
-    return [item.product, item.packSize, item.batchNo]
-      .map((value) => value.trim().toLowerCase())
+  function comboKey(item: {
+    product: string;
+    packSize: string;
+    batchNo: string;
+    batchId?: string;
+  }) {
+    return [item.product, item.packSize, item.batchId || item.batchNo]
+      .map((value) => String(value || "").trim().toLowerCase())
       .join("|");
   }
 
@@ -335,6 +410,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
           ? {
               ...item,
               productId: "",
+              variantId: "",
+              batchId: "",
               product: product?.name || "",
               packSize: "",
               batchNo: "",
@@ -348,24 +425,22 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     );
   }
 
-  function selectPackSize(i: number, packSize: string) {
-    setLineError("");
-    const item = items[i];
-    const open = getProductVariants(productKey(item)).filter(
+  function batchesFor(item: Item, packSize: string) {
+    const size = packSize.trim().toLowerCase();
+    return getProductVariants(productKey(item)).filter(
       (variant: any) =>
-        variant.packSize === packSize &&
-        !usedCombos(i).has(
-          comboKey({
-            product: item.product,
-            packSize,
-            batchNo: variant.batchNo,
-          }),
-        ),
+        String(variant.packSize || "").trim().toLowerCase() === size &&
+        Number(variant.availableQty || 0) > 0 &&
+        (!usesSupabaseData() || variantUuid.test(String(variant.batchId || ""))),
     );
-    if (open.length === 1) {
-      applyVariant(i, open[0]);
-      return;
-    }
+  }
+
+  function batchLabel(variant: any) {
+    const expiry = variant.expiryDate ? formatDate(String(variant.expiryDate)) : "No expiry";
+    return `${variant.batchNo} · Exp ${expiry} · Avl ${variant.availableQty}`;
+  }
+
+  function clearBatch(i: number, packSize: string) {
     setItems((prev) =>
       prev.map((row, index) =>
         index === i
@@ -373,6 +448,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
               ...row,
               packSize,
               batchNo: "",
+              variantId: "",
+              batchId: "",
               expiryDate: "",
               qty: "",
               productId: "",
@@ -383,13 +460,57 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     );
   }
 
-  function selectBatch(i: number, batchNo: string) {
+  function selectPackSize(i: number, packSize: string) {
     const item = items[i];
-    const variant = getProductVariants(productKey(item)).find(
-      (v: any) => v.packSize === item.packSize && v.batchNo === batchNo,
+    const matches = batchesFor(item, packSize);
+    const open = matches.filter(
+      (variant: any) =>
+        !usedCombos(i).has(
+          comboKey({
+            product: item.product,
+            packSize,
+            batchNo: variant.batchNo,
+            batchId: variant.batchId,
+          }),
+        ),
     );
-    if (!variant) return;
-    if (usedCombos(i).has(comboKey({ ...item, batchNo }))) {
+    if (matches.length === 0) {
+      setLineError("No available batch for this package size.");
+      clearBatch(i, packSize);
+      return;
+    }
+    if (open.length === 0) {
+      setLineError("Every available batch for this package size is already on the delivery.");
+      clearBatch(i, packSize);
+      return;
+    }
+    if (open.length === 1) {
+      setLineError("");
+      applyVariant(i, open[0]);
+      return;
+    }
+    setLineError("Select a batch for this package size.");
+    clearBatch(i, packSize);
+  }
+
+  function selectBatch(i: number, batchKey: string) {
+    const item = items[i];
+    const variant = batchesFor(item, item.packSize).find((row: any) =>
+      usesSupabaseData() ? row.batchId === batchKey : row.batchNo === batchKey,
+    );
+    if (!variant) {
+      setLineError("Select a batch that belongs to the chosen package size.");
+      return;
+    }
+    if (
+      usedCombos(i).has(
+        comboKey({
+          ...item,
+          batchNo: variant.batchNo,
+          batchId: variant.batchId,
+        }),
+      )
+    ) {
       setLineError(
         "This product, package size and batch is already added. Edit the existing row.",
       );
@@ -408,7 +529,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
         item.product &&
         item.packSize &&
         item.batchNo.trim() &&
-        item.expiryDate &&
+        (!usesSupabaseData() ||
+          (variantUuid.test(item.variantId) && variantUuid.test(item.batchId))) &&
         Number(item.qty) > 0 &&
         Number(item.unitValue) >= 0 &&
         Number(item.qty) <=
@@ -458,12 +580,16 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
   }
 
   function getNextSdNo() {
+    const code =
+      getStores().find((store) => store.id === storeId)?.code?.trim() || "";
+    const prefix = code ? `${code}-SD-` : "SD-";
+    const pattern = new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\d+)$`, "i");
     const maxNo = challans.reduce((max, challan) => {
-      const match = String(challan.sdNo || "").match(/SD-(\d+)/i);
+      const match = String(challan.sdNo || "").match(pattern);
       return Math.max(max, match ? Number(match[1]) : 0);
     }, 0);
 
-    return `SD-${String(maxNo + 1).padStart(4, "0")}`;
+    return `${prefix}${String(maxNo + 1).padStart(4, "0")}`;
   }
 
   function openCreateForm() {
@@ -472,9 +598,14 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     setDate(new Date().toISOString().split("T")[0]);
     setItems(emptyItems());
     setShowAdd(true);
+    if (usesSupabaseData()) {
+      peekDocumentNo("delivery_challan", storeId).then((nextNo) => {
+        if (nextNo) setsdNo(nextNo);
+      }).catch(() => {});
+    }
   }
 
-  function createChallan() {
+  async function createChallan() {
     if (!canCreate) return;
     if (!storeExecutives.includes(executive)) {
       window.alert("Select an executive assigned to this store.");
@@ -484,19 +615,81 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
     for (const item of items) {
       const key = comboKey(item);
       if (seen.has(key)) {
-        window.alert(
+        setLineError(
           "This product, package size and batch is already added. Edit the existing row.",
         );
         return;
       }
       seen.add(key);
-      const available =
-        getProductVariants(productKey(item)).find(
-          (variant: any) =>
-            variant.packSize === item.packSize && variant.batchNo === item.batchNo,
-        )?.availableQty ?? 0;
+      const selected = getProductVariants(productKey(item)).find(
+        (variant: any) =>
+          variant.packSize === item.packSize && variant.batchNo === item.batchNo,
+      );
+      if (!item.product || !item.packSize) {
+        setLineError("Select a product and package size for every line.");
+        return;
+      }
+      if (!item.batchNo.trim() || !selected) {
+        setLineError("Select a batch that belongs to the chosen package size.");
+        return;
+      }
+      if (
+        usesSupabaseData() &&
+        (!variantUuid.test(item.variantId) || !variantUuid.test(item.batchId))
+      ) {
+        setLineError(
+          "The selected product size does not have a saved variant. Choose the product and package size again.",
+        );
+        return;
+      }
+      if (
+        usesSupabaseData() &&
+        (selected.variantId !== item.variantId || selected.batchId !== item.batchId)
+      ) {
+        setLineError("The selected batch does not belong to this product size.");
+        return;
+      }
+      const available = Number(selected.availableQty || 0);
       if (Number(item.qty) > available) {
-        window.alert(`Only ${available} units available for this batch.`);
+        setLineError(`Only ${available} units available for this batch.`);
+        return;
+      }
+    }
+
+    if (usesSupabaseData()) {
+      const staffList = getStaffByStore(storeId);
+      const staffMember = staffList.find(
+        (s) => s.name.trim().toLowerCase() === executive.trim().toLowerCase(),
+      );
+      if (!staffMember) {
+        window.alert("Select an executive assigned to this store.");
+        return;
+      }
+      const dbLines: RpcLine[] = items.map((item) => ({
+        variant_id: item.variantId,
+        batch_id: item.batchId,
+        batch_no: item.batchNo,
+        expiry_date: item.expiryDate || null,
+        quantity: Number(item.qty || 0),
+        unit_price: Number(item.unitValue || 0),
+      }));
+
+      try {
+        await createStockDeliveryDb(
+          {
+            store_id: storeId,
+            fro_staff_id: staffMember.id,
+            delivery_date: date,
+            notes: purchaseOrderNotes || null,
+          },
+          dbLines,
+        );
+        closeForm();
+        await reloadDbDeliveries();
+        window.dispatchEvent(new Event("nature-biotic-delivery-challan-updated"));
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to create delivery challan"));
         return;
       }
     }
@@ -540,6 +733,11 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Stock Delivery</h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-500">
             Issue products from store stock to field executives.
           </p>
@@ -767,6 +965,8 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                           ...p,
                           {
                             productId: "",
+                            variantId: "",
+                            batchId: "",
                             product: "",
                             packSize: "",
                             batchNo: "",
@@ -892,19 +1092,32 @@ export default function StoreDeliveryChallan({ storeId }: { storeId: string }) {
                                 />
                               </td>
                               <td className="px-2 py-3">
-                                <Select
-                                  value={item.batchNo}
-                                  onChange={(value) => selectBatch(i, value)}
-                                  placeholder="Select batch"
-                                  options={batches.map((variant: any) => ({
-                                    value: String(variant.batchNo || ""),
-                                    label: String(variant.batchNo || ""),
-                                  }))}
-                                />
+                                {batches.length > 1 ? (
+                                  <Select
+                                    value={usesSupabaseData() ? item.batchId : item.batchNo}
+                                    onChange={(value) => selectBatch(i, value)}
+                                    placeholder="Select batch"
+                                    options={batches.map((variant: any) => ({
+                                      value: usesSupabaseData()
+                                        ? String(variant.batchId || "")
+                                        : String(variant.batchNo || ""),
+                                      label: batchLabel(variant),
+                                    }))}
+                                  />
+                                ) : (
+                                  <Input
+                                    value={item.batchNo}
+                                    onChange={() => {}}
+                                    readOnly
+                                    placeholder="Auto"
+                                  />
+                                )}
                               </td>
                               <td className="px-2 py-3">
                                 <Input
-                                  value={item.expiryDate}
+                                  value={
+                                    item.expiryDate ? formatDate(item.expiryDate) : ""
+                                  }
                                   onChange={() => {}}
                                   readOnly
                                   placeholder="Auto"

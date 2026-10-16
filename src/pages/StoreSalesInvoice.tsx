@@ -3,27 +3,38 @@ import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
   formatDate,
+  formatRoundOff,
+  money,
   matchesSimpleDate,
+  roundOffToRupee,
   simpleDateFilterOptions,
   type SimpleDateFilter,
 } from "@/lib/format";
 import {
-  products as allProducts,
+  getProductMaster,
+  productMasterUpdatedEvent,
   getStore,
   getFarmersByStore,
   getStorePurchasesFromCompanySales,
   getFROStockByExecutive,
   getStoreAvailableQty,
+  getStoreStockLines,
   getStaffByStore,
   reduceFROStock,
   nextStoreDocumentNo,
   rememberStoreDocumentNo,
   type Product,
 } from "@/lib/data";
+import { loadCatalog } from "@/lib/db/products";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadSalesInvoices, createSalesInvoiceDb, loadQuotations, convertQuotationToInvoiceDb, type DbQuotation } from "@/lib/db/sales";
+import { peekDocumentNo, type RpcLine } from "@/lib/db/rpc";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { dbErrorMessage } from "@/lib/db/errors";
 import { StoreInvoiceBillModal } from "@/components/StoreInvoiceBillModal";
 import { CommonDocumentBill } from "@/components/CommonDocumentBill";
 import {
@@ -62,6 +73,7 @@ type SaleRow = {
   cgst: number;
   igst: number;
   amount: number;
+  roundOff?: number;
   products: AddedRow[];
 };
 
@@ -81,6 +93,8 @@ type AddedRow = {
   sgst: number;
   key: string;
   productId: string;
+  variantId?: string;
+  batchId?: string;
   product?: Product;
   pkgsize: string;
   batchNo: string;
@@ -151,6 +165,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       return [];
     }
   });
+  const [listLoading, setListLoading] = useState(usesSupabaseData());
+  const [listError, setListError] = useState("");
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -175,7 +191,37 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     }
   }
 
+  const reloadDbInvoices = async () => {
+    if (!usesSupabaseData()) return;
+    setListLoading(true);
+    setListError("");
+    try {
+      const data = await loadSalesInvoices(storeId);
+      setRows(data as unknown as SaleRow[]);
+    } catch (error) {
+      setRows([]);
+      setListError(dbErrorMessage(error, "Could not load sales invoices."));
+    } finally {
+      setListLoading(false);
+    }
+  };
+
   useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbInvoices();
+    loadQuotations(storeId)
+      .then((rows) => {
+        setOpenQuotations(
+          rows.filter((row) => String(row.status || "").toLowerCase() === "open"),
+        );
+      })
+      .catch(() => {
+        setOpenQuotations([]);
+      });
+  }, [storeId]);
+
+  useEffect(() => {
+    if (usesSupabaseData()) return;
     const cleaned = rows.filter((row) => !isSampleSale(row));
     if (cleaned.length === rows.length) return;
     setRows(cleaned);
@@ -221,6 +267,19 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   }, [isFRO, froName]);
   const [stockVersion, setStockVersion] = useState(0);
   const savingSale = useRef(false);
+  const [productMaster, setProductMaster] = useState<Product[]>(() =>
+    getProductMaster(),
+  );
+
+  useEffect(() => {
+    const refresh = () => setProductMaster(getProductMaster());
+    window.addEventListener(productMasterUpdatedEvent, refresh);
+    if (usesSupabaseData() && getProductMaster().length === 0) {
+      void loadCatalog().then(setProductMaster);
+    }
+    return () => window.removeEventListener(productMasterUpdatedEvent, refresh);
+  }, []);
+
   useEffect(() => {
     const refresh = () => setStockVersion((version) => version + 1);
     window.addEventListener("nature-biotic-store-inventory-updated", refresh);
@@ -248,6 +307,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
   );
   const [partyName, setPartyName] = useState("");
   const [farmerId, setFarmerId] = useState("");
+  const [quotationId, setQuotationId] = useState("");
+  const [openQuotations, setOpenQuotations] = useState<DbQuotation[]>([]);
   const [farmerPhone, setFarmerPhone] = useState("");
   const [farmerVillage, setFarmerVillage] = useState("");
   const [farmerCrop, setFarmerCrop] = useState("");
@@ -286,6 +347,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     });
   }, [rows, isFRO, froName, user?.staffId, user?.id]);
 
+  const invoiceListMessage = listError
+    || (listLoading ? "Loading sales invoices..." : "No sales invoices found.");
+
   const listedRows = useMemo(
     () =>
       visibleRows.filter((row) =>
@@ -306,8 +370,6 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     [storeId, stockVersion],
   );
 
-  console.log("DEBUG storePurchaseRows:", storePurchaseRows);
-
   const storeStockVariants = useMemo(() => {
     const seen = new Map<string, any>();
     storePurchaseRows.forEach((row: any) => {
@@ -315,7 +377,7 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       const size = String(row.packSize ?? row.pkgsize ?? row.size ?? "").trim();
       const batchNo = String(row.batchNo ?? "");
       if (!name) return;
-      const master = allProducts.find(
+      const master = productMaster.find(
         (p) =>
           (row.productId && p.id === row.productId) ||
           (p.name.toLowerCase() === name.toLowerCase() &&
@@ -326,52 +388,68 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       if (seen.has(key)) return;
       const quantity = getStoreAvailableQty(storeId, productId, size, batchNo, name);
       if (quantity <= 0) return;
+      const stockLine = getStoreStockLines(storeId).find(
+        (line) =>
+          line.variantId === productId &&
+          line.batchNo.trim().toLowerCase() === batchNo.trim().toLowerCase() &&
+          line.available > 0,
+      );
+      const defaultSellingPrice =
+        Number(master?.sellingPrice ?? 0) > 0
+          ? Number(master?.sellingPrice)
+          : Number(row.sellingPrice ?? 0);
       seen.set(key, {
         key,
         productId: productId || key,
+        variantId: stockLine?.variantId || productId,
+        batchId: stockLine?.batchId || "",
         product: master,
         name,
         size,
         batchNo,
         expiryDate: String(row.expiryDate ?? ""),
         quantity,
-        sellingPrice:
-          Number(master?.sellingPrice ?? 0) > 0
-            ? Number(master?.sellingPrice)
-            : Number(row.sellingPrice ?? row.rate ?? row.price ?? 0),
+        sellingPrice: defaultSellingPrice,
         taxPercentage: Number(
-          row.taxPercent ?? row.taxPercentage ?? master?.taxPercentage ?? 0,
+          master?.taxPercentage ?? row.taxPercent ?? row.taxPercentage ?? 0,
         ),
       });
     });
     return Array.from(seen.values());
-  }, [storePurchaseRows, storeId]);
+  }, [storePurchaseRows, storeId, productMaster]);
 
   // FRO's own delivered stock — used when Through = Executive
     const froStockVariants = useMemo(() => {
     if (through !== "Executive" || !executiveName) return [];
-    console.log("DEBUG froStock RAW:", executiveName, getFROStockByExecutive(storeId, executiveName));
-    return getFROStockByExecutive(storeId, executiveName)
+    return getFROStockByExecutive(storeId, executiveName, isFRO ? user?.staffId : undefined)
       .map((item: any, index: number) => {
-        const master = allProducts.find((p) => p.id === item.productId);
+        const master = productMaster.find(
+          (p) =>
+            p.id === item.productId ||
+            (p.name.toLowerCase() === (item.productName || "").toLowerCase() &&
+              p.size.trim().toLowerCase() === (item.packSize || "").trim().toLowerCase()),
+        );
+        const defaultSellingPrice =
+          Number(master?.sellingPrice ?? 0) > 0
+            ? Number(master?.sellingPrice)
+            : Number(item.sellingPrice ?? 0);
         return {
-          key: `${item.productId}-${item.packSize}-${item.batchNo}-${item.expiryDate}-${index}`,
-          productId: item.productId,
+          key: `${item.variantId || item.productId}-${item.packSize}-${item.batchNo}-${item.expiryDate}-${index}`,
+          productId: master?.id || item.variantId || item.productId,
+          variantId: item.variantId || master?.id || item.productId,
+          batchId: item.batchId || "",
           product: master,
           name: item.productName,
           size: item.packSize,
           batchNo: item.batchNo,
           expiryDate: item.expiryDate,
-          quantity: item.currentQty, // ✅ this field DOES exist on FROStockEntry
-          sellingPrice:
-            Number(master?.sellingPrice ?? 0) > 0
-              ? Number(master?.sellingPrice)
-              : Number(item.unitValue ?? 0),
-          taxPercentage: Number(master?.taxPercentage ?? 0),
+          quantity: item.currentQty,
+          sellingPrice: defaultSellingPrice,
+          taxPercentage: Number(master?.taxPercentage ?? item.taxPercent ?? 0),
         };
       })
       .filter((item: any) => item.name && item.quantity > 0);
-  }, [through, executiveName, storeId, stockVersion]);
+  }, [through, executiveName, storeId, stockVersion, productMaster, isFRO, user?.staffId]);
 
   // Switch source based on sale type
   const activeStockVariants =
@@ -396,26 +474,36 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     [activeStockVariants, selectedProductName],
   );
 
-  const entryProduct = allProducts.find((p) => p.id === entry.productId);
+  const entryProduct = productMaster.find((p) => p.id === entry.productId);
 
   const totals = useMemo(() => {
-    const withoutTax = added.reduce((s, r) => s + r.withoutTax, 0);
-    const totalTax = added.reduce((s, r) => s + r.taxAmount, 0);
-    const sgst = totalTax / 2;
-    const cgst = totalTax / 2;
-    const igst = 0;
-    const grandTotal = withoutTax + totalTax;
-
+    const withoutTax = money(added.reduce((sum, row) => sum + row.withoutTax, 0));
+    const sgst = money(added.reduce((sum, row) => sum + row.sgst, 0));
+    const cgst = money(added.reduce((sum, row) => sum + row.cgst, 0));
+    const igst = money(added.reduce((sum, row) => sum + row.igst, 0));
+    const exact = money(added.reduce((sum, row) => sum + row.rowTotal, 0));
+    const rounded = roundOffToRupee(exact);
     return {
-      withoutTax: Math.round(withoutTax * 100) / 100,
-      sgst: Math.round(sgst * 100) / 100,
-      cgst: Math.round(cgst * 100) / 100,
+      withoutTax,
+      sgst,
+      cgst,
       igst,
-      grandTotal: Math.round(grandTotal * 100) / 100,
+      exact,
+      roundOff: rounded.roundOff,
+      grandTotal: rounded.payable,
     };
   }, [added]);
 
-  function selectFarmer(id: string) {
+  const farmerQuotations = useMemo(
+    () => openQuotations.filter((row) => row.farmerId && row.farmerId === farmerId),
+    [openQuotations, farmerId],
+  );
+
+  function selectFarmer(id: string, preserveQuotation = false) {
+    if (!preserveQuotation && id !== farmerId) {
+      setQuotationId("");
+      setAdded((current) => current.filter((row) => !row.key.startsWith("quote-")));
+    }
     setFarmerId(id);
     const farmer = registeredFarmers.find((item) => item.id === id);
     if (!farmer) {
@@ -559,9 +647,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       !entry.productId ||
       !entry.pkgsize ||
       !entry.batchNo ||
-      !entry.expiryDate ||
       entry.quantity < 1
     ) {
+      window.alert("Please select a product, pack size, batch number, and quantity.");
       return;
     }
 
@@ -569,13 +657,63 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       (item) =>
         item.productId === entry.productId &&
         item.size === entry.pkgsize &&
-        item.batchNo === entry.batchNo &&
-        item.expiryDate === entry.expiryDate,
+        item.batchNo === entry.batchNo,
     );
+    if (!selectedStock) {
+      window.alert("Selected stock batch is not available.");
+      return;
+    }
+
     const product =
       selectedStock?.product ||
-      allProducts.find((p) => p.id === entry.productId);
-    if (!selectedStock || !product) return;
+      productMaster.find((p) => p.id === entry.productId) ||
+      productMaster.find(
+        (p) =>
+          p.name.toLowerCase() === selectedStock.name.toLowerCase() &&
+          p.size.trim().toLowerCase() === selectedStock.size.trim().toLowerCase(),
+      );
+
+    const safeProduct: Product = product || {
+      id: entry.productId,
+      storeId: "catalog",
+      name: selectedStock.name,
+      purpose: "General",
+      productCategory: "Bio-stimulant",
+      productType: "Liquid",
+      manufacturer: "",
+      vendor: "",
+      unit: "bottle",
+      size: entry.pkgsize,
+      hsnCode: "",
+      purchasePrice: 0,
+      sellingPrice: entry.sellingPrice || selectedStock.sellingPrice || 0,
+      mrp: 0,
+      taxType: "Intrastate",
+      taxPercentage: selectedStock.taxPercentage || 0,
+      sgst: (selectedStock.taxPercentage || 0) / 2,
+      cgst: (selectedStock.taxPercentage || 0) / 2,
+      igst: 0,
+      description: "",
+      usageInstructions: "",
+      safetyInfo: "",
+      storageInfo: "",
+      stock: selectedStock.quantity || 0,
+      minStock: 0,
+      maxStock: 0,
+      reservedStock: 0,
+      warehouse: "",
+      lastUpdated: new Date().toISOString().slice(0, 10),
+      status: "Active",
+      sold: 0,
+      imageColor: "emerald",
+      applicationMethods: [],
+      dosage: 0,
+      dosageUnit: "",
+      filler: 0,
+      fillerUnit: "",
+      fillerType: "Water",
+    };
+
     const reserved = added
       .filter(
         (item) =>
@@ -591,32 +729,44 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
       return;
     }
 
-    const gross = entry.quantity * entry.sellingPrice;
-    const withoutTax = Math.max(0, gross - entry.discount);
+    const sellingPrice = money(
+      entry.sellingPrice !== undefined && entry.sellingPrice !== null && !isNaN(entry.sellingPrice) && entry.sellingPrice > 0
+        ? entry.sellingPrice
+        : selectedStock.sellingPrice || safeProduct.sellingPrice || 0,
+    );
+    const gross = money(entry.quantity * sellingPrice);
+    const discount = money(Math.max(0, Number(entry.discount || 0)));
+    const withoutTax = money(Math.max(0, gross - discount));
     const taxPercent =
-      selectedStock.taxPercentage || product.taxPercentage || 0;
-    const taxAmount = Math.round(withoutTax * (taxPercent / 100) * 100) / 100;
-    const rowTotal = Math.round((withoutTax + taxAmount) * 100) / 100;
+      selectedStock.taxPercentage || safeProduct.taxPercentage || 0;
+    const taxAmount = money((withoutTax * taxPercent) / 100);
+    const intrastate = placeOfSupply.trim().toLowerCase() === "tamil nadu";
+    const sgst = intrastate ? money(taxAmount / 2) : 0;
+    const cgst = intrastate ? money(taxAmount - sgst) : 0;
+    const igst = intrastate ? 0 : taxAmount;
+    const rowTotal = money(withoutTax + taxAmount);
 
     const row: AddedRow = {
       key: `${Date.now()}-${Math.random()}`,
       productId: entry.productId,
-      product,
+      variantId: selectedStock.variantId || selectedStock.product?.id || entry.productId,
+      batchId: selectedStock.batchId || "",
+      product: safeProduct,
       pkgsize: entry.pkgsize,
       batchNo: entry.batchNo,
-      expiryDate: entry.expiryDate,
-      packSize: product.size,
-      hsn: product.hsnCode || "",
+      expiryDate: entry.expiryDate || selectedStock.expiryDate || "",
+      packSize: safeProduct.size || entry.pkgsize,
+      hsn: safeProduct.hsnCode || "",
       taxPercent,
       quantity: entry.quantity,
-      sellingPrice: entry.sellingPrice,
-      discount: entry.discount,
+      sellingPrice,
+      discount,
       withoutTax,
       taxAmount,
       rowTotal,
-      igst: 0,
-      cgst: 0,
-      sgst: 0,
+      igst,
+      cgst,
+      sgst,
     };
 
     setAdded((prev) => [...prev, row]);
@@ -627,12 +777,137 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     setAdded((prev) => prev.filter((r) => r.key !== key));
   }
 
+  function repriceLine(
+    row: AddedRow,
+    patch: Partial<Pick<AddedRow, "quantity" | "sellingPrice" | "discount">>,
+    supply = placeOfSupply,
+  ): AddedRow {
+    const quantity = Math.max(0, Number(patch.quantity ?? row.quantity) || 0);
+    const sellingPrice = money(patch.sellingPrice ?? row.sellingPrice);
+    const discount = money(Math.max(0, Number(patch.discount ?? row.discount) || 0));
+    const withoutTax = money(Math.max(0, money(quantity * sellingPrice) - discount));
+    const taxAmount = money((withoutTax * Number(row.taxPercent || 0)) / 100);
+    const intrastate = supply.trim().toLowerCase() === "tamil nadu";
+    const sgst = intrastate ? money(taxAmount / 2) : 0;
+    const cgst = intrastate ? money(taxAmount - sgst) : 0;
+    const igst = intrastate ? 0 : taxAmount;
+    return {
+      ...row,
+      quantity,
+      sellingPrice,
+      discount,
+      withoutTax,
+      taxAmount,
+      sgst,
+      cgst,
+      igst,
+      rowTotal: money(withoutTax + taxAmount),
+    };
+  }
+
+  function updateAdded(
+    key: string,
+    patch: Partial<Pick<AddedRow, "quantity" | "sellingPrice" | "discount">>,
+  ) {
+    setAdded((prev) => prev.map((row) => (row.key === key ? repriceLine(row, patch) : row)));
+  }
+
+  function batchChoices(row: AddedRow) {
+    const size = String(row.packSize || row.pkgsize || "").trim().toLowerCase();
+    return activeStockVariants.filter(
+      (stock) =>
+        stock.productId === row.productId &&
+        String(stock.size || "").trim().toLowerCase() === size,
+    );
+  }
+
+  function changeAddedBatch(key: string, batchNo: string) {
+    setAdded((prev) =>
+      prev.map((row) => {
+        if (row.key !== key) return row;
+        const stock = batchChoices(row).find((item) => item.batchNo === batchNo);
+        if (!stock) return row;
+        return {
+          ...row,
+          batchNo: stock.batchNo,
+          expiryDate: stock.expiryDate || "",
+        };
+      }),
+    );
+  }
+
+  function applyQuotation(id: string) {
+    setQuotationId(id);
+    const quote = openQuotations.find((row) => row.id === id);
+    if (!quote) return;
+    const farmer = quote.farmerId
+      ? registeredFarmers.find((item) => item.id === quote.farmerId)
+      : undefined;
+    const supply = farmer
+      ? (farmer.state || "").toLowerCase() === "tamil nadu"
+        ? "Tamil Nadu"
+        : "Others"
+      : quote.placeOfSupply || "Tamil Nadu";
+    if (quote.farmerId) selectFarmer(quote.farmerId, true);
+    else {
+      setPartyName(quote.farmer || "");
+      setFarmerPhone(quote.phone || "");
+      setFarmerVillage(quote.village || "");
+      setFarmerCrop(quote.crop || "");
+      setFarmerAcre(quote.acre || "");
+      setPlaceOfSupply(supply);
+    }
+    const lines: AddedRow[] = [];
+    quote.products.forEach((item, index) => {
+      const matches = activeStockVariants.filter(
+        (stock) =>
+          stock.productId === String(item.productId || "") &&
+          stock.size.trim().toLowerCase() === String(item.pkgsize || "").trim().toLowerCase(),
+      );
+      const stock = [...matches].sort((a, b) => Number(b.quantity || 0) - Number(a.quantity || 0))[0];
+      if (!stock?.product) return;
+      const draft: AddedRow = {
+        key: `quote-${quote.id}-${index}`,
+        productId: stock.productId,
+        product: stock.product,
+        pkgsize: stock.size,
+        batchNo: stock.batchNo,
+        expiryDate: stock.expiryDate || "",
+        packSize: stock.size,
+        hsn: stock.product.hsnCode || "",
+        taxPercent: Number(item.taxPercent || stock.taxPercentage || 0),
+        quantity: Number(item.quantity || 0),
+        sellingPrice: money(item.sellingPrice || 0),
+        discount: money(item.discount || 0),
+        withoutTax: 0,
+        taxAmount: 0,
+        rowTotal: 0,
+        sgst: 0,
+        cgst: 0,
+        igst: 0,
+      };
+      lines.push(repriceLine(draft, {}, supply));
+    });
+    setAdded(lines);
+  }
+
   function resetForm() {
     setSaleDate(new Date().toISOString().split("T")[0]);
-    setInvoiceNo(nextInvoiceNo());
+    if (usesSupabaseData()) {
+      peekDocumentNo("sales_invoice", storeId)
+        .then((nextNo) => {
+          if (nextNo) setInvoiceNo(nextNo);
+        })
+        .catch(() => {
+          setInvoiceNo(nextInvoiceNo());
+        });
+    } else {
+      setInvoiceNo(nextInvoiceNo());
+    }
     setThrough(isFRO ? "Executive" : "Direct");
     setPartyName("");
     setFarmerId("");
+    setQuotationId("");
     setFarmerPhone("");
     setFarmerVillage("");
     setFarmerCrop("");
@@ -652,12 +927,13 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
     if (showCreate) savingSale.current = false;
   }, [showCreate]);
 
-  function handleCreate() {
+  async function handleCreate() {
     if (savingSale.current) return;
-    if (!invoiceNo.trim() || !partyName.trim() || added.length === 0) return;
+    if (!partyName.trim() || added.length === 0) return;
     if (through === "Executive" && !(isFRO ? froName : executiveName).trim())
       return;
     if (
+      !usesSupabaseData() &&
       rows.some(
         (item) =>
           item.invoiceNo.trim().toLowerCase() === invoiceNo.trim().toLowerCase(),
@@ -696,64 +972,126 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
     savingSale.current = true;
     try {
-    const saleThrough: SaleType = isFRO ? "Executive" : "Direct";
-    const allocatedNo = nextInvoiceNo();
-    const row: SaleRow = {
-      id: `store-sale-${Date.now()}`,
-      date: formatDateInput(saleDate),
-      invoiceNo: allocatedNo,
-      through: saleThrough,
-      partyName: partyName.trim(),
-      farmerId,
-      farmerPhone,
-      farmerVillage,
-      farmerCrop,
-      farmerAcre,
-      placeOfSupply,
-      createdByStaffId: isFRO ? user?.staffId || user?.id : undefined,
-      executiveName: saleThrough === "Executive" ? froName : "",
-      withoutTax: totals.withoutTax,
-      sgst: totals.sgst,
-      cgst: totals.cgst,
-      igst: totals.igst,
-      amount: totals.grandTotal,
-      products: added,
-      notes: "",
-    };
+      const saleThrough: SaleType = isFRO ? "Executive" : "Direct";
 
-    const next = [row, ...rows];
-    setRows(next);
-    rememberStoreDocumentNo(store?.code || "ST", "INV", allocatedNo);
+      if (usesSupabaseData()) {
+        const froStaffId =
+          saleThrough === "Executive"
+            ? user?.staffId || (user?.role === "fro" ? user.id : null)
+            : null;
+        const dbLines: RpcLine[] = added.map((item) => ({
+          product_id: item.productId,
+          variant_id: item.variantId || item.product?.id || item.productId,
+          batch_id: item.batchId || null,
+          product_name: item.product?.name || "",
+          pack_size: item.pkgsize,
+          batch_no: item.batchNo,
+          expiry_date: item.expiryDate || null,
+          quantity: item.quantity,
+          unit_price: item.sellingPrice,
+          discount_amount: item.discount,
+          taxable_amount: item.withoutTax,
+          tax_percent: item.taxPercent,
+          tax_rate: item.taxPercent,
+          tax_amount: item.taxAmount,
+          sgst_amount: item.sgst,
+          cgst_amount: item.cgst,
+          igst_amount: item.igst,
+          line_total: item.rowTotal,
+          hsn_code: item.hsn,
+        }));
+        const header = {
+          store_id: storeId,
+          fro_staff_id: froStaffId,
+          channel: saleThrough === "Executive" ? "executive" as const : "direct" as const,
+          farmer_id: farmerId || null,
+          customer_name: partyName.trim(),
+          party_name: partyName.trim(),
+          customer_phone: farmerPhone.trim() || null,
+          farmer_phone: farmerPhone.trim() || null,
+          customer_village: farmerVillage.trim() || null,
+          farmer_village: farmerVillage.trim() || null,
+          farmer_crop: farmerCrop.trim() || null,
+          farmer_acre: farmerAcre.trim() || null,
+          place_of_supply: placeOfSupply || "Tamil Nadu",
+          invoice_date: saleDate,
+          payment_method: "cash",
+          notes: "",
+          round_off: totals.roundOff,
+        };
+        if (quotationId) {
+          await convertQuotationToInvoiceDb(quotationId, header, dbLines);
+          setOpenQuotations((current) => current.filter((row) => row.id !== quotationId));
+        } else {
+          await createSalesInvoiceDb(header, dbLines);
+        }
+        await refreshPurchasingData();
+        await reloadDbInvoices();
+        window.dispatchEvent(new Event("nature-biotic-sales-invoices-updated"));
+        setShowCreate(false);
+        resetForm();
+        return;
+      }
 
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      window.dispatchEvent(new Event("nature-biotic-store-sales-updated"));
-    } catch {}
+      const allocatedNo = nextInvoiceNo();
+      const row: SaleRow = {
+        id: `store-sale-${Date.now()}`,
+        date: formatDateInput(saleDate),
+        invoiceNo: allocatedNo,
+        through: saleThrough,
+        partyName: partyName.trim(),
+        farmerId,
+        farmerPhone,
+        farmerVillage,
+        farmerCrop,
+        farmerAcre,
+        placeOfSupply,
+        createdByStaffId: isFRO ? user?.staffId || user?.id : undefined,
+        executiveName: saleThrough === "Executive" ? froName : "",
+        withoutTax: totals.withoutTax,
+        sgst: totals.sgst,
+        cgst: totals.cgst,
+        igst: totals.igst,
+        amount: totals.grandTotal,
+        roundOff: totals.roundOff,
+        products: added,
+        notes: "",
+      };
 
-    if (row.through === "Executive") {
-      reduceFROStock(
-        storeId,
-        row.executiveName || "",
-        added.map((item) => ({
-          productId: item.productId,
-          productName: item.product?.name,
-          packSize: item.pkgsize,
-          batchNo: item.batchNo,
-          qty: item.quantity,
-        })),
-        saleDate,
-        "Sale",
-        `sale:${row.id}`,
-      );
-    } else {
-      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
-    }
+      const next = [row, ...rows];
+      setRows(next);
+      rememberStoreDocumentNo(store?.code || "ST", "INV", allocatedNo);
 
-    setShowCreate(false);
-    resetForm();
-    } catch (error) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(next));
+        window.dispatchEvent(new Event("nature-biotic-store-sales-updated"));
+      } catch {}
+
+      if (row.through === "Executive") {
+        reduceFROStock(
+          storeId,
+          row.executiveName || "",
+          added.map((item) => ({
+            productId: item.productId,
+            productName: item.product?.name,
+            packSize: item.pkgsize,
+            batchNo: item.batchNo,
+            qty: item.quantity,
+          })),
+          saleDate,
+          "Sale",
+          `sale:${row.id}`,
+        );
+      } else {
+        window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+      }
+
+      setShowCreate(false);
+      resetForm();
+    } catch (error: any) {
+      window.alert(dbErrorMessage(error, "Failed to create sales invoice."));
+    } finally {
       savingSale.current = false;
-      throw error;
     }
   }
 
@@ -886,9 +1224,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                   <tr>
                     <td
                       colSpan={4}
-                      className="px-3 py-10 text-center text-sm text-slate-400"
+                      className={`px-3 py-10 text-center text-sm ${listError ? "font-medium text-red-600" : "text-slate-400"}`}
                     >
-                      No sales invoices found.
+                      {invoiceListMessage}
                     </td>
                   </tr>
                 ) : (
@@ -1011,9 +1349,9 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                   <tr>
                     <td
                       colSpan={12}
-                      className="px-4 py-10 text-center text-sm text-slate-400"
+                      className={`px-4 py-10 text-center text-sm ${listError ? "font-medium text-red-600" : "text-slate-400"}`}
                     >
-                      No sales invoices found.
+                      {invoiceListMessage}
                     </td>
                   </tr>
                 ) : listedRows.map((r, i) => (
@@ -1073,8 +1411,8 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
 
           <div className="block md:hidden">
             {listedRows.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-slate-400">
-                No sales invoices found.
+              <div className={`px-4 py-10 text-center text-sm ${listError ? "font-medium text-red-600" : "text-slate-400"}`}>
+                {invoiceListMessage}
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
@@ -1290,6 +1628,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                   label="IGST"
                   value={formatCurrency(selectedSale.igst)}
                 />
+                <SummaryRow
+                  label="Round Off"
+                  value={formatRoundOff(selectedSale.roundOff || 0)}
+                />
                 <div className="border-t border-slate-200 pt-2">
                   <SummaryRow
                     label="Grand Total"
@@ -1445,6 +1787,28 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       required
                     />
 
+                    {usesSupabaseData() && (
+                      <Select
+                        label="Quotation"
+                        value={quotationId}
+                        onChange={applyQuotation}
+                        placeholder={
+                          farmerId
+                            ? "Optional — create without a quotation"
+                            : "Select a farmer first"
+                        }
+                        options={
+                          farmerId
+                            ? farmerQuotations.map((quote) => ({
+                                value: quote.id,
+                                label: quote.quotationNo,
+                              }))
+                            : []
+                        }
+                        menuLimit={5}
+                      />
+                    )}
+
                     <Input
                       label="Mobile Number"
                       value={farmerPhone}
@@ -1454,18 +1818,6 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                     <Input
                       label="Village"
                       value={farmerVillage}
-                      onChange={() => {}}
-                      readOnly
-                    />
-                    <Input
-                      label="Crop"
-                      value={farmerCrop}
-                      onChange={() => {}}
-                      readOnly
-                    />
-                    <Input
-                      label="Acre"
-                      value={farmerAcre}
                       onChange={() => {}}
                       readOnly
                     />
@@ -1699,7 +2051,23 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                 <td className="truncate px-2 py-3 font-semibold">
                                   {r.product?.name}
                                 </td>
-                                <td className="px-2 py-3">{r.batchNo}</td>
+                                <td className="px-2 py-3">
+                                  {batchChoices(r).length > 1 ? (
+                                    <select
+                                      value={r.batchNo}
+                                      onChange={(event) => changeAddedBatch(r.key, event.target.value)}
+                                      className="w-full rounded-md border border-slate-200 bg-white px-1 py-1 text-xs"
+                                    >
+                                      {batchChoices(r).map((stock, index) => (
+                                        <option key={`${stock.batchNo}-${index}`} value={stock.batchNo}>
+                                          {stock.batchNo}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    r.batchNo
+                                  )}
+                                </td>
                                 <td className="px-2 py-3 text-center">
                                   {r.expiryDate}
                                 </td>
@@ -1707,13 +2075,40 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                   {r.packSize}
                                 </td>
                                 <td className="px-2 py-3 text-right">
-                                  {r.quantity}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={r.quantity}
+                                    onChange={(event) =>
+                                      updateAdded(r.key, { quantity: Number(event.target.value) })
+                                    }
+                                    className="w-16 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-right text-sm"
+                                  />
                                 </td>
                                 <td className="px-2 py-3 text-right">
-                                  {formatCurrency(r.sellingPrice)}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={r.sellingPrice}
+                                    onChange={(event) =>
+                                      updateAdded(r.key, { sellingPrice: Number(event.target.value) })
+                                    }
+                                    className="w-24 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-right text-sm"
+                                  />
                                 </td>
                                 <td className="px-2 py-3 text-right">
-                                  {formatCurrency(r.discount)}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={r.discount}
+                                    onChange={(event) =>
+                                      updateAdded(r.key, { discount: Number(event.target.value) })
+                                    }
+                                    className="w-24 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-right text-sm"
+                                  />
                                 </td>
                                 <td className="px-2 py-3 text-right">
                                   {formatCurrency(r.taxAmount)}
@@ -1762,10 +2157,24 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                             </div>
 
                             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                              <DetailField
-                                label="Batch"
-                                value={r.batchNo || "-"}
-                              />
+                              {batchChoices(r).length > 1 ? (
+                                <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                  <span className="text-[10px] font-medium text-slate-500">Batch</span>
+                                  <select
+                                    value={r.batchNo}
+                                    onChange={(event) => changeAddedBatch(r.key, event.target.value)}
+                                    className="mt-0.5 w-full bg-transparent text-xs font-semibold"
+                                  >
+                                    {batchChoices(r).map((stock, index) => (
+                                      <option key={`${stock.batchNo}-${index}`} value={stock.batchNo}>
+                                        {stock.batchNo}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              ) : (
+                                <DetailField label="Batch" value={r.batchNo || "-"} />
+                              )}
                               <DetailField
                                 label="Expiry"
                                 value={r.expiryDate || "-"}
@@ -1774,18 +2183,39 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                 label="Size"
                                 value={r.packSize || r.pkgsize || "-"}
                               />
-                              <DetailField
-                                label="Qty"
-                                value={String(r.quantity)}
-                              />
-                              <DetailField
-                                label="Price"
-                                value={formatCurrency(r.sellingPrice)}
-                              />
-                              <DetailField
-                                label="Discount"
-                                value={formatCurrency(r.discount)}
-                              />
+                              <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                <span className="text-[10px] font-medium text-slate-500">Qty</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={r.quantity}
+                                  onChange={(event) => updateAdded(r.key, { quantity: Number(event.target.value) })}
+                                  className="mt-0.5 w-full bg-transparent text-right text-xs font-semibold"
+                                />
+                              </label>
+                              <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                <span className="text-[10px] font-medium text-slate-500">Price</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={r.sellingPrice}
+                                  onChange={(event) => updateAdded(r.key, { sellingPrice: Number(event.target.value) })}
+                                  className="mt-0.5 w-full bg-transparent text-right text-xs font-semibold"
+                                />
+                              </label>
+                              <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                <span className="text-[10px] font-medium text-slate-500">Discount</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={r.discount}
+                                  onChange={(event) => updateAdded(r.key, { discount: Number(event.target.value) })}
+                                  className="mt-0.5 w-full bg-transparent text-right text-xs font-semibold"
+                                />
+                              </label>
                               <DetailField
                                 label="Tax"
                                 value={formatCurrency(r.taxAmount)}
@@ -1828,6 +2258,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       <SummaryRow
                         label="IGST"
                         value={formatCurrency(totals.igst)}
+                      />
+                      <SummaryRow
+                        label="Round Off"
+                        value={formatRoundOff(totals.roundOff)}
                       />
 
                       <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3">
@@ -1937,6 +2371,28 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         required
                       />
 
+                      {usesSupabaseData() && (
+                        <Select
+                          label="Quotation"
+                          value={quotationId}
+                          onChange={applyQuotation}
+                          placeholder={
+                            farmerId
+                              ? "Optional — create without a quotation"
+                              : "Select a farmer first"
+                          }
+                          options={
+                            farmerId
+                              ? farmerQuotations.map((quote) => ({
+                                  value: quote.id,
+                                  label: quote.quotationNo,
+                                }))
+                              : []
+                          }
+                          menuLimit={5}
+                        />
+                      )}
+
                       <Input
                         label="Mobile Number"
                         value={farmerPhone}
@@ -1946,18 +2402,6 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                       <Input
                         label="Village"
                         value={farmerVillage}
-                        onChange={() => {}}
-                        readOnly
-                      />
-                      <Input
-                        label="Crop"
-                        value={farmerCrop}
-                        onChange={() => {}}
-                        readOnly
-                      />
-                      <Input
-                        label="Acre"
-                        value={farmerAcre}
                         onChange={() => {}}
                         readOnly
                       />
@@ -2193,7 +2637,23 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                   <td className="truncate px-2 py-3 font-semibold">
                                     {r.product?.name}
                                   </td>
-                                  <td className="px-2 py-3">{r.batchNo}</td>
+                                  <td className="px-2 py-3">
+                                    {batchChoices(r).length > 1 ? (
+                                      <select
+                                        value={r.batchNo}
+                                        onChange={(event) => changeAddedBatch(r.key, event.target.value)}
+                                        className="w-full rounded-md border border-slate-200 bg-white px-1 py-1 text-xs"
+                                      >
+                                        {batchChoices(r).map((stock, index) => (
+                                          <option key={`${stock.batchNo}-${index}`} value={stock.batchNo}>
+                                            {stock.batchNo}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      r.batchNo
+                                    )}
+                                  </td>
                                   <td className="px-2 py-3 text-center">
                                     {r.expiryDate}
                                   </td>
@@ -2201,13 +2661,40 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                     {r.packSize}
                                   </td>
                                   <td className="px-2 py-3 text-right">
-                                    {r.quantity}
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={r.quantity}
+                                      onChange={(event) =>
+                                        updateAdded(r.key, { quantity: Number(event.target.value) })
+                                      }
+                                      className="w-16 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-right text-sm"
+                                    />
                                   </td>
                                   <td className="px-2 py-3 text-right">
-                                    {formatCurrency(r.sellingPrice)}
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={r.sellingPrice}
+                                      onChange={(event) =>
+                                        updateAdded(r.key, { sellingPrice: Number(event.target.value) })
+                                      }
+                                      className="w-24 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-right text-sm"
+                                    />
                                   </td>
                                   <td className="px-2 py-3 text-right">
-                                    {formatCurrency(r.discount)}
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={r.discount}
+                                      onChange={(event) =>
+                                        updateAdded(r.key, { discount: Number(event.target.value) })
+                                      }
+                                      className="w-24 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-right text-sm"
+                                    />
                                   </td>
                                   <td className="px-2 py-3 text-right">
                                     {formatCurrency(r.taxAmount)}
@@ -2256,10 +2743,24 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                               </div>
 
                               <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                <DetailField
-                                  label="Batch"
-                                  value={r.batchNo || "-"}
-                                />
+                                {batchChoices(r).length > 1 ? (
+                                  <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                    <span className="text-[10px] font-medium text-slate-500">Batch</span>
+                                    <select
+                                      value={r.batchNo}
+                                      onChange={(event) => changeAddedBatch(r.key, event.target.value)}
+                                      className="mt-0.5 w-full bg-transparent text-xs font-semibold"
+                                    >
+                                      {batchChoices(r).map((stock, index) => (
+                                        <option key={`${stock.batchNo}-${index}`} value={stock.batchNo}>
+                                          {stock.batchNo}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                ) : (
+                                  <DetailField label="Batch" value={r.batchNo || "-"} />
+                                )}
                                 <DetailField
                                   label="Expiry"
                                   value={r.expiryDate || "-"}
@@ -2268,18 +2769,39 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                                   label="Size"
                                   value={r.packSize || r.pkgsize || "-"}
                                 />
-                                <DetailField
-                                  label="Qty"
-                                  value={String(r.quantity)}
-                                />
-                                <DetailField
-                                  label="Price"
-                                  value={formatCurrency(r.sellingPrice)}
-                                />
-                                <DetailField
-                                  label="Discount"
-                                  value={formatCurrency(r.discount)}
-                                />
+                                <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                  <span className="text-[10px] font-medium text-slate-500">Qty</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={r.quantity}
+                                    onChange={(event) => updateAdded(r.key, { quantity: Number(event.target.value) })}
+                                    className="mt-0.5 w-full bg-transparent text-right text-xs font-semibold"
+                                  />
+                                </label>
+                                <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                  <span className="text-[10px] font-medium text-slate-500">Price</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={r.sellingPrice}
+                                    onChange={(event) => updateAdded(r.key, { sellingPrice: Number(event.target.value) })}
+                                    className="mt-0.5 w-full bg-transparent text-right text-xs font-semibold"
+                                  />
+                                </label>
+                                <label className="block rounded-lg bg-slate-50 px-2 py-1.5">
+                                  <span className="text-[10px] font-medium text-slate-500">Discount</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={r.discount}
+                                    onChange={(event) => updateAdded(r.key, { discount: Number(event.target.value) })}
+                                    className="mt-0.5 w-full bg-transparent text-right text-xs font-semibold"
+                                  />
+                                </label>
                                 <DetailField
                                   label="Tax"
                                   value={formatCurrency(r.taxAmount)}
@@ -2322,6 +2844,10 @@ export default function StoreSalesInvoice({ storeId }: { storeId: string }) {
                         <SummaryRow
                           label="IGST"
                           value={formatCurrency(totals.igst)}
+                        />
+                        <SummaryRow
+                          label="Round Off"
+                          value={formatRoundOff(totals.roundOff)}
                         />
 
                         <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-3">

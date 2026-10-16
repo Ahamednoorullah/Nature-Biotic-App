@@ -9,14 +9,37 @@ import {
   settleLinkedFarmerAccounts,
   stores as allStores,
 } from "@/lib/data";
-import { Card, Icon } from "@/components/ui";
+import { Button, Card, Icon, Input } from "@/components/ui";
 import { CategoryDonut, CompareBars, HorizontalBars, TrendBars } from "@/components/ReportCharts";
 import {
   formatCurrency,
   formatDate,
+  matchesSimpleDate,
   simpleDateFilterOptions,
   type SimpleDateFilter,
 } from "@/lib/format";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadCompanyDashboardSnapshot,
+  loadExpenses,
+  type CompanyDashboardSnapshot,
+} from "@/lib/db/operations";
+import { loadCompanyCreditNotes } from "@/lib/db/financials";
+import {
+  loadCompanyPurchaseOrderRegister,
+  loadCompanyGstInvoiceRegister,
+  loadCompanyStockDeliveryRegister,
+  type ReportPurchaseOrder,
+  type ReportGstInvoice,
+  type ReportStockDelivery,
+} from "@/lib/db/reportRegisters";
+import { dbErrorMessage } from "@/lib/db/errors";
+import { buildCompanyReportFromSnapshot } from "@/lib/companyReportMetrics";
+import {
+  effectiveCustomRange,
+  exportReportTablePdf,
+  moneyPdf,
+} from "@/lib/reportExport";
 
 type DateFilter = SimpleDateFilter;
 
@@ -406,8 +429,24 @@ function buildReport(filter: DateFilter, from = "", to = "") {
 }
 
 export default function CompanyReports() {
+  const supabaseMode = usesSupabaseData();
   const [filter, setFilter] = useState<DateFilter>("monthly");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [version, setVersion] = useState(0);
+  const [snapshot, setSnapshot] = useState<CompanyDashboardSnapshot | null>(null);
+  const [dbExpenses, setDbExpenses] = useState<
+    Awaited<ReturnType<typeof loadExpenses>>
+  >([]);
+  const [dbCreditNotes, setDbCreditNotes] = useState<
+    Awaited<ReturnType<typeof loadCompanyCreditNotes>>
+  >([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<ReportPurchaseOrder[]>([]);
+  const [gstInvoices, setGstInvoices] = useState<ReportGstInvoice[]>([]);
+  const [stockDeliveries, setStockDeliveries] = useState<ReportStockDelivery[]>([]);
+  const [loading, setLoading] = useState(supabaseMode);
+  const [loadError, setLoadError] = useState("");
+  const [exportingKey, setExportingKey] = useState("");
 
   useEffect(() => {
     const refresh = () => setVersion((current) => current + 1);
@@ -427,15 +466,225 @@ export default function CompanyReports() {
     };
   }, []);
 
-  const report = useMemo(
-    () => buildReport(filter),
-    [filter, version],
+  useEffect(() => {
+    if (!supabaseMode) return;
+    let active = true;
+    setLoading(true);
+    Promise.all([
+      loadCompanyDashboardSnapshot(),
+      loadExpenses("company"),
+      loadCompanyCreditNotes(),
+      loadCompanyPurchaseOrderRegister(),
+      loadCompanyGstInvoiceRegister(),
+      loadCompanyStockDeliveryRegister(),
+    ])
+      .then(([nextSnapshot, expenses, creditNotes, orders, invoices, deliveries]) => {
+        if (!active) return;
+        setSnapshot(nextSnapshot);
+        setDbExpenses(expenses);
+        setDbCreditNotes(creditNotes);
+        setPurchaseOrders(orders);
+        setGstInvoices(invoices);
+        setStockDeliveries(deliveries);
+        setLoadError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setSnapshot(null);
+        setLoadError(dbErrorMessage(error, "Could not load company reports."));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [supabaseMode, version]);
+
+  const range = useMemo(
+    () => effectiveCustomRange(filter, customFrom, customTo),
+    [filter, customFrom, customTo],
   );
+  const rangeError = range.error;
+  const rangeFrom = range.from;
+  const rangeTo = range.to;
+  const filterReady = filter !== "custom" || !rangeError;
+
+  const report = useMemo(() => {
+    if (!filterReady) {
+      return {
+        companyGross: 0,
+        companySalesReturn: 0,
+        companySales: 0,
+        marketSales: 0,
+        sales: 0,
+        companyCollection: 0,
+        marketCollection: 0,
+        collection: 0,
+        companyOutstanding: 0,
+        marketOutstanding: 0,
+        outstanding: 0,
+        expenseTotal: 0,
+        expenseCategories: [] as { name: string; value: number }[],
+        creditNoteTotal: 0,
+        creditNoteCount: 0,
+        storeRows: [] as {
+          id: string;
+          name: string;
+          sales: number;
+          collection: number;
+          outstanding: number;
+          farmers?: number;
+          companySales?: number;
+        }[],
+        storeComparison: [] as { name: string; sales: number; outstanding: number }[],
+        buckets: [] as { label: string; sales: number; collection: number }[],
+        productRows: [] as { name: string; value: number }[],
+        companyInvoiceRows: [] as {
+          date: string;
+          invoiceNo: string;
+          storeName: string;
+          amount: number;
+        }[],
+        companyReceiptRows: [] as {
+          date: string;
+          receiptNo: string;
+          storeName: string;
+          invoiceNo: string;
+          amount: number;
+        }[],
+        purchaseReturnRows: [] as {
+          date: string;
+          returnNo: string;
+          storeName: string;
+          amount: number;
+        }[],
+      };
+    }
+    if (supabaseMode && snapshot) {
+      return buildCompanyReportFromSnapshot(snapshot, filter, {
+        expenses: dbExpenses.map((row) => ({
+          date: row.date,
+          amount: row.amount,
+          category: row.category,
+          status: row.status,
+        })),
+        creditNotes: dbCreditNotes.map((row) => ({
+          date: row.date,
+          total: row.total ?? row.amount ?? 0,
+          status: row.status,
+        })),
+        from: rangeFrom,
+        to: rangeTo,
+      });
+    }
+    return {
+      ...buildReport(filter, rangeFrom, rangeTo),
+      creditNoteTotal: 0,
+      creditNoteCount: 0,
+      companyInvoiceRows: [] as {
+        date: string;
+        invoiceNo: string;
+        storeName: string;
+        amount: number;
+      }[],
+      companyReceiptRows: [] as {
+        date: string;
+        receiptNo: string;
+        storeName: string;
+        invoiceNo: string;
+        amount: number;
+      }[],
+      purchaseReturnRows: [] as {
+        date: string;
+        returnNo: string;
+        storeName: string;
+        amount: number;
+      }[],
+    };
+  }, [
+    supabaseMode,
+    snapshot,
+    filter,
+    filterReady,
+    rangeFrom,
+    rangeTo,
+    dbExpenses,
+    dbCreditNotes,
+    version,
+  ]);
+
   const hasActivity =
     report.sales > 0 ||
     report.collection > 0 ||
     report.outstanding > 0 ||
-    report.expenseTotal > 0;
+    report.expenseTotal > 0 ||
+    report.creditNoteCount > 0;
+
+  const filteredPurchaseOrders = useMemo(
+    () =>
+      filterReady
+        ? purchaseOrders.filter((row) =>
+            matchesSimpleDate(row.date, filter, rangeFrom, rangeTo),
+          )
+        : [],
+    [purchaseOrders, filter, filterReady, rangeFrom, rangeTo],
+  );
+  const filteredGstInvoices = useMemo(
+    () =>
+      filterReady
+        ? gstInvoices.filter(
+            (row) =>
+              matchesSimpleDate(row.date, filter, rangeFrom, rangeTo) &&
+              String(row.status || "").toLowerCase() === "final",
+          )
+        : [],
+    [gstInvoices, filter, filterReady, rangeFrom, rangeTo],
+  );
+  const filteredStockDeliveries = useMemo(
+    () =>
+      filterReady
+        ? stockDeliveries.filter((row) =>
+            matchesSimpleDate(row.date, filter, rangeFrom, rangeTo),
+          )
+        : [],
+    [stockDeliveries, filter, filterReady, rangeFrom, rangeTo],
+  );
+
+  const exportTable = async (
+    key: string,
+    title: string,
+    headers: string[],
+    rows: string[][],
+    total?: string[],
+    aligns?: Array<"left" | "right" | "center">,
+  ) => {
+    if (exportingKey) return;
+    if (filter === "custom" && rangeError) {
+      window.alert(rangeError);
+      return;
+    }
+    setExportingKey(key);
+    try {
+      await exportReportTablePdf({
+        fileName: `nature-biotic-company-${key}.pdf`,
+        title,
+        scopeLabel: "Company",
+        filter,
+        customFrom: rangeFrom,
+        customTo: rangeTo,
+        headers,
+        aligns,
+        rows,
+        total,
+      });
+      window.alert("PDF downloaded.");
+    } catch {
+      window.alert("The PDF could not be created. Please try again.");
+    } finally {
+      setExportingKey("");
+    }
+  };
 
   return (
     <div>
@@ -448,26 +697,57 @@ export default function CompanyReports() {
             Company and market performance from saved transactions.
           </p>
         </div>
-        <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
-          {simpleDateFilterOptions
-            .filter((tab) => tab.value !== "custom")
-            .map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setFilter(tab.value)}
-              className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
-                filter === tab.value
-                  ? "bg-brand-600 text-white shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex w-full flex-col gap-2 sm:w-auto">
+          <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl bg-white p-1 shadow-sm">
+            {simpleDateFilterOptions.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setFilter(tab.value)}
+                className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-base sm:px-5 ${
+                  filter === tab.value
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {filter === "custom" ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <Input
+                label="Start date"
+                type="date"
+                value={customFrom}
+                onChange={setCustomFrom}
+                className="w-full sm:w-40"
+              />
+              <Input
+                label="End date"
+                type="date"
+                value={customTo}
+                onChange={setCustomTo}
+                className="w-full sm:w-40"
+              />
+            </div>
+          ) : null}
+          {rangeError ? (
+            <p className="text-sm font-medium text-red-600">{rangeError}</p>
+          ) : null}
         </div>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {loadError ? (
+        <Card className="mb-4 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {loadError}
+        </Card>
+      ) : null}
+      {loading ? (
+        <Card className="mb-4 p-6 text-center text-sm text-slate-500">Loading reports…</Card>
+      ) : null}
+
+      <div className="mb-6 grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         <Summary
           label="Sales"
           value={report.sales}
@@ -483,15 +763,20 @@ export default function CompanyReports() {
           value={report.outstanding}
           detail={`Company ${formatCurrency(report.companyOutstanding)} · Market ${formatCurrency(report.marketOutstanding)}`}
         />
-        <Summary label="Expenses" value={report.expenseTotal} detail="Company expenses" />
+        <Summary label="Expenses" value={report.expenseTotal} detail="Accepted company expenses" />
+        <Summary
+          label="Credit notes"
+          value={report.creditNoteTotal}
+          detail={`${report.creditNoteCount} GST document(s) · not cash/stock`}
+        />
       </div>
 
-      {!hasActivity ? (
+      {!loading && !hasActivity ? (
         <Card className="p-8 text-center">
           <Icon name="bar_chart" size={28} className="mx-auto text-slate-300" />
           <p className="mt-3 font-semibold text-slate-700">No data available for this period.</p>
         </Card>
-      ) : (
+      ) : !loading && hasActivity ? (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Card className="p-5">
             <h2 className="font-bold text-slate-800">Sales and collection</h2>
@@ -515,16 +800,18 @@ export default function CompanyReports() {
           <Card className="overflow-hidden xl:col-span-2">
             <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
               <Icon name="storefront" size={22} className="text-brand-600" />
-              <h2 className="font-bold text-slate-800">Store performance</h2>
+              <h2 className="font-bold text-slate-800">Store-wise business</h2>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[500px] text-sm">
+              <table className="w-full min-w-[720px] text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                     <th className="px-5 py-3 text-left font-semibold">Store</th>
-                    <th className="px-5 py-3 text-right font-semibold">Sales</th>
+                    <th className="px-5 py-3 text-right font-semibold">Company sales</th>
+                    <th className="px-5 py-3 text-right font-semibold">Market sales</th>
                     <th className="px-5 py-3 text-right font-semibold">Collection</th>
                     <th className="px-5 py-3 text-right font-semibold">Outstanding</th>
+                    <th className="px-5 py-3 text-right font-semibold">Farmers</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -533,12 +820,24 @@ export default function CompanyReports() {
                       <td className="px-5 py-3.5 font-semibold text-slate-800">
                         {store.name}
                       </td>
+                      <td className="px-5 py-3.5 text-right">
+                        {formatCurrency(
+                          "companySales" in store
+                            ? Number((store as { companySales?: number }).companySales || 0)
+                            : 0,
+                        )}
+                      </td>
                       <td className="px-5 py-3.5 text-right">{formatCurrency(store.sales)}</td>
                       <td className="px-5 py-3.5 text-right">
                         {formatCurrency(store.collection)}
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         {formatCurrency(store.outstanding)}
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        {"farmers" in store
+                          ? Number((store as { farmers?: number }).farmers || 0)
+                          : "—"}
                       </td>
                     </tr>
                   ))}
@@ -581,7 +880,296 @@ export default function CompanyReports() {
             )}
           </Card>
         </div>
-      )}
+      ) : null}
+
+      {!loading && supabaseMode ? (
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <ReportDocTable
+              title="Company sales invoices"
+              headers={["Date", "Invoice", "Store", "Amount"]}
+              rows={report.companyInvoiceRows.map((row) => [
+                formatDate(row.date),
+                row.invoiceNo,
+                row.storeName,
+                formatCurrency(row.amount),
+              ])}
+              onExport={() =>
+                exportTable(
+                  "sales-summary",
+                  "Company sales invoices",
+                  ["Date", "Invoice", "Store", "Amount"],
+                  report.companyInvoiceRows.map((row) => [
+                    formatDate(row.date),
+                    row.invoiceNo,
+                    row.storeName,
+                    moneyPdf(row.amount),
+                  ]),
+                  [
+                    "",
+                    "",
+                    "Total",
+                    moneyPdf(
+                      report.companyInvoiceRows.reduce((sum, row) => sum + row.amount, 0),
+                    ),
+                  ],
+                  ["left", "left", "left", "right"],
+                )
+              }
+              exporting={exportingKey === "sales-summary"}
+            />
+            <ReportDocTable
+              title="Company receipts / refunds"
+              headers={["Date", "Receipt", "Store", "Invoice", "Amount"]}
+              rows={report.companyReceiptRows.map((row) => [
+                formatDate(row.date),
+                row.receiptNo,
+                row.storeName,
+                row.invoiceNo,
+                formatCurrency(row.amount),
+              ])}
+              onExport={() =>
+                exportTable(
+                  "receipts",
+                  "Company receipts / refunds",
+                  ["Date", "Receipt", "Store", "Invoice", "Amount"],
+                  report.companyReceiptRows.map((row) => [
+                    formatDate(row.date),
+                    row.receiptNo,
+                    row.storeName,
+                    row.invoiceNo,
+                    moneyPdf(row.amount),
+                  ]),
+                  [
+                    "",
+                    "",
+                    "",
+                    "Total",
+                    moneyPdf(
+                      report.companyReceiptRows.reduce((sum, row) => sum + row.amount, 0),
+                    ),
+                  ],
+                  ["left", "left", "left", "left", "right"],
+                )
+              }
+              exporting={exportingKey === "receipts"}
+            />
+            <ReportDocTable
+              title="Approved purchase returns"
+              headers={["Date", "Return No", "Store", "Amount"]}
+              rows={report.purchaseReturnRows.map((row) => [
+                formatDate(row.date),
+                row.returnNo,
+                row.storeName,
+                formatCurrency(row.amount),
+              ])}
+              onExport={() =>
+                exportTable(
+                  "purchase-returns",
+                  "Approved purchase returns",
+                  ["Date", "Return No", "Store", "Amount"],
+                  report.purchaseReturnRows.map((row) => [
+                    formatDate(row.date),
+                    row.returnNo,
+                    row.storeName,
+                    moneyPdf(row.amount),
+                  ]),
+                  [
+                    "",
+                    "",
+                    "Total",
+                    moneyPdf(
+                      report.purchaseReturnRows.reduce((sum, row) => sum + row.amount, 0),
+                    ),
+                  ],
+                  ["left", "left", "left", "right"],
+                )
+              }
+              exporting={exportingKey === "purchase-returns"}
+            />
+          </div>
+
+          <ReportDocTable
+            title="Purchase order register"
+            headers={[
+              "PO No",
+              "Date",
+              "Store",
+              "Status",
+              "Items",
+              "Taxable",
+              "Total",
+            ]}
+            rows={filteredPurchaseOrders.map((row) => [
+              row.poNo,
+              formatDate(row.date),
+              row.storeName,
+              row.status,
+              String(row.itemCount),
+              formatCurrency(row.taxable),
+              formatCurrency(row.total),
+            ])}
+            onExport={() =>
+              exportTable(
+                "purchase-orders",
+                "Purchase order register",
+                ["PO No", "Date", "Store", "Status", "Items", "Taxable", "Total"],
+                filteredPurchaseOrders.map((row) => [
+                  row.poNo,
+                  formatDate(row.date),
+                  row.storeName,
+                  row.status,
+                  String(row.itemCount),
+                  moneyPdf(row.taxable),
+                  moneyPdf(row.total),
+                ]),
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "Total",
+                  moneyPdf(
+                    filteredPurchaseOrders.reduce((sum, row) => sum + row.taxable, 0),
+                  ),
+                  moneyPdf(
+                    filteredPurchaseOrders.reduce((sum, row) => sum + row.total, 0),
+                  ),
+                ],
+                ["left", "left", "left", "left", "right", "right", "right"],
+              )
+            }
+            exporting={exportingKey === "purchase-orders"}
+          />
+
+          <ReportDocTable
+            title="GST invoice register"
+            headers={[
+              "Invoice",
+              "Date",
+              "Store",
+              "Taxable",
+              "CGST",
+              "SGST",
+              "IGST",
+              "Round off",
+              "Grand total",
+            ]}
+            rows={filteredGstInvoices.map((row) => [
+              row.invoiceNo,
+              formatDate(row.date),
+              row.storeName,
+              formatCurrency(row.taxable),
+              formatCurrency(row.cgst),
+              formatCurrency(row.sgst),
+              formatCurrency(row.igst),
+              formatCurrency(row.roundOff),
+              formatCurrency(row.total),
+            ])}
+            onExport={() =>
+              exportTable(
+                "gst-invoices",
+                "GST invoice register",
+                [
+                  "Invoice",
+                  "Date",
+                  "Store",
+                  "Taxable",
+                  "CGST",
+                  "SGST",
+                  "IGST",
+                  "Round off",
+                  "Grand total",
+                ],
+                filteredGstInvoices.map((row) => [
+                  row.invoiceNo,
+                  formatDate(row.date),
+                  row.storeName,
+                  moneyPdf(row.taxable),
+                  moneyPdf(row.cgst),
+                  moneyPdf(row.sgst),
+                  moneyPdf(row.igst),
+                  moneyPdf(row.roundOff),
+                  moneyPdf(row.total),
+                ]),
+                [
+                  "",
+                  "",
+                  "Total",
+                  moneyPdf(filteredGstInvoices.reduce((s, r) => s + r.taxable, 0)),
+                  moneyPdf(filteredGstInvoices.reduce((s, r) => s + r.cgst, 0)),
+                  moneyPdf(filteredGstInvoices.reduce((s, r) => s + r.sgst, 0)),
+                  moneyPdf(filteredGstInvoices.reduce((s, r) => s + r.igst, 0)),
+                  moneyPdf(filteredGstInvoices.reduce((s, r) => s + r.roundOff, 0)),
+                  moneyPdf(filteredGstInvoices.reduce((s, r) => s + r.total, 0)),
+                ],
+                [
+                  "left",
+                  "left",
+                  "left",
+                  "right",
+                  "right",
+                  "right",
+                  "right",
+                  "right",
+                  "right",
+                ],
+              )
+            }
+            exporting={exportingKey === "gst-invoices"}
+          />
+
+          <ReportDocTable
+            title="Stock delivery register"
+            headers={[
+              "Delivery No",
+              "Date",
+              "Store",
+              "Executive",
+              "Products",
+              "Qty",
+              "Status",
+            ]}
+            rows={filteredStockDeliveries.map((row) => [
+              row.sdNo,
+              formatDate(row.date),
+              row.storeName,
+              row.executive,
+              row.productSummary,
+              String(row.quantity),
+              row.status,
+            ])}
+            onExport={() =>
+              exportTable(
+                "stock-deliveries",
+                "Stock delivery register",
+                ["Delivery No", "Date", "Store", "Executive", "Products", "Qty", "Status"],
+                filteredStockDeliveries.map((row) => [
+                  row.sdNo,
+                  formatDate(row.date),
+                  row.storeName,
+                  row.executive,
+                  row.productSummary,
+                  String(row.quantity),
+                  row.status,
+                ]),
+                [
+                  "",
+                  "",
+                  "",
+                  "",
+                  "Total qty",
+                  String(
+                    filteredStockDeliveries.reduce((sum, row) => sum + row.quantity, 0),
+                  ),
+                  "",
+                ],
+              )
+            }
+            exporting={exportingKey === "stock-deliveries"}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="min-w-0 p-5">
@@ -651,6 +1239,70 @@ function Summary({
       <p className="text-sm font-medium text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-slate-800">{formatCurrency(value)}</p>
       <p className="mt-2 text-xs text-slate-500">{detail}</p>
+    </Card>
+  );
+}
+
+function ReportDocTable({
+  title,
+  headers,
+  rows,
+  onExport,
+  exporting,
+}: {
+  title: string;
+  headers: string[];
+  rows: string[][];
+  onExport?: () => void;
+  exporting?: boolean;
+}) {
+  return (
+    <Card className="min-w-0 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <h2 className="font-bold text-slate-800">{title}</h2>
+        {onExport ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="shrink-0"
+            onClick={onExport}
+            disabled={!!exporting}
+          >
+            <Icon name="download" size={18} />
+            {exporting ? "Exporting…" : "Export"}
+          </Button>
+        ) : null}
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-slate-500">
+          No data available for this period.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[360px] text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                {headers.map((header) => (
+                  <th key={header} className="px-3 py-2 text-left font-semibold">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((row, index) => (
+                <tr key={`${title}-${index}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex} className="whitespace-nowrap px-3 py-2 text-slate-700">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }

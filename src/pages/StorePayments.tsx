@@ -8,6 +8,15 @@ import {
   getCompanyStorePositions,
   getCompanyRefunds,
 } from '@/lib/data';
+import { usesSupabaseData } from '@/lib/db/mode';
+import {
+  loadCompanyRefunds,
+  loadStoreCompanyReceipts,
+  paymentMethodLabel,
+} from '@/lib/db/financials';
+import { dbErrorMessage } from '@/lib/db/errors';
+
+type PaymentRow = Payment & { remarks: string };
 
 const vendors = ['Nature Biotic', 'Green Agro Suppliers', 'Sri Lakshmi Traders'];
 const methods = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
@@ -20,7 +29,7 @@ const statusColor: Record<string, 'green' | 'amber'> = {
 };
 
 /** Receipts the company recorded from this store, and refunds it paid back. */
-function companyPaymentRows(storeId: string): Payment[] {
+function companyPaymentRows(storeId: string): PaymentRow[] {
   let receipts: any[] = [];
   try {
     const raw = localStorage.getItem('nature-biotic-company-receipts-v1');
@@ -30,7 +39,7 @@ function companyPaymentRows(storeId: string): Payment[] {
     receipts = [];
   }
   const invoiceDue = getCompanyStorePositions().get(storeId)?.invoiceDue;
-  const paid: Payment[] = receipts
+  const paid: PaymentRow[] = receipts
     .filter((row) => row?.storeId === storeId && Number(row.amount) > 0)
     .sort((a, b) =>
       String(a.date).localeCompare(String(b.date)) ||
@@ -52,9 +61,10 @@ function companyPaymentRows(storeId: string): Payment[] {
         amount,
         balance,
         status: 'Paid',
+        remarks: String(row.remarks || ''),
       };
     });
-  const refunded: Payment[] = getCompanyRefunds()
+  const refunded: PaymentRow[] = getCompanyRefunds()
     .filter((row) => row.storeId === storeId && Number(row.amount) > 0)
     .map((row) => ({
       id: `company-refund:${row.id}`,
@@ -66,27 +76,89 @@ function companyPaymentRows(storeId: string): Payment[] {
       amount: -Number(row.amount || 0),
       balance: 0,
       status: 'Refund' as Payment['status'],
+      remarks: String(row.remarks || ''),
     }));
   return [...paid, ...refunded];
+}
+
+function refundRows(rows: {
+  id: string;
+  refundNo: string;
+  date: string;
+  storeId: string;
+  creditNoteNo: string;
+  amount: number;
+  method: string;
+  remarks: string;
+}[], storeId: string): PaymentRow[] {
+  return rows
+    .filter((row) => row.storeId === storeId && row.amount > 0)
+    .map((row) => ({
+      id: `company-refund:${row.id}`,
+      paymentNo: row.refundNo || '-',
+      date: row.date,
+      vendor: 'Nature Biotic',
+      invoiceRef: row.creditNoteNo || '-',
+      method: paymentMethodLabel(row.method),
+      amount: -row.amount,
+      balance: 0,
+      status: 'Refund' as Payment['status'],
+      remarks: row.remarks || '',
+    }));
 }
 
 export default function StorePayments({ storeId }: { storeId: string }) {
   const [search, setSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
-  const [viewing, setViewing] = useState<Payment | null>(null);
-  const [records, setRecords] = useState<Payment[]>([]);
+  const [viewing, setViewing] = useState<PaymentRow | null>(null);
+  const [records, setRecords] = useState<PaymentRow[]>([]);
+  const [listError, setListError] = useState('');
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
   useEffect(() => {
+    let active = true;
     const refresh = () => {
-      let saved: Payment[] = [];
+      if (usesSupabaseData()) {
+        Promise.all([loadStoreCompanyReceipts(storeId), loadCompanyRefunds()])
+          .then(([receipts, refunds]) => {
+            if (!active) return;
+            const paid: PaymentRow[] = receipts.map((row) => ({
+              id: `company-receipt:${row.id}`,
+              paymentNo: row.receiptNo || '-',
+              date: row.date,
+              vendor: 'Nature Biotic',
+              invoiceRef: row.invoiceNo || '-',
+              method: paymentMethodLabel(row.method),
+              amount: row.amount,
+              balance: row.balanceAfter ?? 0,
+              status: 'Paid',
+              remarks: row.remarks || '',
+            }));
+            setRecords(
+              [...paid, ...refundRows(refunds, storeId)].sort((a, b) =>
+                String(b.date).localeCompare(String(a.date)),
+              ),
+            );
+            setListError('');
+          })
+          .catch((error) => {
+            if (!active) return;
+            setRecords([]);
+            setListError(dbErrorMessage(error, 'Could not load store payments.'));
+          });
+        return;
+      }
+      let saved: PaymentRow[] = [];
       try {
         const raw = localStorage.getItem(`naturebiotic:purchase-payments:${storeId}`);
         const parsed = raw ? JSON.parse(raw) : [];
-        saved = Array.isArray(parsed) ? parsed : [];
+        saved = (Array.isArray(parsed) ? parsed : []).map((row) => ({
+          ...row,
+          remarks: String(row?.remarks || ''),
+        }));
       } catch {
         saved = [];
       }
@@ -95,6 +167,7 @@ export default function StorePayments({ storeId }: { storeId: string }) {
           String(b.date).localeCompare(String(a.date)),
         ),
       );
+      setListError('');
     };
     refresh();
     window.addEventListener('nature-biotic-company-receipts-updated', refresh);
@@ -102,6 +175,7 @@ export default function StorePayments({ storeId }: { storeId: string }) {
     window.addEventListener('store-approval-requests-updated', refresh);
     window.addEventListener('focus', refresh);
     return () => {
+      active = false;
       window.removeEventListener('nature-biotic-company-receipts-updated', refresh);
       window.removeEventListener(companyRefundsUpdatedEvent, refresh);
       window.removeEventListener('store-approval-requests-updated', refresh);
@@ -128,10 +202,26 @@ export default function StorePayments({ storeId }: { storeId: string }) {
     [dated, search, vendorFilter, methodFilter],
   );
 
-  const totalPayable = dated.reduce(
-    (s, p) => (p.amount < 0 ? s : s + p.amount + p.balance),
-    0,
-  );
+  const totalPayable = useMemo(() => {
+    const companyLatest = new Map<string, number>();
+    let companyPaid = 0;
+    let other = 0;
+    dated.forEach((p) => {
+      if (p.amount < 0) return;
+      if (!p.id.startsWith('company-receipt:')) {
+        other += p.amount + p.balance;
+        return;
+      }
+      companyPaid += p.amount;
+      const key = p.invoiceRef.toLowerCase();
+      companyLatest.set(key, Math.min(companyLatest.get(key) ?? Infinity, p.balance));
+    });
+    return (
+      other +
+      companyPaid +
+      [...companyLatest.values()].reduce((sum, balance) => sum + balance, 0)
+    );
+  }, [dated]);
   const paid = dated.reduce((s, p) => s + p.amount, 0);
   const pending = useMemo(() => {
     const companyLatest = new Map<string, number>();
@@ -177,6 +267,12 @@ export default function StorePayments({ storeId }: { storeId: string }) {
           )}
         </div>
       </div>
+
+      {listError ? (
+        <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {listError}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-sm text-slate-500 font-medium">Total Payable</p><p className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(totalPayable)}</p></div><div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center"><Icon name="payments" size={22} className="text-brand-600" /></div></div></Card>
@@ -289,6 +385,7 @@ export default function StorePayments({ storeId }: { storeId: string }) {
             <Detail label="Amount" value={formatCurrency(viewing.amount)} />
             <Detail label="Balance" value={formatCurrency(viewing.balance)} />
             <Detail label="Status" value={viewing.status} />
+            <Detail label="Remarks" value={viewing.remarks || '-'} />
           </div>
         </div>
 

@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Icon, Input, Select, Button, EmptyState } from "@/components/ui";
-import { staff as staffSeed, getStore, type Staff } from "@/lib/data";
+import { getStaffByStore, getStore, type Staff } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadAttendance } from "@/lib/db/operations";
+import { loadStaff } from "@/lib/db/staff";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type AttendanceStatus =
   | "Present"
@@ -32,6 +36,15 @@ function isoDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function businessDate(date = new Date()) {
+  if (usesSupabaseData()) {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+    }).format(date);
+  }
+  return isoDate(date);
 }
 
 export const attendanceUpdatedEvent = "nature-biotic-attendance-updated";
@@ -313,13 +326,16 @@ function statusClass(status: AttendanceStatus) {
 
 export default function StoreAttendance({ storeId }: { storeId: string }) {
   const store = getStore(storeId);
+  const [staffVersion, setStaffVersion] = useState(0);
+  const [listError, setListError] = useState("");
   const storeStaff = useMemo(
-    () => staffSeed.filter((member) => member.storeId === storeId),
-    [storeId],
+    () => getStaffByStore(storeId),
+    [storeId, staffVersion],
   );
 
   const storageKey = `${STORAGE_PREFIX}:${storeId}`;
   const [records, setRecords] = useState<AttendanceRecord[]>(() => {
+    if (usesSupabaseData()) return [];
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) return JSON.parse(saved);
@@ -329,7 +345,33 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
     }
   });
 
+  const reloadDbAttendance = async () => {
+    try {
+      await loadStaff();
+      setStaffVersion((current) => current + 1);
+      const rows = await loadAttendance(storeId);
+      setRecords(rows as AttendanceRecord[]);
+      setListError("");
+    } catch (error) {
+      setRecords([]);
+      setListError(dbErrorMessage(error, "Could not load attendance."));
+    }
+  };
+
   useEffect(() => {
+    if (usesSupabaseData()) {
+      void reloadDbAttendance();
+      const refresh = () => {
+        void reloadDbAttendance();
+      };
+      window.addEventListener(attendanceUpdatedEvent, refresh);
+      window.addEventListener("focus", refresh);
+      return () => {
+        window.removeEventListener(attendanceUpdatedEvent, refresh);
+        window.removeEventListener("focus", refresh);
+      };
+    }
+
     const refresh = () => {
       try {
         const saved = localStorage.getItem(storageKey);
@@ -345,9 +387,9 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
       window.removeEventListener(attendanceUpdatedEvent, refresh);
       window.removeEventListener("focus", refresh);
     };
-  }, [storageKey]);
+  }, [storageKey, storeId]);
 
-  const [selectedDate, setSelectedDate] = useState(isoDate(new Date()));
+  const [selectedDate, setSelectedDate] = useState(businessDate());
   const [staffFilter, setStaffFilter] = useState("all");
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
 
@@ -397,7 +439,7 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
     () =>
       records.filter(
         (record) =>
-          record.date === isoDate(new Date()) &&
+          record.date === businessDate() &&
           storeStaff.some((member) => member.id === record.staffId),
       ),
     [records, storeStaff],
@@ -430,6 +472,9 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
           View check-in, check-out, leave and monthly attendance for staff assigned
           to {store?.name || "this store"}.
         </p>
+        {listError && (
+          <p className="mt-2 text-sm font-medium text-red-600">{listError}</p>
+        )}
       </div>
 
       <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -523,11 +568,11 @@ export default function StoreAttendance({ storeId }: { storeId: string }) {
           </div>
 
           {(staffFilter !== "all" ||
-            selectedDate !== isoDate(new Date())) && (
+            selectedDate !== businessDate()) && (
             <Button
               variant="secondary"
               onClick={() => {
-                setSelectedDate(isoDate(new Date()));
+                setSelectedDate(businessDate());
                 setStaffFilter("all");
               }}
             >

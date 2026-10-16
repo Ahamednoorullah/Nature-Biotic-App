@@ -212,6 +212,8 @@ export type Product = {
   filler?: number;
   fillerUnit?: string;
   fillerType?: "Water" | "NA" | "";
+  variantId?: string;
+  productId?: string;
 };
 
 export type CustomerCategory = "Retail" | "Wholesale" | "Dealer";
@@ -257,6 +259,7 @@ export type Farmer = {
   executiveName?: string;
   createdByStaffId?: string;
   createdByUserId?: string;
+  createdByName?: string;
   landmark: string;
   district: string;
   state: string;
@@ -482,6 +485,8 @@ export type Staff = {
   joinedDate: string;
   address: string;
   proofIdName: string;
+  profileImage?: string;
+  profileImagePath?: string;
   profileImageName: string;
   designation: string;
   level: 1 | 2 | 3 | 4;
@@ -492,6 +497,7 @@ export type Staff = {
   role: string;
   status: "Active" | "On Leave" | "Inactive";
   accountId?: string;
+  loginStatus?: "not_invited" | "invitation_pending" | "active" | "disabled";
 };
 
 export const stores: Store[] = [
@@ -752,12 +758,14 @@ export type DatabasePurchaseReturn = {
   id: string;
   storeId: string;
   storeName: string;
+  storeCode: string;
   returnNo: string;
   date: string;
   invoiceId: string;
   invoiceNo: string;
   total: number;
   reason: string;
+  decisionNote: string;
   status: "Pending" | "Approved" | "Rejected";
   items: DatabasePurchaseReturnItem[];
 };
@@ -769,8 +777,23 @@ export type DatabaseStockLine = {
   productName: string;
   packSize: string;
   batchNo: string;
+  expiryDate?: string;
   quantity: number;
   available: number;
+};
+
+export type DatabaseFroStockLine = {
+  storeId: string;
+  staffId: string;
+  froName: string;
+  variantId: string;
+  batchId: string;
+  productName: string;
+  packSize: string;
+  batchNo: string;
+  expiryDate: string;
+  quantity: number;
+  unitValue: number;
 };
 
 let databaseCompanySales: CompanyStoreSaleRecord[] | null = null;
@@ -778,6 +801,7 @@ let databasePurchaseOrders: DatabasePurchaseOrder[] | null = null;
 let databasePurchaseReturns: DatabasePurchaseReturn[] | null = null;
 let databasePurchaseStatuses: Record<string, string> | null = null;
 let databaseStockLines: DatabaseStockLine[] | null = null;
+let databaseFroStockLines: DatabaseFroStockLine[] | null = null;
 
 function notifyPurchasingCaches() {
   if (typeof window === "undefined") return;
@@ -787,6 +811,21 @@ function notifyPurchasingCaches() {
   window.dispatchEvent(new Event("nature-biotic-purchase-returns-updated"));
   window.dispatchEvent(new Event("nature-biotic-store-purchase-status-updated"));
   window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+}
+
+export function adoptDatabaseFroStock(rows: DatabaseFroStockLine[]) {
+  databaseFroStockLines = rows;
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("fro-stock-updated"));
+}
+
+export function getDatabaseFroStock(storeId?: string, staffId?: string) {
+  const rows = databaseFroStockLines ?? [];
+  return rows.filter((row) => {
+    if (storeId && row.storeId !== storeId) return false;
+    if (staffId && row.staffId !== staffId) return false;
+    return row.quantity > 0;
+  });
 }
 
 export function adoptDatabasePurchasing(input: {
@@ -2354,6 +2393,17 @@ export function addCompanyRefund(input: {
 }
 
 /**
+ * Company period sales after approved returns. Returns are not capped at sales,
+ * so the result is negative when approved returns exceed sales in the period.
+ * Outstanding and collection stay on settleCompanyAccount.
+ */
+export function companyPeriodNetSales(grossSales: number, approvedReturns: number) {
+  const gross = Number(grossSales);
+  const returns = Number(approvedReturns);
+  return (Number.isFinite(gross) ? gross : 0) - (Number.isFinite(returns) ? returns : 0);
+}
+
+/**
  * Company ↔ store account. An approved return lowers net sales only.
  * Outstanding stays until a refund is applied against it. The cash part of a
  * refund lowers collection and does not change outstanding.
@@ -2413,6 +2463,8 @@ export type FROStockRow = {
   unitValue: any;
   currentQty: any;
   productId: string;
+  variantId?: string;
+  batchId?: string;
   productName: string;
   packSize: string;
   batchNo: string;
@@ -3838,11 +3890,59 @@ function matchKey(
 // FRO current stock (by executive) — used by Sales Invoice + Dashboard
 // ============================================================
 
-export function getFROStockByExecutive(storeId: string, executiveName: string) {
+export function getFROStockByExecutive(storeId: string, executiveName: string, staffId?: string) {
+  if (usesSupabaseData()) {
+    const name = normStockText(executiveName);
+    const staff = String(staffId || "").trim();
+    return getDatabaseFroStock(storeId)
+      .filter((row) => (staff ? row.staffId === staff : normStockText(row.froName) === name))
+      .map((row) => ({
+        id: `${row.staffId}-${row.variantId}-${row.batchId}`,
+        storeId: row.storeId,
+        executiveName: row.froName,
+        productId: row.variantId,
+        variantId: row.variantId,
+        batchId: row.batchId,
+        productName: row.productName,
+        packSize: row.packSize,
+        batchNo: row.batchNo,
+        expiryDate: row.expiryDate,
+        unitValue: row.unitValue,
+        currentQty: row.quantity,
+        issuedQty: row.quantity,
+        returnedQty: 0,
+        currentStock: row.quantity,
+      }));
+  }
   const name = normStockText(executiveName);
   return getFROStock(storeId).filter(
     (r) => normStockText(r.executiveName) === name && Number(r.currentQty || 0) > 0,
   );
+}
+
+function databaseFroLines(
+  storeId: string,
+  productId: string,
+  packSize: string,
+  batchNo: string,
+  productName?: string,
+  executiveName?: string,
+) {
+  const batch = String(batchNo || "").trim().toLowerCase();
+  const size = String(packSize || "").trim().toLowerCase();
+  const name = String(productName || "").trim().toLowerCase();
+  const executive = normStockText(executiveName);
+  return getDatabaseFroStock(storeId).filter((row) => {
+    if (executive && normStockText(row.froName) !== executive) return false;
+    const sameVariant = productId
+      ? row.variantId === productId
+      : name.length > 0 &&
+        row.productName.trim().toLowerCase() === name &&
+        row.packSize.trim().toLowerCase() === size;
+    if (!sameVariant) return false;
+    if (!batch) return true;
+    return row.batchNo.trim().toLowerCase() === batch;
+  });
 }
 
 export function getFROHandQty(
@@ -3853,6 +3953,16 @@ export function getFROHandQty(
   productName?: string,
   executiveName?: string,
 ) {
+  if (usesSupabaseData()) {
+    return databaseFroLines(
+      storeId,
+      productId,
+      packSize,
+      batchNo,
+      productName,
+      executiveName,
+    ).reduce((sum, row) => sum + Math.max(0, row.quantity), 0);
+  }
   const target = { productId, productName, packSize, batchNo };
   const executive = normStockText(executiveName);
   return getFROStock(storeId).reduce((sum, row) => {
@@ -3881,6 +3991,16 @@ export function getFROStockHolders(
   batchNo: string,
   productName?: string,
 ) {
+  if (usesSupabaseData()) {
+    const totals = new Map<string, number>();
+    databaseFroLines(storeId, productId, packSize, batchNo, productName).forEach((row) => {
+      const qty = Math.max(0, row.quantity);
+      if (qty <= 0) return;
+      const name = row.froName.trim() || "FRO";
+      totals.set(name, (totals.get(name) || 0) + qty);
+    });
+    return Array.from(totals.entries()).map(([name, quantity]) => ({ name, quantity }));
+  }
   const target = { productId, productName, packSize, batchNo };
   const totals = new Map<string, number>();
 
@@ -4126,13 +4246,14 @@ export function farmerFromRefund(
     salesReturn?.invoiceNo || refund?.invoiceNo,
   );
   const farmerId = String(
-    invoice?.farmerId || salesReturn?.farmerId || "",
+    invoice?.farmerId || salesReturn?.farmerId || refund?.farmerId || "",
   ).trim();
   const farmerName = String(
     invoice?.partyName ||
       invoice?.farmerName ||
       salesReturn?.partyName ||
       salesReturn?.farmerName ||
+      refund?.farmerName ||
       "",
   ).trim();
   return {
@@ -4502,6 +4623,7 @@ export function getFROCashPosition(
     if (receiptId) seenReceipts.add(receiptId);
     if (!froOwnsTransaction(row, name, staffId)) return;
     if (isVoidStatus(row?.status)) return;
+    if (String(row?.collectionAccount || "").trim().toLowerCase() === "store") return;
     if (!isCashMethod(row?.method || row?.paymentMethod)) return;
     const amount = Math.max(0, Number(row?.amount || 0));
     if (!amount) return;

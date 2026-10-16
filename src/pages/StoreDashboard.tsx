@@ -26,10 +26,14 @@ import { useNav } from "@/context/NavContext";
 import {
   buildStoreDashboard,
   inPeriod,
+  summarizeStoreLedger,
   type ChannelSummary,
   type DashboardDetail,
   type DateFilter,
 } from "@/lib/storeDashboardMetrics";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadStoreDashboardLedger, loadCashHandovers, decideCashHandoverDb, loadDigitalSettlements, decideDigitalSettlementDb, type StoreDashboardLedger } from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 const filterTabs: { key: DateFilter; label: string }[] = [
   { key: "today", label: "Today" },
@@ -81,6 +85,7 @@ type FROHandover = {
   status?: "pending" | "accepted" | "rejected";
   acceptedAt?: string;
   acceptedBy?: string;
+  kind?: "cash" | "digital";
 };
 
 const FRO_HANDOVER_STORAGE_PREFIX = "nature-biotic-fro-handovers-v1";
@@ -102,6 +107,53 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   }, []);
 
   function loadPendingHandovers() {
+    if (usesSupabaseData()) {
+      void Promise.all([loadCashHandovers(storeId), loadDigitalSettlements(storeId)])
+        .then(([cash, digital]) => {
+          setPendingHandovers([
+            ...cash
+              .filter((row) => row.status === "pending")
+              .map((row) => ({
+                id: row.id,
+                date: row.date,
+                amount: row.amount,
+                method: row.method,
+                handedOverBy: row.handedOverBy,
+                remarks: row.remarks,
+                status: row.status,
+                acceptedAt: row.decidedAt,
+                kind: "cash" as const,
+              })),
+            ...digital
+              .filter((row) => row.status === "pending")
+              .map((row) => ({
+                id: row.id,
+                date: row.date,
+                amount: row.amount,
+                method: row.method,
+                handedOverBy: row.handedOverBy,
+                remarks: row.remarks,
+                status: row.status,
+                acceptedAt: row.decidedAt,
+                kind: "digital" as const,
+              })),
+          ]);
+          const seen = new Set<string>();
+          setAcceptedHandoverCash(
+            cash.reduce((sum, row) => {
+              if (seen.has(row.id)) return sum;
+              seen.add(row.id);
+              if (row.status !== "accepted") return sum;
+              if (String(row.method || "").toLowerCase() !== "cash") return sum;
+              return sum + Math.max(0, row.amount);
+            }, 0),
+          );
+        })
+        .catch((error) => {
+          setLedgerError(dbErrorMessage(error, "Could not load pending handovers."));
+        });
+      return;
+    }
     try {
       const raw = localStorage.getItem(
         `${FRO_HANDOVER_STORAGE_PREFIX}:${storeId}`,
@@ -135,11 +187,13 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-handover-updated", refresh);
+    window.addEventListener("nature-biotic-digital-settlement-updated", refresh);
 
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
       window.removeEventListener("nature-biotic-handover-updated", refresh);
+      window.removeEventListener("nature-biotic-digital-settlement-updated", refresh);
     };
   }, [storeId]);
   const store = getStore(storeId);
@@ -157,19 +211,44 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   const [execDetail, setExecDetail] = useState<ExecDetailSelection>(null);
   const [directDetail, setDirectDetail] = useState<DirectDetailSelection>(null);
   const [version, setVersion] = useState(0);
+  const [ledger, setLedger] = useState<StoreDashboardLedger | null>(null);
+  const [ledgerError, setLedgerError] = useState("");
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    loadStoreDashboardLedger(storeId)
+      .then((next) => {
+        if (!active) return;
+        setLedger(next);
+        setLedgerError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLedgerError(dbErrorMessage(error, "Could not load the store dashboard."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId, version]);
 
   useEffect(() => {
     const refresh = () => setVersion((current) => current + 1);
     const events = [
       "nature-biotic-store-inventory-updated",
       "nature-biotic-store-receipts-updated",
+      "nature-biotic-store-refunds-updated",
       "nature-biotic-fro-visits-updated",
       "nature-biotic-handover-updated",
+      "nature-biotic-digital-settlement-updated",
       "fro-sales-updated",
       "farmer-purchases-updated",
       "fro-stock-txns-updated",
       "store-purchase-orders-updated",
       "company-store-sales-updated",
+      "nature-biotic-sales-invoices-updated",
+      "nature-biotic-sales-returns-updated",
+      "store-farmers-updated",
       "nature-biotic-store-purchase-status-updated",
       "fro-stock-updated",
       "fro-accepted-deliveries-updated",
@@ -182,13 +261,43 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
   }, []);
 
   const dashboard = useMemo(
-    () => buildStoreDashboard(storeId, dateFilter),
+    () => (usesSupabaseData() ? null : buildStoreDashboard(storeId, dateFilter)),
     [storeId, dateFilter, version],
   );
-  const data = dashboard.overview;
-  const directSales = dashboard.direct;
-  const executives = dashboard.executives;
+  const summary = useMemo(
+    () => (ledger ? summarizeStoreLedger(ledger, dateFilter) : null),
+    [ledger, dateFilter],
+  );
+  const figuresReady = !usesSupabaseData() || summary != null;
+  const data = summary?.overview ?? dashboard?.overview ?? {
+    sales: 0,
+    collection: 0,
+    outstanding: 0,
+    farmers: 0,
+    farms: 0,
+    crops: 0,
+    visits: 0,
+  };
+  const directSales = summary?.direct ?? dashboard?.direct ?? {
+    sales: 0,
+    collection: 0,
+    outstanding: 0,
+    farmers: 0,
+    farms: 0,
+    crops: 0,
+    salesRows: [],
+    collectionRows: [],
+    outstandingRows: [],
+  };
+  const executives = summary?.executives ?? dashboard?.executives ?? [];
   const stockPurchases = useMemo(() => {
+    if (summary) {
+      return {
+        rows: summary.purchases,
+        totalValue: summary.receivedTotal,
+        totalQty: summary.purchases.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
+      };
+    }
     const received = getStorePurchasesFromCompanySales(storeId)
       .filter((row) => isStorePurchaseReceived(row.invoiceNo))
       .filter((row) => inPeriod(row.date, dateFilter))
@@ -204,12 +313,12 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
       totalValue: received.reduce((sum, row) => sum + Number(row.total || 0), 0),
       totalQty: received.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
     };
-  }, [storeId, dateFilter, version]);
+  }, [storeId, dateFilter, version, summary]);
 
-  const currentStockValue = useMemo(
-    () => getStoreOverviewStockValue(storeId),
-    [storeId, version],
-  );
+  const currentStockValue = useMemo(() => {
+    if (usesSupabaseData()) return summary?.stockCostValue ?? null;
+    return getStoreOverviewStockValue(storeId);
+  }, [storeId, version, summary]);
 
     const execReceivedData = useMemo(() => {
     const result: Record<ExecKey, { qty: number; value: number }> = {} as any;
@@ -308,10 +417,27 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
     return map;
   }, [pendingHandovers, executives]);
 
-  function updateHandoverStatus(
+  async function updateHandoverStatus(
     handoverId: string,
     status: "accepted" | "rejected",
   ) {
+    if (usesSupabaseData()) {
+      const row = pendingHandovers.find((item) => item.id === handoverId);
+      try {
+        if (row?.kind === "digital") {
+          await decideDigitalSettlementDb(handoverId, status);
+          window.dispatchEvent(new Event("nature-biotic-digital-settlement-updated"));
+        } else {
+          await decideCashHandoverDb(handoverId, status);
+        }
+        window.dispatchEvent(new Event("nature-biotic-handover-updated"));
+        loadPendingHandovers();
+      } catch (error) {
+        setLedgerError(dbErrorMessage(error, "Could not update the handover."));
+        window.alert(dbErrorMessage(error, "Could not update the handover."));
+      }
+      return;
+    }
     try {
       const storageKey = `${FRO_HANDOVER_STORAGE_PREFIX}:${storeId}`;
       const raw = localStorage.getItem(storageKey);
@@ -439,6 +565,12 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         document.body,
       )}
 
+      {ledgerError ? (
+        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {ledgerError}
+        </div>
+      ) : null}
+
       {(() => {
         const limit = resolveStoreOutstandingLimit(store);
         const due = getCompanyStoreOutstanding(storeId);
@@ -465,42 +597,42 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3 stagger">
           <BusinessOverviewCard
             label="Sales"
-            value={formatCurrency(data.sales)}
+            value={figuresReady ? formatCurrency(data.sales) : "—"}
             icon="payments"
             color="brand"
             trend=""
           />
           <BusinessOverviewCard
             label="Collection"
-            value={formatCurrency(data.collection)}
+            value={figuresReady ? formatCurrency(data.collection) : "—"}
             icon="account_balance_wallet"
             color="blue"
             trend=""
           />
           <BusinessOverviewCard
             label="Outstanding"
-            value={formatCurrency(data.outstanding)}
+            value={figuresReady ? formatCurrency(data.outstanding) : "—"}
             icon="receipt_long"
             color="amber"
             trend=""
           />
           <BusinessOverviewCard
             label="Farmers"
-            value={String(data.farmers)}
+            value={figuresReady ? String(data.farmers) : "—"}
             icon="groups"
             color="purple"
             trend=""
           />
           <BusinessOverviewCard
             label="Farms"
-            value={String(data.farms)}
+            value={figuresReady ? String(data.farms) : "—"}
             icon="agriculture"
             color="brand"
             trend=""
           />
           <BusinessOverviewCard
             label="Crops"
-            value={String(data.crops)}
+            value={figuresReady ? String(data.crops) : "—"}
             icon="spa"
             color="blue"
             trend=""
@@ -522,41 +654,41 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <DirectSalesCard
             label="Sales"
-            value={formatCurrency(directSales.sales)}
+            value={figuresReady ? formatCurrency(directSales.sales) : "—"}
             icon="payments"
             color="brand"
             onClick={() => setDirectDetail("sales")}
           />
           <DirectSalesCard
             label="Collection"
-            value={formatCurrency(directSales.collection)}
+            value={figuresReady ? formatCurrency(directSales.collection) : "—"}
             icon="account_balance_wallet"
             color="blue"
             onClick={() => setDirectDetail("collection")}
           />
           <DirectSalesCard
             label="Outstanding"
-            value={formatCurrency(directSales.outstanding)}
+            value={figuresReady ? formatCurrency(directSales.outstanding) : "—"}
             icon="receipt_long"
             color="amber"
             onClick={() => setDirectDetail("outstanding")}
           />
           <DirectSalesCard
             label="Farmers"
-            value={String(directSales.farmers)}
+            value={figuresReady ? String(directSales.farmers) : "—"}
             icon="groups"
             color="purple"
           />
           <DirectSalesCard
             label="Total Received"
-            value={formatCurrency(stockPurchases.totalValue)}
+            value={figuresReady ? formatCurrency(stockPurchases.totalValue) : "—"}
             icon="local_shipping"
             color="brand"
             onClick={() => setDirectDetail("stocks")}
           />
           <DirectSalesCard
             label="Current Stocks"
-            value={formatCurrency(currentStockValue)}
+            value={figuresReady && currentStockValue != null ? formatCurrency(currentStockValue) : "—"}
             icon="inventory_2"
             color="blue"
           />
@@ -766,6 +898,11 @@ export default function StoreDashboard({ storeId }: { storeId: string }) {
         createPortal(
           <ExecutiveDetailModal
             selection={execDetail}
+            dateFilter={dateFilter}
+            cashBalance={
+              executives.find((officer) => officer.id === execDetail.execKey)?.collectionInHand
+            }
+            loadError={ledgerError}
             rows={
               executives.find((officer) => officer.id === execDetail.execKey)?.[
                 execDetail.type === "sales"
@@ -816,16 +953,19 @@ function PendingHandoverModal({
   acceptedCash: number;
   viewingId: string | null;
   onView: (handoverId: string | null) => void;
-  onAccept: (handoverId: string) => void;
-  onReject: (handoverId: string) => void;
+  onAccept: (handoverId: string) => void | Promise<void>;
+  onReject: (handoverId: string) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
 
-  function handleAccept(id: string) {
+  async function handleAccept(id: string) {
     setAcceptingId(id);
-    onAccept(id);
-    setAcceptingId(null);
+    try {
+      await onAccept(id);
+    } finally {
+      setAcceptingId(null);
+    }
   }
 
   return (
@@ -838,7 +978,7 @@ function PendingHandoverModal({
             </div>
             <div>
               <h3 className="font-bold text-slate-800">
-                Pending Cash Handover
+                Pending Handover
               </h3>
               <p className="text-xs text-slate-500">
                 {storeName} · Accepted cash received {formatCurrency(acceptedCash)}
@@ -1058,7 +1198,16 @@ function DirectSalesDetailModal({
   type: DirectDetailType;
   dateFilter: DateFilter;
   summary: ChannelSummary;
-  stockRows: ReturnType<typeof getStorePurchasesFromCompanySales>;
+  stockRows: Array<{
+    id: string;
+    date: string;
+    invoiceNo: string;
+    product?: string;
+    packSize?: string;
+    quantity: number;
+    rate: number;
+    total: number;
+  }>;
   stockTotalValue: number;
   storeName: string;
   onClose: () => void;
@@ -1069,6 +1218,7 @@ function DirectSalesDetailModal({
     monthly: "This Month",
     quarterly: "This Quarter",
     yearly: "This Year",
+    custom: "Custom",
   };
 
   // ---- STOCKS: real data from Company → Store purchases ----
@@ -1394,10 +1544,16 @@ function ExecutiveDetailModal({
   selection,
   rows,
   stockData,
+  dateFilter,
+  cashBalance,
+  loadError,
   onClose,
 }: {
   selection: Exclude<ExecDetailSelection, null>;
   rows: DashboardDetail[];
+  dateFilter: DateFilter;
+  cashBalance?: number;
+  loadError?: string;
   stockData: {
     deliveryRows: AggregatedStockRow[];
     salesRows: AggregatedStockRow[];
@@ -1415,6 +1571,14 @@ function ExecutiveDetailModal({
   onClose: () => void;
 }) {
   const { execName, type } = selection;
+  const periodName = {
+    today: "Today",
+    weekly: "Weekly",
+    monthly: "Monthly",
+    quarterly: "Quarterly",
+    yearly: "Yearly",
+    custom: "Custom",
+  }[dateFilter];
 
   const titles: Record<ExecDetailType, string> = {
     sales: "Sales Details",
@@ -1597,7 +1761,9 @@ function ExecutiveDetailModal({
                 {execName} — {titles[type]}
               </h3>
               <p className="text-xs text-slate-500">
-                Detailed activity for the selected executive
+                {type === "cash"
+                  ? `Current balance ${formatCurrency(cashBalance || 0)}. ${periodName} cash movement is totaled below.`
+                  : "Detailed activity for the selected executive"}
               </p>
             </div>
           </div>
@@ -1635,6 +1801,7 @@ function ExecutiveDetailModal({
               {type === "cash" && (
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-5 py-3 text-left">Date</th>
+                  <th className="px-5 py-3 text-left">Ref No</th>
                   <th className="px-5 py-3 text-left">Farmer Name</th>
                   <th className="px-5 py-3 text-right">Amount</th>
                 </tr>
@@ -1655,10 +1822,12 @@ function ExecutiveDetailModal({
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={type === "outstanding" ? 5 : type === "cash" ? 3 : 4}
+                    colSpan={type === "outstanding" ? 5 : type === "cash" ? 4 : 4}
                     className="px-5 py-10 text-center text-slate-400"
                   >
-                    No records in this period.
+                    {type === "cash" && loadError && rows.length === 0
+                      ? loadError
+                      : "No records in this period."}
                   </td>
                 </tr>
               ) : (
@@ -1670,6 +1839,9 @@ function ExecutiveDetailModal({
                     )}
                     {type === "collection" && (
                       <td className="px-5 py-3 font-semibold text-slate-700">{row.receiptNo}</td>
+                    )}
+                    {type === "cash" && (
+                      <td className="px-5 py-3 font-semibold text-slate-700 break-all">{row.receiptNo || "-"}</td>
                     )}
                     <td className="px-5 py-3 text-slate-700">{row.farmer}</td>
                     {type === "outstanding" && (
@@ -1689,10 +1861,10 @@ function ExecutiveDetailModal({
             <tfoot className="sticky bottom-0 z-10">
               <tr className="border-t-2 border-slate-200 bg-slate-50">
                 <td
-                  colSpan={type === "outstanding" ? 4 : type === "cash" ? 2 : 3}
+                  colSpan={type === "outstanding" ? 4 : type === "cash" ? 3 : 3}
                   className="px-5 py-4 text-right text-sm font-bold text-slate-600"
                 >
-                  Total
+                  {type === "cash" ? "Period total" : "Total"}
                 </td>
 
                 <td className="px-5 py-4 text-right text-base font-bold tabular-nums text-amber-700">

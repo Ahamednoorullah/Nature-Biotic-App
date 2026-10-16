@@ -18,10 +18,24 @@ import {
   Icon,
 } from "@/components/ui";
 import { formatCurrency, formatCompact, formatDate, initials } from "@/lib/format";
+
+function creatorLabel(farmer: Farmer) {
+  const executive =
+    farmer.through === "Executive" || Boolean(String(farmer.createdByStaffId || "").trim());
+  if (executive) {
+    const name = String(farmer.executiveName || farmer.createdByName || "").trim();
+    return name || "—";
+  }
+  if (farmer.through === "Direct") return "Direct";
+  return "—";
+}
 import { downloadDataTablePdf } from "@/lib/documentPdf";
 import { createPortal } from "react-dom";
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadFarmers, loadStoreFarmerBalances } from "@/lib/db/farmers";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 const colorMap: Record<string, string> = {
   emerald: "from-emerald-400 to-emerald-600",
@@ -39,27 +53,73 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
   const [farmers, setFarmers] = useState<Farmer[]>(() =>
     getFarmersByStore(storeId),
   );
+  const [listLoading, setListLoading] = useState(usesSupabaseData());
+  const [listError, setListError] = useState("");
   const [accountsVersion, setAccountsVersion] = useState(0);
+  const [dbBalances, setDbBalances] = useState<
+    { farmerId: string; farmerName: string; outstanding: number }[] | null
+  >(null);
+  const [balanceError, setBalanceError] = useState("");
   const [search, setSearch] = useState("");
   const [cropFilter, setCropFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
+    let active = true;
     const refresh = () => {
       setFarmers(getFarmersByStore(storeId));
       setAccountsVersion((value) => value + 1);
     };
-    refresh();
+    if (usesSupabaseData()) {
+      setListLoading(true);
+      loadFarmers()
+        .then(() => {
+          if (!active) return;
+          setFarmers(getFarmersByStore(storeId));
+          setListError("");
+        })
+        .catch((error) => {
+          if (active) setListError(dbErrorMessage(error, "Could not load farmers."));
+        })
+        .finally(() => {
+          if (active) setListLoading(false);
+        });
+    } else {
+      refresh();
+    }
     const events = [
       "focus",
       "store-farmers-updated",
       "nature-biotic-store-refunds-updated",
       "nature-biotic-store-sales-updated",
+      "nature-biotic-sales-invoices-updated",
       "nature-biotic-store-receipts-updated",
     ];
     events.forEach((event) => window.addEventListener(event, refresh));
-    return () => events.forEach((event) => window.removeEventListener(event, refresh));
+    return () => {
+      active = false;
+      events.forEach((event) => window.removeEventListener(event, refresh));
+    };
   }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    let active = true;
+    loadStoreFarmerBalances(storeId)
+      .then((rows) => {
+        if (!active) return;
+        setDbBalances(rows);
+        setBalanceError("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setDbBalances(null);
+        setBalanceError(dbErrorMessage(error, "Could not load outstanding balances."));
+      });
+    return () => {
+      active = false;
+    };
+  }, [storeId, accountsVersion]);
 
   const visibleFarmers = useMemo(
     () =>
@@ -92,7 +152,8 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
     [visibleFarmers, search, cropFilter],
   );
 
-  const farmerBalances = useMemo(() => {
+  const localBalances = useMemo(() => {
+    if (usesSupabaseData()) return [];
     const read = (key: string) => {
       try {
         const parsed = JSON.parse(localStorage.getItem(`${key}:${storeId}`) || "[]");
@@ -108,18 +169,31 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
       refunds: read("nature-biotic-store-refunds-v2"),
     }).farmers;
   }, [storeId, accountsVersion]);
-  const balanceOf = (farmer: Farmer) =>
-    farmerBalances.find((row) => {
-      if (row.farmerId && row.farmerId === farmer.id) return true;
-      return (
-        !row.farmerId &&
-        row.farmerName.trim().toLowerCase() === farmer.name.trim().toLowerCase()
-      );
-    })?.outstanding || 0;
+  const farmerBalances = usesSupabaseData() ? dbBalances || [] : localBalances;
+  const balanceKnown = !usesSupabaseData() || (dbBalances !== null && !balanceError);
+  const balanceOf = (farmer: Farmer) => {
+    if (!balanceKnown) return null;
+    return (
+      farmerBalances.find((row) => {
+        if (row.farmerId && row.farmerId === farmer.id) return true;
+        return (
+          !row.farmerId &&
+          row.farmerName.trim().toLowerCase() === farmer.name.trim().toLowerCase()
+        );
+      })?.outstanding || 0
+    );
+  };
+  const balanceAmount = (farmer: Farmer) => balanceOf(farmer) ?? 0;
+  const outstandingText = (farmer: Farmer) => {
+    const amount = balanceOf(farmer);
+    if (amount === null) return { label: "—", due: false };
+    if (amount > 0) return { label: formatCurrency(amount), due: true };
+    return { label: "Clear", due: false };
+  };
 
   const totalFarmers = visibleFarmers.length;
   const totalOutstanding = visibleFarmers.reduce(
-    (s, f) => s + balanceOf(f),
+    (s, f) => s + balanceAmount(f),
     0,
   );
   const totalPurchaseValue = visibleFarmers.reduce(
@@ -145,7 +219,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
           farmer.village || "-",
           farmer.cropType || farmer.crops?.[0]?.cropType || "-",
           formatCurrency(farmer.totalPurchases).replace("₹", "Rs. "),
-          formatCurrency(balanceOf(farmer)).replace("₹", "Rs. "),
+          formatCurrency(balanceAmount(farmer)).replace("₹", "Rs. "),
         ]),
         total: [
           "",
@@ -156,7 +230,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
             "₹",
             "Rs. ",
           ),
-          formatCurrency(filtered.reduce((sum, farmer) => sum + balanceOf(farmer), 0)).replace(
+          formatCurrency(filtered.reduce((sum, farmer) => sum + balanceAmount(farmer), 0)).replace(
             "₹",
             "Rs. ",
           ),
@@ -210,6 +284,12 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
           </button>
         </div>
 
+        {balanceError ? (
+          <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {balanceError}
+          </div>
+        ) : null}
+
         {/* FRO toolbar: one line */}
         <Card className="mb-4 p-2.5">
           <div className="flex items-center gap-2">
@@ -249,8 +329,8 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
           <Card className="p-0">
             <EmptyState
               icon="groups"
-              title="No farmers found"
-              description="No farmers are assigned to this FRO."
+              title={listError || (listLoading ? "Loading farmers..." : "No farmers found")}
+              description={listError ? "The farmer list could not be loaded." : listLoading ? "Reading registered farmers for this store." : "No farmers are assigned to this FRO."}
               action={
                 <Button onClick={() => goStorePage("add-farmer")}>
                   <Icon name="add" size={19} /> Add Farmer
@@ -327,6 +407,12 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
         </Button>
       </div>
 
+      {balanceError ? (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {balanceError}
+        </div>
+      ) : null}
+
       {/* Toolbar */}
       <Card className="p-4 mb-5">
         <div className="flex flex-col lg:flex-row gap-3">
@@ -374,8 +460,8 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
         <Card className="p-0">
           <EmptyState
             icon="groups"
-            title="No farmers found"
-            description="Try adjusting your search or filters, or add a new farmer to get started."
+            title={listError || (listLoading ? "Loading farmers..." : "No farmers found")}
+            description={listError ? "The farmer list could not be loaded." : listLoading ? "Reading registered farmers for this store." : "Try adjusting your search or filters, or add a new farmer to get started."}
             action={
               <Button onClick={() => goStorePage("add-farmer")}>
                 <Icon name="person_add" size={20} fill /> Add Farmer
@@ -445,9 +531,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       <div className="rounded-xl bg-slate-50 px-3 py-2 min-w-0">
                         <p className="text-slate-400">Through</p>
                         <p className="font-semibold text-slate-700 truncate mt-0.5">
-                          {f.through === "Executive"
-                            ? f.executiveName || "-"
-                            : "Direct"}
+                          {creatorLabel(f)}
                         </p>
                       </div>
                       <div className="rounded-xl bg-slate-50 px-3 py-2">
@@ -459,11 +543,11 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       <div className="rounded-xl bg-slate-50 px-3 py-2">
                         <p className="text-slate-400">Outstanding</p>
                         <p
-                          className={`font-bold mt-0.5 ${balanceOf(f) > 0 ? "text-amber-600" : "text-slate-500"}`}
+                          className={`font-bold mt-0.5 ${
+                            outstandingText(f).due ? "text-amber-600" : "text-slate-500"
+                          }`}
                         >
-                          {balanceOf(f) > 0
-                            ? formatCurrency(balanceOf(f))
-                            : "Clear"}
+                          {outstandingText(f).label}
                         </p>
                       </div>
                     </div>
@@ -577,9 +661,7 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       {f.village || "-"}
                     </td>
                     <td className="px-3 py-3.5 text-center text-slate-600 border-r border-slate-200">
-                      {f.through === "Executive"
-                        ? f.executiveName || "-"
-                        : "Direct"}
+                      {creatorLabel(f)}
                     </td>
                     <td className="px-3 py-3.5 text-center font-semibold text-slate-700 border-r border-slate-200">
                       {f.landSize || 0}
@@ -602,12 +684,12 @@ export default function StoreFarmers({ storeId }: { storeId: string }) {
                       </div>
                     </td>
                     <td className="px-3 py-3.5 text-center border-r border-slate-200">
-                      {balanceOf(f) > 0 ? (
+                      {outstandingText(f).due ? (
                         <span className="font-bold text-amber-600">
-                          {formatCurrency(balanceOf(f))}
+                          {outstandingText(f).label}
                         </span>
                       ) : (
-                        <span className="text-slate-400">Clear</span>
+                        <span className="text-slate-400">{outstandingText(f).label}</span>
                       )}
                     </td>
                     <td className="px-3 py-3.5 text-center">

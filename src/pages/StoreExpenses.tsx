@@ -6,6 +6,26 @@ import type { Expense } from "@/lib/purchaseData";
 import { staff as staffList } from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadExpenses,
+  loadExpenseCategories,
+  createExpenseDb,
+  loadCashAdvances,
+  createCashAdvanceDb,
+  loadStoreFroCashRefunds,
+  decideFroExpenseDb,
+  decideFroCashRefundDb,
+  froRefundFromLabel,
+  type DbFroCashRefund,
+} from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
+
+type StoreExpenseRow = Expense & {
+  scope?: string;
+  status?: string;
+  froStaffId?: string;
+};
 
 const categories = [
   "Transport",
@@ -73,20 +93,33 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
 
   // Only staff assigned to this store are available when the Store gives cash
   // to an FRO/Executive.
-  const froOptions = useMemo(
+  const froStaffOptions = useMemo(
     () =>
       staffList
         .filter(
           (member) =>
-            member.storeId === storeId && member.status !== "Inactive",
+            member.storeId === storeId &&
+            member.status !== "Inactive" &&
+            roleForStaffDesignation(member.designation) === "fro",
         )
-        .map((member) => member.name.trim())
-        .filter(Boolean)
-        .filter((name, index, list) => list.indexOf(name) === index),
+        .map((member) => ({
+          id: String(member.id),
+          name: member.name.trim(),
+        }))
+        .filter((member) => member.name)
+        .filter(
+          (member, index, list) =>
+            list.findIndex((row) => row.id === member.id) === index,
+        ),
     [storeId],
   );
-
-  const [expenses, setExpenses] = useState<Expense[]>(readStoredExpenses);
+  const [expenses, setExpenses] = useState<StoreExpenseRow[]>(() =>
+    usesSupabaseData() ? [] : readStoredExpenses(),
+  );
+  const [froRefunds, setFroRefunds] = useState<DbFroCashRefund[]>([]);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [focusExpenseId, setFocusExpenseId] = useState("");
+  const [focusRefundId, setFocusRefundId] = useState("");
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -96,7 +129,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
 
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [viewing, setViewing] = useState<Expense | null>(null);
+  const [viewing, setViewing] = useState<StoreExpenseRow | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [category, setCategory] = useState("");
@@ -115,8 +148,10 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
   const [cashRemarks, setCashRemarks] = useState("");
 
   const loadSharedData = () => {
-    setExpenses(readStoredExpenses());
-    setCashRequests(readJSON(cashKey, []));
+    if (!usesSupabaseData()) {
+      setExpenses(readStoredExpenses());
+      setCashRequests(readJSON(cashKey, []));
+    }
   };
 
   useEffect(() => {
@@ -124,11 +159,104 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
     const refresh = () => loadSharedData();
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
+    window.addEventListener("nature-biotic-cash-received-updated", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
+      window.removeEventListener("nature-biotic-cash-received-updated", refresh);
     };
   }, [cashKey]);
+
+  const [listError, setListError] = useState("");
+
+  const reloadDbExpenses = async () => {
+    try {
+      const [storeRows, froRows, advances, refunds] = await Promise.all([
+        loadExpenses("store", storeId),
+        loadExpenses("fro", storeId),
+        loadCashAdvances(storeId),
+        loadStoreFroCashRefunds(storeId),
+      ]);
+      const rows = [...storeRows, ...froRows];
+      setExpenses(
+        rows.map((r) => ({
+          id: r.id,
+          expenseNo: r.expenseNo,
+          date: r.date,
+          category: r.category as Expense["category"],
+          description: r.description,
+          amount: r.amount,
+          method: r.method as Expense["method"],
+          enteredBy: r.enteredBy,
+          scope: r.scope,
+          status: r.status,
+          froStaffId: r.froStaffId,
+        })),
+      );
+      setCashRequests(
+        advances.map((row) => ({
+          id: row.id,
+          date: row.date,
+          amount: row.amount,
+          method: row.method.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+          receivedFrom: row.receivedFrom || "Store",
+          requestedFor: row.froName,
+          remarks: row.remarks,
+          status: row.status,
+          acceptedAt: row.acceptedAt,
+          settlementId: row.settlementId,
+        })),
+      );
+      setFroRefunds(refunds);
+      setListError("");
+    } catch (error) {
+      setExpenses([]);
+      setCashRequests([]);
+      setFroRefunds([]);
+      setListError(dbErrorMessage(error, "Could not load expenses."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbExpenses();
+    const refresh = () => void reloadDbExpenses();
+    window.addEventListener("nature-biotic-cash-received-updated", refresh);
+    window.addEventListener("nature-biotic-expense-updated", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("nature-biotic-cash-received-updated", refresh);
+      window.removeEventListener("nature-biotic-expense-updated", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!usesSupabaseData() || isFRO) return;
+    const openFromNotice = () => {
+      try {
+        const expenseId = sessionStorage.getItem("nature-biotic-open-fro-expense") || "";
+        const refundId = sessionStorage.getItem("nature-biotic-open-fro-refund") || "";
+        if (expenseId) {
+          sessionStorage.removeItem("nature-biotic-open-fro-expense");
+          setFocusExpenseId(expenseId);
+        }
+        if (refundId) {
+          sessionStorage.removeItem("nature-biotic-open-fro-refund");
+          setFocusRefundId(refundId);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    openFromNotice();
+    window.addEventListener("nature-biotic-open-fro-expense", openFromNotice);
+    window.addEventListener("nature-biotic-open-fro-refund", openFromNotice);
+    return () => {
+      window.removeEventListener("nature-biotic-open-fro-expense", openFromNotice);
+      window.removeEventListener("nature-biotic-open-fro-refund", openFromNotice);
+    };
+  }, [storeId, isFRO]);
 
   useEffect(() => {
     if (isFRO) setEnteredBy(user?.name ?? "");
@@ -172,7 +300,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
         String(e.expenseNo || "")
           .toLowerCase()
           .includes(q) ||
-        e.description.toLowerCase().includes(q) ||
+        String(e.description || "").toLowerCase().includes(q) ||
         String(e.enteredBy || "")
           .toLowerCase()
           .includes(q);
@@ -182,15 +310,71 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
     });
   }, [datedExpenses, search, categoryFilter]);
 
-  const isFROEntry = (expense: Expense) =>
+  const isFROEntry = (expense: StoreExpenseRow) =>
+    expense.scope === "fro" ||
     froNames.has(String(expense.enteredBy || "").trim().toLowerCase());
+  const isAcceptedExpense = (expense: StoreExpenseRow) =>
+    String(expense.status || "accepted").toLowerCase() === "accepted";
+  // Summary cards count accepted expenses only (pending/rejected stay out of totals).
   const froExpenses = datedExpenses
-    .filter(isFROEntry)
+    .filter((expense) => isFROEntry(expense) && isAcceptedExpense(expense))
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const storeExpenses = datedExpenses
-    .filter((expense) => !isFROEntry(expense))
+    .filter((expense) => !isFROEntry(expense) && isAcceptedExpense(expense))
     .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const totalExpenses = froExpenses + storeExpenses;
+
+  const pendingFroExpenses = useMemo(
+    () =>
+      expenses.filter(
+        (e) =>
+          e.scope === "fro" &&
+          String(e.status || "").toLowerCase() === "pending",
+      ),
+    [expenses],
+  );
+  const pendingFroRefunds = useMemo(
+    () => froRefunds.filter((r) => r.status === "pending"),
+    [froRefunds],
+  );
+  const focusedPendingExpense =
+    pendingFroExpenses.find((e) => e.id === focusExpenseId) ||
+    pendingFroExpenses[0] ||
+    null;
+  const focusedPendingRefund =
+    pendingFroRefunds.find((r) => r.id === focusRefundId) ||
+    pendingFroRefunds[0] ||
+    null;
+
+  const decideExpense = async (expenseId: string, decision: "accepted" | "rejected") => {
+    if (!expenseId || decidingId) return;
+    setDecidingId(expenseId);
+    try {
+      await decideFroExpenseDb(expenseId, decision);
+      setFocusExpenseId("");
+      await reloadDbExpenses();
+      window.dispatchEvent(new Event("nature-biotic-expense-updated"));
+    } catch (error) {
+      window.alert(dbErrorMessage(error, `Could not ${decision} FRO expense.`));
+    } finally {
+      setDecidingId(null);
+    }
+  };
+
+  const decideRefund = async (refundId: string, decision: "accepted" | "rejected") => {
+    if (!refundId || decidingId) return;
+    setDecidingId(refundId);
+    try {
+      await decideFroCashRefundDb(refundId, decision);
+      setFocusRefundId("");
+      await reloadDbExpenses();
+      window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+    } catch (error) {
+      window.alert(dbErrorMessage(error, `Could not ${decision} cash refund.`));
+    } finally {
+      setDecidingId(null);
+    }
+  };
 
   const pendingRequests = isFRO
     ? []
@@ -203,7 +387,6 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
   const canCreate =
     !!date &&
     !!category &&
-    !!description.trim() &&
     Number(amount) > 0 &&
     !!method &&
     !!enteredBy.trim();
@@ -217,8 +400,33 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
     setEnteredBy(isFRO ? (user?.name ?? "") : "");
   };
 
-  const handleCreateExpense = () => {
+  const handleCreateExpense = async () => {
     if (!canCreate) return;
+
+    if (usesSupabaseData()) {
+      try {
+        const catList = await loadExpenseCategories("store");
+        const matchedCat = catList.find((c) => c.name.toLowerCase() === category.toLowerCase()) || catList[0];
+        const methodKey = (method.toLowerCase().replace(/\s+/g, "_")) as "cash" | "upi" | "bank_transfer" | "cheque";
+        await createExpenseDb({
+          p_scope: "store",
+          p_store_id: storeId,
+          p_category_id: matchedCat?.id || "",
+          p_amount: Number(amount),
+          p_method: methodKey,
+          p_expense_date: date,
+          p_description: description.trim() || null,
+          p_entered_by_name: isFRO ? (user?.name?.trim() ?? "") : enteredBy.trim(),
+        });
+        resetCreateForm();
+        setShowCreate(false);
+        await reloadDbExpenses();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to create store expense"));
+        return;
+      }
+    }
 
     const nextExpense: Expense = {
       id: `exp-${Date.now()}`,
@@ -229,7 +437,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
       amount: Number(amount),
       method: method as Expense["method"],
       enteredBy: isFRO ? (user?.name?.trim() ?? "") : enteredBy.trim(),
-    };
+    } as Expense;
 
     const next = [nextExpense, ...expenses];
     setExpenses(next);
@@ -251,16 +459,51 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
   const canCreateCash =
     !!cashDate && !!cashFRO.trim() && Number(cashAmount) > 0 && !!cashMethod;
 
-  const handleCreateCashForFRO = () => {
+  const handleCreateCashForFRO = async () => {
     if (!canCreateCash) return;
 
+    if (usesSupabaseData()) {
+      const fro = froStaffOptions.find(
+        (member) =>
+          member.id === cashFRO ||
+          member.name.toLowerCase() === cashFRO.trim().toLowerCase(),
+      );
+      if (!fro?.id) {
+        window.alert("Select a valid FRO for this cash request.");
+        return;
+      }
+      try {
+        const methodKey = cashMethod
+          .toLowerCase()
+          .replace(/\s+/g, "_") as "cash" | "upi" | "bank_transfer" | "cheque";
+        await createCashAdvanceDb({
+          froStaffId: fro.id,
+          amount: Number(cashAmount),
+          method: methodKey,
+          advanceDate: cashDate,
+          remarks: cashRemarks.trim() || null,
+        });
+        resetCashForm();
+        setShowCashCreate(false);
+        window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+        await reloadDbExpenses();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to create cash request for FRO"));
+        return;
+      }
+    }
+
+    const froName =
+      froStaffOptions.find((member) => member.id === cashFRO)?.name ||
+      cashFRO.trim();
     const item: CashReceivedRequest = {
       id: `cash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       date: cashDate,
       amount: Number(cashAmount),
       method: cashMethod,
       receivedFrom: "Store",
-      requestedFor: cashFRO.trim(),
+      requestedFor: froName,
       remarks: cashRemarks.trim(),
       status: "pending",
     };
@@ -288,6 +531,11 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Expenses
           </h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-500">
             Track all store-level expenses and FRO cash requests.
           </p>
@@ -384,6 +632,115 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
         </Card>
       )}
 
+      {!isFRO && pendingFroExpenses.length > 0 && (
+        <Card className="mb-5 overflow-hidden border-orange-200">
+          <div className="flex items-center justify-between border-b border-orange-100 bg-orange-50 px-4 py-3">
+            <div>
+              <h2 className="font-bold text-orange-900">Pending FRO Expenses</h2>
+              <p className="mt-0.5 text-xs text-orange-700">
+                Review and accept or reject expenses submitted by FRO staff.
+              </p>
+            </div>
+            <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-bold text-orange-800">
+              {pendingFroExpenses.length} Pending
+            </span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {pendingFroExpenses.map((item) => (
+              <div
+                key={item.id}
+                className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${
+                  focusedPendingExpense?.id === item.id ? "bg-orange-50/60" : ""
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800">
+                    {item.expenseNo} · {formatCurrency(item.amount)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {item.enteredBy || "FRO"} · {item.category} · {item.method} ·{" "}
+                    {formatExpenseDate(item.date)}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-slate-500">
+                    {item.description?.trim() || "—"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={!!decidingId}
+                    onClick={() => void decideExpense(item.id, "rejected")}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    disabled={!!decidingId}
+                    onClick={() => void decideExpense(item.id, "accepted")}
+                  >
+                    {decidingId === item.id ? "Saving…" : "Accept"}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {!isFRO && pendingFroRefunds.length > 0 && (
+        <Card className="mb-5 overflow-hidden border-sky-200">
+          <div className="flex items-center justify-between border-b border-sky-100 bg-sky-50 px-4 py-3">
+            <div>
+              <h2 className="font-bold text-sky-900">Pending FRO Cash Refunds</h2>
+              <p className="mt-0.5 text-xs text-sky-700">
+                My Account refunds reduce FRO Cash in Hand only after Accept.
+                Store Account refunds never change FRO Cash in Hand.
+              </p>
+            </div>
+            <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800">
+              {pendingFroRefunds.length} Pending
+            </span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {pendingFroRefunds.map((item) => (
+              <div
+                key={item.id}
+                className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${
+                  focusedPendingRefund?.id === item.id ? "bg-sky-50/60" : ""
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800">
+                    {item.refundNo || item.id.slice(0, 8)} · {formatCurrency(item.amount)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {item.froName || "FRO"} · {froRefundFromLabel(item.refundFrom)} ·{" "}
+                    {item.method} · {formatExpenseDate(item.date)}
+                  </p>
+                  <p className="mt-1 truncate text-xs text-slate-500">
+                    {item.remarks?.trim() || "—"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={!!decidingId}
+                    onClick={() => void decideRefund(item.id, "rejected")}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    disabled={!!decidingId}
+                    onClick={() => void decideRefund(item.id, "accepted")}
+                  >
+                    {decidingId === item.id ? "Saving…" : "Accept"}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat
           title="Total Expenses"
@@ -456,6 +813,7 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
                     "Amount",
                     "Payment Method",
                     "Entered By",
+                    "Status",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -467,7 +825,15 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((e, i) => (
+                {filtered.map((e, i) => {
+                  const statusLabel = String(e.status || "accepted");
+                  const statusCls =
+                    statusLabel === "pending"
+                      ? "bg-amber-50 text-amber-700"
+                      : statusLabel === "rejected"
+                        ? "bg-red-50 text-red-700"
+                        : "bg-emerald-50 text-emerald-700";
+                  return (
                   <tr
                     key={e.id}
                     onClick={() => setViewing(e)}
@@ -483,21 +849,32 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
                   >
                     <td className="border-r px-3 py-3 font-semibold">
                       {e.expenseNo}
+                      {e.scope === "fro" ? (
+                        <span className="ml-1 text-[10px] font-semibold uppercase text-slate-400">
+                          FRO
+                        </span>
+                      ) : null}
                     </td>
                     <td className="border-r px-3 py-3 text-slate-500">
                       {formatExpenseDate(e.date)}
                     </td>
                     <td className="border-r px-3 py-3">{e.category}</td>
                     <td className="border-r px-3 py-3 text-slate-600">
-                      {e.description}
+                      {e.description?.trim() || "—"}
                     </td>
                     <td className="border-r px-3 py-3 text-right font-semibold">
                       {formatCurrency(e.amount)}
                     </td>
                     <td className="border-r px-3 py-3">{e.method}</td>
                     <td className="border-r px-3 py-3">{e.enteredBy || "-"}</td>
+                    <td className="border-r px-3 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold capitalize ${statusCls}`}>
+                        {statusLabel}
+                      </span>
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -537,17 +914,27 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
                     value={cashDate}
                     onChange={setCashDate}
                   />
-                  <SelectField
-                    label="Executive / FRO"
-                    value={cashFRO}
-                    onChange={setCashFRO}
-                    options={froOptions}
-                    placeholder={
-                      froOptions.length
-                        ? "Select executive / FRO"
-                        : "No FRO assigned to this store"
-                    }
-                  />
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Executive / FRO *
+                    </label>
+                    <select
+                      value={cashFRO}
+                      onChange={(e) => setCashFRO(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 focus:border-brand-500 focus:outline-none"
+                    >
+                      <option value="">
+                        {froStaffOptions.length
+                          ? "Select executive / FRO"
+                          : "No FRO assigned to this store"}
+                      </option>
+                      {froStaffOptions.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <InputField
                     label="Amount"
                     type="number"
@@ -660,14 +1047,14 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
                   />
                   <div className="sm:col-span-2">
                     <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      Description *
+                      Description
                     </label>
                     <textarea
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       rows={3}
                       className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 focus:border-brand-500 focus:outline-none"
-                      placeholder="Enter expense description"
+                      placeholder="Optional"
                     />
                   </div>
                 </div>
@@ -720,8 +1107,19 @@ export default function StoreExpenses({ storeId }: { storeId: string }) {
                 <Detail label="Amount" value={formatCurrency(viewing.amount)} />
                 <Detail label="Payment Method" value={viewing.method} />
                 <Detail label="Entered By" value={viewing.enteredBy || "-"} />
+                <Detail
+                  label="Type"
+                  value={viewing.scope === "fro" ? "FRO Expense" : "Store Expense"}
+                />
+                <Detail
+                  label="Status"
+                  value={String(viewing.status || "accepted")}
+                />
                 <div className="col-span-2">
-                  <Detail label="Description" value={viewing.description} />
+                  <Detail
+                    label="Description"
+                    value={viewing.description?.trim() || "—"}
+                  />
                 </div>
               </div>
               <div className="flex justify-end border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">

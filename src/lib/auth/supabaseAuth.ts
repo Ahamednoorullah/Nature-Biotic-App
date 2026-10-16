@@ -62,8 +62,10 @@ function toUser(profile: ProfileRow): AuthUser {
     role,
     roleLabel: roleLabel(role),
     storeId:
-      role === "store_admin" && profile.store_id ? profile.store_id : undefined,
-    staffId: undefined,
+      (role === "store_admin" || role === "fro") && profile.store_id
+        ? profile.store_id
+        : undefined,
+    staffId: profile.staff_id || undefined,
     externalAuthId: profile.id,
   };
 }
@@ -76,9 +78,10 @@ function accountFromProfile(profile: ProfileRow): AuthAccount {
     name: profile.full_name,
     role,
     roleLabel: roleLabel(role),
-    subjectType: role === "store_admin" ? "store" : "company",
+    subjectType: role === "store_admin" ? "store" : role === "fro" ? "staff" : "company",
     subjectId: profile.store_id || profile.id,
     storeId: profile.store_id || undefined,
+    staffId: profile.staff_id || undefined,
     passwordSet: true,
     status: profile.status === "disabled" ? "disabled" : "active",
     externalAuthId: profile.id,
@@ -119,7 +122,6 @@ async function resolveUser(userId: string): Promise<SignInResult> {
   if (!profile) return rejectSession(ACCOUNT_NOT_LINKED);
   if (profile.status !== "active") return rejectSession(ACCOUNT_DISABLED);
   if (!isUserRole(profile.role)) return rejectSession(ACCOUNT_NOT_LINKED);
-  if (profile.role === "fro") return rejectSession(FRO_NOT_ENABLED);
   if (profile.role === "company_admin") {
     cachedUser = toUser(profile);
     return { user: cachedUser, error: null };
@@ -440,8 +442,88 @@ export const supabaseAuth: AuthAdapter = {
   },
   async createAccount(input: CreateAccountInput) {
     await ensureReady();
+    const storeId = input.storeId || input.subjectId;
+    const email = input.email.trim().toLowerCase();
+    const name = input.name.trim();
     if (input.role === "fro" || input.subjectType === "staff") {
-      return { account: null, error: "Staff logins are not enabled yet." };
+      if (input.role !== "fro") {
+        return {
+          account: null,
+          error: "Only a Field Representative receives a staff login.",
+        };
+      }
+      const staffId = input.staffId || "";
+      if (!staffId) {
+        return { account: null, error: "Save the staff member before creating a login." };
+      }
+      if (!isValidEmail(email)) {
+        return { account: null, error: "Enter a valid email address." };
+      }
+      if (!name) {
+        return { account: null, error: "Enter the staff member's name." };
+      }
+      if (!isSupabaseConfigured()) {
+        return { account: null, error: "Supabase is not configured." };
+      }
+      const { data, error } = await getSupabase().functions.invoke(
+        "provision-store-admin",
+        {
+          body: {
+            email,
+            full_name: name,
+            staff_id: staffId,
+            store_id: storeId || undefined,
+            redirect_to: `${window.location.origin}/login`,
+            resend: input.resend === true,
+          },
+        },
+      );
+      if (error) {
+        const details = await readInvokeDetails(error);
+        return {
+          account: null,
+          error: details.error,
+          canResend: details.canResend,
+        };
+      }
+      const created = data as {
+        id?: string;
+        email?: string;
+        full_name?: string;
+        store_id?: string;
+        staff_id?: string;
+        error?: string;
+        existing_account_linked?: boolean;
+        password_setup_resent?: boolean;
+      } | null;
+      if (!created?.id || created.error) {
+        return {
+          account: null,
+          error: created?.error || "The FRO login could not be created.",
+        };
+      }
+      const passwordSetupResent = created.password_setup_resent === true;
+      const linkedExisting =
+        !passwordSetupResent && created.existing_account_linked === true;
+      return {
+        account: {
+          id: created.id,
+          email: created.email || email,
+          name: created.full_name || name,
+          role: "fro",
+          roleLabel: roleLabel("fro"),
+          subjectType: "staff",
+          subjectId: created.staff_id || staffId,
+          storeId: created.store_id || storeId,
+          staffId: created.staff_id || staffId,
+          passwordSet: linkedExisting,
+          status: "active",
+          externalAuthId: created.id,
+        },
+        error: null,
+        linkedExisting,
+        passwordSetupResent,
+      };
     }
     if (input.role !== "store_admin" || input.subjectType !== "store") {
       return {
@@ -449,9 +531,6 @@ export const supabaseAuth: AuthAdapter = {
         error: "Only a store administrator login can be created from this screen.",
       };
     }
-    const storeId = input.storeId || input.subjectId;
-    const email = input.email.trim().toLowerCase();
-    const name = input.name.trim();
     if (!isValidEmail(email)) {
       return { account: null, error: "Enter a valid email address." };
     }

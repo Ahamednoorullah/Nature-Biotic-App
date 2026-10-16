@@ -1,11 +1,14 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useNav } from "@/context/NavContext";
 import { Card, Button, Icon, Input, Select } from "@/components/ui";
 import {
   formatCurrency,
   formatDate,
+  formatRoundOff,
   matchesSimpleDate,
+  money,
+  numberToWords,
   simpleDateFilterOptions,
   type SimpleDateFilter,
 } from "@/lib/format";
@@ -35,6 +38,11 @@ import {
   detailedShareMessage,
   farmerContactText,
 } from "@/lib/whatsappShare";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadSalesReturns, createSalesReturnDb, loadSalesInvoices, approveSalesReturnDb, rejectSalesReturnDb } from "@/lib/db/sales";
+import { refreshPurchasingData } from "@/lib/db/purchasing";
+import { peekDocumentNo, type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 
 type SaleType = "Direct" | "Executive";
@@ -43,6 +51,7 @@ type ReturnItem = {
   rowTotal: number;
   taxAmount: number;
   key: string;
+  sourceItemId?: string;
   productId: string;
   product?: Product;
   packSize: string;
@@ -82,7 +91,9 @@ type SalesReturnRow = {
   sgst: number;
   cgst: number;
   igst: number;
+  roundOff?: number;
   total: number;
+  status?: string;
   items: ReturnItem[];
 };
 
@@ -90,6 +101,7 @@ const STORAGE_KEY = "nature-biotic-store-sales-returns-v2";
 
 type StoredSaleProduct = {
   key: string;
+  sourceItemId?: string;
   productId: string;
   product?: Product;
   pkgsize?: string;
@@ -171,6 +183,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   const storageKey = `${STORAGE_KEY}:${storeId}`;
 
   const [rows, setRows] = useState<SalesReturnRow[]>(() => {
+    if (usesSupabaseData()) return [];
     try {
       const saved = localStorage.getItem(storageKey);
       return saved ? JSON.parse(saved) : seedRows;
@@ -178,6 +191,72 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       return seedRows;
     }
   });
+
+  const [dbInvoices, setDbInvoices] = useState<StoredSaleInvoice[]>([]);
+  const [listError, setListError] = useState("");
+  const [invoiceError, setInvoiceError] = useState("");
+  const [decisionError, setDecisionError] = useState("");
+  const decidingReturn = useRef(false);
+
+  const reloadDbReturns = async () => {
+    try {
+      const dbRows = await loadSalesReturns(storeId);
+      setRows(dbRows as SalesReturnRow[]);
+      setListError("");
+    } catch (error) {
+      setRows([]);
+      setListError(dbErrorMessage(error, "Could not load sales returns."));
+    }
+  };
+
+  const reloadDbInvoices = async () => {
+    try {
+      const invoices = await loadSalesInvoices(storeId);
+      setDbInvoices(invoices as unknown as StoredSaleInvoice[]);
+      setInvoiceError("");
+    } catch (error) {
+      setDbInvoices([]);
+      setInvoiceError(dbErrorMessage(error, "Could not load sales invoices."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbReturns();
+    void reloadDbInvoices();
+  }, [storeId]);
+
+  function documentRoundOff(row: SalesReturnRow) {
+    if (typeof row.roundOff === "number") return row.roundOff;
+    const lineSum =
+      Number(row.withoutTax || 0) +
+      Number(row.sgst || 0) +
+      Number(row.cgst || 0) +
+      Number(row.igst || 0);
+    return money(Number(row.total || 0) - lineSum);
+  }
+
+  async function decideReturn(action: "approve" | "reject") {
+    if (!selectedReturn || decidingReturn.current || !usesSupabaseData()) return;
+    if (String(selectedReturn.status || "").toLowerCase() !== "pending") return;
+    const reason = action === "reject" ? window.prompt("Reason for rejecting this sales return") : "";
+    if (action === "reject" && !String(reason || "").trim()) return;
+    decidingReturn.current = true;
+    setDecisionError("");
+    try {
+      if (action === "approve") await approveSalesReturnDb(selectedReturn.id);
+      else await rejectSalesReturnDb(selectedReturn.id, String(reason || "").trim());
+      await reloadDbReturns();
+      await refreshPurchasingData();
+      setSelectedReturn(null);
+      window.dispatchEvent(new Event("nature-biotic-sales-returns-updated"));
+      window.dispatchEvent(new Event("nature-biotic-store-inventory-updated"));
+    } catch (error) {
+      setDecisionError(dbErrorMessage(error, "Could not update this sales return."));
+    } finally {
+      decidingReturn.current = false;
+    }
+  }
 
   const [showCreate, setShowCreate] = useState(false);
   const [dateFilter, setDateFilter] = useState<SimpleDateFilter>("monthly");
@@ -219,6 +298,16 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   }
 
   const saleInvoices = useMemo<StoredSaleInvoice[]>(() => {
+    if (usesSupabaseData()) {
+      return isFRO
+        ? dbInvoices.filter(
+            (invoice) =>
+              invoice.through === "Executive" &&
+              (invoice.executiveName || "").trim().toLowerCase() ===
+                froName.toLowerCase(),
+          )
+        : dbInvoices;
+    }
     try {
       const raw = localStorage.getItem(
         `${SALES_INVOICE_STORAGE_KEY}:${storeId}`,
@@ -235,7 +324,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     } catch {
       return [];
     }
-  }, [storeId, showCreate, isFRO, froName]);
+  }, [storeId, showCreate, isFRO, froName, dbInvoices]);
 
   const invoiceOptions = useMemo(
     () =>
@@ -268,50 +357,43 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
   const [items, setItems] = useState<ReturnItem[]>([]);
   const [purchaseOrderNotes, setPurchaseOrderNotes] = useState("");
 
-  function previouslyReturnedQty(
-    productId: string,
-    batchNo: string,
-    packSize: string,
-  ) {
+  function returnStatusCounts(status: unknown) {
+    const value = String(status || "approved").trim().toLowerCase();
+    return value === "pending" || value === "approved";
+  }
+
+  function previouslyReturnedQty(sourceItemId: string, productId = "", batchNo = "", packSize = "") {
     return rows
       .filter(
         (row) =>
+          returnStatusCounts(row.status) &&
           String(row.invoiceNo || "") === String(selectedInvoice?.invoiceNo || ""),
       )
       .flatMap((row) => row.items || [])
       .filter((item) => {
-        const sameProduct =
-          String(item.productId || "") === String(productId || "");
+        if (sourceItemId && item.sourceItemId) {
+          return item.sourceItemId === sourceItemId;
+        }
+        const sameProduct = String(item.productId || "") === String(productId || "");
         const sameBatch = String(item.batchNo || "") === String(batchNo || "");
-        const samePack =
-          !packSize || String(item.packSize || "") === String(packSize || "");
+        const samePack = !packSize || String(item.packSize || "") === String(packSize || "");
         return sameProduct && sameBatch && samePack;
       })
       .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   }
 
-  function formReturnedQty(productId: string, batchNo: string, packSize: string) {
+  function formReturnedQty(sourceItemId: string) {
     return items
-      .filter(
-        (item) =>
-          String(item.productId || "") === String(productId || "") &&
-          String(item.batchNo || "") === String(batchNo || "") &&
-          (!packSize || String(item.packSize || "") === String(packSize || "")),
-      )
+      .filter((item) => item.sourceItemId === sourceItemId)
       .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   }
 
-  function remainingReturnQty(
-    productId: string,
-    batchNo: string,
-    packSize: string,
-    soldQty: number,
-  ) {
+  function remainingReturnQty(sourceItemId: string, soldQty: number, productId = "", batchNo = "", packSize = "") {
     return Math.max(
       0,
       Number(soldQty || 0) -
-        previouslyReturnedQty(productId, batchNo, packSize) -
-        formReturnedQty(productId, batchNo, packSize),
+        previouslyReturnedQty(sourceItemId, productId, batchNo, packSize) -
+        formReturnedQty(sourceItemId),
     );
   }
 
@@ -385,10 +467,11 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
     const packSize = item.pkgsize || item.packSize || item.product?.size || "";
     const max = remainingReturnQty(
+      String(item.sourceItemId || item.key || ""),
+      Number(item.quantity || 0),
       item.productId,
       item.batchNo || "",
       packSize,
-      Number(item.quantity || 0),
     );
     setEntry((prev) => ({
       ...prev,
@@ -441,12 +524,13 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     setEntry({ ...emptyItem(), productName: name, packSize: size });
   }
 
-  function selectReturnBatch(batch: string) {
+  function selectReturnBatch(sourceKey: string) {
     const line = (selectedInvoice?.products || []).find(
-      (item) =>
+      (item) => item.key === sourceKey || (
         returnLineName(item) === entry.productName &&
         returnLineSize(item) === entry.packSize &&
-        String(item.batchNo || "") === batch,
+        String(item.batchNo || "") === sourceKey
+      ),
     );
     if (line) selectInvoiceProduct(line.key);
   }
@@ -469,11 +553,17 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     }
 
 
+    const sourceItemId = String(original.sourceItemId || "");
+    if (usesSupabaseData() && !sourceItemId) {
+      window.alert("This invoice line is missing its saved item reference.");
+      return;
+    }
     const remainingQty = remainingReturnQty(
+      sourceItemId || original.key,
+      Number(original.quantity || 0),
       original.productId,
       original.batchNo || "",
       entry.packSize,
-      Number(original.quantity || 0),
     );
     if (entry.quantity > remainingQty) {
       window.alert(
@@ -510,6 +600,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
       ...prev,
       {
         key: `${Date.now()}-${prev.length}`,
+        sourceItemId: sourceItemId || original.key,
         productId: original.productId,
         product,
         packSize: original.pkgsize || original.packSize || product.size || "",
@@ -537,7 +628,15 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
   function resetForm() {
     setDate(new Date().toISOString().split("T")[0]);
-    setReturnNo(nextReturnNo());
+    if (usesSupabaseData()) {
+      peekDocumentNo("sales_return", storeId).then((nextNo) => {
+        if (nextNo) setReturnNo(nextNo);
+      }).catch(() => {
+        setReturnNo(nextReturnNo());
+      });
+    } else {
+      setReturnNo(nextReturnNo());
+    }
     setInvoiceNo("");
     setThrough(isFRO ? "Executive" : "Direct");
     setPartyName("");
@@ -565,31 +664,67 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
     items.length > 0 &&
     (isFRO || through === "Direct" || executiveName.trim());
 
-  function saveReturn() {
+  async function saveReturn() {
     if (!canSave || !selectedInvoice) return;
 
     for (const item of items) {
       const original = selectedInvoice.products.find(
-        (product) => product.key === item.key || (
-          product.productId === item.productId &&
-          product.batchNo === item.batchNo
-        ),
+        (product) =>
+          (item.sourceItemId && product.sourceItemId === item.sourceItemId) ||
+          product.key === item.sourceItemId,
       );
       const sold = Number(original?.quantity || 0);
       const already = previouslyReturnedQty(
+        String(item.sourceItemId || ""),
         item.productId,
         item.batchNo,
         item.packSize,
       );
-      const requested = formReturnedQty(
-        item.productId,
-        item.batchNo,
-        item.packSize,
-      );
+      const requested = formReturnedQty(String(item.sourceItemId || ""));
       if (Number(item.quantity || 0) < 1 || already + requested > sold) {
         window.alert(
           `Only ${Math.max(0, sold - already)} quantity can be returned for this invoice line.`,
         );
+        return;
+      }
+    }
+
+    if (usesSupabaseData()) {
+      if (items.some((item) => !item.sourceItemId)) {
+        window.alert("Each return line must reference a line of the selected invoice.");
+        return;
+      }
+      const dbLines: RpcLine[] = items.map((item) => ({
+        source_item_id: item.sourceItemId,
+        product_id: item.productId,
+        product_name: item.product?.name || "Product",
+        pack_size: item.packSize,
+        batch_no: item.batchNo,
+        expiry_date: item.expiryDate || null,
+        quantity: item.quantity,
+        unit_price: item.price,
+        discount_amount: item.discountAmount,
+        tax_rate: item.taxPercent,
+        reason: item.reason,
+      }));
+
+      try {
+        await createSalesReturnDb(
+          {
+            sales_invoice_id: selectedInvoice?.id || null,
+            customer_name: partyName.trim(),
+            customer_phone: farmerPhone.trim() || null,
+            return_date: date,
+            reason: items.map((i) => i.reason).filter(Boolean).join("; ") || "Sales return",
+            place_of_return: placeOfSupply || "Tamil Nadu",
+          },
+          dbLines,
+        );
+        await reloadDbReturns();
+        closeForm();
+        return;
+      } catch (err: any) {
+        window.alert(dbErrorMessage(err, "Failed to create sales return."));
         return;
       }
     }
@@ -705,6 +840,11 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
 
   return (
     <div>
+      {listError || invoiceError ? (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          {listError || invoiceError}
+        </p>
+      ) : null}
       {isFRO ? (
         !showCreate && !selectedReturn ? (
           <div className="mb-4 flex items-center justify-between">
@@ -1212,21 +1352,20 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                       ).length > 1 ? (
                         <Select
                           label="Batch ID"
-                          value={entry.batchNo}
+                          value={entry.sourceKey}
                           onChange={selectReturnBatch}
                           placeholder="Select batch"
-                          options={Array.from(
-                            new Set(
-                              (selectedInvoice?.products || [])
-                                .filter(
-                                  (item) =>
-                                    returnLineName(item) === entry.productName &&
-                                    returnLineSize(item) === entry.packSize,
-                                )
-                                .map((item) => String(item.batchNo || ""))
-                                .filter(Boolean),
-                            ),
-                          ).map((batch) => ({ value: batch, label: batch }))}
+                          options={(selectedInvoice?.products || [])
+                            .filter(
+                              (item) =>
+                                returnLineName(item) === entry.productName &&
+                                returnLineSize(item) === entry.packSize &&
+                                String(item.batchNo || "").trim(),
+                            )
+                            .map((item) => ({
+                              value: item.key,
+                              label: `${item.batchNo} · Qty ${item.quantity}`,
+                            }))}
                         />
                       ) : (
                         <Input
@@ -1254,10 +1393,11 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                             quantity: clampReturnQty(
                               v,
                               remainingReturnQty(
+                                String(selectedInvoiceItem?.sourceItemId || current.sourceKey || ""),
+                                Number(selectedInvoiceItem?.quantity || 0),
                                 current.productId,
                                 current.batchNo,
                                 current.packSize,
-                                Number(selectedInvoiceItem?.quantity || 0),
                               ),
                             ),
                           }))
@@ -1647,6 +1787,7 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                       <div className="mt-2 space-y-1">
                         <Summary label="Without Tax" value={selectedReturn.withoutTax} />
                         <Summary label="Tax" value={selectedReturn.sgst + selectedReturn.cgst + selectedReturn.igst} />
+                        <Summary label="Round Off" value={documentRoundOff(selectedReturn)} />
                         <div className="mt-2 border-t border-slate-200 pt-2"><Summary label="Grand Total" value={selectedReturn.total} bold /></div>
                       </div>
                     </section>
@@ -1724,6 +1865,8 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
                     Against Invoice: {selectedReturn.invoiceNo}
+                    {" · "}
+                    {String(selectedReturn.status || "pending")}
                   </p>
                 </div>
                 <button
@@ -2234,126 +2377,25 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                   {/* ROW 1: Amount in Words (left) + Round Off / Grand Total (right) */}
                   <div className="grid grid-cols-1 border-t border-slate-300 md:grid-cols-[1fr_300px]">
                     <div className="border-r border-slate-300 p-2.5 flex items-center">
-                      {(() => {
-                        const grandTotal = selectedReturn.items.length
-                          ? selectedReturn.items.reduce(
-                              (sum, row) => sum + Number(row.rowTotal || 0),
-                              0,
-                            )
-                          : Number(selectedReturn.total || 0);
-                        const roundedTotal = Math.round(grandTotal);
-
-                        function numberToWords(
-                          roundedTotal: number,
-                        ): import("react").ReactNode {
-                          const ones = [
-                            "zero",
-                            "one",
-                            "two",
-                            "three",
-                            "four",
-                            "five",
-                            "six",
-                            "seven",
-                            "eight",
-                            "nine",
-                            "ten",
-                            "eleven",
-                            "twelve",
-                            "thirteen",
-                            "fourteen",
-                            "fifteen",
-                            "sixteen",
-                            "seventeen",
-                            "eighteen",
-                            "nineteen",
-                          ];
-                          const tens = [
-                            "",
-                            "",
-                            "twenty",
-                            "thirty",
-                            "forty",
-                            "fifty",
-                            "sixty",
-                            "seventy",
-                            "eighty",
-                            "ninety",
-                          ];
-
-                          const convert = (value: number): string => {
-                            if (value < 20) return ones[value];
-                            if (value < 100) {
-                              return `${tens[Math.floor(value / 10)]}${value % 10 ? `-${ones[value % 10]}` : ""}`;
-                            }
-                            if (value < 1000) {
-                              return `${ones[Math.floor(value / 100)]} hundred${value % 100 ? ` ${convert(value % 100)}` : ""}`;
-                            }
-                            if (value < 1000000) {
-                              return `${convert(Math.floor(value / 1000))} thousand${value % 1000 ? ` ${convert(value % 1000)}` : ""}`;
-                            }
-                            if (value < 1000000000) {
-                              return `${convert(Math.floor(value / 1000000))} million${value % 1000000 ? ` ${convert(value % 1000000)}` : ""}`;
-                            }
-                            return `${convert(Math.floor(value / 1000000000))} billion${value % 1000000000 ? ` ${convert(value % 1000000000)}` : ""}`;
-                          };
-
-                          if (roundedTotal < 0)
-                            return `minus ${convert(Math.abs(roundedTotal))}`;
-                          return convert(roundedTotal);
-                        }
-
-                        return (
-                          <p className="text-[10px] font-semibold text-slate-700">
-                            Amount in Words :{" "}
-                            <span className="font-bold text-slate-900">
-                              {numberToWords(roundedTotal)}
-                            </span>
-                          </p>
-                        );
-                      })()}
+                      <p className="text-[10px] font-semibold text-slate-700">
+                        Amount in Words :{" "}
+                        <span className="font-bold text-slate-900">
+                          {numberToWords(Number(selectedReturn.total || 0))}
+                        </span>
+                      </p>
                     </div>
 
                     <div className="space-y-1 p-2.5 text-[11px]">
                       <Summary
                         label="Round Off"
-                        value={(() => {
-                          const total = selectedReturn.items.length
-                            ? selectedReturn.items.reduce(
-                                (sum, row) => sum + Number(row.rowTotal || 0),
-                                0,
-                              )
-                            : Number(selectedReturn.total || 0);
-                          const taxableTotal = selectedReturn.items.length
-                            ? selectedReturn.items.reduce(
-                                (sum, row) =>
-                                  sum +
-                                  Number(row.withoutTax || 0) +
-                                  Number(row.sgst || 0) +
-                                  Number(row.cgst || 0) +
-                                  Number(row.igst || 0),
-                                0,
-                              )
-                            : Number(selectedReturn.withoutTax || 0) +
-                              Number(selectedReturn.sgst || 0) +
-                              Number(selectedReturn.cgst || 0) +
-                              Number(selectedReturn.igst || 0);
-                          return total - taxableTotal;
-                        })()}
+                        value={documentRoundOff(selectedReturn)}
                         muted
                       />
 
                       <div className="border-t border-slate-300 pt-1.5">
                         <Summary
                           label="Grand Total"
-                          value={
-                            selectedReturn.items.length
-                              ? selectedReturn.items.reduce(
-                                  (sum, row) => sum + Number(row.rowTotal || 0),
-                                  0,
-                                )
-                              : Number(selectedReturn.total || 0)
-                          }
+                          value={Number(selectedReturn.total || 0)}
                           bold
                         />
                       </div>
@@ -2408,7 +2450,20 @@ export default function StoreSalesReturn({ storeId }: { storeId: string }) {
                 </div>
               </div>
 
-              <div className="sales-return-screen-only flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+              <div className="sales-return-screen-only flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+                {decisionError && (
+                  <p className="mr-auto text-sm font-medium text-red-600">{decisionError}</p>
+                )}
+                {usesSupabaseData() && !isFRO && String(selectedReturn.status || "").toLowerCase() === "pending" && (
+                  <>
+                    <Button variant="secondary" onClick={() => void decideReturn("reject")}>
+                      Reject
+                    </Button>
+                    <Button onClick={() => void decideReturn("approve")}>
+                      Approve return
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="secondary"
                   onClick={() => setSelectedReturn(null)}
@@ -2486,7 +2541,7 @@ function Summary({
               : "font-semibold text-slate-700"
         }
       >
-        {formatCurrency(value)}
+        {label === "Round Off" ? formatRoundOff(value) : formatCurrency(value)}
       </span>
     </div>
   );

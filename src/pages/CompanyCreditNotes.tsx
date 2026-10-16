@@ -8,7 +8,7 @@ import {
   EmptyState,
   Icon,
 } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatRoundOff, roundOffToRupee } from "@/lib/format";
 import {
   stores,
   adsdompanyCreditNoteSyncRecords,
@@ -19,6 +19,11 @@ import {
   type CompanyStoreSaleRecord,
 } from "@/lib/data";
 import { createPortal } from "react-dom";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadCompanyCreditNotes, saveCompanyCreditNoteDb, issueCompanyCreditNoteDb } from "@/lib/db/financials";
+import CompanyManualCreditNoteForm from "@/pages/CompanyManualCreditNoteForm";
+import { peekDocumentNo, type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type CreditNoteStatus = "Draft" | "Approved" | "Pending" | "Rejected";
 
@@ -31,9 +36,11 @@ type CreditNote = {
   sgst: number;
   cgst: number;
   igst: number;
+  roundOff?: number;
   total: number;
   storeLocation: string;
   placeofreturn: string;
+  lines?: CreditNote[];
   storeId?: string;
   product?: string;
   quantity?: number;
@@ -154,6 +161,7 @@ function CreditInfo({ label, value }: { label: string; value: string }) {
 
 export default function CompanyCreditNotes() {
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>(() => {
+    if (usesSupabaseData()) return [];
     const synced = getCompanyCreditNoteSyncRecords();
 
     const createdNotes: CreditNote[] = synced.map((row) => {
@@ -191,6 +199,67 @@ export default function CompanyCreditNotes() {
 
     return createdNotes;
   });
+  const [listError, setListError] = useState("");
+
+  const reloadDbCompanyCreditNotes = async () => {
+    try {
+      const dbRows = await loadCompanyCreditNotes();
+      const flat: CreditNote[] = dbRows.map((row) => ({
+        id: row.id,
+        creditNoteNo: row.creditNoteNo,
+        party: row.storeName,
+        Date: row.date,
+        amount: row.amount,
+        sgst: row.sgst,
+        cgst: row.cgst,
+        igst: row.igst,
+        roundOff: row.roundOff,
+        total: row.total,
+        storeLocation: row.storeLocation,
+        placeofreturn: "",
+        storeId: row.storeId,
+        status: row.status as CreditNoteStatus,
+        taxableAmount: row.amount,
+        reason: row.reason,
+        lines: (row.items || []).map((item, idx) => ({
+          id: `${row.id}:${idx}`,
+          creditNoteNo: row.creditNoteNo,
+          party: row.storeName,
+          Date: row.date,
+          amount: item.taxableAmount,
+          sgst: item.sgst,
+          cgst: item.cgst,
+          igst: item.igst,
+          total: item.total,
+          storeLocation: row.storeLocation,
+          placeofreturn: "",
+          storeId: row.storeId,
+          product: item.productName,
+          quantity: item.quantity,
+          reason: item.reason,
+          status: row.status as CreditNoteStatus,
+          pkgsize: item.packSize,
+          batchNo: item.batchNo,
+          expiryDate: item.expiryDate,
+          sellingPrice: item.unitPrice,
+          discountPercent: item.discountPercent,
+          discountAmount: item.discountAmount,
+          taxableAmount: item.taxableAmount,
+          taxPercent: item.taxPercent,
+        })),
+      }));
+      setCreditNotes(flat);
+      setListError("");
+    } catch (error) {
+      setCreditNotes([]);
+      setListError(dbErrorMessage(error, "Could not load company credit notes."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbCompanyCreditNotes();
+  }, []);
   const savingRef = useRef(false);
 
   const [search, setSearch] = useState("");
@@ -656,12 +725,15 @@ export default function CompanyCreditNotes() {
   }
 
   function openCreditNote(row: CreditNote) {
-    const relatedRows = creditNotes.filter(
-      (item) =>
-        item.creditNoteNo === row.creditNoteNo &&
-        (item.storeId || item.party) === (row.storeId || row.party) &&
-        item.Date === row.Date,
-    );
+    const relatedRows = row.lines?.length
+      ? row.lines
+      : creditNotes.filter(
+          (item) =>
+            item.creditNoteNo === row.creditNoteNo &&
+            (item.storeId || item.party) === (row.storeId || row.party) &&
+            item.Date === row.Date &&
+            item.product,
+        );
     if (row.status === "Draft") {
       const lines = (relatedRows.length > 0 ? relatedRows : [row]).filter(
         (item) => item.product,
@@ -738,7 +810,7 @@ export default function CompanyCreditNotes() {
     setAdded([]);
   }
 
-  function handleSaveDraft() {
+  async function handleSaveDraft() {
     if (!storeId || !creditNoteNo || !selectedStore) {
       window.alert("Select a store before saving the credit note draft.");
       return;
@@ -769,6 +841,51 @@ export default function CompanyCreditNotes() {
             sourceInvoiceNo: invoiceNo,
           },
         ];
+
+    if (usesSupabaseData()) {
+      try {
+        const existingRow = creditNotes.find((r) => r.creditNoteNo === noteNo);
+        const existingId =
+          existingRow && !existingRow.id.startsWith("draft-")
+            ? existingRow.id.split("-")[0]
+            : null;
+        const lines: RpcLine[] = source.map((item) => ({
+          product_name: item.productName || "",
+          pack_size: item.pkgsize || null,
+          batch_no: item.batchNo || null,
+          expiry_date: item.expiryDate || null,
+          quantity: item.quantity,
+          unit_price: item.sellingPrice,
+          taxable_amount: item.taxableAmount,
+          tax_percent: item.taxPercent,
+          sgst_amount: item.sgst,
+          cgst_amount: item.cgst,
+          igst_amount: item.igst,
+          line_total: item.total,
+          reason: item.reason || remarks || null,
+        }));
+        await saveCompanyCreditNoteDb(
+          existingId,
+          {
+            store_id: selectedStore.id,
+            credit_note_date: returnDate || new globalThis.Date().toISOString().slice(0, 10),
+            place_of_return: selectedStore.location?.split(",")[0] || null,
+            store_location: selectedStore.location || null,
+            reason: remarks || "Credit Note Draft",
+            notes: remarks || null,
+          },
+          lines,
+        );
+        window.alert("Credit Note saved as draft.");
+        closeForm();
+        await reloadDbCompanyCreditNotes();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to save credit note draft"));
+        return;
+      }
+    }
+
     const syncRows: CompanyCreditNoteSyncRecord[] = source.map((item, index) => ({
       id: `draft-${noteNo}-${index}`,
       creditNoteNo: noteNo,
@@ -840,9 +957,56 @@ export default function CompanyCreditNotes() {
     closeForm();
   }
 
-  function handleCreate() {
+  async function handleCreate() {
     if (savingRef.current || !canCreate || !selectedStore) return;
     savingRef.current = true;
+
+    if (usesSupabaseData()) {
+      try {
+        const noteNo = editingCreditNo || creditNoteNo;
+        const existingRow = creditNotes.find((r) => r.creditNoteNo === noteNo);
+        const existingId =
+          existingRow && !existingRow.id.startsWith("draft-")
+            ? existingRow.id.split("-")[0]
+            : null;
+        const lines: RpcLine[] = added.map((item) => ({
+          product_name: item.productName,
+          pack_size: item.pkgsize || null,
+          batch_no: item.batchNo || null,
+          expiry_date: item.expiryDate || null,
+          quantity: item.quantity,
+          unit_price: item.sellingPrice,
+          taxable_amount: item.taxableAmount,
+          tax_percent: item.taxPercent,
+          sgst_amount: item.sgst,
+          cgst_amount: item.cgst,
+          igst_amount: item.igst,
+          line_total: item.total,
+          reason: item.reason || remarks || "Product Return",
+        }));
+        const res = await saveCompanyCreditNoteDb(
+          existingId,
+          {
+            store_id: selectedStore.id,
+            credit_note_date: returnDate || new globalThis.Date().toISOString().slice(0, 10),
+            place_of_return: selectedStore.location?.split(",")[0] || null,
+            store_location: selectedStore.location || null,
+            reason: remarks || "Product Return",
+            notes: remarks.trim() || `This credit note is generated against returned goods from ${selectedStore.name}.`,
+          },
+          lines,
+        );
+        await issueCompanyCreditNoteDb(res.id);
+        savingRef.current = false;
+        closeForm();
+        await reloadDbCompanyCreditNotes();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to create company credit note"));
+        savingRef.current = false;
+        return;
+      }
+    }
 
     const createdAt = new globalThis.Date().getTime();
     const allocatedNo = editingCreditNo || nextCreditNoteNo();
@@ -1003,7 +1167,11 @@ export default function CompanyCreditNotes() {
       const matchesSearch =
         !q ||
         c.creditNoteNo.toLowerCase().includes(q) ||
-        c.party.toLowerCase().includes(q);
+        c.party.toLowerCase().includes(q) ||
+        `${c.product || ""} ${c.batchNo || ""}`.toLowerCase().includes(q) ||
+        (c.lines || []).some((line) =>
+          `${line.product || ""} ${line.batchNo || ""}`.toLowerCase().includes(q),
+        );
 
       return matchesSearch && isWithinDateFilter(c.Date);
     });
@@ -1027,8 +1195,13 @@ export default function CompanyCreditNotes() {
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
             Credit Notes (Returns)
           </h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="text-slate-500 mt-1">
-            Manage product returns and credit note records.
+            Company GST credit notes issued to a store. The store receives each one as a debit note.
           </p>
         </div>
         <Button onClick={openCreateForm}>
@@ -1148,15 +1321,9 @@ export default function CompanyCreditNotes() {
                   </th>
                   <th
                     rowSpan={2}
-                    className="w-[14%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap"
+                    className="w-[18%] text-center font-semibold px-2 py-3 border-r border-slate-200 whitespace-nowrap"
                   >
                     Store Name
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="w-[9%] text-center font-semibold px-2 py-3 border-r border-slate-200"
-                  >
-                    Place
                   </th>
                   <th
                     rowSpan={2}
@@ -1232,9 +1399,6 @@ export default function CompanyCreditNotes() {
                     </td>
                     <td className="px-2 py-3 text-center text-slate-700 border-r border-slate-100 whitespace-nowrap">
                       {c.party}
-                    </td>
-                    <td className="px-2 py-3 text-center text-slate-600 border-r border-slate-100 truncate">
-                      {c.placeofreturn}
                     </td>
                     <td className="px-5 py-3.5 text-right text-slate-600 border-r border-slate-100">
                       {formatCurrency(c.amount)}
@@ -1457,10 +1621,6 @@ export default function CompanyCreditNotes() {
                       <p className="text-slate-600">
                         {selectesdreditNote.header.storeLocation || "-"}
                       </p>
-                      <p className="text-slate-600">
-                        Place of Return:{" "}
-                        {selectesdreditNote.header.placeofreturn || "-"}
-                      </p>
                     </div>
 
                     <div className="p-3">
@@ -1476,10 +1636,14 @@ export default function CompanyCreditNotes() {
                         <span className="font-semibold">
                           {formatDate(selectesdreditNote.header.Date)}
                         </span>
-                        <span className="text-slate-500">Invoice No</span>
-                        <span className="font-semibold">
-                          {selectesdreditNote.header.invoiceNo || "-"}
-                        </span>
+                        {!usesSupabaseData() && (
+                          <>
+                            <span className="text-slate-500">Invoice No</span>
+                            <span className="font-semibold">
+                              {selectesdreditNote.header.invoiceNo || "-"}
+                            </span>
+                          </>
+                        )}
                         <span className="text-slate-500">Store Name</span>
                         <span className="font-semibold">
                           {selectesdreditNote.header.party}
@@ -1813,6 +1977,66 @@ export default function CompanyCreditNotes() {
                     </table>
                   </div>
 
+                  {(() => {
+                    const header = selectesdreditNote.header;
+                    const rows = selectesdreditNote.rows;
+                    const persisted = typeof header.roundOff === "number";
+                    const taxable = persisted
+                      ? Number(header.amount || 0)
+                      : rows.reduce(
+                          (sum, row) =>
+                            sum + Number(row.taxableAmount ?? row.amount ?? 0),
+                          0,
+                        );
+                    const sgst = persisted
+                      ? Number(header.sgst || 0)
+                      : rows.reduce((sum, row) => sum + Number(row.sgst || 0), 0);
+                    const cgst = persisted
+                      ? Number(header.cgst || 0)
+                      : rows.reduce((sum, row) => sum + Number(row.cgst || 0), 0);
+                    const igst = persisted
+                      ? Number(header.igst || 0)
+                      : rows.reduce((sum, row) => sum + Number(row.igst || 0), 0);
+                    const lineTotal = rows.reduce(
+                      (sum, row) => sum + Number(row.total || 0),
+                      0,
+                    );
+                    const computed = roundOffToRupee(lineTotal);
+                    const roundOff = persisted
+                      ? Number(header.roundOff)
+                      : computed.roundOff;
+                    const grandTotal = persisted
+                      ? Number(header.total || 0)
+                      : computed.payable;
+                    const summary = [
+                      ["Taxable Amount", formatCurrency(taxable)],
+                      ["SGST", formatCurrency(sgst)],
+                      ["CGST", formatCurrency(cgst)],
+                      ["IGST", formatCurrency(igst)],
+                      ["Round Off", formatRoundOff(roundOff)],
+                      ["Grand Total", formatCurrency(grandTotal)],
+                    ];
+                    return (
+                      <div className="flex justify-end border-t border-slate-300">
+                        <div className="w-full max-w-[320px] text-xs">
+                          {summary.map(([label, value]) => (
+                            <div
+                              key={label}
+                              className={`flex items-center justify-between border-b border-slate-200 px-3 py-1.5 ${
+                                label === "Grand Total"
+                                  ? "bg-slate-50 text-sm font-bold text-slate-900"
+                                  : "text-slate-700"
+                              }`}
+                            >
+                              <span>{label}</span>
+                              <span>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* ROW 2: Notes (left) + Authorised Signatory (right) */}
                   <div className="grid min-h-[110px] grid-cols-[1fr_300px] border-t border-slate-300">
                     <div className="border-r border-slate-300 p-3">
@@ -1927,7 +2151,7 @@ export default function CompanyCreditNotes() {
                 </Button>
                 <Button onClick={() => window.print()}>
                   <Icon name="print" size={18} />
-                  Print Credit Note
+                  Download PDF
                 </Button>
               </div>
             </div>
@@ -1936,7 +2160,13 @@ export default function CompanyCreditNotes() {
         )}
 
       {/* Create Creditnote — full-screen form, rendered via portal so it always sits above everything and scrolls properly */}
-      {showCreate &&
+      {showCreate && usesSupabaseData() && (
+        <CompanyManualCreditNoteForm
+          onClose={closeForm}
+          onSaved={reloadDbCompanyCreditNotes}
+        />
+      )}
+      {showCreate && !usesSupabaseData() &&
         createPortal(
           <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
             <div className="nb-modal-panel flex w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -1993,7 +2223,7 @@ export default function CompanyCreditNotes() {
                     />
 
                     <Select
-                      label="Place of Return"
+                      label="Place of Supply"
                       value={placeOfSupply}
                       onChange={setPlaceOfSupply}
                       options={[

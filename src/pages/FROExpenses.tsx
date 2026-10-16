@@ -1,8 +1,36 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Card, Button, Input, Select, Icon } from "@/components/ui";
-import { formatCurrency, formatDate } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  matchesSimpleDate,
+  type SimpleDateFilter,
+} from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadExpenses,
+  loadExpenseCategories,
+  createExpenseDb,
+  loadCashAdvances,
+  acceptCashAdvanceDb,
+  loadFroMoneyPosition,
+  loadFroCashRefunds,
+  createFroCashRefundDb,
+  froExpenseRefundFromLabel,
+  buildActiveExpenseAdvanceSummary,
+  type FroMoneyPosition,
+  type FroRefundFrom,
+} from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
+
+const expenseListDateFilters: { value: SimpleDateFilter; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 type CashReceived = {
   id: string;
@@ -13,10 +41,17 @@ type CashReceived = {
   remarks?: string;
   status?: "pending" | "accepted";
   requestedFor?: string;
+  froStaffId?: string;
   acceptedBy?: string;
   acceptedAt?: string;
   settlementId?: string;
+  referenceNo?: string;
 };
+
+const formatPaymentMethod = (value: string) =>
+  String(value || "cash")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 type Expense = {
   id: string;
   expenseNo?: string;
@@ -27,6 +62,7 @@ type Expense = {
   method: string;
   enteredBy?: string;
   settlementId?: string;
+  status?: string;
 };
 type CashRefund = {
   id: string;
@@ -37,9 +73,23 @@ type CashRefund = {
   remarks?: string;
   settlementId?: string;
   enteredBy?: string;
+  status?: string;
+  refundNo?: string;
+  refundFrom?: FroRefundFrom;
 };
 
-type Props = { storeId?: string };
+const refundFromOptions: { value: FroRefundFrom; label: string }[] = [
+  { value: "fro_cash", label: "My Account (Expense Advance)" },
+  { value: "store_account", label: "Store Account" },
+];
+
+type FroLedgerPage = "expenses" | "refunds" | "expenseForm" | "refundForm";
+
+type Props = {
+  storeId?: string;
+  /** Open a sub-view immediately (e.g. Sales → Refund). */
+  initialPage?: FroLedgerPage | null;
+};
 
 const RECEIVED_PREFIX = "nature-biotic-fro-cash-received-v1";
 const EXPENSE_STORAGE_KEY = "naturebiotic_shared_expenses";
@@ -91,7 +141,10 @@ const read = <T,>(key: string): T[] => {
 const id = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export default function FROExpenses({ storeId = "default" }: Props) {
+export default function FROExpenses({
+  storeId = "default",
+  initialPage = null,
+}: Props) {
   const { user } = useAuth();
   const receivedKey = `${RECEIVED_PREFIX}:${storeId}`;
   const expenseKey = EXPENSE_STORAGE_KEY;
@@ -100,7 +153,10 @@ export default function FROExpenses({ storeId = "default" }: Props) {
   const [received, setReceived] = useState<CashReceived[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [refunds, setRefunds] = useState<CashRefund[]>([]);
-  const [form, setForm] = useState<"expense" | "refund" | null>(null);
+  const [moneyPosition, setMoneyPosition] = useState<FroMoneyPosition | null>(null);
+  const [form, setForm] = useState<"expense" | "refund" | null>(
+    initialPage === "refundForm" ? "refund" : initialPage === "expenseForm" ? "expense" : null,
+  );
   const settlementKey = `${SETTLEMENT_PREFIX}:${storeId}`;
   const completedSettlementKey = `${SETTLEMENT_PREFIX}-completed:${storeId}`;
   const [activeSettlementId, setActiveSettlementId] = useState<string>(() => {
@@ -110,23 +166,187 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     "expenses" | "received" | "refund" | null
   >(null);
   const [showPendingCash, setShowPendingCash] = useState(false);
+  const [focusAdvanceId, setFocusAdvanceId] = useState<string>("");
+  const [acceptError, setAcceptError] = useState("");
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [savingExpense, setSavingExpense] = useState(false);
   const [showRefunds, setShowRefunds] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
-  const [activePage, setActivePage] = useState<
-    "expenses" | "refunds" | "expenseForm" | "refundForm" | null
-  >(null);
+  const [expenseDateFilter, setExpenseDateFilter] =
+    useState<SimpleDateFilter>("monthly");
+  const [refundDateFilter, setRefundDateFilter] =
+    useState<SimpleDateFilter>("monthly");
+  const [activePage, setActivePage] = useState<FroLedgerPage | null>(
+    initialPage ?? null,
+  );
+  const [listError, setListError] = useState("");
+  const [ledgerLoading, setLedgerLoading] = useState(false);
 
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("Cash");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Travel");
   const [remarks, setRemarks] = useState("");
+  const [refundFrom, setRefundFrom] = useState<FroRefundFrom>("fro_cash");
+
+  const currentStaffId = String(
+    (user as { staffId?: string } | null)?.staffId || "",
+  );
+  const supabaseMode = usesSupabaseData();
+
+  const mapAdvances = (rows: Awaited<ReturnType<typeof loadCashAdvances>>): CashReceived[] =>
+    rows
+      .filter(
+        (row) =>
+          !currentStaffId ||
+          row.froStaffId === currentStaffId ||
+          row.froName.trim().toLowerCase() === (user?.name ?? "").trim().toLowerCase(),
+      )
+      .map((row) => ({
+        id: row.id,
+        date: row.date,
+        amount: row.amount,
+        method: formatPaymentMethod(row.method),
+        receivedFrom: row.receivedFrom || "Store",
+        remarks: row.remarks,
+        status: row.status,
+        requestedFor: row.froName,
+        froStaffId: row.froStaffId,
+        acceptedAt: row.acceptedAt,
+        settlementId: row.settlementId,
+        referenceNo: row.referenceNo,
+      }));
+
+  const reloadDbLedger = async () => {
+    if (!supabaseMode || !storeId || storeId === "default") return;
+    // Use profiles.staff_id only — never auth user id / localStorage (RLS keys on fro_staff_id).
+    const staffKey = currentStaffId || undefined;
+    setLedgerLoading(true);
+    const settled = await Promise.allSettled([
+      loadCashAdvances(storeId),
+      staffKey ? loadFroMoneyPosition(staffKey) : Promise.resolve(null),
+      loadExpenses("fro", storeId),
+      // Prefer staff filter when known; otherwise RLS returns this FRO's rows.
+      loadFroCashRefunds(staffKey),
+    ]);
+
+    const errors: string[] = [];
+    const take = <T,>(index: number, fallback: T, label: string): T => {
+      const result = settled[index];
+      if (result.status === "fulfilled") return result.value as T;
+      const message = dbErrorMessage(result.reason, `Could not load ${label}.`);
+      console.error(`[FROExpenses] ${label}`, result.reason);
+      errors.push(message);
+      return fallback;
+    };
+
+    const rows = take(0, [] as Awaited<ReturnType<typeof loadCashAdvances>>, "cash advances");
+    const position = take(1, null as FroMoneyPosition | null, "cash position");
+    const expenseRows = take(2, [] as Awaited<ReturnType<typeof loadExpenses>>, "expenses");
+    const refundRows = take(3, [] as Awaited<ReturnType<typeof loadFroCashRefunds>>, "cash refunds");
+
+    setReceived(mapAdvances(rows));
+    setMoneyPosition(position);
+    setExpenses(
+      expenseRows
+        .filter(
+          (r) =>
+            !staffKey ||
+            r.froStaffId === staffKey ||
+            (r.enteredBy || "").trim().toLowerCase() ===
+              (user?.name ?? "").trim().toLowerCase(),
+        )
+        .map((r) => ({
+          id: r.id,
+          expenseNo: r.expenseNo,
+          date: r.date,
+          category: r.category,
+          description: r.description,
+          amount: r.amount,
+          method: r.method,
+          enteredBy: r.enteredBy,
+          status: r.status,
+        })),
+    );
+    setRefunds(
+      refundRows.map((r) => ({
+        id: r.id,
+        date: r.date,
+        amount: r.amount,
+        method: r.method,
+        refundedTo: r.refundedTo,
+        remarks: r.remarks,
+        settlementId: r.settlementId,
+        status: r.status,
+        refundNo: r.refundNo,
+        refundFrom: r.refundFrom,
+      })),
+    );
+    setListError(errors[0] || "");
+    setLedgerLoading(false);
+  };
 
   const load = () => {
+    if (supabaseMode) {
+      void reloadDbLedger();
+      return;
+    }
     setReceived(read<CashReceived>(receivedKey));
     setExpenses(read<Expense>(expenseKey));
     setRefunds(read<CashRefund>(refundKey));
   };
+
+  useEffect(() => {
+    if (initialPage) {
+      setActivePage(initialPage);
+      if (initialPage === "refundForm") setForm("refund");
+      if (initialPage === "expenseForm") setForm("expense");
+    }
+  }, [initialPage]);
+
+  useEffect(() => {
+    if (!supabaseMode) return;
+    void reloadDbLedger();
+  }, [storeId, currentStaffId]);
+
+  useEffect(() => {
+    const openPending = (event?: Event) => {
+      const detail = (event as CustomEvent<{ advanceId?: string }> | undefined)?.detail;
+      let advanceId = String(detail?.advanceId || "").trim();
+      if (!advanceId) {
+        try {
+          advanceId = sessionStorage.getItem("nature-biotic-open-pending-cash") || "";
+          sessionStorage.removeItem("nature-biotic-open-pending-cash");
+        } catch {
+          advanceId = "";
+        }
+      }
+      setFocusAdvanceId(advanceId);
+      setAcceptError("");
+      setShowPendingCash(true);
+      setActivePage(null);
+      if (supabaseMode) void reloadDbLedger();
+      else load();
+    };
+    try {
+      if (sessionStorage.getItem("nature-biotic-open-pending-cash") != null) {
+        openPending();
+      }
+    } catch {
+      // ignore
+    }
+    window.addEventListener(
+      "nature-biotic-open-pending-cash",
+      openPending as EventListener,
+    );
+    return () => {
+      window.removeEventListener(
+        "nature-biotic-open-pending-cash",
+        openPending as EventListener,
+      );
+    };
+  }, [storeId, receivedKey]);
+
   const saveActiveSettlement = (value: string) => {
     setActiveSettlementId(value);
     localStorage.setItem(settlementKey, value);
@@ -157,7 +377,7 @@ export default function FROExpenses({ storeId = "default" }: Props) {
   };
 
   useEffect(() => {
-    if (!localStorage.getItem(settlementKey)) {
+    if (!localStorage.getItem(settlementKey) && !supabaseMode) {
       localStorage.setItem(settlementKey, activeSettlementId);
     }
     load();
@@ -165,6 +385,7 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
     window.addEventListener("nature-biotic-cash-received-updated", refresh);
+    window.addEventListener("nature-biotic-expense-updated", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
@@ -172,82 +393,147 @@ export default function FROExpenses({ storeId = "default" }: Props) {
         "nature-biotic-cash-received-updated",
         refresh,
       );
+      window.removeEventListener("nature-biotic-expense-updated", refresh);
     };
-  }, [receivedKey, expenseKey, refundKey, settlementKey]);
+  }, [receivedKey, expenseKey, refundKey, settlementKey, supabaseMode]);
 
   const currentFROName = (user?.name ?? "").trim();
   const currentFROKey = currentFROName.toLowerCase();
 
-  // Only the current/open settlement is shown in the four summary cards.
-  // All older settlements remain in History.
+  const isForCurrentFro = (x: CashReceived) => {
+    if (currentStaffId && x.froStaffId) return x.froStaffId === currentStaffId;
+    return (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey;
+  };
+
+  // Accepted Store→FRO cash advances (Supabase: all accepted; offline: open settlement).
   const activeReceived = useMemo(
     () =>
       received.filter(
         (x) =>
           x.status === "accepted" &&
-          x.settlementId === activeSettlementId &&
-          (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey,
+          isForCurrentFro(x) &&
+          (supabaseMode || x.settlementId === activeSettlementId),
       ),
-    [received, activeSettlementId, currentFROKey],
+    [received, activeSettlementId, currentFROKey, currentStaffId, supabaseMode],
   );
 
-  // Cash is created by Store for this FRO. It becomes part of the
-  // settlement only after the FRO accepts it.
   const pendingCashRequests = useMemo(
-    () =>
-      received.filter(
-        (x) =>
-          x.status !== "accepted" &&
-          (x.requestedFor ?? "").trim().toLowerCase() === currentFROKey,
-      ),
-    [received, currentFROKey],
+    () => received.filter((x) => x.status !== "accepted" && isForCurrentFro(x)),
+    [received, currentFROKey, currentStaffId],
   );
 
-  const totalReceived = useMemo(
-    () => activeReceived.reduce((s, x) => s + Number(x.amount || 0), 0),
-    [activeReceived],
-  );
+  const focusedPendingRequest = useMemo(() => {
+    if (!focusAdvanceId) return pendingCashRequests[0] ?? null;
+    return (
+      pendingCashRequests.find((x) => x.id === focusAdvanceId) ||
+      received.find((x) => x.id === focusAdvanceId) ||
+      null
+    );
+  }, [focusAdvanceId, pendingCashRequests, received]);
 
   const froExpenses = useMemo(() => {
+    if (supabaseMode) {
+      return expenses.filter((x) => {
+        const methodKey = String(x.method || "").toLowerCase().replace(/\s+/g, "_");
+        return methodKey === "cash";
+      });
+    }
     const currentFRO = (user?.name ?? "").trim().toLowerCase();
     if (!currentFRO) return [];
-
     return expenses.filter(
       (x) =>
         (x.enteredBy ?? "").trim().toLowerCase() === currentFRO &&
         x.settlementId === activeSettlementId,
     );
-  }, [expenses, user?.name, activeSettlementId]);
-
-  const totalExpenses = useMemo(
-    () => froExpenses.reduce((s, x) => s + Number(x.amount || 0), 0),
-    [froExpenses],
-  );
+  }, [expenses, user?.name, activeSettlementId, supabaseMode]);
 
   const activeRefunds = useMemo(
-    () => refunds.filter((x) => x.settlementId === activeSettlementId),
-    [refunds, activeSettlementId],
+    () =>
+      supabaseMode
+        ? refunds
+        : refunds.filter((x) => x.settlementId === activeSettlementId),
+    [refunds, activeSettlementId, supabaseMode],
   );
 
-  const totalRefund = useMemo(
-    () => activeRefunds.reduce((s, x) => s + Number(x.amount || 0), 0),
-    [activeRefunds],
-  );
+  // Active cycle only: after the advance pool last settles to ₹0, summary cards reset.
+  // Historical rows remain in the Total Expenses / Amount Refund lists.
+  const activeAdvanceSummary = useMemo(() => {
+    if (supabaseMode) {
+      return buildActiveExpenseAdvanceSummary({
+        advances: received.map((row) => ({
+          id: row.id,
+          amount: row.amount,
+          status: row.status,
+          method: row.method,
+          acceptedAt: row.acceptedAt,
+          date: row.date,
+        })),
+        expenses: expenses.map((row) => ({
+          id: row.id,
+          amount: row.amount,
+          status: row.status,
+          method: row.method,
+          date: row.date,
+        })),
+        refunds: refunds.map((row) => ({
+          id: row.id,
+          amount: row.amount,
+          status: row.status,
+          method: row.method,
+          date: row.date,
+          refundFrom: row.refundFrom,
+        })),
+      });
+    }
+    const receivedAmt = activeReceived.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const expenseAmt = froExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const refundAmt = activeRefunds
+      .filter((x) => String(x.status || "accepted").toLowerCase() === "accepted")
+      .reduce((s, x) => s + Number(x.amount || 0), 0);
+    return {
+      amountReceived: receivedAmt,
+      totalExpenses: expenseAmt,
+      amountRefund: refundAmt,
+      balance: Math.max(receivedAmt - expenseAmt - refundAmt, 0),
+    };
+  }, [
+    supabaseMode,
+    received,
+    expenses,
+    refunds,
+    activeReceived,
+    froExpenses,
+    activeRefunds,
+  ]);
 
-  const balance = Math.max(totalReceived - totalExpenses - totalRefund, 0);
+  const totalReceived = activeAdvanceSummary.amountReceived;
+  const totalExpenses = activeAdvanceSummary.totalExpenses;
+  const totalRefund = activeAdvanceSummary.amountRefund;
 
-  // When a settlement is fully settled, move the dashboard to a new empty
-  // settlement. The old transactions stay available in History.
+  // Available Balance = active expense-advance pool (authoritative DB when available).
+  const balance = useMemo(() => {
+    if (supabaseMode) {
+      if (listError && !moneyPosition) return 0;
+      if (moneyPosition) {
+        // Prefer DB pool; when settled to zero it matches the active-cycle summary.
+        return Math.max(Number(moneyPosition.expenseAdvanceBalance || 0), 0);
+      }
+      return activeAdvanceSummary.balance;
+    }
+    return activeAdvanceSummary.balance;
+  }, [supabaseMode, moneyPosition, activeAdvanceSummary.balance, listError]);
+
+  // Offline-only settlement rotation. Supabase uses fro_cash_position / open settlements in DB.
   useEffect(() => {
+    if (supabaseMode) return;
     if (totalReceived > 0 && balance === 0) {
       markSettlementCompleted(activeSettlementId);
       makeNewSettlement();
     }
-  }, [balance, totalReceived, activeSettlementId]);
+  }, [balance, totalReceived, activeSettlementId, supabaseMode]);
 
-  // A Store acceptance creates a new settlementId. Pick that newly accepted
-  // cash as the active settlement when the current dashboard is empty.
   useEffect(() => {
+    if (supabaseMode) return;
     if (totalReceived !== 0 || balance !== 0) return;
 
     const completed = getCompletedSettlements();
@@ -266,9 +552,28 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     ) {
       saveActiveSettlement(nextAccepted.settlementId);
     }
-  }, [received, totalReceived, balance, activeSettlementId]);
+  }, [received, totalReceived, balance, activeSettlementId, supabaseMode]);
 
-  const acceptCash = (requestId: string) => {
+  const acceptCash = async (requestId: string) => {
+    if (!requestId || acceptingId) return;
+    setAcceptError("");
+    setAcceptingId(requestId);
+
+    if (supabaseMode) {
+      try {
+        await acceptCashAdvanceDb(requestId);
+        await reloadDbLedger();
+        window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+        setShowPendingCash(false);
+        setFocusAdvanceId("");
+      } catch (error) {
+        setAcceptError(dbErrorMessage(error, "Could not accept cash request."));
+      } finally {
+        setAcceptingId(null);
+      }
+      return;
+    }
+
     const next = received.map((x) =>
       x.id === requestId
         ? {
@@ -284,11 +589,43 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     setReceived(next);
     localStorage.setItem(receivedKey, JSON.stringify(next));
     window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+    setShowPendingCash(false);
+    setFocusAdvanceId("");
+    setAcceptingId(null);
   };
 
-  const saveExpense = () => {
+  const saveExpense = async () => {
     const value = Number(amount);
-    if (value <= 0 || value > balance) return;
+    if (value <= 0 || value > balance || savingExpense) return;
+
+    if (supabaseMode) {
+      setSavingExpense(true);
+      try {
+        const catList = await loadExpenseCategories("fro");
+        const matchedCat = catList.find((c) => c.name.toLowerCase() === category.toLowerCase()) || catList[0];
+        const methodKey = (method.toLowerCase().replace(/\s+/g, "_")) as "cash" | "upi" | "bank_transfer" | "cheque";
+        await createExpenseDb({
+          p_scope: "fro",
+          p_category_id: matchedCat?.id || "",
+          p_amount: value,
+          p_method: methodKey,
+          p_expense_date: new Date().toISOString().split("T")[0],
+          p_description: description.trim() || category,
+          p_entered_by_name: user?.name?.trim() ?? "",
+        });
+        reset();
+        await reloadDbLedger();
+        window.dispatchEvent(new Event("nature-biotic-expense-updated"));
+        window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+        setActivePage(null);
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to record FRO expense"));
+      } finally {
+        setSavingExpense(false);
+      }
+      return;
+    }
+
     const item: Expense = {
       id: id("expense"),
       expenseNo: getNextExpenseNo(expenses),
@@ -307,9 +644,41 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     reset();
   };
 
-  const saveRefund = () => {
+  const saveRefund = async () => {
     const value = Number(amount);
-    if (value <= 0 || value > balance) return;
+    if (value <= 0 || savingExpense) return;
+    if (refundFrom === "fro_cash" && value > balance) return;
+    if (!refundFrom) {
+      window.alert("Select Refund From: My Account or Store Account.");
+      return;
+    }
+
+    if (supabaseMode) {
+      setSavingExpense(true);
+      try {
+        const methodKey = (method.toLowerCase().replace(/\s+/g, "_")) as
+          | "cash"
+          | "upi"
+          | "bank_transfer"
+          | "cheque";
+        await createFroCashRefundDb({
+          amount: value,
+          method: methodKey,
+          remarks: remarks.trim() || null,
+          refundFrom,
+        });
+        reset();
+        await reloadDbLedger();
+        window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
+        setActivePage("refunds");
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to record cash refund"));
+      } finally {
+        setSavingExpense(false);
+      }
+      return;
+    }
+
     const item: CashRefund = {
       id: id("refund"),
       date: new Date().toISOString(),
@@ -319,12 +688,15 @@ export default function FROExpenses({ storeId = "default" }: Props) {
       remarks: remarks.trim(),
       settlementId: activeSettlementId,
       enteredBy: user?.name?.trim() ?? "",
+      status: "pending",
+      refundFrom,
     };
     const next = [item, ...refunds];
     setRefunds(next);
     localStorage.setItem(refundKey, JSON.stringify(next));
     window.dispatchEvent(new Event("nature-biotic-cash-received-updated"));
     reset();
+    setActivePage("refunds");
   };
 
   const reset = () => {
@@ -332,6 +704,7 @@ export default function FROExpenses({ storeId = "default" }: Props) {
     setDescription("");
     setRemarks("");
     setMethod("Cash");
+    setRefundFrom("fro_cash");
     setForm(null);
   };
 
@@ -339,38 +712,66 @@ export default function FROExpenses({ storeId = "default" }: Props) {
 
   const currentFRO = (user?.name ?? "").trim().toLowerCase();
 
-  const expenseHistoryItems = [...expenses]
-    .filter((x) => (x.enteredBy ?? "").trim().toLowerCase() === currentFRO)
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .map((x) => ({
-      id: x.id,
-      title: x.expenseNo ? `${x.expenseNo} • ${x.description}` : x.description,
-      sub: `${x.category} • ${x.method}`,
-      amount: x.amount,
-      date: x.date,
-      cls: "text-red-600",
-    }));
+  const expenseListRows = useMemo(() => {
+    const source = supabaseMode
+      ? expenses
+      : expenses.filter(
+          (x) => (x.enteredBy ?? "").trim().toLowerCase() === currentFRO,
+        );
+    return [...source]
+      .filter((row) => matchesSimpleDate(row.date, expenseDateFilter))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }, [supabaseMode, expenses, currentFRO, expenseDateFilter]);
 
-  const refundHistoryItems = [...refunds]
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .map((x) => ({
-      id: x.id,
-      title: "Refund to Store",
-      sub: `${x.method}${x.remarks ? ` • ${x.remarks}` : ""}`,
-      amount: x.amount,
-      date: x.date,
-      cls: "text-orange-600",
-    }));
+  const refundListRows = useMemo(() => {
+    return [...activeRefunds]
+      .filter((row) => matchesSimpleDate(row.date, refundDateFilter))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }, [activeRefunds, refundDateFilter]);
 
-  const filteredExpenseHistory = expenseHistoryItems.filter((x) => {
-    const q = historySearch.trim().toLowerCase();
-    return (
-      !q ||
-      x.title.toLowerCase().includes(q) ||
-      x.sub.toLowerCase().includes(q) ||
-      formatExpenseDate(x.date).toLowerCase().includes(q)
-    );
-  });
+  const filteredExpenseListTotal = expenseListRows.reduce(
+    (sum, row) =>
+      sum +
+      (String(row.status || "accepted").toLowerCase() === "accepted"
+        ? Number(row.amount || 0)
+        : 0),
+    0,
+  );
+
+  const filteredRefundListTotal = refundListRows.reduce(
+    (sum, row) =>
+      sum +
+      (String(row.status || "accepted").toLowerCase() === "accepted"
+        ? Number(row.amount || 0)
+        : 0),
+    0,
+  );
+
+  const refundHistoryItems = [...activeRefunds]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .map((x) => {
+      const status = String(x.status || "accepted");
+      const statusLabel =
+        status === "pending"
+          ? "Pending"
+          : status === "rejected"
+            ? "Rejected"
+            : "Accepted";
+      return {
+        id: x.id,
+        title: x.refundNo || "Refund to Store",
+        sub: `${froExpenseRefundFromLabel(x.refundFrom)} • ${x.method}${x.remarks ? ` • ${x.remarks}` : ""} • ${statusLabel}`,
+        amount: x.amount,
+        date: x.date,
+        status: statusLabel,
+        cls:
+          status === "pending"
+            ? "text-amber-600"
+            : status === "rejected"
+              ? "text-slate-400"
+              : "text-orange-600",
+      };
+    });
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
@@ -379,7 +780,14 @@ export default function FROExpenses({ storeId = "default" }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Expenses</h1>
-              <p className="mt-1 text-sm text-slate-500">Manage FRO cash, expenses and store refunds.</p>
+              {listError ? (
+                <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                  {listError}
+                </p>
+              ) : null}
+              <p className="mt-1 text-sm text-slate-500">
+                Expense advances, FRO expenses, and unused advance refunds to Store. Farmer sales refunds are under Sales → Refund.
+              </p>
             </div>
             <button type="button"
               onClick={() => { setForm("expense"); setActivePage("expenseForm"); }}
@@ -390,18 +798,41 @@ export default function FROExpenses({ storeId = "default" }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <button type="button" onClick={() => { setHistorySearch(""); setActivePage("expenses"); }} className="text-left">
+            <button
+              type="button"
+              onClick={() => {
+                setHistorySearch("");
+                setExpenseDateFilter("monthly");
+                setActivePage("expenses");
+              }}
+              className="text-left"
+            >
               <Summary title="Total Expenses" value={totalExpenses} icon="receipt_long" tone="bg-red-50 text-red-700" clickable />
             </button>
             <Summary title="Amount Received" value={totalReceived} icon="payments" tone="bg-blue-50 text-blue-700" />
             <Summary title="Amount Balance" value={balance} icon="account_balance_wallet" tone="bg-green-50 text-green-700" />
-            <button type="button" onClick={() => setActivePage("refunds")} className="text-left">
+            <button
+              type="button"
+              onClick={() => {
+                setRefundDateFilter("monthly");
+                setActivePage("refunds");
+              }}
+              className="text-left"
+            >
               <Summary title="Amount Refund" value={totalRefund} icon="undo" tone="bg-orange-50 text-orange-700" clickable />
             </button>
           </div>
 
           {pendingCashRequests.length > 0 && (
-            <button type="button" onClick={() => setShowPendingCash(true)} className="w-full text-left">
+            <button
+              type="button"
+              onClick={() => {
+                setFocusAdvanceId(pendingCashRequests[0]?.id || "");
+                setAcceptError("");
+                setShowPendingCash(true);
+              }}
+              className="w-full text-left"
+            >
               <Card className="overflow-hidden border-amber-200 transition hover:shadow-md">
                 <div className="flex items-center gap-3 bg-amber-50 px-4 py-4">
                   <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
@@ -437,21 +868,104 @@ export default function FROExpenses({ storeId = "default" }: Props) {
 
       {activePage === "expenses" && (
         <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
-          <PageHeader title="Total Expenses" subtitle="Expense History" onBack={() => { setActivePage(null); setHistorySearch(""); }} />
+          <PageHeader
+            title="Total Expenses"
+            subtitle="FRO expense history from Supabase"
+            onBack={() => {
+              setActivePage(null);
+              setHistorySearch("");
+            }}
+          />
           <div className="space-y-3 p-4 sm:p-5">
-            <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
-              placeholder="Search by name, description, method or date..."
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500" />
-            {filteredExpenseHistory.length === 0 ? (
-              <div className="py-10 text-center text-sm text-slate-500">No matching entries found.</div>
+            <div className="flex flex-wrap gap-2">
+              {expenseListDateFilters.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setExpenseDateFilter(filter.value)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    expenseDateFilter === filter.value
+                      ? "bg-brand-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+              <span className="font-medium text-slate-600">Accepted total (filter)</span>
+              <span className="font-bold text-red-600">{formatCurrency(filteredExpenseListTotal)}</span>
+            </div>
+            {listError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {listError}
+              </div>
+            ) : null}
+            {ledgerLoading ? (
+              <div className="py-10 text-center text-sm text-slate-500">Loading expenses…</div>
+            ) : expenseListRows.length === 0 ? (
+              <div className="py-10 text-center text-sm text-slate-500">
+                No expenses found for this date filter.
+              </div>
             ) : (
-              <div className="space-y-2">{filteredExpenseHistory.map((x) => (
-                <div key={x.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4">
-                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800">{x.title}</p>
-                    <p className="truncate text-xs text-slate-500">{x.sub} • {formatExpenseDate(x.date)}</p></div>
-                  <span className={`shrink-0 text-sm font-bold ${x.cls}`}>{formatCurrency(x.amount)}</span>
-                </div>
-              ))}</div>
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full min-w-[720px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                      <th className="px-2 py-2 text-center font-semibold">S.No</th>
+                      <th className="px-2 py-2 text-left font-semibold">Date</th>
+                      <th className="px-2 py-2 text-left font-semibold">Expense No</th>
+                      <th className="px-2 py-2 text-left font-semibold">Category</th>
+                      <th className="px-2 py-2 text-left font-semibold">Description</th>
+                      <th className="px-2 py-2 text-right font-semibold">Amount</th>
+                      <th className="px-2 py-2 text-left font-semibold">Method</th>
+                      <th className="px-2 py-2 text-left font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenseListRows.map((row, index) => {
+                      const status = String(row.status || "accepted");
+                      const statusLabel =
+                        status === "pending"
+                          ? "Pending"
+                          : status === "rejected"
+                            ? "Rejected"
+                            : "Accepted";
+                      return (
+                        <tr key={row.id} className="border-b border-slate-100">
+                          <td className="px-2 py-2 text-center text-slate-500">{index + 1}</td>
+                          <td className="px-2 py-2 whitespace-nowrap text-slate-600">
+                            {formatExpenseDate(row.date)}
+                          </td>
+                          <td className="px-2 py-2 font-medium text-slate-800">
+                            {row.expenseNo || "—"}
+                          </td>
+                          <td className="px-2 py-2 text-slate-600">{row.category || "—"}</td>
+                          <td className="max-w-[12rem] truncate px-2 py-2 text-slate-600">
+                            {row.description || "—"}
+                          </td>
+                          <td className="px-2 py-2 text-right font-semibold text-red-600">
+                            {formatCurrency(row.amount)}
+                          </td>
+                          <td className="px-2 py-2 text-slate-600">{row.method || "—"}</td>
+                          <td
+                            className={`px-2 py-2 font-semibold ${
+                              status === "pending"
+                                ? "text-amber-600"
+                                : status === "rejected"
+                                  ? "text-slate-400"
+                                  : "text-emerald-700"
+                            }`}
+                          >
+                            {statusLabel}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -478,21 +992,112 @@ export default function FROExpenses({ storeId = "default" }: Props) {
       {activePage === "refunds" && (
         <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b px-4 py-4 sm:px-5">
-            <PageHeader title="Amount Refund" subtitle="Refund History" onBack={() => setActivePage(null)} />
-            <button type="button" onClick={() => { setForm("refund"); setActivePage("refundForm"); }} disabled={balance <= 0}
-              aria-label="Create Cash Refund" title="Create Cash Refund"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-40">
+            <PageHeader
+              title="Amount Refund"
+              subtitle="Unused expense-advance returns to Store"
+              onBack={() => setActivePage(null)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setForm("refund");
+                setActivePage("refundForm");
+              }}
+              disabled={balance <= 0}
+              aria-label="Create Cash Refund"
+              title="Create Cash Refund"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700 text-white shadow-sm hover:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
               <Icon name="add" size={21} />
             </button>
           </div>
-          <div className="space-y-2 p-4 sm:p-5">
-            {refundHistoryItems.length === 0 ? <div className="py-8 text-center text-sm text-slate-500">No cash refunds yet.</div> :
-              refundHistoryItems.map((x) => (
-                <div key={x.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3 sm:px-4">
-                  <div className="min-w-0"><p className="text-sm font-semibold text-slate-800">Refund to Store</p><p className="truncate text-xs text-slate-500">{x.sub} • {formatExpenseDate(x.date)}</p></div>
-                  <span className="shrink-0 text-sm font-bold text-orange-600">{formatCurrency(x.amount)}</span>
-                </div>
+          <div className="space-y-3 p-4 sm:p-5">
+            <div className="flex flex-wrap gap-2">
+              {expenseListDateFilters.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setRefundDateFilter(filter.value)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                    refundDateFilter === filter.value
+                      ? "bg-brand-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {filter.label}
+                </button>
               ))}
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+              <span className="font-medium text-slate-600">Accepted total (filter)</span>
+              <span className="font-bold text-orange-600">{formatCurrency(filteredRefundListTotal)}</span>
+            </div>
+            {listError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {listError}
+              </div>
+            ) : null}
+            {ledgerLoading ? (
+              <div className="py-8 text-center text-sm text-slate-500">Loading refunds…</div>
+            ) : refundListRows.length === 0 ? (
+              <div className="py-8 text-center text-sm text-slate-500">
+                No expense-advance refunds found for this date filter.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full min-w-[640px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                      <th className="px-2 py-2 text-center font-semibold">S.No</th>
+                      <th className="px-2 py-2 text-left font-semibold">Date</th>
+                      <th className="px-2 py-2 text-left font-semibold">Refund No</th>
+                      <th className="px-2 py-2 text-left font-semibold">Refund From</th>
+                      <th className="px-2 py-2 text-right font-semibold">Amount</th>
+                      <th className="px-2 py-2 text-left font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refundListRows.map((row, index) => {
+                      const status = String(row.status || "accepted");
+                      const statusLabel =
+                        status === "pending"
+                          ? "Pending"
+                          : status === "rejected"
+                            ? "Rejected"
+                            : "Accepted";
+                      return (
+                        <tr key={row.id} className="border-b border-slate-100">
+                          <td className="px-2 py-2 text-center text-slate-500">{index + 1}</td>
+                          <td className="px-2 py-2 whitespace-nowrap text-slate-600">
+                            {formatExpenseDate(row.date)}
+                          </td>
+                          <td className="px-2 py-2 font-medium text-slate-800">
+                            {row.refundNo || "—"}
+                          </td>
+                          <td className="px-2 py-2 text-slate-600">
+                            {froExpenseRefundFromLabel(row.refundFrom)}
+                          </td>
+                          <td className="px-2 py-2 text-right font-semibold text-orange-600">
+                            {formatCurrency(row.amount)}
+                          </td>
+                          <td
+                            className={`px-2 py-2 font-semibold ${
+                              status === "pending"
+                                ? "text-amber-600"
+                                : status === "rejected"
+                                  ? "text-slate-400"
+                                  : "text-emerald-700"
+                            }`}
+                          >
+                            {statusLabel}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -501,19 +1106,194 @@ export default function FROExpenses({ storeId = "default" }: Props) {
         <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
           <PageHeader title="Cash Refund" onBack={() => { reset(); setActivePage("refunds"); }} />
           <div className="space-y-4 p-4 sm:p-5">
-            <div className="rounded-lg bg-green-50 px-3 py-3 text-sm">Available Balance: <b className="text-green-700">{formatCurrency(balance)}</b></div>
+            {refundFrom === "fro_cash" ? (
+              <div className="rounded-lg bg-green-50 px-3 py-3 text-sm">
+                Expense advance available: <b className="text-green-700">{formatCurrency(balance)}</b>
+                <p className="mt-1 text-xs text-slate-600">
+                  Pending refunds do not reduce the expense advance balance until the Store accepts.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                Store Account refunds do not change FRO Cash in Hand. They still require Store acceptance.
+              </div>
+            )}
+            <Select
+              label="Refund From"
+              value={refundFrom}
+              onChange={(value) => setRefundFrom(value as FroRefundFrom)}
+              options={refundFromOptions}
+              required
+            />
             <Input label="Refund Amount" type="number" value={amount} onChange={setAmount} placeholder="Enter amount" required />
             <Select label="Payment Method" value={method} onChange={setMethod} options={paymentMethods.map((x) => ({ value: x, label: x }))} required />
             <Input label="Refund To" value="Store" onChange={() => {}} readOnly />
             <Input label="Remarks" value={remarks} onChange={setRemarks} placeholder="Optional" />
-            {Number(amount) > balance && <p className="text-sm text-red-600">Refund cannot be greater than the available balance.</p>}
+            {refundFrom === "fro_cash" && Number(amount) > balance && (
+              <p className="text-sm text-red-600">Refund cannot be greater than the available expense advance.</p>
+            )}
           </div>
           <div className="flex justify-end gap-2 border-t bg-slate-50 px-4 py-3">
             <Button variant="secondary" onClick={() => { reset(); setActivePage("refunds"); }}>Back</Button>
-            <Button onClick={() => { saveRefund(); setActivePage(null); }}>Save Refund</Button>
+            <Button
+              disabled={
+                savingExpense ||
+                Number(amount) <= 0 ||
+                (refundFrom === "fro_cash" && Number(amount) > balance)
+              }
+              onClick={() => void saveRefund()}
+            >
+              {savingExpense ? "Saving…" : "Save Refund"}
+            </Button>
           </div>
         </div>
       )}
+
+      {showPendingCash &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[10002] flex items-center justify-center bg-slate-900/45 p-3 backdrop-blur-[2px] sm:p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex max-h-[94dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex shrink-0 items-center justify-between border-b px-4 py-4 sm:px-5">
+                <div>
+                  <h3 className="font-bold text-slate-900">Cash Received Request</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Review the Store cash request and accept to add it to your balance.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPendingCash(false);
+                    setFocusAdvanceId("");
+                    setAcceptError("");
+                  }}
+                  aria-label="Close"
+                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
+                >
+                  <Icon name="close" size={20} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                {pendingCashRequests.length > 1 && (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Pending requests
+                    </p>
+                    {pendingCashRequests.map((row) => (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => {
+                          setFocusAdvanceId(row.id);
+                          setAcceptError("");
+                        }}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                          focusedPendingRequest?.id === row.id
+                            ? "border-brand-500 bg-brand-50"
+                            : "border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-800">
+                              {row.referenceNo || row.id}
+                            </p>
+                            <p className="truncate text-xs text-slate-500">
+                              {formatExpenseDate(row.date)} · {row.method}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-sm font-bold text-slate-800">
+                            {formatCurrency(row.amount)}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!focusedPendingRequest ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                    {listError || "No pending cash request found."}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Detail
+                      label="Reference No"
+                      value={focusedPendingRequest.referenceNo || focusedPendingRequest.id}
+                    />
+                    <Detail
+                      label="Date"
+                      value={formatExpenseDate(focusedPendingRequest.date)}
+                    />
+                    <Detail label="From" value={focusedPendingRequest.receivedFrom || "Store"} />
+                    <Detail
+                      label="Amount"
+                      value={formatCurrency(focusedPendingRequest.amount)}
+                    />
+                    <Detail label="Payment Method" value={focusedPendingRequest.method} />
+                    <Detail
+                      label="Status"
+                      value={
+                        focusedPendingRequest.status === "accepted" ? "Accepted" : "Pending"
+                      }
+                    />
+                    <div className="col-span-2">
+                      <Detail
+                        label="Description / Remarks"
+                        value={focusedPendingRequest.remarks?.trim() || "—"}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {acceptError && (
+                  <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {acceptError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex shrink-0 justify-end gap-2 border-t bg-slate-50 px-4 py-3 sm:px-5">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowPendingCash(false);
+                    setFocusAdvanceId("");
+                    setAcceptError("");
+                  }}
+                >
+                  Close
+                </Button>
+                {focusedPendingRequest?.status !== "accepted" && (
+                  <Button
+                    disabled={!focusedPendingRequest || !!acceptingId}
+                    onClick={() => void acceptCash(focusedPendingRequest!.id)}
+                  >
+                    {acceptingId === focusedPendingRequest?.id ? "Accepting…" : "Accept"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 break-words text-sm font-semibold text-slate-800">{value}</p>
     </div>
   );
 }

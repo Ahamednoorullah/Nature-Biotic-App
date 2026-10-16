@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { Card, Button, Icon, EmptyState } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { useAuth } from "@/context/AuthContext";
+import { usesSupabaseData } from "@/lib/db/mode";
+import { loadExpenses, loadExpenseCategories, createExpenseDb, type DbExpense } from "@/lib/db/operations";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 const categories = [
   "Transport",
@@ -82,7 +85,7 @@ export default function CompanyExpenses() {
   const { user } = useAuth();
   const savingRef = useRef(false);
   const [expenses, setExpenses] = useState<CompanyExpense[]>(() =>
-    readJSON(EXPENSE_STORAGE_KEY, []),
+    usesSupabaseData() ? [] : readJSON(EXPENSE_STORAGE_KEY, []),
   );
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -96,6 +99,7 @@ export default function CompanyExpenses() {
   const [enteredBy, setEnteredBy] = useState(user?.name ?? "");
 
   useEffect(() => {
+    if (usesSupabaseData()) return;
     const refresh = () => setExpenses(readJSON(EXPENSE_STORAGE_KEY, []));
     window.addEventListener("storage", refresh);
     window.addEventListener("focus", refresh);
@@ -103,6 +107,35 @@ export default function CompanyExpenses() {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("focus", refresh);
     };
+  }, []);
+
+  const [listError, setListError] = useState("");
+
+  const reloadDbExpenses = async () => {
+    try {
+      const rows = await loadExpenses("company");
+      setExpenses(
+        rows.map((r) => ({
+          id: r.id,
+          expenseNo: r.expenseNo,
+          date: r.date,
+          category: r.category,
+          description: r.description,
+          amount: r.amount,
+          method: r.method,
+          enteredBy: r.enteredBy,
+        })),
+      );
+      setListError("");
+    } catch (error) {
+      setExpenses([]);
+      setListError(dbErrorMessage(error, "Could not load expenses."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbExpenses();
   }, []);
 
   const filtered = useMemo(() => {
@@ -158,9 +191,35 @@ export default function CompanyExpenses() {
     setShowCreate(true);
   };
 
-  const handleCreateExpense = () => {
+  const handleCreateExpense = async () => {
     if (savingRef.current || !canCreate) return;
     savingRef.current = true;
+
+    if (usesSupabaseData()) {
+      try {
+        const catList = await loadExpenseCategories("company");
+        const matchedCat = catList.find((c) => c.name.toLowerCase() === category.toLowerCase()) || catList[0];
+        const methodKey = (method.toLowerCase().replace(/\s+/g, "_")) as "cash" | "upi" | "bank_transfer" | "cheque";
+        await createExpenseDb({
+          p_scope: "company",
+          p_category_id: matchedCat?.id || "",
+          p_amount: Number(amount),
+          p_method: methodKey,
+          p_expense_date: date,
+          p_description: description.trim(),
+          p_entered_by_name: enteredBy.trim(),
+        });
+        savingRef.current = false;
+        resetCreateForm();
+        setShowCreate(false);
+        await reloadDbExpenses();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to create expense"));
+        savingRef.current = false;
+        return;
+      }
+    }
 
     const latest = readJSON<CompanyExpense[]>(EXPENSE_STORAGE_KEY, []);
     const expenseNo = nextExpenseNo(latest);
@@ -202,6 +261,11 @@ export default function CompanyExpenses() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">
             Expenses
           </h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-500">
             Track Nature Biotic company expenses.
           </p>

@@ -1,7 +1,9 @@
 import { db, requireUserId, throwIfError } from "@/lib/db/client";
 import {
+  adoptDatabaseFroStock,
   adoptDatabasePurchasing,
   type CompanyStoreSaleRecord,
+  type DatabaseFroStockLine,
   type DatabasePurchaseOrder,
   type DatabasePurchaseReturn,
   type DatabaseStockLine,
@@ -58,7 +60,7 @@ export async function refreshPurchasingData() {
       ),
       selectAll<Record<string, unknown>>(
         "purchase_returns",
-        "id, store_id, return_no, return_date, company_invoice_id, reason, total_amount, status",
+        "id, store_id, return_no, return_date, company_invoice_id, reason, decision_note, total_amount, status",
       ),
       selectAll<Record<string, unknown>>(
         "purchase_return_items",
@@ -66,12 +68,13 @@ export async function refreshPurchasingData() {
       ),
       selectAll<Record<string, unknown>>(
         "store_stock_available",
-        "store_id, variant_id, batch_id, product_name, pack_size, batch_no, quantity, available_quantity",
+        "store_id, variant_id, batch_id, product_name, pack_size, batch_no, expiry_date, quantity, available_quantity",
       ),
-      selectAll<Record<string, unknown>>("stores", "id, name"),
+      selectAll<Record<string, unknown>>("stores", "id, name, code"),
     ]);
 
   const storeName = new Map(stores.map((row) => [String(row.id), String(row.name || "")]));
+  const storeCode = new Map(stores.map((row) => [String(row.id), String(row.code || "")]));
   const mappedOrders: DatabasePurchaseOrder[] = orders.map((order) => {
     const items = orderItems
       .filter((item) => item.po_id === order.id)
@@ -177,12 +180,14 @@ export async function refreshPurchasingData() {
     id: String(row.id),
     storeId: String(row.store_id),
     storeName: storeName.get(String(row.store_id)) || "",
+    storeCode: storeCode.get(String(row.store_id)) || "",
     returnNo: String(row.return_no || ""),
     date: day(row.return_date),
     invoiceId: String(row.company_invoice_id),
     invoiceNo: invoiceNoById.get(String(row.company_invoice_id)) || "",
     total: num(row.total_amount),
     reason: String(row.reason || ""),
+    decisionNote: String(row.decision_note || ""),
     status: returnStatus(String(row.status || "")),
     items: returnItems
       .filter((item) => item.return_id === row.id)
@@ -211,6 +216,7 @@ export async function refreshPurchasingData() {
     productName: String(row.product_name || ""),
     packSize: String(row.pack_size || ""),
     batchNo: String(row.batch_no || ""),
+    expiryDate: day(row.expiry_date),
     quantity: num(row.quantity),
     available: num(row.available_quantity),
   }));
@@ -222,4 +228,45 @@ export async function refreshPurchasingData() {
     statuses,
     stock: mappedStock,
   });
+  await refreshFroStock();
+}
+
+export async function refreshFroStock() {
+  await requireUserId();
+  const balances = await selectAll<Record<string, unknown>>(
+    "fro_stock_balances",
+    "store_id, fro_staff_id, fro_name, variant_id, batch_id, product_name, pack_size, batch_no, expiry_date, quantity",
+  );
+  const movementResult = await db()
+    .from("stock_movements")
+    .select("store_id, fro_staff_id, variant_id, batch_id, unit_value, created_at")
+    .eq("location", "fro")
+    .eq("movement_type", "delivery_in")
+    .order("created_at", { ascending: true });
+  throwIfError(movementResult.error, "Could not load FRO stock values.");
+  const unitValue = new Map<string, number>();
+  for (const row of movementResult.data || []) {
+    const value = num(row.unit_value);
+    if (value <= 0) continue;
+    const key = `${row.store_id}|${row.fro_staff_id}|${row.variant_id}|${row.batch_id || ""}`;
+    unitValue.set(key, value);
+  }
+  const rows: DatabaseFroStockLine[] = balances.map((row) => {
+    const key = `${row.store_id}|${row.fro_staff_id}|${row.variant_id}|${row.batch_id || ""}`;
+    return {
+      storeId: String(row.store_id),
+      staffId: String(row.fro_staff_id || ""),
+      froName: String(row.fro_name || ""),
+      variantId: String(row.variant_id),
+      batchId: String(row.batch_id || ""),
+      productName: String(row.product_name || ""),
+      packSize: String(row.pack_size || ""),
+      batchNo: String(row.batch_no || ""),
+      expiryDate: day(row.expiry_date),
+      quantity: num(row.quantity),
+      unitValue: unitValue.get(key) || 0,
+    };
+  });
+  adoptDatabaseFroStock(rows);
+  return rows;
 }

@@ -7,9 +7,21 @@ import {
   type Staff,
 } from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
-import { formatDate } from "@/lib/format";
+import {
+  businessDate,
+  formatDate,
+  matchesSimpleDate,
+  type SimpleDateFilter,
+} from "@/lib/format";
+import type { StoreDashboardLedger } from "@/lib/db/operations";
 
-export type DateFilter = "today" | "weekly" | "monthly" | "quarterly" | "yearly";
+export type DateFilter =
+  | "today"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly"
+  | "custom";
 
 export type DashboardDetail = {
   date: string;
@@ -144,15 +156,100 @@ export function periodBounds(filter: DateFilter) {
     case "yearly":
       start = new Date(now.getFullYear(), 0, 1);
       break;
+    case "custom":
+      // Custom ranges use matchesSimpleDate(from, to); default bounds unused.
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
   }
   return { start, end };
 }
 
-export function inPeriod(value: unknown, filter: DateFilter) {
-  const date = parseTxnDate(value);
-  if (!date) return false;
-  const { start, end } = periodBounds(filter);
-  return date >= start && date <= end;
+export function inPeriod(
+  value: unknown,
+  filter: DateFilter,
+  from = "",
+  to = "",
+) {
+  // Asia/Kolkata business-date boundaries (shared with list pages).
+  return matchesSimpleDate(
+    String(value ?? ""),
+    filter as SimpleDateFilter,
+    from,
+    to,
+  );
+}
+
+const KOLKATA_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+function kolkataCalendar(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(now);
+  const read = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const weekday = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[read("weekday")];
+  return {
+    year: Number(read("year")),
+    month: Number(read("month")),
+    day: Number(read("day")),
+    weekday: weekday ?? 0,
+  };
+}
+
+function kolkataMidnight(year: number, month: number, day: number) {
+  return new Date(Date.UTC(year, month - 1, day) - KOLKATA_OFFSET_MS);
+}
+
+/** Inclusive start and exclusive end for a creation timestamp, in Asia/Kolkata. */
+export function creationPeriod(filter: DateFilter, now = new Date()) {
+  const { year, month, day, weekday } = kolkataCalendar(now);
+  const todayStart = kolkataMidnight(year, month, day);
+  if (filter === "today") {
+    return { start: todayStart, end: new Date(todayStart.getTime() + 86400000) };
+  }
+  if (filter === "weekly") {
+    const daysFromMonday = weekday === 0 ? 6 : weekday - 1;
+    const start = new Date(todayStart.getTime() - daysFromMonday * 86400000);
+    return { start, end: new Date(start.getTime() + 7 * 86400000) };
+  }
+  if (filter === "monthly") {
+    const start = kolkataMidnight(year, month, 1);
+    const end = month === 12 ? kolkataMidnight(year + 1, 1, 1) : kolkataMidnight(year, month + 1, 1);
+    return { start, end };
+  }
+  if (filter === "quarterly") {
+    const quarterMonth = Math.floor((month - 1) / 3) * 3 + 1;
+    const start = kolkataMidnight(year, quarterMonth, 1);
+    const nextMonth = quarterMonth + 3;
+    const end = nextMonth > 12 ? kolkataMidnight(year + 1, nextMonth - 12, 1) : kolkataMidnight(year, nextMonth, 1);
+    return { start, end };
+  }
+  return { start: kolkataMidnight(year, 1, 1), end: kolkataMidnight(year + 1, 1, 1) };
+}
+
+export function createdInPeriod(
+  value: unknown,
+  filter: DateFilter,
+  now = new Date(),
+  from = "",
+  to = "",
+) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return false;
+  if (filter === "custom") {
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(raw.slice(0, 10))
+      ? raw.slice(0, 10)
+      : businessDate(new Date(raw));
+    if (!day || day === "Invalid Date") return false;
+    return matchesSimpleDate(day, "custom", from, to);
+  }
+  const created = new Date(raw);
+  if (Number.isNaN(created.getTime())) return false;
+  const { start, end } = creationPeriod(filter, now);
+  return created >= start && created < end;
 }
 
 function displayDate(value: unknown) {
@@ -280,6 +377,81 @@ function farmerStats(storeId: string, farmerIds: Set<string>, farmerNames: Set<s
   };
 }
 
+export function directSalesFromInvoices(
+  storeId: string,
+  filter: DateFilter,
+  invoices: Array<{
+    date?: string;
+    invoiceNo?: string;
+    through?: string;
+    partyName?: string;
+    farmerId?: string;
+    farmerVillage?: string;
+    farmerPhone?: string;
+    amount?: number;
+    status?: string;
+  }>,
+): ChannelSummary {
+  const direct: ChannelSummary = {
+    sales: 0,
+    collection: 0,
+    outstanding: 0,
+    farmers: 0,
+    farms: 0,
+    crops: 0,
+    salesRows: [],
+    collectionRows: [],
+    outstandingRows: [],
+  };
+  const farmerIds = new Set<string>();
+  const farmerNames = new Set<string>();
+
+  invoices.forEach((invoice) => {
+    const status = String(invoice.status || "").toLowerCase();
+    if (status === "cancelled") return;
+    if (String(invoice.through || "").toLowerCase() === "executive") return;
+    if (!inPeriod(invoice.date, filter)) return;
+    const net = Math.max(0, money(invoice.amount));
+    if (net <= 0) return;
+    direct.sales += net;
+    direct.outstanding += net;
+    const farmerName = String(invoice.partyName || "-");
+    const farmerId = String(invoice.farmerId || "").trim();
+    if (farmerId) farmerIds.add(farmerId);
+    else if (farmerName.trim() && farmerName !== "-") {
+      farmerNames.add(farmerName.trim().toLowerCase());
+    }
+    direct.salesRows.push({
+      date: displayDate(invoice.date),
+      invoiceNo: String(invoice.invoiceNo || ""),
+      receiptNo: "",
+      farmer: farmerName,
+      amount: net,
+      method: "Direct",
+      village: "",
+      phone: "",
+      ageing: "",
+    });
+    direct.outstandingRows.push({
+      date: displayDate(invoice.date),
+      invoiceNo: String(invoice.invoiceNo || ""),
+      receiptNo: "",
+      farmer: farmerName,
+      amount: net,
+      method: "",
+      village: String(invoice.farmerVillage || "-"),
+      phone: String(invoice.farmerPhone || "-"),
+      ageing: ageingLabel(parseTxnDate(invoice.date)),
+    });
+  });
+
+  const stats = farmerStats(storeId, farmerIds, farmerNames);
+  direct.farmers = stats.farmers;
+  direct.farms = stats.farms;
+  direct.crops = stats.crops;
+  return direct;
+}
+
 export function buildStoreDashboard(storeId: string, filter: DateFilter) {
   const invoices = uniqueRows(readRows(`${SALES_KEY}:${storeId}`)).filter(
     (row) => row.id !== "store-sale-1" && String(row.invoiceNo || "").toLowerCase() !== "nb-inv-2001",
@@ -294,7 +466,8 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
 
   const returned = new Map<string, number>();
   returns.forEach((row) => {
-    if (row.status === "Rejected") return;
+    const status = String(row.status || "approved").trim().toLowerCase();
+    if (status !== "approved") return;
     const invoiceNo = String(row.invoiceNo || "").trim().toLowerCase();
     if (!invoiceNo) return;
     returned.set(invoiceNo, (returned.get(invoiceNo) || 0) + money(row.total || row.amount));
@@ -677,4 +850,368 @@ export function buildStoreDashboard(storeId: string, filter: DateFilter) {
     direct,
     executives,
   };
+}
+
+function blankChannel(): ChannelSummary {
+  return {
+    sales: 0,
+    collection: 0,
+    outstanding: 0,
+    farmers: 0,
+    farms: 0,
+    crops: 0,
+    salesRows: [],
+    collectionRows: [],
+    outstandingRows: [],
+  };
+}
+
+export function summarizeStoreLedger(
+  ledger: StoreDashboardLedger,
+  filter: DateFilter,
+  from = "",
+  to = "",
+) {
+  const officerIds = new Set(ledger.officers.map((officer) => officer.id));
+  const invoiceById = new Map(ledger.invoices.map((invoice) => [invoice.id, invoice]));
+  const direct = blankChannel();
+  const residual = blankChannel();
+  const byOfficer = new Map<string, ChannelSummary>();
+  ledger.officers.forEach((officer) => byOfficer.set(officer.id, blankChannel()));
+
+  const channelFor = (channel: string, staffId: string) => {
+    if (staffId && officerIds.has(staffId)) return byOfficer.get(staffId) || residual;
+    if (String(channel || "").toLowerCase() === "executive") return residual;
+    return direct;
+  };
+
+  ledger.invoices.forEach((invoice) => {
+    if (String(invoice.status || "").toLowerCase() !== "final") return;
+    if (!inPeriod(invoice.date, filter, from, to)) return;
+    const channel = channelFor(invoice.channel, invoice.staffId);
+    channel.sales += invoice.amount;
+    channel.salesRows.push({
+      date: displayDate(invoice.date),
+      invoiceNo: invoice.invoiceNo,
+      receiptNo: "",
+      farmer: invoice.partyName || "-",
+      amount: invoice.amount,
+      method: String(invoice.channel).toLowerCase() === "executive" ? "Executive" : "Direct",
+      village: invoice.village,
+      phone: invoice.phone,
+      ageing: "",
+    });
+  });
+
+  ledger.salesReturns.forEach((salesReturn) => {
+    if (String(salesReturn.status || "").toLowerCase() !== "approved") return;
+    if (!inPeriod(salesReturn.date, filter, from, to)) return;
+    const invoice = invoiceById.get(salesReturn.salesInvoiceId);
+    const channel = channelFor(
+      salesReturn.channel || invoice?.channel || "direct",
+      salesReturn.staffId || invoice?.staffId || "",
+    );
+    channel.sales -= salesReturn.amount;
+    channel.salesRows.push({
+      date: displayDate(salesReturn.date),
+      invoiceNo: salesReturn.returnNo,
+      receiptNo: invoice?.invoiceNo || "",
+      farmer: invoice?.partyName || "-",
+      amount: -salesReturn.amount,
+      method: "Sales Return",
+      village: invoice?.village || "",
+      phone: invoice?.phone || "",
+      ageing: "",
+    });
+  });
+
+  ledger.receipts.forEach((receipt) => {
+    if (String(receipt.status || "").toLowerCase() !== "final") return;
+    if (!inPeriod(receipt.date, filter, from, to)) return;
+    const invoice = invoiceById.get(receipt.salesInvoiceId);
+    const channel = channelFor(invoice?.channel || "direct", receipt.staffId || invoice?.staffId || "");
+    channel.collection += receipt.amount;
+    channel.collectionRows.push({
+      date: displayDate(receipt.date),
+      invoiceNo: invoice?.invoiceNo || "",
+      receiptNo: receipt.receiptNo,
+      farmer: receipt.farmerName || invoice?.partyName || "-",
+      amount: receipt.amount,
+      method: receipt.method,
+      village: invoice?.village || "",
+      phone: invoice?.phone || "",
+      ageing: "",
+    });
+  });
+
+  ledger.refunds.forEach((refund) => {
+    if (String(refund.status || "").toLowerCase() !== "final") return;
+    if (!inPeriod(refund.date, filter, from, to)) return;
+    if (refund.cashPaid <= 0) return;
+    const invoice = invoiceById.get(refund.salesInvoiceId);
+    const channel = channelFor(
+      refund.channel || invoice?.channel || "direct",
+      refund.staffId || invoice?.staffId || "",
+    );
+    channel.collection -= refund.cashPaid;
+    channel.collectionRows.push({
+      date: displayDate(refund.date),
+      invoiceNo: invoice?.invoiceNo || "",
+      receiptNo: refund.refundNo,
+      farmer: refund.farmerName || invoice?.partyName || "-",
+      amount: -refund.cashPaid,
+      method: "Refund",
+      village: "",
+      phone: "",
+      ageing: "",
+    });
+  });
+
+  ledger.outstanding.forEach((row) => {
+    if (row.outstanding <= 0) return;
+    const channel = channelFor(row.channel, row.staffId);
+    channel.outstanding += row.outstanding;
+    channel.outstandingRows.push({
+      date: displayDate(row.date),
+      invoiceNo: row.invoiceNo,
+      receiptNo: "",
+      farmer: row.partyName || "-",
+      amount: row.outstanding,
+      method: "",
+      village: row.village || "-",
+      phone: row.phone || "-",
+      ageing: ageingLabel(parseTxnDate(row.date)),
+    });
+  });
+
+  const createdFarmerIds = new Set(
+    ledger.farmers
+      .filter((farmer) => farmer.id && createdInPeriod(farmer.createdAt, filter, undefined, from, to))
+      .map((farmer) => farmer.id),
+  );
+  const directFarmerIds = new Set(
+    ledger.farmers
+      .filter(
+        (farmer) =>
+          farmer.id &&
+          farmer.channel === "direct" &&
+          createdInPeriod(farmer.createdAt, filter, undefined, from, to),
+      )
+      .map((farmer) => farmer.id),
+  );
+  const farmIds = new Set<string>();
+  const cropIds = new Set<string>();
+  ledger.farmers.forEach((farmer) => {
+    farmer.farms.forEach((farm) => {
+      if (farm.id && createdInPeriod(farm.createdAt, filter, undefined, from, to)) farmIds.add(farm.id);
+    });
+    farmer.crops.forEach((crop) => {
+      if (crop.id && createdInPeriod(crop.createdAt, filter, undefined, from, to)) cropIds.add(crop.id);
+    });
+  });
+
+  direct.farmers = directFarmerIds.size;
+  const executives: ExecutiveDashboard[] = ledger.officers.map((officer, index) => {
+    const channel = byOfficer.get(officer.id) || blankChannel();
+    return {
+      id: officer.id,
+      name: officer.name,
+      color: colors[index % colors.length],
+      sales: channel.sales,
+      collection: channel.collection,
+      collectionInHand: ledger.cashByStaff?.[officer.id] ?? 0,
+      outstanding: channel.outstanding,
+      farmers: new Set(
+        ledger.farmers
+          .filter(
+            (farmer) =>
+              farmer.id &&
+              farmer.staffId === officer.id &&
+              createdInPeriod(farmer.createdAt, filter, undefined, from, to),
+          )
+          .map((farmer) => farmer.id),
+      ).size,
+      farms: 0,
+      crops: 0,
+      visits: ledger.visits.filter(
+        (visit) => visit.staffId === officer.id && inPeriod(visit.date, filter, from, to),
+      ).length,
+      target: {
+        sales: periodTarget(officer.targetSales, filter, officer.joinedDate),
+        farmers: Math.round(periodTarget(officer.targetFarmers, filter, officer.joinedDate)),
+        farms: Math.round(periodTarget(officer.targetFarms, filter, officer.joinedDate)),
+        visits: Math.round(periodTarget(officer.targetVisits, filter, officer.joinedDate)),
+      },
+      salesRows: channel.salesRows,
+      collectionRows: channel.collectionRows,
+      cashRows: (ledger.cashLines || [])
+        .filter((line) => line.staffId === officer.id && inPeriod(line.date, filter, from, to))
+        .map((line) => ({
+          date: displayDate(line.date),
+          invoiceNo: "",
+          receiptNo: line.ref,
+          farmer: line.farmerName,
+          amount: line.amount,
+          method: "Cash",
+          village: line.village,
+          phone: line.phone,
+          ageing: "",
+        })),
+      outstandingRows: channel.outstandingRows,
+    };
+  });
+
+  const purchases = ledger.purchases.filter((row) => inPeriod(row.date, filter, from, to));
+  return {
+    overview: {
+      sales: direct.sales + residual.sales + executives.reduce((sum, officer) => sum + officer.sales, 0),
+      collection:
+        direct.collection +
+        residual.collection +
+        executives.reduce((sum, officer) => sum + officer.collection, 0),
+      outstanding:
+        direct.outstanding +
+        residual.outstanding +
+        executives.reduce((sum, officer) => sum + officer.outstanding, 0),
+      farmers: createdFarmerIds.size,
+      farms: farmIds.size,
+      crops: cropIds.size,
+      visits: ledger.visits.filter((visit) => inPeriod(visit.date, filter, from, to)).length,
+    },
+    direct,
+    executives,
+    stockCostValue: ledger.stockCostValue,
+    purchases,
+    receivedTotal: purchases.reduce((sum, row) => sum + row.total, 0),
+  };
+}
+
+export function summarizeFroAccounts(
+  ledger: Pick<StoreDashboardLedger, "invoices" | "receipts" | "refunds" | "salesReturns" | "outstanding">,
+  staffId: string,
+  filter: DateFilter,
+  from = "",
+  to = "",
+) {
+  const owns = (id: string) => Boolean(staffId) && id === staffId;
+  const invoiceById = new Map(ledger.invoices.map((invoice) => [invoice.id, invoice]));
+  const salesRows: Array<{
+    date: string;
+    invoiceNo: string;
+    farmerName: string;
+    village: string;
+    phone: string;
+    amount: number;
+  }> = [];
+  const collectionRows: Array<{
+    date: string;
+    receiptNo: string;
+    farmerName: string;
+    village: string;
+    phone: string;
+    amount: number;
+  }> = [];
+  const outstandingRows: Array<{
+    date: string;
+    invoiceNo: string;
+    farmerName: string;
+    village: string;
+    phone: string;
+    amount: number;
+  }> = [];
+  const seenInvoices = new Set<string>();
+  let sales = 0;
+  ledger.invoices.forEach((invoice) => {
+    if (!invoice.id || seenInvoices.has(invoice.id)) return;
+    if (String(invoice.status || "").toLowerCase() !== "final") return;
+    if (!owns(invoice.staffId)) return;
+    if (!inPeriod(invoice.date, filter, from, to)) return;
+    seenInvoices.add(invoice.id);
+    sales += invoice.amount;
+    salesRows.push({
+      date: invoice.date,
+      invoiceNo: invoice.invoiceNo,
+      farmerName: invoice.partyName || "-",
+      village: invoice.village || "-",
+      phone: invoice.phone || "-",
+      amount: invoice.amount,
+    });
+  });
+  const seenReturns = new Set<string>();
+  ledger.salesReturns.forEach((salesReturn) => {
+    if (!salesReturn.id || seenReturns.has(salesReturn.id)) return;
+    if (String(salesReturn.status || "").toLowerCase() !== "approved") return;
+    const invoice = invoiceById.get(salesReturn.salesInvoiceId);
+    if (!owns(salesReturn.staffId || invoice?.staffId || "")) return;
+    if (!inPeriod(salesReturn.date, filter, from, to)) return;
+    seenReturns.add(salesReturn.id);
+    sales -= salesReturn.amount;
+    salesRows.push({
+      date: salesReturn.date,
+      invoiceNo: salesReturn.returnNo,
+      farmerName: invoice?.partyName || "-",
+      village: invoice?.village || "-",
+      phone: invoice?.phone || "-",
+      amount: -salesReturn.amount,
+    });
+  });
+
+  const seenReceipts = new Set<string>();
+  let collection = 0;
+  ledger.receipts.forEach((receipt) => {
+    if (!receipt.id || seenReceipts.has(receipt.id)) return;
+    if (String(receipt.status || "").toLowerCase() !== "final") return;
+    const invoice = invoiceById.get(receipt.salesInvoiceId);
+    if (!owns(receipt.staffId || invoice?.staffId || "")) return;
+    if (!inPeriod(receipt.date, filter, from, to)) return;
+    seenReceipts.add(receipt.id);
+    collection += receipt.amount;
+    collectionRows.push({
+      date: receipt.date,
+      receiptNo: receipt.receiptNo,
+      farmerName: receipt.farmerName || invoice?.partyName || "-",
+      village: invoice?.village || "-",
+      phone: invoice?.phone || "-",
+      amount: receipt.amount,
+    });
+  });
+  const seenRefunds = new Set<string>();
+  ledger.refunds.forEach((refund) => {
+    if (!refund.id || seenRefunds.has(refund.id)) return;
+    if (String(refund.status || "").toLowerCase() !== "final") return;
+    if (refund.cashPaid <= 0) return;
+    const invoice = invoiceById.get(refund.salesInvoiceId);
+    if (!owns(refund.staffId || invoice?.staffId || "")) return;
+    if (!inPeriod(refund.date, filter, from, to)) return;
+    seenRefunds.add(refund.id);
+    collection -= refund.cashPaid;
+    collectionRows.push({
+      date: refund.date,
+      receiptNo: refund.refundNo,
+      farmerName: refund.farmerName || invoice?.partyName || "-",
+      village: invoice?.village || "-",
+      phone: invoice?.phone || "-",
+      amount: -refund.cashPaid,
+    });
+  });
+
+  const seenOutstanding = new Set<string>();
+  let outstanding = 0;
+  ledger.outstanding.forEach((row) => {
+    if (!row.salesInvoiceId || seenOutstanding.has(row.salesInvoiceId)) return;
+    if (!owns(row.staffId)) return;
+    if (row.outstanding <= 0) return;
+    seenOutstanding.add(row.salesInvoiceId);
+    outstanding += row.outstanding;
+    outstandingRows.push({
+      date: row.date,
+      invoiceNo: row.invoiceNo,
+      farmerName: row.partyName || "-",
+      village: row.village || "-",
+      phone: row.phone || "-",
+      amount: row.outstanding,
+    });
+  });
+
+  return { sales, collection, outstanding, salesRows, collectionRows, outstandingRows };
 }

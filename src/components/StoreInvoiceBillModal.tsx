@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { printDocumentPdf } from "@/lib/documentPdf";
 import { createPortal } from "react-dom";
 import { Button, Icon } from "@/components/ui";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatRoundOff } from "@/lib/format";
 import {
   CommonDocumentBill,
   SummaryRow,
@@ -326,6 +326,10 @@ export function StoreInvoiceBillModal({
                         <SummaryRow
                           label="IGST"
                           value={formatCurrency(sale.igst)}
+                        />
+                        <SummaryRow
+                          label="Round Off"
+                          value={formatRoundOff(sale.roundOff || 0)}
                         />
                         <div className="border-t border-slate-200 pt-3">
                           <SummaryRow

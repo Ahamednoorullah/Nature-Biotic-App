@@ -13,6 +13,15 @@ import {
   getStaffByStore,
 } from "@/lib/data";
 import { roleForStaffDesignation } from "@/lib/auth/roles";
+import { usesSupabaseData } from "@/lib/db/mode";
+import {
+  loadStockReturns,
+  acceptStockReturnDb,
+  rejectStockReturnDb,
+  createManualStockReturnDb,
+} from "@/lib/db/operations";
+import { peekDocumentNo, type RpcLine } from "@/lib/db/rpc";
+import { dbErrorMessage } from "@/lib/db/errors";
 
 type ReturnItem = {
   product: string;
@@ -64,7 +73,7 @@ type FROReturnRequest = {
   storeId: string;
   froName: string;
   reason: string;
-  status: "pending" | "accepted";
+  status: "pending" | "accepted" | "rejected";
   createdAt: string;
   acceptedAt?: string;
   acceptedBy?: string;
@@ -110,12 +119,79 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
   );
 
   const [rows, setRows] = useState<ReturnChallan[]>(() => {
+    if (usesSupabaseData()) return [];
     const saved = loadRows(storageKey);
 
     if (saved.length > 0) return saved;
 
     return [];
   });
+  const [listError, setListError] = useState("");
+
+  const reloadDbStockReturns = async () => {
+    try {
+      const dbRows = await loadStockReturns(storeId);
+      const converted: ReturnChallan[] = dbRows.map((r) => ({
+        id: r.id,
+        rcNo: r.srNo,
+        date: r.date,
+        sdNo: "-",
+        executive: r.executive,
+        customerName: "Store Stock Return",
+        village: "-",
+        phone: "-",
+        placeOfSupply: "Tamil Nadu",
+        cgstPercent: 0,
+        sgstPercent: 0,
+        igstPercent: 0,
+        items: r.items.map((it) => ({
+          product: it.product,
+          productId: it.productId,
+          packSize: it.packSize,
+          batchNo: it.batchNo,
+          expiryDate: it.expiryDate,
+          issuedQty: it.qty,
+          returnedQty: it.qty,
+          unitValue: it.unitValue,
+        })),
+        farmer: undefined,
+        productId: "",
+      }));
+      setRows(converted);
+
+      const pendingFromDb: FROReturnRequest[] = dbRows
+        .filter((r) => r.status === "pending")
+        .map((r) => ({
+          id: r.id,
+          rcNo: r.srNo,
+          date: r.date,
+          storeId: r.storeId,
+          froName: r.executive,
+          reason: r.reason || "FRO Return",
+          status: "pending" as const,
+          createdAt: r.date,
+          items: r.items.map((it) => ({
+            productId: it.productId,
+            product: it.product,
+            packSize: it.packSize,
+            batchNo: it.batchNo,
+            expiryDate: it.expiryDate,
+            qty: Number(it.qty || 0),
+            unitValue: Number(it.unitValue || 0),
+          })),
+        }));
+      setFroReturns(pendingFromDb);
+      setListError("");
+    } catch (error) {
+      setRows([]);
+      setListError(dbErrorMessage(error, "Could not load stock returns."));
+    }
+  };
+
+  useEffect(() => {
+    if (!usesSupabaseData()) return;
+    void reloadDbStockReturns();
+  }, [storeId]);
 
   const [showAdd, setShowAdd] = useState(false);
   const [selectesdhallan, setSelectesdhallan] = useState<ReturnChallan | null>(
@@ -298,8 +374,21 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     return (base * Number(item.taxPercent ?? 0)) / 100;
   }
 
-  function acceptFROReturn(request: FROReturnRequest) {
-    if (request.status === "accepted") return;
+  async function acceptFROReturn(request: FROReturnRequest) {
+    if (request.status !== "pending") return;
+
+    if (usesSupabaseData()) {
+      try {
+        await acceptStockReturnDb(request.id);
+        setSelectedFroReturn(null);
+        window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
+        await reloadDbStockReturns();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to accept stock return in database"));
+        return;
+      }
+    }
 
     // Resolve the request against the FRO's actual current hand stock.
     // Older return requests may have an empty productId because the old
@@ -418,6 +507,27 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     });
     persistFROReturnAccepted(accepted);
 
+    setSelectedFroReturn(null);
+  }
+
+  async function rejectFROReturn(request: FROReturnRequest) {
+    if (request.status !== "pending") return;
+
+    if (usesSupabaseData()) {
+      try {
+        await rejectStockReturnDb(request.id);
+        setSelectedFroReturn(null);
+        window.dispatchEvent(new Event("nature-biotic-fro-stock-return-updated"));
+        await reloadDbStockReturns();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to reject stock return in database"));
+        return;
+      }
+    }
+
+    const nextRequests = froReturns.filter((item) => item.id !== request.id);
+    setFroReturns(nextRequests);
     setSelectedFroReturn(null);
   }
 
@@ -624,8 +734,40 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
     } catch {}
   }
 
-  function createReturnChallan() {
+  async function createReturnChallan() {
     if (!canCreate) return;
+
+    if (usesSupabaseData()) {
+      const staffList = getStaffByStore(storeId);
+      const staffMember = staffList.find(
+        (s) => s.name.trim().toLowerCase() === executive.trim().toLowerCase(),
+      );
+      const dbLines: RpcLine[] = items.map((item) => ({
+        product_name: item.product,
+        pack_size: item.packSize,
+        batch_no: item.batchNo,
+        expiry_date: item.expiryDate || null,
+        quantity: Number(item.returnedQty || 0),
+        unit_price: Number(item.unitValue || 0),
+      }));
+      try {
+        await createManualStockReturnDb(
+          {
+            store_id: storeId,
+            fro_staff_id: staffMember?.id || "",
+            return_date: date,
+            reason: "Manual Return Challan",
+          },
+          dbLines,
+        );
+        closeForm();
+        await reloadDbStockReturns();
+        return;
+      } catch (err) {
+        window.alert(dbErrorMessage(err, "Failed to record stock return"));
+        return;
+      }
+    }
 
     const row: ReturnChallan = {
       id: String(Date.now()),
@@ -682,6 +824,11 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Stock Return</h1>
+          {listError ? (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              {listError}
+            </p>
+          ) : null}
           <p className="mt-1 text-slate-500">
             Record unsold products returned by executives against delivery
             challans.
@@ -859,23 +1006,12 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
 
                     {/* SR NO */}
                     <td className="border-r border-slate-100 px-1.5 py-3 text-center font-semibold">
-                      <span className="block">
-                        {String(row.rcNo || "").replace(/^RC/i, "SR")}
-                      </span>
-                      <span className="mt-0.5 block text-[10px] font-semibold text-emerald-700">
-                        Accepted
-                      </span>
+                      {String(row.rcNo || "").replace(/^RC/i, "SR")}
                     </td>
 
                     {/* EXECUTIVE */}
                     <td className="border-r border-slate-100 px-1.5 py-3 text-center">
-                      <span className="block">{row.executive || "-"}</span>
-                      <span className="mt-0.5 block text-[10px] leading-tight text-slate-500 break-words">
-                        {row.items
-                          .map((item) => item.product)
-                          .filter(Boolean)
-                          .join(", ") || "-"}
-                      </span>
+                      {row.executive || "-"}
                     </td>
 
                     {/* RETURNED QTY */}
@@ -991,9 +1127,9 @@ export default function StoreReturnChallan({ storeId }: { storeId: string }) {
                 <Button
                   variant="secondary"
                   className="w-full"
-                  onClick={() => setSelectedFroReturn(null)}
+                  onClick={() => rejectFROReturn(selectedFroReturn)}
                 >
-                  Close
+                  Reject
                 </Button>
                 <Button
                   className="w-full"

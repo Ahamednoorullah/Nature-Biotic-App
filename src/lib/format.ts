@@ -7,6 +7,30 @@ export function formatCurrency(n: number): string {
   }).format(n);
 }
 
+/** Round a money amount to paise without truncating to a whole rupee. */
+export function money(value: unknown) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+/** Nearest-rupee adjustment. 1234.56 becomes payable 1235 and round-off +0.44. */
+export function roundOffToRupee(exact: unknown) {
+  const amount = money(exact);
+  const payable = Math.round(amount);
+  return {
+    exact: amount,
+    roundOff: money(payable - amount),
+    payable,
+  };
+}
+
+export function formatRoundOff(value: unknown) {
+  const amount = money(value);
+  if (amount > 0) return `+${formatCurrency(amount)}`;
+  return formatCurrency(amount);
+}
+
 export function formatCompact(n: number): string {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
   if (n >= 100000) return `₹${(n / 100000).toFixed(2)}L`;
@@ -34,6 +58,40 @@ export const simpleDateFilterOptions: {
   { value: "custom", label: "Custom Date" },
 ];
 
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+/** Calendar date in Asia/Kolkata, as YYYY-MM-DD. */
+export function businessDate(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+export function businessCalendar(date = new Date()) {
+  const [year, month, day] = businessDate(date).split("-").map(Number);
+  const weekdayName = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+  }).format(date);
+  return {
+    year,
+    month,
+    day,
+    weekday: WEEKDAY_INDEX[weekdayName] ?? 0,
+  };
+}
+
 export function parseBusinessDate(value: string): Date | null {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -58,14 +116,13 @@ export function matchesSimpleDate(
 ) {
   const date = parseBusinessDate(value);
   if (!date) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayParts = businessCalendar();
+  const today = new Date(todayParts.year, todayParts.month - 1, todayParts.day);
   date.setHours(0, 0, 0, 0);
   if (filter === "today") return date.getTime() === today.getTime();
   if (filter === "weekly") {
     const start = new Date(today);
-    const day = start.getDay();
-    start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+    start.setDate(start.getDate() - (todayParts.weekday === 0 ? 6 : todayParts.weekday - 1));
     return date >= start && date <= today;
   }
   if (filter === "monthly") {
